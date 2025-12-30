@@ -628,6 +628,7 @@ dependencies = [
  "dirs",
  "melotui-audio",
  "melotui-core",
+ "melotui-download",
  "melotui-ipc",
  "melotui-tui",
  "tracing",
@@ -640,6 +641,14 @@ name = "melotui-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "tracing",
+]
+
+[[package]]
+name = "melotui-download"
+version = "0.1.0"
+dependencies = [
+ "melotui-core",
  "tracing",
 ]
 

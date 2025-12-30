@@ -57,11 +57,11 @@ impl Tui {
     }
 
     /// Poll input
-    pub fn poll_event(&self, ui_mode: UIMode) -> anyhow::Result<Option<AppMsg>> {
+    pub fn poll_event(&self, state: &AppState) -> anyhow::Result<Option<AppMsg>> {
         if event::poll(Duration::from_millis(50))?
             && let Event::Key(key) = event::read()?
         {
-            return Ok(match ui_mode {
+            return Ok(match state.ui.mode {
                 UIMode::Normal => match key.code {
                     KeyCode::Char('q') => Some(AppMsg::Quit),
                     KeyCode::Char('[') => Some(AppMsg::SwitchToPlaylists),
@@ -76,7 +76,7 @@ impl Tui {
 
                 UIMode::Command => match key.code {
                     KeyCode::Esc => Some(AppMsg::ExitCommandMode),
-                    KeyCode::Enter => Some(AppMsg::SubmitCommand),
+                    KeyCode::Enter => Some(AppMsg::SubmitCommand(state.ui.command_buffer.clone())),
                     KeyCode::Backspace => Some(AppMsg::BackspaceCommand),
                     KeyCode::Char(c) => Some(AppMsg::UpdateCommand(c)),
                     _ => None,

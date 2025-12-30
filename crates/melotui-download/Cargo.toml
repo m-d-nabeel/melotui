@@ -1,0 +1,8 @@
+[package]
+name = "melotui-download"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+melotui-core = { path = "../melotui-core" }
+tracing = "0.1.44"

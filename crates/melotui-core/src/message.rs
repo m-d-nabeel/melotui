@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AppMsg {
     Quit,
 
@@ -19,5 +19,14 @@ pub enum AppMsg {
     ExitCommandMode,
     UpdateCommand(char),
     BackspaceCommand,
-    SubmitCommand,
+    SubmitCommand(String),
+
+    // command execution
+    ExecuteCommand(String),
+
+    // downloads
+    StartDownload { query: String },
+    DownloadProgress { message: String },
+    DownloadFinished,
+    DownloadFailed { error: String },
 }

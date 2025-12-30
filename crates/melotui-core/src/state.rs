@@ -47,6 +47,18 @@ pub struct PlaybackState {
 }
 
 #[derive(Debug, Clone)]
+pub enum DownloadStatus {
+    Idle,
+    Running { info: String },
+    Failed { error: String },
+}
+
+#[derive(Debug, Clone)]
+pub struct DownloadState {
+    pub status: DownloadStatus,
+}
+
+#[derive(Debug, Clone)]
 pub struct AppState {
     pub app_name: String,
     pub status: String,
@@ -60,4 +72,6 @@ pub struct AppState {
     pub library: Library,
 
     pub playback: PlaybackState,
+
+    pub download: DownloadState,
 }

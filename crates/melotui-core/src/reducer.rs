@@ -1,6 +1,6 @@
 use crate::{
-    AppMsg, AppState, Library, NavMode, UIMode,
-    state::{PlaybackStatus, TrackId},
+    AppMsg, AppState, Command, Library, NavMode, UIMode,
+    state::{DownloadStatus, PlaybackStatus, TrackId},
 };
 
 fn reconcile_nav_state(state: &mut AppState) {
@@ -81,6 +81,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
 
         AppMsg::PlaySelected => {
             if state.nav.mode != NavMode::Tracks {
+                tracing::warn!("PlaySelected called but not in Track Mode.");
                 return;
             }
 
@@ -88,7 +89,10 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
 
             let playlist = match state.library.playlists.get(p) {
                 Some(pl) => pl,
-                None => return,
+                None => {
+                    tracing::warn!("No playlist found at index {}.", p);
+                    return;
+                }
             };
 
             let t = state.nav.selected_tracks[p];
@@ -116,6 +120,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
                 Ok(new_library) => {
                     state.library = new_library;
                     reconcile_nav_state(state);
+                    tracing::info!("Library rescanned");
 
                     // reconcile playback
                     if let Some(current) = &state.playback.current {
@@ -159,14 +164,58 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
             state.ui.command_buffer.pop();
         }
 
-        AppMsg::SubmitCommand => {
-            let cmd = state.ui.command_buffer.trim().to_string();
+        AppMsg::SubmitCommand(input) => {
             state.ui.mode = UIMode::Normal;
             state.ui.command_buffer.clear();
 
-            let status_msg = format!("Command entered: {}", cmd);
-            state.status = status_msg.clone();
-            tracing::debug!(status_msg);
+            if input.trim().is_empty() {
+                return;
+            }
+
+            reduce(state, AppMsg::ExecuteCommand(input));
+        }
+
+        AppMsg::ExecuteCommand(input) => {
+            match Command::parse(&input) {
+                Command::Quit => {
+                    // handled in main loop
+                    state.status = "Quit".into();
+                }
+
+                Command::Rescan => {
+                    reduce(state, AppMsg::RescanLibrary);
+                }
+
+                Command::Download { query } => {
+                    state.status = format!("Downloading: {}", query);
+                    reduce(state, AppMsg::StartDownload { query });
+                }
+
+                Command::Unknown(reason) => {
+                    state.status = format!("Unknown command: {}", reason);
+                }
+            }
+        }
+
+        AppMsg::StartDownload { query } => {
+            state.download.status = DownloadStatus::Running {
+                info: format!("Starting download: {}", query),
+            };
+            tracing::info!("StartDownload called with {}", query);
+        }
+
+        AppMsg::DownloadProgress { message } => {
+            state.download.status = DownloadStatus::Running { info: message };
+        }
+
+        AppMsg::DownloadFinished => {
+            state.download.status = DownloadStatus::Idle;
+            reduce(state, AppMsg::RescanLibrary);
+            tracing::info!("DownloadFinished called");
+        }
+
+        AppMsg::DownloadFailed { error } => {
+            state.download.status = DownloadStatus::Failed { error };
         }
     }
 }
