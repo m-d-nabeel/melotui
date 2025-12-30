@@ -1,7 +1,8 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Instant};
 
 use crate::library::Library;
 
+// ----------- UI Mode & State -------------
 #[derive(Debug, Clone, PartialEq)]
 pub enum NavMode {
     Playlists,
@@ -26,7 +27,8 @@ pub struct UIState {
     pub mode: UIMode,
     pub command_buffer: String,
 }
-
+// ----------- UI Mode & State -------------
+// --------------- Playback ----------------
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackId {
     pub playlist: String,
@@ -45,7 +47,8 @@ pub struct PlaybackState {
     pub current: Option<TrackId>,
     pub status: PlaybackStatus,
 }
-
+// --------------- Playback ----------------
+// --------------- Download ----------------
 #[derive(Debug, Clone)]
 pub enum DownloadStatus {
     Idle,
@@ -58,20 +61,39 @@ pub struct DownloadState {
     pub status: DownloadStatus,
 }
 
+// --------------- Download ----------------
+// ------------- Notification --------------
+#[derive(Debug, Clone)]
+pub enum NotificationKind {
+    Info,
+    Progress,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub kind: NotificationKind,
+    pub message: String,
+    pub progress: Option<u8>, // 0–100
+    pub created_at: Instant,
+    pub dismiss_after: Option<std::time::Duration>,
+}
+
+#[derive(Debug, Clone)]
+pub struct NotificationState {
+    pub current: Option<Notification>,
+}
+// ------------- Notification --------------
+
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub app_name: String,
-    pub status: String,
-
     // navigation
     pub nav: UINavState,
-
     // UI-only
     pub ui: UIState,
-
     pub library: Library,
-
     pub playback: PlaybackState,
-
     pub download: DownloadState,
+    pub notification: NotificationState,
 }

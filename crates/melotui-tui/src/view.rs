@@ -8,14 +8,14 @@ use ratatui::{
 use melotui_core::{AppState, UIMode};
 
 use crate::widgets::{
-    command_view, library_view, playback_view, sound_control_view, visualizer_view,
+    command_view, library_view, notification_popup, playback_view, sound_control_view,
+    visualizer_view,
 };
 
 pub fn draw(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
 
     // --- MAIN LAYOUT (always the same) ---
-
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(2, 10), Constraint::Ratio(8, 10)])
@@ -41,6 +41,7 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
     visualizer_view::draw(frame, right_vertical[0], state);
     sound_control_view::draw(frame, control_chunks[0], state);
     playback_view::draw(frame, control_chunks[1], state);
+    notification_popup::draw(frame, frame.area(), state);
 
     // --- COMMAND OVERLAY ---
     if state.ui.mode == UIMode::Command {

@@ -5,6 +5,8 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::Sender;
 use std::thread;
 
+use crate::progress::parse_progress;
+
 pub fn spawn_download(query: String, music_root: PathBuf, tx: Sender<AppMsg>) {
     thread::spawn(move || {
         tracing::debug!("YT-DLP Thread Spawned");
@@ -19,10 +21,10 @@ pub fn spawn_download(query: String, music_root: PathBuf, tx: Sender<AppMsg>) {
             .arg("0")
             .arg("--embed-thumbnail")
             .arg("--add-metadata")
-            .arg("--no-progress")
             .arg("--output")
             .arg(format!("{}/%(title)s.%(ext)s", music_root.display()))
             .arg(format!("ytsearch1:{}", query))
+            .arg("--newline")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn();
@@ -39,20 +41,37 @@ pub fn spawn_download(query: String, music_root: PathBuf, tx: Sender<AppMsg>) {
             }
         };
 
-        let stdout = child.stdout.take().unwrap();
+        let tx_err = tx.clone();
         let stderr = child.stderr.take().unwrap();
-        let stdout_reader = BufReader::new(stdout);
-        let stderr_reader = BufReader::new(stderr);
 
-        for line in stderr_reader.lines().map_while(Result::ok) {
-            tracing::warn!("yt-dlp stderr: {}", line);
-            let _ = tx.send(AppMsg::DownloadProgress { message: line });
-        }
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().map_while(Result::ok) {
+                tracing::debug!("yt-dlp stderr: {}", line);
+                if let Some(pct) = parse_progress(&line) {
+                    let _ = tx_err.send(AppMsg::DownloadProgress {
+                        message: line,
+                        percent: pct,
+                    });
+                }
+            }
+        });
 
-        for line in stdout_reader.lines().map_while(Result::ok) {
-            tracing::warn!("yt-dlp stdout: {}", line);
-            let _ = tx.send(AppMsg::DownloadProgress { message: line });
-        }
+        let tx_out = tx.clone();
+        let stdout = child.stdout.take().unwrap();
+
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stdout);
+            for line in reader.lines().map_while(Result::ok) {
+                tracing::debug!("yt-dlp stderr: {}", line);
+                if let Some(pct) = parse_progress(&line) {
+                    let _ = tx_out.send(AppMsg::DownloadProgress {
+                        message: line,
+                        percent: pct,
+                    });
+                }
+            }
+        });
 
         match child.wait() {
             Ok(status) if status.success() => {

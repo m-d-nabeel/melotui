@@ -17,7 +17,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .map(|n| n.to_string_lossy())
         .unwrap_or_else(|| "—".into());
 
-    let text = format!("Now Playing: {}\nStatus: {}", now_playing, state.status);
+    let text = format!("Now Playing: {}\n", now_playing);
 
     let paragraph = Paragraph::new(text).block(block);
 

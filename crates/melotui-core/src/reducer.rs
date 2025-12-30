@@ -1,6 +1,8 @@
+use std::time::{Duration, Instant};
+
 use crate::{
     AppMsg, AppState, Command, Library, NavMode, UIMode,
-    state::{DownloadStatus, PlaybackStatus, TrackId},
+    state::{DownloadStatus, Notification, NotificationKind, PlaybackStatus, TrackId},
 };
 
 fn reconcile_nav_state(state: &mut AppState) {
@@ -109,10 +111,16 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
 
             state.playback.status = PlaybackStatus::Playing;
 
-            state.status = format!(
-                "Playing {}",
-                track_path.file_name().unwrap_or_default().to_string_lossy()
-            );
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Info,
+                message: format!(
+                    "Playing {}",
+                    track_path.file_name().unwrap_or_default().to_string_lossy()
+                ),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(2)),
+            });
         }
 
         AppMsg::RescanLibrary => {
@@ -132,14 +140,32 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
                         if !still_exists {
                             state.playback.current = None;
                             state.playback.status = PlaybackStatus::Stopped;
-                            state.status = "Playback stopped (file removed)".into();
+                            state.notification.current = Some(Notification {
+                                kind: NotificationKind::Info,
+                                message: "Playback stopped (file removed)".into(),
+                                progress: None,
+                                created_at: Instant::now(),
+                                dismiss_after: Some(Duration::from_secs(2)),
+                            });
                         }
                     }
 
-                    state.status = "Library rescanned".into();
+                    state.notification.current = Some(Notification {
+                        kind: NotificationKind::Info,
+                        message: "Library rescanned".into(),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
                 }
                 Err(err) => {
-                    state.status = format!("Rescan failed: {err}");
+                    state.notification.current = Some(Notification {
+                        kind: NotificationKind::Info,
+                        message: format!("Rescan failed: {err}"),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
                 }
             }
         }
@@ -179,7 +205,13 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
             match Command::parse(&input) {
                 Command::Quit => {
                     // handled in main loop
-                    state.status = "Quit".into();
+                    state.notification.current = Some(Notification {
+                        kind: NotificationKind::Info,
+                        message: "Quit".into(),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
                 }
 
                 Command::Rescan => {
@@ -187,12 +219,24 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
                 }
 
                 Command::Download { query } => {
-                    state.status = format!("Downloading: {}", query);
+                    state.notification.current = Some(Notification {
+                        kind: NotificationKind::Info,
+                        message: format!("Downloading: {}", query),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
                     reduce(state, AppMsg::StartDownload { query });
                 }
 
                 Command::Unknown(reason) => {
-                    state.status = format!("Unknown command: {}", reason);
+                    state.notification.current = Some(Notification {
+                        kind: NotificationKind::Info,
+                        message: format!("Unknown command: {}", reason),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
                 }
             }
         }
@@ -204,18 +248,37 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
             tracing::info!("StartDownload called with {}", query);
         }
 
-        AppMsg::DownloadProgress { message } => {
-            state.download.status = DownloadStatus::Running { info: message };
+        AppMsg::DownloadProgress { message, percent } => {
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Progress,
+                message,
+                progress: Some(percent),
+                created_at: Instant::now(),
+                dismiss_after: None,
+            });
         }
 
         AppMsg::DownloadFinished => {
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Info,
+                message: "Download complete".into(),
+                progress: Some(100),
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(2)),
+            });
+
             state.download.status = DownloadStatus::Idle;
             reduce(state, AppMsg::RescanLibrary);
-            tracing::info!("DownloadFinished called");
         }
 
         AppMsg::DownloadFailed { error } => {
-            state.download.status = DownloadStatus::Failed { error };
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Error,
+                message: error,
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(4)),
+            });
         }
     }
 }

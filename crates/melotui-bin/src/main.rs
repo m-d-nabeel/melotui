@@ -2,7 +2,10 @@ mod logging;
 use melotui_core::{
     AppMsg, AppState, Command, Library, NavMode, UINavState,
     reducer::reduce,
-    state::{DownloadState, DownloadStatus, PlaybackState, PlaybackStatus, UIMode, UIState},
+    state::{
+        DownloadState, DownloadStatus, NotificationState, PlaybackState, PlaybackStatus, UIMode,
+        UIState,
+    },
 };
 use melotui_download::spawn_download;
 use melotui_tui::Tui;
@@ -47,6 +50,7 @@ fn main() -> anyhow::Result<()> {
         download: DownloadState {
             status: DownloadStatus::Idle,
         },
+        notification: NotificationState { current: None },
     };
 
     let mut running = true;
@@ -65,12 +69,19 @@ fn main() -> anyhow::Result<()> {
             }
 
             // SIDE EFFECTS BELONG HERE
-            if let AppMsg::SubmitCommand(input) = msg {
-                if let Command::Download { query } = Command::parse(&input) {
-                    tracing::info!("Spawning yt-dlp for query: {}", query);
-                    spawn_download(query, state.library.root.clone(), tx.clone());
-                }
+            if let AppMsg::SubmitCommand(input) = msg
+                && let Command::Download { query } = Command::parse(&input)
+            {
+                tracing::info!("Spawning yt-dlp for query: {}", query);
+                spawn_download(query, state.library.root.clone(), tx.clone());
             }
+        }
+
+        if let Some(n) = &state.notification.current
+            && let Some(timeout) = n.dismiss_after
+            && n.created_at.elapsed() >= timeout
+        {
+            state.notification.current = None;
         }
 
         // Handle background worker messages
