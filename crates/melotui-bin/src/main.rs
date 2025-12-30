@@ -2,7 +2,7 @@ mod logging;
 use melotui_core::{
     AppMsg, AppState, Library, NavMode, UINavState,
     reducer::reduce,
-    state::{PlaybackState, PlaybackStatus},
+    state::{PlaybackState, PlaybackStatus, UIMode, UIState},
 };
 use melotui_tui::Tui;
 
@@ -36,12 +36,16 @@ fn main() -> anyhow::Result<()> {
             current: None,
             status: PlaybackStatus::Stopped,
         },
+        ui: UIState {
+            mode: UIMode::Normal,
+            command_buffer: String::new(),
+        },
     };
 
     let mut running = true;
     while running {
         tui.draw(&state)?;
-        if let Some(msg) = tui.poll_event()? {
+        if let Some(msg) = tui.poll_event(state.ui.mode.clone())? {
             if matches!(msg, AppMsg::Quit) {
                 running = false;
             } else {

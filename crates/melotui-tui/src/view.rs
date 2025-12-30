@@ -1,17 +1,25 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    widgets::{Block, Clear},
 };
 
-use crate::widgets::{library, playback_state, sound_control, visualizer};
-use melotui_core::AppState;
+use melotui_core::{AppState, UIMode};
+
+use crate::widgets::{
+    command_view, library_view, playback_view, sound_control_view, visualizer_view,
+};
 
 pub fn draw(frame: &mut Frame, state: &AppState) {
-    // Horizontal split: left navigation + right (visualizer + control)
+    let area = frame.area();
+
+    // --- MAIN LAYOUT (always the same) ---
+
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Ratio(2, 10), Constraint::Ratio(8, 10)])
-        .split(frame.area());
+        .split(area);
 
     let right_vertical = Layout::default()
         .direction(Direction::Vertical)
@@ -24,18 +32,32 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
     let control_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage(50), // Sound Control
-            Constraint::Percentage(50), // Playback State
+            Constraint::Percentage(50), // Sound control
+            Constraint::Percentage(50), // Playback
         ])
         .split(right_vertical[1]);
 
-    let library_area = horizontal[0];
-    let visualizer_area = right_vertical[0];
-    let sound_control_area = control_chunks[0];
-    let playback_state_area = control_chunks[1];
+    library_view::draw(frame, horizontal[0], state);
+    visualizer_view::draw(frame, right_vertical[0], state);
+    sound_control_view::draw(frame, control_chunks[0], state);
+    playback_view::draw(frame, control_chunks[1], state);
 
-    library::draw(frame, library_area, state);
-    visualizer::draw(frame, visualizer_area, state);
-    sound_control::draw(frame, sound_control_area, state);
-    playback_state::draw(frame, playback_state_area, state);
+    // --- COMMAND OVERLAY ---
+    if state.ui.mode == UIMode::Command {
+        let backdrop = Block::default().style(Style::default().add_modifier(Modifier::DIM));
+        frame.render_widget(backdrop, area);
+        let overlay = command_overlay_rect(area);
+        frame.render_widget(Clear, overlay);
+        command_view::draw(frame, overlay, state);
+    }
+}
+
+fn command_overlay_rect(area: Rect) -> Rect {
+    let height = 3;
+    Rect {
+        x: area.x,
+        y: area.y + area.height.saturating_sub(height),
+        width: area.width,
+        height,
+    }
 }

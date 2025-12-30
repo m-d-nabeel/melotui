@@ -1,5 +1,5 @@
 use crate::{
-    AppMsg, AppState, Library, NavMode,
+    AppMsg, AppState, Library, NavMode, UIMode,
     state::{PlaybackStatus, TrackId},
 };
 
@@ -34,15 +34,18 @@ fn reconcile_nav_state(state: &mut AppState) {
 
 pub fn reduce(state: &mut AppState, msg: AppMsg) {
     match msg {
-        AppMsg::Quit => todo!(),
+        AppMsg::Quit => {}
+
         AppMsg::SwitchToPlaylists => {
             tracing::debug!("Switch to Playlist Mode");
             state.nav.mode = NavMode::Playlists;
         }
+
         AppMsg::SwitchToTracks => {
             tracing::debug!("Switch to Track Mode");
             state.nav.mode = NavMode::Tracks;
         }
+
         AppMsg::MoveUp => match state.nav.mode {
             NavMode::Playlists => {
                 if state.nav.selected_playlist > 0 {
@@ -58,6 +61,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
                 }
             }
         },
+
         AppMsg::MoveDown => match state.nav.mode {
             NavMode::Playlists => {
                 if state.nav.selected_playlist + 1 < state.library.playlists.len() {
@@ -74,6 +78,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
                 }
             }
         },
+
         AppMsg::PlaySelected => {
             if state.nav.mode != NavMode::Tracks {
                 return;
@@ -132,6 +137,36 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
                     state.status = format!("Rescan failed: {err}");
                 }
             }
+        }
+
+        AppMsg::EnterCommandMode => {
+            tracing::debug!("Enter Command Mode");
+            state.ui.mode = UIMode::Command;
+            state.ui.command_buffer.clear();
+        }
+
+        AppMsg::ExitCommandMode => {
+            tracing::debug!("Exit Command Mode");
+            state.ui.mode = UIMode::Normal;
+            state.ui.command_buffer.clear();
+        }
+
+        AppMsg::UpdateCommand(c) => {
+            state.ui.command_buffer.push(c);
+        }
+
+        AppMsg::BackspaceCommand => {
+            state.ui.command_buffer.pop();
+        }
+
+        AppMsg::SubmitCommand => {
+            let cmd = state.ui.command_buffer.trim().to_string();
+            state.ui.mode = UIMode::Normal;
+            state.ui.command_buffer.clear();
+
+            let status_msg = format!("Command entered: {}", cmd);
+            state.status = status_msg.clone();
+            tracing::debug!(status_msg);
         }
     }
 }

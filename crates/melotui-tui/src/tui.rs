@@ -1,3 +1,4 @@
+use melotui_core::state::UIMode;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{Event, KeyCode};
 use ratatui::crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
@@ -56,21 +57,31 @@ impl Tui {
     }
 
     /// Poll input
-    pub fn poll_event(&self) -> anyhow::Result<Option<AppMsg>> {
+    pub fn poll_event(&self, ui_mode: UIMode) -> anyhow::Result<Option<AppMsg>> {
         if event::poll(Duration::from_millis(50))?
             && let Event::Key(key) = event::read()?
         {
-            let msg = match key.code {
-                KeyCode::Char('q') => Some(AppMsg::Quit),
-                KeyCode::Char('[') => Some(AppMsg::SwitchToPlaylists),
-                KeyCode::Char(']') => Some(AppMsg::SwitchToTracks),
-                KeyCode::Up => Some(AppMsg::MoveUp),
-                KeyCode::Down => Some(AppMsg::MoveDown),
-                KeyCode::Enter => Some(AppMsg::PlaySelected),
-                KeyCode::Char('r') => Some(AppMsg::RescanLibrary),
-                _ => None,
-            };
-            return Ok(msg);
+            return Ok(match ui_mode {
+                UIMode::Normal => match key.code {
+                    KeyCode::Char('q') => Some(AppMsg::Quit),
+                    KeyCode::Char('[') => Some(AppMsg::SwitchToPlaylists),
+                    KeyCode::Char(']') => Some(AppMsg::SwitchToTracks),
+                    KeyCode::Up => Some(AppMsg::MoveUp),
+                    KeyCode::Down => Some(AppMsg::MoveDown),
+                    KeyCode::Char('r') => Some(AppMsg::RescanLibrary),
+                    KeyCode::Char(':') => Some(AppMsg::EnterCommandMode),
+                    KeyCode::Enter => Some(AppMsg::PlaySelected),
+                    _ => None,
+                },
+
+                UIMode::Command => match key.code {
+                    KeyCode::Esc => Some(AppMsg::ExitCommandMode),
+                    KeyCode::Enter => Some(AppMsg::SubmitCommand),
+                    KeyCode::Backspace => Some(AppMsg::BackspaceCommand),
+                    KeyCode::Char(c) => Some(AppMsg::UpdateCommand(c)),
+                    _ => None,
+                },
+            });
         }
         Ok(None)
     }

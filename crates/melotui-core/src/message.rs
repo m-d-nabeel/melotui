@@ -13,4 +13,11 @@ pub enum AppMsg {
 
     // future
     PlaySelected,
+
+    // command bar
+    EnterCommandMode,
+    ExitCommandMode,
+    UpdateCommand(char),
+    BackspaceCommand,
+    SubmitCommand,
 }

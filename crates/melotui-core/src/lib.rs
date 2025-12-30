@@ -5,4 +5,4 @@ pub mod state;
 
 pub use library::{Library, Playlist};
 pub use message::AppMsg;
-pub use state::{AppState, NavMode, UINavState};
+pub use state::{AppState, NavMode, UIMode, UINavState};

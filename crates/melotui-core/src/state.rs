@@ -16,6 +16,18 @@ pub struct UINavState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UIMode {
+    Normal,
+    Command,
+}
+
+#[derive(Debug, Clone)]
+pub struct UIState {
+    pub mode: UIMode,
+    pub command_buffer: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackId {
     pub playlist: String,
     pub path: PathBuf,
@@ -41,6 +53,9 @@ pub struct AppState {
 
     // navigation
     pub nav: UINavState,
+
+    // UI-only
+    pub ui: UIState,
 
     pub library: Library,
 
