@@ -1,6 +1,6 @@
 mod logging;
 use melotui_core::{
-    AppMsg, AppState, Command, Library, NavMode, UINavState,
+    AppMsg, AppState, Library, NavMode, UINavState,
     reducer::reduce,
     state::{
         DownloadState, DownloadStatus, NotificationState, PlaybackState, PlaybackStatus, UIMode,
@@ -9,7 +9,31 @@ use melotui_core::{
 };
 use melotui_download::spawn_download;
 use melotui_tui::Tui;
-use std::sync::mpsc;
+use std::{collections::VecDeque, sync::mpsc};
+
+fn handle_side_effects(msg: &AppMsg, state: &AppState, tx: &mpsc::Sender<AppMsg>) {
+    tracing::debug!("handle_side_effects:msg = {:?}", msg);
+    tracing::debug!("handle_side_effects:download_state = {:?}", state.download);
+    if let AppMsg::StartDownload { query } = msg
+        && let DownloadStatus::Running { control, .. } = &state.download.status
+    {
+        spawn_download(
+            query.clone(),
+            state.library.root.clone(),
+            tx.clone(),
+            control.clone(),
+        );
+    }
+}
+
+/// Processes all queued effects until system stabilizes
+fn process_effects(state: &mut AppState, queue: &mut VecDeque<AppMsg>, tx: &mpsc::Sender<AppMsg>) {
+    while let Some(effect) = queue.pop_front() {
+        let new_effects = reduce(state, effect.clone());
+        queue.extend(new_effects);
+        handle_side_effects(&effect, state, tx);
+    }
+}
 
 fn main() -> anyhow::Result<()> {
     let _log_guard = logging::init();
@@ -32,7 +56,6 @@ fn main() -> anyhow::Result<()> {
 
     let mut state = AppState {
         app_name: "Melotui".into(),
-        status: "Ready".into(),
         nav: UINavState {
             mode: NavMode::Playlists,
             selected_playlist: 0,
@@ -54,29 +77,32 @@ fn main() -> anyhow::Result<()> {
     };
 
     let mut running = true;
+    let mut effect_queue = VecDeque::<AppMsg>::new();
+
     while running {
+        // --- Draw UI ---
         tui.draw(&state)?;
 
+        // --- UI input ---
         if let Some(msg) = tui.poll_event(&state)? {
             if matches!(msg, AppMsg::Quit) {
                 break;
             }
 
-            reduce(&mut state, msg.clone());
-
-            if state.status == "Quit" {
-                running = false;
-            }
-
-            // SIDE EFFECTS BELONG HERE
-            if let AppMsg::SubmitCommand(input) = msg
-                && let Command::Download { query } = Command::parse(&input)
-            {
-                tracing::info!("Spawning yt-dlp for query: {}", query);
-                spawn_download(query, state.library.root.clone(), tx.clone());
-            }
+            let effects = reduce(&mut state, msg);
+            effect_queue.extend(effects);
         }
 
+        // --- Worker input ---
+        while let Ok(msg) = rx.try_recv() {
+            let effects = reduce(&mut state, msg);
+            effect_queue.extend(effects);
+        }
+
+        // --- Apply all effects ---
+        process_effects(&mut state, &mut effect_queue, &tx);
+
+        // --- Notification timeout ---
         if let Some(n) = &state.notification.current
             && let Some(timeout) = n.dismiss_after
             && n.created_at.elapsed() >= timeout
@@ -84,9 +110,11 @@ fn main() -> anyhow::Result<()> {
             state.notification.current = None;
         }
 
-        // Handle background worker messages
-        while let Ok(msg) = rx.try_recv() {
-            reduce(&mut state, msg);
+        // --- Exit condition ---
+        if let Some(m) = &state.notification.current
+            && m.message == "Quit"
+        {
+            running = false;
         }
     }
 

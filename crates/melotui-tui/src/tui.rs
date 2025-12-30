@@ -71,6 +71,7 @@ impl Tui {
                     KeyCode::Char('r') => Some(AppMsg::RescanLibrary),
                     KeyCode::Char(':') => Some(AppMsg::EnterCommandMode),
                     KeyCode::Enter => Some(AppMsg::PlaySelected),
+                    KeyCode::Esc => Some(AppMsg::CancelDownload),
                     _ => None,
                 },
 

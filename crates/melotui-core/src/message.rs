@@ -21,12 +21,10 @@ pub enum AppMsg {
     BackspaceCommand,
     SubmitCommand(String),
 
-    // command execution
-    ExecuteCommand(String),
-
     // downloads
     StartDownload { query: String },
     DownloadProgress { message: String, percent: u8 },
     DownloadFinished,
     DownloadFailed { error: String },
+    CancelDownload,
 }

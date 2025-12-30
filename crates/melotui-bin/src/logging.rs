@@ -6,7 +6,7 @@ pub fn init() -> tracing_appender::non_blocking::WorkerGuard {
     let log_dir = log_dir();
     std::fs::create_dir_all(&log_dir).expect("failed to create log dir");
 
-    let file_appender = rolling::daily(log_dir, "melotui.log");
+    let file_appender = rolling::hourly(log_dir, "melotui.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     tracing_subscriber::fmt()
@@ -18,6 +18,7 @@ pub fn init() -> tracing_appender::non_blocking::WorkerGuard {
         .with_target(true)
         .with_thread_ids(true)
         .with_thread_names(true)
+        .with_line_number(true)
         .init();
 
     guard

@@ -1,4 +1,8 @@
-use std::{path::PathBuf, time::Instant};
+use std::{
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicBool},
+    time::Instant,
+};
 
 use crate::library::Library;
 
@@ -50,10 +54,21 @@ pub struct PlaybackState {
 // --------------- Playback ----------------
 // --------------- Download ----------------
 #[derive(Debug, Clone)]
+pub struct DownloadControl {
+    pub cancel: Arc<AtomicBool>,
+}
+
+#[derive(Debug, Clone)]
 pub enum DownloadStatus {
     Idle,
-    Running { info: String },
-    Failed { error: String },
+    Running {
+        percent: u8,
+        control: DownloadControl,
+    },
+    Cancelling,
+    Failed {
+        error: String,
+    },
 }
 
 #[derive(Debug, Clone)]

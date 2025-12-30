@@ -1,8 +1,17 @@
-use std::time::{Duration, Instant};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
+    vec,
+};
 
 use crate::{
     AppMsg, AppState, Command, Library, NavMode, UIMode,
-    state::{DownloadStatus, Notification, NotificationKind, PlaybackStatus, TrackId},
+    state::{
+        DownloadControl, DownloadStatus, Notification, NotificationKind, PlaybackStatus, TrackId,
+    },
 };
 
 fn reconcile_nav_state(state: &mut AppState) {
@@ -34,9 +43,17 @@ fn reconcile_nav_state(state: &mut AppState) {
     }
 }
 
-pub fn reduce(state: &mut AppState, msg: AppMsg) {
+pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
     match msg {
-        AppMsg::Quit => {}
+        AppMsg::Quit => {
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Info,
+                message: "Quit".into(),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: None,
+            });
+        }
 
         AppMsg::SwitchToPlaylists => {
             tracing::debug!("Switch to Playlist Mode");
@@ -84,7 +101,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
         AppMsg::PlaySelected => {
             if state.nav.mode != NavMode::Tracks {
                 tracing::warn!("PlaySelected called but not in Track Mode.");
-                return;
+                return vec![];
             }
 
             let p = state.nav.selected_playlist;
@@ -93,7 +110,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
                 Some(pl) => pl,
                 None => {
                     tracing::warn!("No playlist found at index {}.", p);
-                    return;
+                    return vec![];
                 }
             };
 
@@ -101,7 +118,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
 
             let track_path = match playlist.tracks.get(t) {
                 Some(path) => path.clone(),
-                None => return,
+                None => return vec![],
             };
 
             state.playback.current = Some(TrackId {
@@ -194,31 +211,23 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
             state.ui.mode = UIMode::Normal;
             state.ui.command_buffer.clear();
 
-            if input.trim().is_empty() {
-                return;
+            let input = input.trim();
+            if input.is_empty() {
+                return vec![];
             }
 
-            reduce(state, AppMsg::ExecuteCommand(input));
-        }
-
-        AppMsg::ExecuteCommand(input) => {
-            match Command::parse(&input) {
+            match Command::parse(input) {
                 Command::Quit => {
-                    // handled in main loop
-                    state.notification.current = Some(Notification {
-                        kind: NotificationKind::Info,
-                        message: "Quit".into(),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
+                    return vec![AppMsg::Quit];
                 }
 
                 Command::Rescan => {
-                    reduce(state, AppMsg::RescanLibrary);
+                    return vec![AppMsg::RescanLibrary];
                 }
 
                 Command::Download { query } => {
+                    tracing::debug!("Command::Download <- {}", query);
+
                     state.notification.current = Some(Notification {
                         kind: NotificationKind::Info,
                         message: format!("Downloading: {}", query),
@@ -226,26 +235,36 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
                         created_at: Instant::now(),
                         dismiss_after: Some(Duration::from_secs(2)),
                     });
-                    reduce(state, AppMsg::StartDownload { query });
+
+                    return vec![AppMsg::StartDownload { query }];
                 }
 
                 Command::Unknown(reason) => {
                     state.notification.current = Some(Notification {
-                        kind: NotificationKind::Info,
+                        kind: NotificationKind::Error,
                         message: format!("Unknown command: {}", reason),
                         progress: None,
                         created_at: Instant::now(),
                         dismiss_after: Some(Duration::from_secs(2)),
                     });
+                    return vec![];
                 }
             }
         }
 
         AppMsg::StartDownload { query } => {
-            state.download.status = DownloadStatus::Running {
-                info: format!("Starting download: {}", query),
-            };
             tracing::info!("StartDownload called with {}", query);
+
+            let control = DownloadControl {
+                cancel: Arc::new(AtomicBool::new(false)),
+            };
+
+            state.download.status = DownloadStatus::Running {
+                percent: 0,
+                control,
+            };
+
+            return vec![];
         }
 
         AppMsg::DownloadProgress { message, percent } => {
@@ -256,6 +275,12 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
                 created_at: Instant::now(),
                 dismiss_after: None,
             });
+            if let DownloadStatus::Running { control, .. } = &state.download.status {
+                state.download.status = DownloadStatus::Running {
+                    percent,
+                    control: control.clone(),
+                };
+            }
         }
 
         AppMsg::DownloadFinished => {
@@ -268,17 +293,33 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) {
             });
 
             state.download.status = DownloadStatus::Idle;
-            reduce(state, AppMsg::RescanLibrary);
+            return vec![AppMsg::RescanLibrary];
         }
 
         AppMsg::DownloadFailed { error } => {
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Error,
-                message: error,
+                message: error.clone(),
                 progress: None,
                 created_at: Instant::now(),
                 dismiss_after: Some(Duration::from_secs(4)),
             });
+            state.download.status = DownloadStatus::Failed { error };
+        }
+
+        AppMsg::CancelDownload => {
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Error,
+                message: "Cancelling Download".into(),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(4)),
+            });
+            if let DownloadStatus::Running { control, .. } = &state.download.status {
+                control.cancel.store(true, Ordering::SeqCst);
+                state.download.status = DownloadStatus::Cancelling;
+            }
         }
     }
+    vec![]
 }
