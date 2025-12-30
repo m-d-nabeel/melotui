@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     path::PathBuf,
     sync::{Arc, atomic::AtomicBool},
     time::Instant,
@@ -54,6 +55,11 @@ pub struct PlaybackState {
 // --------------- Playback ----------------
 // --------------- Download ----------------
 #[derive(Debug, Clone)]
+pub struct DownloadJob {
+    pub query: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct DownloadControl {
     pub cancel: Arc<AtomicBool>,
 }
@@ -73,6 +79,7 @@ pub enum DownloadStatus {
 
 #[derive(Debug, Clone)]
 pub struct DownloadState {
+    pub queue: VecDeque<DownloadJob>,
     pub status: DownloadStatus,
 }
 

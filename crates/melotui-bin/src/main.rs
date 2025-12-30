@@ -14,7 +14,8 @@ use std::{collections::VecDeque, sync::mpsc};
 fn handle_side_effects(msg: &AppMsg, state: &AppState, tx: &mpsc::Sender<AppMsg>) {
     tracing::debug!("handle_side_effects:msg = {:?}", msg);
     tracing::debug!("handle_side_effects:download_state = {:?}", state.download);
-    if let AppMsg::StartDownload { query } = msg
+
+    if let AppMsg::SpawnDownload { query } = msg
         && let DownloadStatus::Running { control, .. } = &state.download.status
     {
         spawn_download(
@@ -72,6 +73,7 @@ fn main() -> anyhow::Result<()> {
         },
         download: DownloadState {
             status: DownloadStatus::Idle,
+            queue: VecDeque::new(),
         },
         notification: NotificationState { current: None },
     };

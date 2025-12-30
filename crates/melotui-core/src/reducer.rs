@@ -10,7 +10,8 @@ use std::{
 use crate::{
     AppMsg, AppState, Command, Library, NavMode, UIMode,
     state::{
-        DownloadControl, DownloadStatus, Notification, NotificationKind, PlaybackStatus, TrackId,
+        DownloadControl, DownloadJob, DownloadStatus, Notification, NotificationKind,
+        PlaybackStatus, TrackId,
     },
 };
 
@@ -253,19 +254,33 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         }
 
         AppMsg::StartDownload { query } => {
-            tracing::info!("StartDownload called with {}", query);
+            tracing::info!("Queueing download: {}", query);
+            state.download.queue.push_back(DownloadJob { query });
+            // If nothing is running, start immediately
+            if matches!(state.download.status, DownloadStatus::Idle) {
+                return vec![AppMsg::BeginNextDownload];
+            }
+            return vec![];
+        }
 
+        AppMsg::BeginNextDownload => {
+            let job = match state.download.queue.pop_front() {
+                Some(job) => job,
+                None => return vec![], // nothing to do
+            };
             let control = DownloadControl {
                 cancel: Arc::new(AtomicBool::new(false)),
             };
-
+            tracing::info!("Starting download: {}", job.query);
             state.download.status = DownloadStatus::Running {
                 percent: 0,
                 control,
             };
-
-            return vec![];
+            // Trigger side effect ONCE
+            return vec![AppMsg::SpawnDownload { query: job.query }];
         }
+
+        AppMsg::SpawnDownload { .. } => return vec![],
 
         AppMsg::DownloadProgress { message, percent } => {
             state.notification.current = Some(Notification {
@@ -293,7 +308,11 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             });
 
             state.download.status = DownloadStatus::Idle;
-            return vec![AppMsg::RescanLibrary];
+
+            return vec![
+                AppMsg::RescanLibrary,
+                AppMsg::BeginNextDownload, // ← THIS is the queue
+            ];
         }
 
         AppMsg::DownloadFailed { error } => {
@@ -304,7 +323,10 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 created_at: Instant::now(),
                 dismiss_after: Some(Duration::from_secs(4)),
             });
-            state.download.status = DownloadStatus::Failed { error };
+
+            state.download.status = DownloadStatus::Idle;
+
+            return vec![AppMsg::BeginNextDownload];
         }
 
         AppMsg::CancelDownload => {
@@ -315,10 +337,13 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 created_at: Instant::now(),
                 dismiss_after: Some(Duration::from_secs(4)),
             });
+
             if let DownloadStatus::Running { control, .. } = &state.download.status {
                 control.cancel.store(true, Ordering::SeqCst);
                 state.download.status = DownloadStatus::Cancelling;
             }
+
+            return vec![];
         }
     }
     vec![]

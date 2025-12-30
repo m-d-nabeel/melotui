@@ -23,6 +23,8 @@ pub enum AppMsg {
 
     // downloads
     StartDownload { query: String },
+    BeginNextDownload,
+    SpawnDownload { query: String },
     DownloadProgress { message: String, percent: u8 },
     DownloadFinished,
     DownloadFailed { error: String },
