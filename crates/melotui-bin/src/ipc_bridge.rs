@@ -19,6 +19,8 @@ pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
 
         AppMsg::RequestQuit => Some(IpcCommand::Shutdown),
 
+        AppMsg::DispatchPlay { path } => Some(IpcCommand::Play { path: path.clone() }),
+
         _ => None,
     }
 }

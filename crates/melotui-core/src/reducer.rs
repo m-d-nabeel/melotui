@@ -132,6 +132,8 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 created_at: Instant::now(),
                 dismiss_after: Some(Duration::from_secs(2)),
             });
+
+            return vec![AppMsg::DispatchPlay { path: track_path }];
         }
         AppMsg::RequestRescanLibrary => {
             match Library::scan(state.library.root.clone()) {
@@ -336,10 +338,8 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             return vec![];
         }
         AppMsg::DispatchDownload { .. } => {}
+        AppMsg::DispatchPlay { .. } => {}
         AppMsg::Noop => {}
-        AppMsg::DispatchPlay { path } => {
-            tracing::info!("TODO: Dispacth Play called for {:?}", path);
-        }
     }
     vec![]
 }

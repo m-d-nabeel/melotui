@@ -11,7 +11,7 @@ pub enum IpcCommand {
 
     // ───── Playback (next step) ─────
     Play {
-        path: String,
+        path: PathBuf,
     },
     Pause,
     Resume,
