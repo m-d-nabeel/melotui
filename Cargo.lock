@@ -649,12 +649,16 @@ name = "melotui-download"
 version = "0.1.0"
 dependencies = [
  "melotui-core",
+ "melotui-ipc",
  "tracing",
 ]
 
 [[package]]
 name = "melotui-ipc"
 version = "0.1.0"
+dependencies = [
+ "tracing",
+]
 
 [[package]]
 name = "melotui-tui"

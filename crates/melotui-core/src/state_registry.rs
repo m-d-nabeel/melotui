@@ -5,8 +5,6 @@ use std::{
     time::Instant,
 };
 
-use crate::library::Library;
-
 // ----------- UI Mode & State -------------
 #[derive(Debug, Clone, PartialEq)]
 pub enum NavMode {
@@ -106,16 +104,3 @@ pub struct NotificationState {
     pub current: Option<Notification>,
 }
 // ------------- Notification --------------
-
-#[derive(Debug, Clone)]
-pub struct AppState {
-    pub app_name: String,
-    // navigation
-    pub nav: UINavState,
-    // UI-only
-    pub ui: UIState,
-    pub library: Library,
-    pub playback: PlaybackState,
-    pub download: DownloadState,
-    pub notification: NotificationState,
-}

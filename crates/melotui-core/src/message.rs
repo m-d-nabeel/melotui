@@ -1,32 +1,45 @@
 #[derive(Debug, Clone)]
 pub enum AppMsg {
     Quit,
+    Noop,
 
-    // navigation
+    // ───── Navigation ─────
     SwitchToPlaylists,
     SwitchToTracks,
     MoveUp,
     MoveDown,
 
-    // library
+    // ───── Library ─────
     RescanLibrary,
 
-    // future
+    // ───── Playback (future IPC) ─────
     PlaySelected,
 
-    // command bar
+    // ───── Command bar ─────
     EnterCommandMode,
     ExitCommandMode,
     UpdateCommand(char),
     BackspaceCommand,
     SubmitCommand(String),
 
-    // downloads
-    StartDownload { query: String },
+    // ───── Downloads (UI + state machine) ─────
+    /// User intent or derived intent
+    StartDownload {
+        query: String,
+    },
+
+    /// Internal scheduler signal (pure, local)
     BeginNextDownload,
-    SpawnDownload { query: String },
-    DownloadProgress { message: String, percent: u8 },
+
+    /// External facts (from IPC)
+    DownloadProgress {
+        percent: u8,
+    },
     DownloadFinished,
-    DownloadFailed { error: String },
+    DownloadFailed {
+        error: String,
+    },
+
+    /// UI intent
     CancelDownload,
 }

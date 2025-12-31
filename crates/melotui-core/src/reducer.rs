@@ -9,7 +9,7 @@ use std::{
 
 use crate::{
     AppMsg, AppState, Command, Library, NavMode, UIMode,
-    state::{
+    state_registry::{
         DownloadControl, DownloadJob, DownloadStatus, Notification, NotificationKind,
         PlaybackStatus, TrackId,
     },
@@ -55,17 +55,14 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 dismiss_after: None,
             });
         }
-
         AppMsg::SwitchToPlaylists => {
             tracing::debug!("Switch to Playlist Mode");
             state.nav.mode = NavMode::Playlists;
         }
-
         AppMsg::SwitchToTracks => {
             tracing::debug!("Switch to Track Mode");
             state.nav.mode = NavMode::Tracks;
         }
-
         AppMsg::MoveUp => match state.nav.mode {
             NavMode::Playlists => {
                 if state.nav.selected_playlist > 0 {
@@ -81,7 +78,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 }
             }
         },
-
         AppMsg::MoveDown => match state.nav.mode {
             NavMode::Playlists => {
                 if state.nav.selected_playlist + 1 < state.library.playlists.len() {
@@ -98,7 +94,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 }
             }
         },
-
         AppMsg::PlaySelected => {
             if state.nav.mode != NavMode::Tracks {
                 tracing::warn!("PlaySelected called but not in Track Mode.");
@@ -140,7 +135,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 dismiss_after: Some(Duration::from_secs(2)),
             });
         }
-
         AppMsg::RescanLibrary => {
             match Library::scan(state.library.root.clone()) {
                 Ok(new_library) => {
@@ -187,27 +181,22 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 }
             }
         }
-
         AppMsg::EnterCommandMode => {
             tracing::debug!("Enter Command Mode");
             state.ui.mode = UIMode::Command;
             state.ui.command_buffer.clear();
         }
-
         AppMsg::ExitCommandMode => {
             tracing::debug!("Exit Command Mode");
             state.ui.mode = UIMode::Normal;
             state.ui.command_buffer.clear();
         }
-
         AppMsg::UpdateCommand(c) => {
             state.ui.command_buffer.push(c);
         }
-
         AppMsg::BackspaceCommand => {
             state.ui.command_buffer.pop();
         }
-
         AppMsg::SubmitCommand(input) => {
             state.ui.mode = UIMode::Normal;
             state.ui.command_buffer.clear();
@@ -252,7 +241,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 }
             }
         }
-
         AppMsg::StartDownload { query } => {
             tracing::info!("Queueing download: {}", query);
             state.download.queue.push_back(DownloadJob { query });
@@ -262,7 +250,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             }
             return vec![];
         }
-
         AppMsg::BeginNextDownload => {
             let job = match state.download.queue.pop_front() {
                 Some(job) => job,
@@ -277,15 +264,12 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 control,
             };
             // Trigger side effect ONCE
-            return vec![AppMsg::SpawnDownload { query: job.query }];
+            return vec![];
         }
-
-        AppMsg::SpawnDownload { .. } => return vec![],
-
-        AppMsg::DownloadProgress { message, percent } => {
+        AppMsg::DownloadProgress { percent } => {
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Progress,
-                message,
+                message: "".to_owned(),
                 progress: Some(percent),
                 created_at: Instant::now(),
                 dismiss_after: None,
@@ -297,7 +281,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 };
             }
         }
-
         AppMsg::DownloadFinished => {
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Info,
@@ -314,7 +297,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 AppMsg::BeginNextDownload, // ← THIS is the queue
             ];
         }
-
         AppMsg::DownloadFailed { error } => {
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Error,
@@ -328,7 +310,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
 
             return vec![AppMsg::BeginNextDownload];
         }
-
         AppMsg::CancelDownload => {
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Error,
@@ -345,6 +326,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
 
             return vec![];
         }
+        AppMsg::Noop => {}
     }
     vec![]
 }

@@ -1,4 +1,4 @@
-use melotui_core::state::UIMode;
+use melotui_core::state_registry::UIMode;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::{Event, KeyCode};
 use ratatui::crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
@@ -28,7 +28,6 @@ impl Tui {
     /// Initialize terminal (raw mode + alt screen)
     pub fn new() -> anyhow::Result<Self> {
         enable_raw_mode()?;
-        // execute!(stdout, EnterAlternateScreen, DisableMouseCapture, Hide)?;
         execute!(stdout(), EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout());
         let terminal = Terminal::new(backend)?;
