@@ -1,8 +1,4 @@
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
     time::{Duration, Instant},
     vec,
 };
@@ -10,8 +6,7 @@ use std::{
 use crate::{
     AppMsg, AppState, Command, Library, NavMode, UIMode,
     state_registry::{
-        DownloadControl, DownloadJob, DownloadStatus, Notification, NotificationKind,
-        PlaybackStatus, TrackId,
+        DownloadJob, DownloadStatus, Notification, NotificationKind, PlaybackStatus, TrackId,
     },
 };
 
@@ -47,6 +42,7 @@ fn reconcile_nav_state(state: &mut AppState) {
 pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
     match msg {
         AppMsg::Quit => {
+            tracing::info!("Application quit requested");
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Info,
                 message: "Quit".into(),
@@ -124,6 +120,8 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
 
             state.playback.status = PlaybackStatus::Playing;
 
+            tracing::info!("Playing track: {}", track_path.display());
+
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Info,
                 message: format!(
@@ -171,6 +169,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                     });
                 }
                 Err(err) => {
+                    tracing::error!("Library rescan failed: {}", err);
                     state.notification.current = Some(Notification {
                         kind: NotificationKind::Info,
                         message: format!("Rescan failed: {err}"),
@@ -253,18 +252,13 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         AppMsg::BeginNextDownload => {
             let job = match state.download.queue.pop_front() {
                 Some(job) => job,
-                None => return vec![], // nothing to do
+                None => return vec![],
             };
-            let control = DownloadControl {
-                cancel: Arc::new(AtomicBool::new(false)),
-            };
+
             tracing::info!("Starting download: {}", job.query);
-            state.download.status = DownloadStatus::Running {
-                percent: 0,
-                control,
-            };
-            // Trigger side effect ONCE
-            return vec![];
+            state.download.status = DownloadStatus::Running { percent: 0 };
+            // THIS IS THE IPC TRIGGER
+            return vec![AppMsg::SpawnDownload { query: job.query }];
         }
         AppMsg::DownloadProgress { percent } => {
             state.notification.current = Some(Notification {
@@ -274,11 +268,8 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 created_at: Instant::now(),
                 dismiss_after: None,
             });
-            if let DownloadStatus::Running { control, .. } = &state.download.status {
-                state.download.status = DownloadStatus::Running {
-                    percent,
-                    control: control.clone(),
-                };
+            if let DownloadStatus::Running { .. } = &state.download.status {
+                state.download.status = DownloadStatus::Running { percent };
             }
         }
         AppMsg::DownloadFinished => {
@@ -298,6 +289,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             ];
         }
         AppMsg::DownloadFailed { error } => {
+            tracing::error!("Download failed: {}", error);
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Error,
                 message: error.clone(),
@@ -311,6 +303,8 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             return vec![AppMsg::BeginNextDownload];
         }
         AppMsg::CancelDownload => {
+            tracing::info!("Cancelling download");
+
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Error,
                 message: "Cancelling Download".into(),
@@ -319,13 +313,13 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 dismiss_after: Some(Duration::from_secs(4)),
             });
 
-            if let DownloadStatus::Running { control, .. } = &state.download.status {
-                control.cancel.store(true, Ordering::SeqCst);
+            if let DownloadStatus::Running { .. } = &state.download.status {
                 state.download.status = DownloadStatus::Cancelling;
             }
 
             return vec![];
         }
+        AppMsg::SpawnDownload { .. } => {}
         AppMsg::Noop => {}
     }
     vec![]

@@ -1,9 +1,4 @@
-use std::{
-    collections::VecDeque,
-    path::PathBuf,
-    sync::{Arc, atomic::AtomicBool},
-    time::Instant,
-};
+use std::{collections::VecDeque, path::PathBuf, time::Instant};
 
 // ----------- UI Mode & State -------------
 #[derive(Debug, Clone, PartialEq)]
@@ -58,21 +53,11 @@ pub struct DownloadJob {
 }
 
 #[derive(Debug, Clone)]
-pub struct DownloadControl {
-    pub cancel: Arc<AtomicBool>,
-}
-
-#[derive(Debug, Clone)]
 pub enum DownloadStatus {
     Idle,
-    Running {
-        percent: u8,
-        control: DownloadControl,
-    },
+    Running { percent: u8 },
     Cancelling,
-    Failed {
-        error: String,
-    },
+    Failed { error: String },
 }
 
 #[derive(Debug, Clone)]

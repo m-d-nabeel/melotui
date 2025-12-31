@@ -23,13 +23,21 @@ pub enum AppMsg {
     SubmitCommand(String),
 
     // ───── Downloads (UI + state machine) ─────
-    /// User intent or derived intent
+    /// User intent or derived intent (pure)
+    /// Example: user types `dl queen`
     StartDownload {
         query: String,
     },
 
     /// Internal scheduler signal (pure, local)
+    /// Fired when the queue should advance
     BeginNextDownload,
+
+    /// Side-effect boundary (execution trigger)
+    /// THIS is what IPC listens for
+    SpawnDownload {
+        query: String,
+    },
 
     /// External facts (from IPC)
     DownloadProgress {

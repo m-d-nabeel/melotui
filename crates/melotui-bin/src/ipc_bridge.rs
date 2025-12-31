@@ -2,9 +2,12 @@ use melotui_core::AppMsg;
 use melotui_ipc::{command::IpcCommand, event::IpcEvent};
 
 /// UI → Worker
+///
+/// Only SIDE-EFFECT TRIGGERS are sent over IPC
 pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
     match msg {
-        AppMsg::StartDownload { query } => Some(IpcCommand::Download {
+        // Side-effect boundary
+        AppMsg::SpawnDownload { query } => Some(IpcCommand::Download {
             query: query.clone(),
         }),
 
@@ -17,9 +20,12 @@ pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
 }
 
 /// Worker → UI
+///
+/// Only EXTERNAL FACTS come back
 pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
     match evt {
-        IpcEvent::DownloadStarted { query } => AppMsg::StartDownload { query },
+        // Optional – informational only
+        IpcEvent::DownloadStarted { .. } => AppMsg::Noop,
 
         IpcEvent::DownloadProgress { percent } => AppMsg::DownloadProgress { percent },
 
@@ -29,6 +35,7 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
 
         IpcEvent::Error { message } => AppMsg::DownloadFailed { error: message },
 
+        // Playback events will map later
         _ => AppMsg::Noop,
     }
 }

@@ -7,5 +7,10 @@ pub trait IpcSender: Send {
 }
 
 pub trait IpcReceiver: Send {
-    fn try_recv(&self) -> Option<IpcEvent>;
+    fn try_recv(&mut self) -> Option<IpcEvent>;
+}
+
+pub trait IpcWorker: Send {
+    fn recv(&self) -> Option<IpcCommand>;
+    fn send(&self, evt: IpcEvent);
 }

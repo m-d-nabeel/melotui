@@ -15,6 +15,7 @@ use crate::{
 pub struct UiEndpoint {
     cmd_tx: mpsc::Sender<IpcCommand>,
     evt_rx: mpsc::Receiver<IpcEvent>,
+    disconnected: bool,
 }
 
 /// IPC endpoint owned by a worker
@@ -31,7 +32,7 @@ pub struct WorkerEndpoint {
 
 impl IpcSender for UiEndpoint {
     fn send(&self, cmd: IpcCommand) {
-        tracing::debug!("IPC → send command: {:?}", cmd);
+        tracing::trace!("IPC → send command: {:?}", cmd);
         if let Err(err) = self.cmd_tx.send(cmd) {
             tracing::error!("IPC send command failed: {}", err);
         }
@@ -39,21 +40,22 @@ impl IpcSender for UiEndpoint {
 }
 
 impl IpcReceiver for UiEndpoint {
-    fn try_recv(&self) -> Option<IpcEvent> {
+    fn try_recv(&mut self) -> Option<IpcEvent> {
         match self.evt_rx.try_recv() {
-            Ok(evt) => {
-                tracing::debug!("IPC ← received event: {:?}", evt);
-                Some(evt)
-            }
+            Ok(evt) => Some(evt),
+
             Err(mpsc::TryRecvError::Empty) => None,
+
             Err(mpsc::TryRecvError::Disconnected) => {
-                tracing::warn!("IPC event channel disconnected");
+                if !self.disconnected {
+                    tracing::warn!("IPC event channel disconnected");
+                    self.disconnected = true;
+                }
                 None
             }
         }
     }
 }
-
 /// Create an in-process IPC channel
 ///
 /// Returns:
@@ -66,7 +68,23 @@ pub fn channel() -> (UiEndpoint, WorkerEndpoint) {
     tracing::info!("IPC in-process channel initialized");
 
     (
-        UiEndpoint { cmd_tx, evt_rx },
+        UiEndpoint {
+            cmd_tx,
+            evt_rx,
+            disconnected: false,
+        },
         WorkerEndpoint { cmd_rx, evt_tx },
     )
+}
+
+impl crate::channel::IpcWorker for WorkerEndpoint {
+    fn recv(&self) -> Option<IpcCommand> {
+        self.cmd_rx.recv().ok()
+    }
+
+    fn send(&self, evt: IpcEvent) {
+        if let Err(err) = self.evt_tx.send(evt) {
+            tracing::error!("IPC worker send failed: {}", err);
+        }
+    }
 }
