@@ -619,6 +619,11 @@ dependencies = [
 [[package]]
 name = "melotui-audio"
 version = "0.1.0"
+dependencies = [
+ "melotui-core",
+ "melotui-ipc",
+ "tracing",
+]
 
 [[package]]
 name = "melotui-bin"
