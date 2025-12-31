@@ -7,7 +7,7 @@ use melotui_ipc::{command::IpcCommand, event::IpcEvent};
 pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
     match msg {
         // Side-effect boundary
-        AppMsg::SpawnDownload {
+        AppMsg::DispatchDownload {
             query,
             download_path,
         } => Some(IpcCommand::Download {
@@ -15,9 +15,9 @@ pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
             download_path: download_path.clone(),
         }),
 
-        AppMsg::CancelDownload => Some(IpcCommand::CancelDownload),
+        AppMsg::RequestCancelDownload => Some(IpcCommand::CancelDownload),
 
-        AppMsg::Quit => Some(IpcCommand::Shutdown),
+        AppMsg::RequestQuit => Some(IpcCommand::Shutdown),
 
         _ => None,
     }

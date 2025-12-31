@@ -2,7 +2,8 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub enum AppMsg {
-    Quit,
+    // ───── Lifecycle ─────
+    RequestQuit,
     Noop,
 
     // ───── Navigation ─────
@@ -12,10 +13,13 @@ pub enum AppMsg {
     MoveDown,
 
     // ───── Library ─────
-    RescanLibrary,
+    RequestRescanLibrary,
 
     // ───── Playback (future IPC) ─────
-    PlaySelected,
+    RequestPlaySelected, // intent
+    DispatchPlay {
+        path: PathBuf,
+    }, // side-effect boundary (future)
 
     // ───── Command bar ─────
     EnterCommandMode,
@@ -24,20 +28,20 @@ pub enum AppMsg {
     BackspaceCommand,
     SubmitCommand(String),
 
-    // ───── Downloads (UI + state machine) ─────
-    /// User intent or derived intent (pure)
+    // ───── Downloads ─────
+    /// User intent (pure)
     /// Example: user types `dl queen`
-    StartDownload {
+    RequestDownload {
         query: String,
     },
 
-    /// Internal scheduler signal (pure, local)
+    /// Internal scheduler signal (pure)
     /// Fired when the queue should advance
     BeginNextDownload,
 
     /// Side-effect boundary (execution trigger)
-    /// THIS is what IPC listens for
-    SpawnDownload {
+    /// IPC listens ONLY for this
+    DispatchDownload {
         query: String,
         download_path: PathBuf,
     },
@@ -52,5 +56,5 @@ pub enum AppMsg {
     },
 
     /// UI intent
-    CancelDownload,
+    RequestCancelDownload,
 }

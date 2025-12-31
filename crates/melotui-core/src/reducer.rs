@@ -41,7 +41,7 @@ fn reconcile_nav_state(state: &mut AppState) {
 
 pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
     match msg {
-        AppMsg::Quit => {
+        AppMsg::RequestQuit => {
             tracing::info!("Application quit requested");
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Info,
@@ -90,7 +90,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 }
             }
         },
-        AppMsg::PlaySelected => {
+        AppMsg::RequestPlaySelected => {
             if state.nav.mode != NavMode::Tracks {
                 tracing::warn!("PlaySelected called but not in Track Mode.");
                 return vec![];
@@ -133,7 +133,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 dismiss_after: Some(Duration::from_secs(2)),
             });
         }
-        AppMsg::RescanLibrary => {
+        AppMsg::RequestRescanLibrary => {
             match Library::scan(state.library.root.clone()) {
                 Ok(new_library) => {
                     state.library = new_library;
@@ -207,11 +207,11 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
 
             match Command::parse(input) {
                 Command::Quit => {
-                    return vec![AppMsg::Quit];
+                    return vec![AppMsg::RequestQuit];
                 }
 
                 Command::Rescan => {
-                    return vec![AppMsg::RescanLibrary];
+                    return vec![AppMsg::RequestRescanLibrary];
                 }
 
                 Command::Download { query } => {
@@ -225,7 +225,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                         dismiss_after: Some(Duration::from_secs(2)),
                     });
 
-                    return vec![AppMsg::StartDownload { query }];
+                    return vec![AppMsg::RequestDownload { query }];
                 }
 
                 Command::Unknown(reason) => {
@@ -240,10 +240,18 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 }
             }
         }
-        AppMsg::StartDownload { query } => {
+        AppMsg::RequestDownload { query } => {
             tracing::info!("Queueing download: {}", query);
-            let current_playlist = state.nav.selected_playlist;
-            let download_path = state.library.playlists[current_playlist].path.to_path_buf();
+
+            let curr_playlist_idx = state.nav.selected_playlist;
+            let download_path = match state.library.playlists.get(curr_playlist_idx) {
+                Some(pl) => pl.path.to_path_buf(),
+                None => {
+                    tracing::warn!("No playlist found at index {}.", curr_playlist_idx);
+                    return vec![];
+                }
+            };
+
             state.download.queue.push_back(DownloadJob {
                 query,
                 download_path,
@@ -263,7 +271,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             tracing::info!("Starting download: {}", job.query);
             state.download.status = DownloadStatus::Running { percent: 0 };
             // THIS IS THE IPC TRIGGER
-            return vec![AppMsg::SpawnDownload {
+            return vec![AppMsg::DispatchDownload {
                 query: job.query,
                 download_path: job.download_path,
             }];
@@ -292,7 +300,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             state.download.status = DownloadStatus::Idle;
 
             return vec![
-                AppMsg::RescanLibrary,
+                AppMsg::RequestRescanLibrary,
                 AppMsg::BeginNextDownload, // ← THIS is the queue
             ];
         }
@@ -310,7 +318,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
 
             return vec![AppMsg::BeginNextDownload];
         }
-        AppMsg::CancelDownload => {
+        AppMsg::RequestCancelDownload => {
             tracing::info!("Cancelling download");
 
             state.notification.current = Some(Notification {
@@ -327,8 +335,11 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
 
             return vec![];
         }
-        AppMsg::SpawnDownload { .. } => {}
+        AppMsg::DispatchDownload { .. } => {}
         AppMsg::Noop => {}
+        AppMsg::DispatchPlay { path } => {
+            tracing::info!("TODO: Dispacth Play called for {:?}", path);
+        }
     }
     vec![]
 }

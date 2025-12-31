@@ -47,7 +47,7 @@ pub fn run() -> anyhow::Result<()> {
         // happens in the same frame or shortly after.
         while let Some(msg) = effect_queue.pop_front() {
             // Check for Quit signal
-            if matches!(msg, AppMsg::Quit) {
+            if matches!(msg, AppMsg::RequestQuit) {
                 tracing::info!("Quit requested by UI");
                 if ipc_alive {
                     ui_ipc.send(melotui_ipc::command::IpcCommand::Shutdown);

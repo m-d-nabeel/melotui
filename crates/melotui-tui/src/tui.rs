@@ -62,15 +62,15 @@ impl Tui {
         {
             return Ok(match state.ui.mode {
                 UIMode::Normal => match key.code {
-                    KeyCode::Char('q') => Some(AppMsg::Quit),
+                    KeyCode::Char('q') => Some(AppMsg::RequestQuit),
                     KeyCode::Char('[') => Some(AppMsg::SwitchToPlaylists),
                     KeyCode::Char(']') => Some(AppMsg::SwitchToTracks),
                     KeyCode::Up => Some(AppMsg::MoveUp),
                     KeyCode::Down => Some(AppMsg::MoveDown),
-                    KeyCode::Char('r') => Some(AppMsg::RescanLibrary),
+                    KeyCode::Char('r') => Some(AppMsg::RequestRescanLibrary),
                     KeyCode::Char(':') => Some(AppMsg::EnterCommandMode),
-                    KeyCode::Enter => Some(AppMsg::PlaySelected),
-                    KeyCode::Esc => Some(AppMsg::CancelDownload),
+                    KeyCode::Enter => Some(AppMsg::RequestPlaySelected),
+                    KeyCode::Esc => Some(AppMsg::RequestCancelDownload),
                     _ => None,
                 },
 
