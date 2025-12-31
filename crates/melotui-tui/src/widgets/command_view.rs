@@ -1,13 +1,16 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
 };
 
 use melotui_core::AppState;
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default().title("Command").borders(Borders::TOP);
+    let block = Block::default()
+        .title("Command")
+        .borders(Borders::TOP)
+        .border_type(BorderType::Rounded);
 
     let text = format!(":{}▌", state.ui.command_buffer);
 
