@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 #[derive(Debug, Clone)]
 pub enum AppMsg {
     Quit,
@@ -37,6 +39,7 @@ pub enum AppMsg {
     /// THIS is what IPC listens for
     SpawnDownload {
         query: String,
+        download_path: PathBuf,
     },
 
     /// External facts (from IPC)

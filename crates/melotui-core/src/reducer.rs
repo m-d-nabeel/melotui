@@ -242,7 +242,12 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         }
         AppMsg::StartDownload { query } => {
             tracing::info!("Queueing download: {}", query);
-            state.download.queue.push_back(DownloadJob { query });
+            let current_playlist = state.nav.selected_playlist;
+            let download_path = state.library.playlists[current_playlist].path.to_path_buf();
+            state.download.queue.push_back(DownloadJob {
+                query,
+                download_path,
+            });
             // If nothing is running, start immediately
             if matches!(state.download.status, DownloadStatus::Idle) {
                 return vec![AppMsg::BeginNextDownload];
@@ -258,7 +263,10 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             tracing::info!("Starting download: {}", job.query);
             state.download.status = DownloadStatus::Running { percent: 0 };
             // THIS IS THE IPC TRIGGER
-            return vec![AppMsg::SpawnDownload { query: job.query }];
+            return vec![AppMsg::SpawnDownload {
+                query: job.query,
+                download_path: job.download_path,
+            }];
         }
         AppMsg::DownloadProgress { percent } => {
             state.notification.current = Some(Notification {

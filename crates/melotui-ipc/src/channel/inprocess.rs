@@ -7,10 +7,6 @@ use crate::{
 };
 
 /// IPC endpoint owned by the UI / runtime
-///
-/// Responsibilities:
-/// - Send IPC commands to workers
-/// - Receive IPC events from workers
 #[derive(Debug)]
 pub struct UiEndpoint {
     cmd_tx: mpsc::Sender<IpcCommand>,
@@ -19,10 +15,6 @@ pub struct UiEndpoint {
 }
 
 /// IPC endpoint owned by a worker
-///
-/// Responsibilities:
-/// - Receive IPC commands from UI
-/// - Send IPC events back to UI
 #[allow(unused)]
 #[derive(Debug)]
 pub struct WorkerEndpoint {
@@ -43,9 +35,7 @@ impl IpcReceiver for UiEndpoint {
     fn try_recv(&mut self) -> Option<IpcEvent> {
         match self.evt_rx.try_recv() {
             Ok(evt) => Some(evt),
-
             Err(mpsc::TryRecvError::Empty) => None,
-
             Err(mpsc::TryRecvError::Disconnected) => {
                 if !self.disconnected {
                     tracing::warn!("IPC event channel disconnected");
@@ -56,11 +46,7 @@ impl IpcReceiver for UiEndpoint {
         }
     }
 }
-/// Create an in-process IPC channel
-///
-/// Returns:
-/// - `UiEndpoint`: owned by UI / runtime
-/// - `WorkerEndpoint`: moved into a worker thread/process
+
 pub fn channel() -> (UiEndpoint, WorkerEndpoint) {
     let (cmd_tx, cmd_rx) = mpsc::channel::<IpcCommand>();
     let (evt_tx, evt_rx) = mpsc::channel::<IpcEvent>();
@@ -80,6 +66,11 @@ pub fn channel() -> (UiEndpoint, WorkerEndpoint) {
 impl crate::channel::IpcWorker for WorkerEndpoint {
     fn recv(&self) -> Option<IpcCommand> {
         self.cmd_rx.recv().ok()
+    }
+
+    // New implementation
+    fn try_recv(&self) -> Option<IpcCommand> {
+        self.cmd_rx.try_recv().ok()
     }
 
     fn send(&self, evt: IpcEvent) {

@@ -12,5 +12,7 @@ pub trait IpcReceiver: Send {
 
 pub trait IpcWorker: Send {
     fn recv(&self) -> Option<IpcCommand>;
+    // Non-blocking receive
+    fn try_recv(&self) -> Option<IpcCommand>;
     fn send(&self, evt: IpcEvent);
 }

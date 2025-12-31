@@ -50,6 +50,7 @@ pub struct PlaybackState {
 #[derive(Debug, Clone)]
 pub struct DownloadJob {
     pub query: String,
+    pub download_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]

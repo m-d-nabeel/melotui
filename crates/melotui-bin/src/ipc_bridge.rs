@@ -7,8 +7,12 @@ use melotui_ipc::{command::IpcCommand, event::IpcEvent};
 pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
     match msg {
         // Side-effect boundary
-        AppMsg::SpawnDownload { query } => Some(IpcCommand::Download {
+        AppMsg::SpawnDownload {
+            query,
+            download_path,
+        } => Some(IpcCommand::Download {
             query: query.clone(),
+            download_path: download_path.clone(),
         }),
 
         AppMsg::CancelDownload => Some(IpcCommand::CancelDownload),
