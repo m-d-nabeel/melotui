@@ -4,3 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+melotui-core = { path = "../melotui-core" }
+melotui-ipc = { path = "../melotui-ipc" }
+rodio = { version = "0.21", default-features = false, features = ["symphonia-all", "playback"] }
+tracing = "0.1"

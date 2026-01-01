@@ -33,6 +33,8 @@ impl AppState {
         let playback = PlaybackState {
             current: None,
             status: PlaybackStatus::Stopped,
+            progress_ms: 0,
+            duration_ms: None,
         };
         let ui = UIState {
             mode: UIMode::Normal,

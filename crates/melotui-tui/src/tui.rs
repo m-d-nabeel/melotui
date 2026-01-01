@@ -62,15 +62,30 @@ impl Tui {
         {
             return Ok(match state.ui.mode {
                 UIMode::Normal => match key.code {
-                    KeyCode::Char('q') => Some(AppMsg::Quit),
+                    // --- Navigation ---
+                    KeyCode::Char('q') => Some(AppMsg::RequestQuit),
                     KeyCode::Char('[') => Some(AppMsg::SwitchToPlaylists),
                     KeyCode::Char(']') => Some(AppMsg::SwitchToTracks),
-                    KeyCode::Up => Some(AppMsg::MoveUp),
-                    KeyCode::Down => Some(AppMsg::MoveDown),
-                    KeyCode::Char('r') => Some(AppMsg::RescanLibrary),
+                    KeyCode::Up | KeyCode::Char('k') => Some(AppMsg::MoveUp),
+                    KeyCode::Down | KeyCode::Char('j') => Some(AppMsg::MoveDown),
+
+                    // --- Playback Control ---
+                    KeyCode::Enter => Some(AppMsg::RequestPlaySelected),
+                    KeyCode::Char(' ') => Some(AppMsg::RequestTogglePlayback),
+                    KeyCode::Char('s') => Some(AppMsg::RequestStop),
+
+                    // Seek -5s / +5s
+                    KeyCode::Left | KeyCode::Char('h') => {
+                        Some(AppMsg::RequestSeek { offset_seconds: -5 })
+                    }
+                    KeyCode::Right | KeyCode::Char('l') => {
+                        Some(AppMsg::RequestSeek { offset_seconds: 5 })
+                    }
+
+                    // --- Global ---
+                    KeyCode::Char('r') => Some(AppMsg::RequestRescanLibrary),
                     KeyCode::Char(':') => Some(AppMsg::EnterCommandMode),
-                    KeyCode::Enter => Some(AppMsg::PlaySelected),
-                    KeyCode::Esc => Some(AppMsg::CancelDownload),
+                    KeyCode::Esc => Some(AppMsg::RequestCancelDownload),
                     _ => None,
                 },
 
