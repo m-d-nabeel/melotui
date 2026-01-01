@@ -484,7 +484,16 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                     }
                 }
             }
+            // 2. Dispatch the command to the worker
+            let is_spectrum = state.visualizer_mode == VisualizerMode::Spectrum;
+            return vec![AppMsg::DispatchSetVisualizer {
+                active: is_spectrum,
+            }];
         }
+        AppMsg::AudioSpectrum { magnitude } => {
+            state.spectrum_raw = magnitude;
+        }
+        AppMsg::DispatchSetVisualizer { .. } => {}
         AppMsg::Noop => {}
     }
     vec![]

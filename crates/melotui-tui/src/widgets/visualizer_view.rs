@@ -1,51 +1,38 @@
 use melotui_core::{AppState, state_registry::VisualizerMode};
-use ratatui::{
-    Frame,
-    layout::{Alignment, Rect},
-    style::{Color, Style},
-    widgets::{Block, BorderType, Borders, Paragraph},
-};
+use ratatui::{Frame, layout::Rect, style::Color};
+
+use crate::widgets::{album_art_view, spectrum_visualizer_view};
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    // 1. Determine Title based on Mode
-    let title = match state.visualizer_mode {
-        VisualizerMode::Spectrum => " Visualizer ",
-        VisualizerMode::AlbumArt => " Album Art ",
-    };
-
-    // 2. Create the container block
-    let block = Block::default()
-        .title(title)
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
-
-    let inner_area = block.inner(area);
-    frame.render_widget(block, area);
-
-    // 3. Render Content based on Mode
     match state.visualizer_mode {
         VisualizerMode::Spectrum => {
-            // Placeholder for future FFT/Frequency visualization
-            let text = "█ ▄ █ ▄ █ ▄ █ ▄\n(Spectrum Mode)";
-            let p = Paragraph::new(text)
-                .alignment(Alignment::Center)
-                .style(Style::default().fg(Color::Cyan));
-            frame.render_widget(p, inner_area);
+            // spectrum_visualizer_view::draw_cava(frame, area, state);
+            spectrum_visualizer_view::draw_4(frame, area, state);
         }
-
         VisualizerMode::AlbumArt => {
-            if let Some(art) = &state.current_album_art {
-                // Render the pre-calculated ASCII art
-                let p = Paragraph::new(art.clone()).alignment(Alignment::Center); // Center the art horizontally
-                frame.render_widget(p, inner_area);
-            } else {
-                // Fallback if no art is found or loaded
-                let text = "\n\nNo Cover Art";
-                let p = Paragraph::new(text)
-                    .alignment(Alignment::Center)
-                    .style(Style::default().fg(Color::DarkGray));
-                frame.render_widget(p, inner_area);
-            }
+            album_art_view::draw(frame, area, state);
         }
     }
+}
+
+/// Helper: HSL to Ratatui Color
+pub fn hsl_to_rgb(h: f64, s: f64, l: f64) -> Color {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = l - c / 2.0;
+
+    let (r, g, b) = match h {
+        v if v < 60.0 => (c, x, 0.0),
+        v if v < 120.0 => (x, c, 0.0),
+        v if v < 180.0 => (0.0, c, x),
+        v if v < 240.0 => (0.0, x, c),
+        v if v < 300.0 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+
+    Color::Rgb(
+        ((r + m) * 255.0) as u8,
+        ((g + m) * 255.0) as u8,
+        ((b + m) * 255.0) as u8,
+    )
 }

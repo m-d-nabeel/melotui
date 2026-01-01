@@ -19,6 +19,9 @@ pub enum IpcCommand {
     Seek {
         position_ms: u64,
     },
+    SetVisualizer {
+        active: bool,
+    },
 
     // ───── Lifecycle ─────
     Shutdown,

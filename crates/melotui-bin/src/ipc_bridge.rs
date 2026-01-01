@@ -60,7 +60,8 @@ impl IpcRuntime {
             | IpcCommand::Pause
             | IpcCommand::Resume
             | IpcCommand::Stop
-            | IpcCommand::Seek { .. } => {
+            | IpcCommand::Seek { .. }
+            | IpcCommand::SetVisualizer { .. } => {
                 let _ = self.audio_tx.send(cmd);
             }
 
@@ -93,6 +94,9 @@ pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
         AppMsg::DispatchSeek { position_ms } => Some(IpcCommand::Seek {
             position_ms: *position_ms,
         }),
+        AppMsg::DispatchSetVisualizer { active } => {
+            Some(IpcCommand::SetVisualizer { active: *active })
+        }
         _ => None,
     }
 }
@@ -107,6 +111,7 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::PlaybackFinished => AppMsg::AudioFinished,
         IpcEvent::PlaybackPaused => AppMsg::AudioPaused,
         IpcEvent::PlaybackResumed => AppMsg::AudioResumed,
+        IpcEvent::SpectrumData { magnitude } => AppMsg::AudioSpectrum { magnitude },
         _ => AppMsg::Noop,
     }
 }

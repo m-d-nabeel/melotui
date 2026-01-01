@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, time::Instant};
 
 use melotui_core::{AppMsg, AppState, Library};
 use melotui_tui::Tui;
@@ -19,8 +19,14 @@ pub fn run() -> anyhow::Result<()> {
 
     let mut running = true;
     let mut effect_queue = VecDeque::new();
+    let mut last_tick = Instant::now();
 
     while running {
+        let now = Instant::now();
+        let dt = now.duration_since(last_tick).as_secs_f32();
+        last_tick = now;
+
+        update_visualizer_physics(&mut state, dt);
         tui.draw(&state)?;
 
         // 1. UI Input
@@ -67,4 +73,42 @@ pub fn run() -> anyhow::Result<()> {
     }
 
     tui.shutdown()
+}
+
+fn update_visualizer_physics(state: &mut AppState, dt: f32) {
+    if state.visualizer_mode != melotui_core::state_registry::VisualizerMode::Spectrum {
+        return;
+    }
+
+    // CHANGE: Lower gravity for 0-1 range data
+    // 0.5 means it takes 2 seconds to fall from max to 0.
+    // 2.0 means it takes 0.5 seconds.
+    let gravity = 4.0;
+    let smoothing_speed = 15.0; // CAVA is already smooth, so high speed is fine
+
+    let len = state.spectrum_raw.len();
+    if state.spectrum_smooth.len() != len {
+        state.spectrum_smooth.resize(len, 0.0);
+    }
+    if state.spectrum_peaks.len() != len {
+        state.spectrum_peaks.resize(len, 0.0);
+    }
+
+    for i in 0..len {
+        let target = state.spectrum_raw[i];
+
+        // Simple Lerp
+        let diff = target - state.spectrum_smooth[i];
+        state.spectrum_smooth[i] += diff * (smoothing_speed * dt).min(1.0);
+
+        // Peaks
+        if state.spectrum_smooth[i] > state.spectrum_peaks[i] {
+            state.spectrum_peaks[i] = state.spectrum_smooth[i];
+        } else {
+            state.spectrum_peaks[i] -= gravity * dt;
+            if state.spectrum_peaks[i] < 0.0 {
+                state.spectrum_peaks[i] = 0.0;
+            }
+        }
+    }
 }

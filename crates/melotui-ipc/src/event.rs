@@ -12,6 +12,7 @@ pub enum IpcEvent {
     PlaybackResumed,
     PlaybackStopped,
     PlaybackProgress { position_ms: u64 },
+    SpectrumData { magnitude: Vec<f32> },
     PlaybackFinished,
 
     // ───── Errors ─────
