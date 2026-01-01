@@ -1,4 +1,6 @@
-use melotui_ipc::{channel::IpcWorker, command::IpcCommand, event::IpcEvent};
+use melotui_ipc::{
+    channel::IpcWorker, command::IpcCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
+};
 use ringbuf::{HeapRb, traits::Split};
 use rodio::Decoder;
 use std::{
@@ -18,7 +20,7 @@ enum VisualizerBackend {
     None,
 }
 
-pub fn run(worker: impl IpcWorker) {
+pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
     tracing::info!("Audio worker started");
 
     let stream_handle =
@@ -170,7 +172,10 @@ pub fn run(worker: impl IpcWorker) {
                 };
 
                 if let Some(magnitude) = spectrum_opt {
-                    worker.send(IpcEvent::SpectrumData { magnitude });
+                    // OLD: worker.send(IpcEvent::SpectrumData { magnitude });
+
+                    // NEW: Atomic Write (Zero-Copy logic)
+                    spectrum_producer.push(&magnitude);
                 }
             }
         }

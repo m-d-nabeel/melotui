@@ -1,7 +1,9 @@
 use std::{sync::mpsc, thread};
 
 use melotui_core::AppMsg;
-use melotui_ipc::{channel::inprocess, command::IpcCommand, event::IpcEvent};
+use melotui_ipc::{
+    channel::inprocess, command::IpcCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
+};
 
 /// The "Supervisor" that manages all workers and routing.
 /// The UI holds this struct.
@@ -18,7 +20,7 @@ pub struct IpcRuntime {
 
 impl IpcRuntime {
     /// Boot up the runtime and all workers
-    pub fn new() -> Self {
+    pub fn new(spectrum_producer: SpectrumProducer) -> Self {
         // A. Create the "Bus" (The single event stream)
         // If you used mpsc::channel(), you would get (Sender, Receiver)
         // for that reason we use inprocess::hub to get the consistency
@@ -32,11 +34,11 @@ impl IpcRuntime {
         });
 
         // C. Spawn Audio Worker (The Child)
+        // Pass the producer to the audio worker
         let (audio_tx, audio_worker) = inprocess::join_worker(bus_tx.clone());
         thread::spawn(move || {
-            melotui_audio::run(audio_worker);
+            melotui_audio::run(audio_worker, spectrum_producer);
         });
-
         tracing::info!("IPC Runtime initialized with Download and Audio workers");
 
         Self {
@@ -111,7 +113,6 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::PlaybackFinished => AppMsg::AudioFinished,
         IpcEvent::PlaybackPaused => AppMsg::AudioPaused,
         IpcEvent::PlaybackResumed => AppMsg::AudioResumed,
-        IpcEvent::SpectrumData { magnitude } => AppMsg::AudioSpectrum { magnitude },
         _ => AppMsg::Noop,
     }
 }

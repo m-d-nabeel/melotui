@@ -5,6 +5,7 @@ pub mod library;
 pub mod message;
 pub mod reducer;
 pub mod state_registry;
+pub mod visualizer_interface;
 
 pub use app_state::AppState;
 pub use command::Command;

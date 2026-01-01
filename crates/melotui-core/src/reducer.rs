@@ -55,43 +55,51 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         }
         AppMsg::SwitchToPlaylists => {
             tracing::debug!("Switch to Playlist Mode");
+            state.last_nav_time = state.time_elapsed;
             state.nav.mode = NavMode::Playlists;
         }
         AppMsg::SwitchToTracks => {
             tracing::debug!("Switch to Track Mode");
+            state.last_nav_time = state.time_elapsed;
             state.nav.mode = NavMode::Tracks;
         }
-        AppMsg::MoveUp => match state.nav.mode {
-            NavMode::Playlists => {
-                if state.nav.selected_playlist > 0 {
-                    state.nav.selected_playlist -= 1;
+        AppMsg::MoveUp => {
+            state.last_nav_time = state.time_elapsed;
+            match state.nav.mode {
+                NavMode::Playlists => {
+                    if state.nav.selected_playlist > 0 {
+                        state.nav.selected_playlist -= 1;
+                    }
                 }
-            }
-            NavMode::Tracks => {
-                let p = state.nav.selected_playlist;
-                let cursor = &mut state.nav.selected_tracks[p];
+                NavMode::Tracks => {
+                    let p = state.nav.selected_playlist;
+                    let cursor = &mut state.nav.selected_tracks[p];
 
-                if *cursor > 0 {
-                    *cursor -= 1;
+                    if *cursor > 0 {
+                        *cursor -= 1;
+                    }
                 }
             }
-        },
-        AppMsg::MoveDown => match state.nav.mode {
-            NavMode::Playlists => {
-                if state.nav.selected_playlist + 1 < state.library.playlists.len() {
-                    state.nav.selected_playlist += 1;
+        }
+        AppMsg::MoveDown => {
+            state.last_nav_time = state.time_elapsed;
+            match state.nav.mode {
+                NavMode::Playlists => {
+                    if state.nav.selected_playlist + 1 < state.library.playlists.len() {
+                        state.nav.selected_playlist += 1;
+                    }
                 }
-            }
-            NavMode::Tracks => {
-                let p = state.nav.selected_playlist;
-                let tracks = &state.library.playlists[p].tracks;
-                let cursor = &mut state.nav.selected_tracks[p];
+                NavMode::Tracks => {
+                    let p = state.nav.selected_playlist;
+                    let tracks = &state.library.playlists[p].tracks;
+                    let cursor = &mut state.nav.selected_tracks[p];
 
-                if *cursor + 1 < tracks.len() {
-                    *cursor += 1;
+                    if *cursor + 1 < tracks.len() {
+                        *cursor += 1;
+                    }
                 }
             }
-        },
+        }
         AppMsg::RequestRescanLibrary => {
             match Library::scan(state.library.root.clone()) {
                 Ok(new_library) => {
@@ -497,9 +505,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             return vec![AppMsg::DispatchSetVisualizer {
                 active: is_spectrum,
             }];
-        }
-        AppMsg::AudioSpectrum { magnitude } => {
-            state.spectrum_raw = magnitude;
         }
         AppMsg::DispatchSetVisualizer { .. } => {}
         AppMsg::Noop => {}

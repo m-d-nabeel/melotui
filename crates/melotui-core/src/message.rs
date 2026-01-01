@@ -76,9 +76,7 @@ pub enum AppMsg {
     AudioError {
         error: String,
     },
-    AudioSpectrum {
-        magnitude: Vec<f32>,
-    },
+
     // ───── Command bar ─────
     EnterCommandMode,
     ExitCommandMode,
