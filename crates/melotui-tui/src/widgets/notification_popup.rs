@@ -15,7 +15,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let width = 35;
     let height = 4;
-    let popup_area = bottom_right_rect(width, height, area, 1);
+    let popup_area = top_right_rect(width, height, area, 1);
 
     frame.render_widget(Clear, popup_area);
 
@@ -81,14 +81,14 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 }
 
-fn bottom_right_rect(w: u16, h: u16, area: Rect, margin: u16) -> Rect {
+fn top_right_rect(w: u16, h: u16, area: Rect, margin: u16) -> Rect {
     let effective_width = w.min(area.width);
     let effective_height = h.min(area.height);
 
     let x = (area.x + area.width)
         .saturating_sub(effective_width)
         .saturating_sub(margin);
-    let y = (area.y + area.height)
+    let y = (area.y)
         .saturating_sub(effective_height)
         .saturating_sub(margin);
 
