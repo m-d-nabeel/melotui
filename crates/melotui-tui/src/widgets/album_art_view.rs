@@ -2,9 +2,20 @@ use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::{Color, Style},
+    style::{Color, Modifier, Style},
     widgets::{Block, BorderType, Borders, Paragraph},
 };
+
+const BRANDING_ART: &str = r#"
+░▒▓██████████████▓▒░░▒▓████████▓▒░▒▓█▓▒░      ░▒▓██████▓▒░▒▓████████▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓██████▓▒░ ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓████████▓▒░▒▓████████▓▒░▒▓██████▓▒░  ░▒▓█▓▒░    ░▒▓██████▓▒░░▒▓█▓▒░ 
+"#;
+const DESCRIPTION: &str = "The Terminal Music Player";
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let block = Block::default()
@@ -20,11 +31,29 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         let p = Paragraph::new(art.clone()).alignment(Alignment::Center);
         frame.render_widget(p, inner_area);
     } else {
-        // Fallback if no art is found or loaded
-        let text = "\n\nNo Cover Art";
-        let p = Paragraph::new(text)
-            .alignment(Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(p, inner_area);
+        let art_clean = BRANDING_ART.trim_matches('\n');
+        let content = format!("{}\n\n{}", art_clean, DESCRIPTION);
+
+        // 2. Calculate Vertical Center
+        // Count lines: Art lines + 1 empty line + 1 description line
+        let content_height = (art_clean.lines().count() + 2) as u16;
+        let y_offset = inner_area.height.saturating_sub(content_height) / 2;
+
+        // 3. Create a Centered Rect
+        let centered_rect = Rect {
+            x: inner_area.x,
+            y: inner_area.y + y_offset,
+            width: inner_area.width,
+            height: content_height, // Restrict height to content
+        };
+
+        let p = Paragraph::new(content).alignment(Alignment::Center).style(
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        );
+
+        // 4. Render into the calculated centered area
+        frame.render_widget(p, centered_rect);
     }
 }

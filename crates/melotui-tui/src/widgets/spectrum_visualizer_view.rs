@@ -9,7 +9,6 @@ use ratatui::{
         canvas::{Canvas, Line, Rectangle},
     },
 };
-use std::time::SystemTime;
 
 static SENSITIVITY: f32 = 60.0;
 
@@ -22,10 +21,7 @@ pub fn draw_bar(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    let time = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64();
+    let time = state.time_elapsed;
 
     let spectrum = &state.spectrum_smooth;
     let peaks = &state.spectrum_peaks;
@@ -278,10 +274,7 @@ pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     // 2. Time for Color Oscillation
-    let time = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs_f64();
+    let time = state.time_elapsed;
 
     let canvas = Canvas::default()
         .marker(symbols::Marker::Braille)
@@ -322,7 +315,7 @@ pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
                 let peak_height = (peak * height).clamp(0.0, height);
 
                 // 5. Color Oscillation (From your old code)
-                let color_phase = i as f64 / num_ui_bars as f64 + time * 0.1;
+                let color_phase = (i as f64 / num_ui_bars as f64) + (time as f64 * 0.1);
                 let r = ((color_phase * 2.0).sin() * 0.5 + 0.5) * 255.0;
                 let g = ((color_phase * 2.0 + 2.0).sin() * 0.5 + 0.5) * 255.0;
                 let b = ((color_phase * 2.0 + 4.0).sin() * 0.5 + 0.5) * 255.0;

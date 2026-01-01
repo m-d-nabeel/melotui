@@ -11,6 +11,8 @@ use crate::{
 
 pub struct AppState {
     pub app_name: String,
+    pub time_elapsed: f32,
+    pub last_nav_time: f32,
     // navigation
     pub nav: UINavState,
     // UI-only
@@ -68,6 +70,8 @@ impl AppState {
 
         Self {
             app_name: "Melotui".into(),
+            time_elapsed: 0.0,
+            last_nav_time: 0.0,
             nav,
             library,
             playback,

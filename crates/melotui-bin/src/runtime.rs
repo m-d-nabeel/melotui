@@ -36,6 +36,8 @@ pub fn run() -> anyhow::Result<()> {
         let dt = now.duration_since(last_tick).as_secs_f32();
         last_tick = now;
 
+        state.time_elapsed += dt;
+
         update_visualizer_physics(&mut state, dt);
         tui.draw(&state)?;
 
