@@ -85,6 +85,7 @@ impl Tui {
                     // --- Global ---
                     KeyCode::Char('r') => Some(AppMsg::RequestRescanLibrary),
                     KeyCode::Char(':') => Some(AppMsg::EnterCommandMode),
+                    KeyCode::Char('{') | KeyCode::Char('}') => Some(AppMsg::ToggleArt),
                     KeyCode::Esc => Some(AppMsg::RequestCancelDownload),
                     _ => None,
                 },

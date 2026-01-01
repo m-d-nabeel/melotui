@@ -11,6 +11,7 @@ pub enum AppMsg {
     SwitchToTracks,
     MoveUp,
     MoveDown,
+    ToggleArt,
 
     // ───── Library ─────
     RequestRescanLibrary,
@@ -63,7 +64,6 @@ pub enum AppMsg {
     /// Used to update UI state (icon changes) or auto-advance playlist
     AudioStarted {
         path: String,
-        duration_ms: Option<u64>,
     },
     AudioPaused,
     AudioResumed,

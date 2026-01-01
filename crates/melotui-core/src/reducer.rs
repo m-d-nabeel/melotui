@@ -5,8 +5,10 @@ use std::{
 
 use crate::{
     AppMsg, AppState, Command, Library, NavMode, UIMode,
+    art_converter::bytes_to_ascii,
     state_registry::{
         DownloadJob, DownloadStatus, Notification, NotificationKind, PlaybackStatus, TrackId,
+        VisualizerMode,
     },
 };
 
@@ -101,7 +103,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                     if let Some(current) = &state.playback.current {
                         let still_exists = state.library.playlists.iter().any(|pl| {
                             pl.name == current.playlist
-                                && pl.tracks.iter().any(|p| p == &current.path)
+                                && pl.tracks.iter().any(|p| p.file_path == current.path)
                         });
 
                         if !still_exists {
@@ -301,11 +303,11 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             let p = state.nav.selected_playlist;
             if let Some(playlist) = state.library.playlists.get(p) {
                 let t = state.nav.selected_tracks[p];
-                if let Some(path) = playlist.tracks.get(t) {
+                if let Some(track) = playlist.tracks.get(t) {
                     // A. Update UI State IMMEDIATELY
                     state.playback.current = Some(TrackId {
                         playlist: playlist.name.clone(),
-                        path: path.clone(),
+                        path: track.file_path.clone(),
                     });
                     state.playback.status = PlaybackStatus::Playing;
                     state.playback.progress_ms = 0;
@@ -313,19 +315,29 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
 
                     state.notification.current = Some(Notification {
                         kind: NotificationKind::Info,
-                        message: format!("Playing {}", path.file_name().unwrap().to_string_lossy()),
+                        message: format!("Playing {}", track.file_path.to_string_lossy()),
                         progress: None,
                         created_at: Instant::now(),
                         dismiss_after: Some(Duration::from_secs(2)),
                     });
 
+                    state.current_album_art = None;
+                    if track.has_cover
+                        && let Some((data, _mime)) = Library::get_album_art(&track.file_path)
+                    {
+                        // Hardcode a reasonable width for the ASCII art, e.g., 40 columns
+                        if let Ok(ascii) = bytes_to_ascii(&data, 30) {
+                            state.current_album_art = Some(ascii);
+                        }
+                    }
+
                     // B. Trigger Side-Effect
-                    return vec![AppMsg::DispatchPlay { path: path.clone() }];
+                    return vec![AppMsg::DispatchPlay {
+                        path: track.file_path.clone(),
+                    }];
                 }
             }
         }
-
-        // 2. User toggles Play/Pause
         AppMsg::RequestTogglePlayback => {
             match state.playback.status {
                 // Case A: Playing -> Pause
@@ -380,8 +392,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             }
             return vec![];
         }
-
-        // 3. User stops playback
         AppMsg::RequestStop => {
             state.playback.status = PlaybackStatus::Stopped;
             state.playback.progress_ms = 0;
@@ -394,43 +404,29 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             });
             return vec![AppMsg::DispatchStop];
         }
-
-        // 4. User seeks
-        AppMsg::RequestSeek { offset_seconds } => {
-            let current = state.playback.progress_ms as i64;
-            // Default to 0 if we don't know duration yet, or huge number if we do
-            let total = state.playback.duration_ms.unwrap_or(u64::MAX) as i64;
-            let offset_ms = offset_seconds * 1000;
-
-            // Clamp logic
-            let new_pos = (current + offset_ms).max(0).min(total) as u64;
-
-            // Optimistic Update: Jump the progress bar immediately
-            state.playback.progress_ms = new_pos;
-
-            return vec![AppMsg::DispatchSeek {
-                position_ms: new_pos,
-            }];
+        AppMsg::RequestSeek { offset_seconds: _ } => {
+            // Not working correctly
+            // let current = state.playback.progress_ms as i64;
+            // // Default to 0 if we don't know duration yet, or huge number if we do
+            // let total = state.playback.duration_ms.unwrap_or(u64::MAX) as i64;
+            // let offset_ms = offset_seconds * 1000;
+            //
+            // // Clamp logic
+            // let new_pos = (current + offset_ms).max(0).min(total) as u64;
+            //
+            // // Optimistic Update: Jump the progress bar immediately
+            // state.playback.progress_ms = new_pos;
+            //
+            // return vec![AppMsg::DispatchSeek {
+            //     position_ms: new_pos,
+            // }];
         }
-
-        // ───── Side-Effects (Ignored by UI) ─────
-        // These exist ONLY for the Supervisor to catch and route to IPC.
         AppMsg::DispatchPlay { .. } => {}
         AppMsg::DispatchPause => {}
         AppMsg::DispatchResume => {}
         AppMsg::DispatchStop => {}
         AppMsg::DispatchSeek { .. } => {}
-
-        // ───── External Facts (Truth from Worker) ─────
-        // We trust the worker for timing and file duration
-        AppMsg::AudioStarted {
-            path: _,
-            duration_ms,
-        } => {
-            // Worker finally parsed the file header and knows the real duration
-            state.playback.duration_ms = duration_ms;
-        }
-
+        AppMsg::AudioStarted { path: _ } => {}
         AppMsg::AudioProgress { position_ms } => {
             // Sync up. Even if optimistic UI set it, we correct it here.
             // We only update if status is Playing to avoid jitter if user just hit Pause.
@@ -438,19 +434,16 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 state.playback.progress_ms = position_ms;
             }
         }
-
         AppMsg::AudioFinished => {
             // Natural finish (not user requested)
             state.playback.status = PlaybackStatus::Stopped;
             state.playback.progress_ms = 0;
             // TODO: Trigger "Next Track" logic here if you want auto-play
         }
-
         AppMsg::AudioPaused | AppMsg::AudioResumed => {
             // No-op: We already updated the UI optimistically in RequestTogglePlayback.
             // We ignore these to prevent the UI from "flickering" back and forth.
         }
-
         AppMsg::AudioError { error } => {
             state.playback.status = PlaybackStatus::Stopped;
             state.notification.current = Some(Notification {
@@ -460,6 +453,37 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 created_at: Instant::now(),
                 dismiss_after: Some(Duration::from_secs(4)),
             });
+        }
+        AppMsg::ToggleArt => {
+            // 1. Flip the Mode
+            state.visualizer_mode = match state.visualizer_mode {
+                VisualizerMode::Spectrum => VisualizerMode::AlbumArt,
+                VisualizerMode::AlbumArt => VisualizerMode::Spectrum,
+            };
+
+            // If we just switched TO Art mode, and haven't loaded it yet, do it now.
+            if state.visualizer_mode == VisualizerMode::AlbumArt
+                && state.current_album_art.is_none()
+            {
+                // A. Resolve the current track from the Library
+                if let Some(track_id) = &state.playback.current {
+                    let track_opt = state
+                        .library
+                        .playlists
+                        .iter()
+                        .find(|p| p.name == track_id.playlist)
+                        .and_then(|pl| pl.tracks.iter().find(|t| t.file_path == track_id.path));
+
+                    // B. Load and Convert
+                    if let Some(track) = track_opt
+                        && track.has_cover
+                        && let Some((data, _mime)) = Library::get_album_art(&track.file_path)
+                        && let Ok(ascii) = bytes_to_ascii(&data, 40)
+                    {
+                        state.current_album_art = Some(ascii);
+                    }
+                }
+            }
         }
         AppMsg::Noop => {}
     }

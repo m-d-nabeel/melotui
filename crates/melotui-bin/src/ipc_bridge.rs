@@ -102,13 +102,7 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::DownloadProgress { percent } => AppMsg::DownloadProgress { percent },
         IpcEvent::DownloadFinished => AppMsg::DownloadFinished,
         IpcEvent::DownloadFailed { error } => AppMsg::DownloadFailed { error },
-        IpcEvent::PlaybackStarted {
-            path,
-            total_duration_ms,
-        } => AppMsg::AudioStarted {
-            path,
-            duration_ms: Some(total_duration_ms),
-        },
+        IpcEvent::PlaybackStarted { path } => AppMsg::AudioStarted { path },
         IpcEvent::PlaybackProgress { position_ms } => AppMsg::AudioProgress { position_ms },
         IpcEvent::PlaybackFinished => AppMsg::AudioFinished,
         IpcEvent::PlaybackPaused => AppMsg::AudioPaused,

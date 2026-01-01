@@ -35,10 +35,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 .tracks
                 .iter()
                 .map(|t| {
-                    let name = t.file_name().unwrap().to_string_lossy().to_string();
-
+                    let name = &t.title;
                     let is_playing = state.playback.current.as_ref().is_some_and(|current| {
-                        current.playlist == playlist.name && current.path == *t
+                        current.playlist == playlist.name && current.path == t.file_path
                     });
 
                     if is_playing {

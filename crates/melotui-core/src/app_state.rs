@@ -4,6 +4,7 @@ use crate::{
     Library, NavMode, UIMode, UINavState,
     state_registry::{
         DownloadState, DownloadStatus, NotificationState, PlaybackState, PlaybackStatus, UIState,
+        VisualizerMode,
     },
 };
 
@@ -18,6 +19,8 @@ pub struct AppState {
     pub playback: PlaybackState,
     pub download: DownloadState,
     pub notification: NotificationState,
+    pub visualizer_mode: VisualizerMode,
+    pub current_album_art: Option<ratatui::text::Text<'static>>,
 }
 
 impl AppState {
@@ -54,6 +57,8 @@ impl AppState {
             ui,
             download,
             notification,
+            visualizer_mode: VisualizerMode::AlbumArt,
+            current_album_art: None,
         }
     }
 }

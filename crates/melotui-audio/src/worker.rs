@@ -1,5 +1,5 @@
 use melotui_ipc::{channel::IpcWorker, command::IpcCommand, event::IpcEvent};
-use rodio::{Decoder, Source};
+use rodio::Decoder;
 use std::{
     fs::File,
     io::BufReader,
@@ -16,7 +16,6 @@ pub fn run(worker: impl IpcWorker) {
 
     // --- TRACKING STATE ---
     let mut is_playing = false;
-    let mut total_duration: Option<Duration>;
     let mut last_resume_time: Option<Instant> = None; // last started/resumed
     let mut accumulated_time = Duration::ZERO; // time already played before the current resume
 
@@ -32,19 +31,6 @@ pub fn run(worker: impl IpcWorker) {
                     if let Ok(file) = File::open(&path) {
                         let reader = BufReader::new(file);
                         if let Ok(source) = Decoder::new(reader) {
-                            // Get duration before appending to sink as sink consumes source
-                            total_duration = source.total_duration();
-
-                            let td_ms = match total_duration {
-                                Some(duration) => duration.as_millis() as u64,
-                                None => {
-                                    tracing::warn!(
-                                        "Unable to determine total duration for the file."
-                                    );
-                                    0
-                                }
-                            };
-
                             sink.append(source);
                             sink.play();
 
@@ -54,7 +40,6 @@ pub fn run(worker: impl IpcWorker) {
 
                             worker.send(IpcEvent::PlaybackStarted {
                                 path: path.to_string_lossy().to_string(),
-                                total_duration_ms: td_ms,
                             });
                         }
                     }

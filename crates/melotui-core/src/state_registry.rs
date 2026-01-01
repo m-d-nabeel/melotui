@@ -93,3 +93,10 @@ pub struct NotificationState {
     pub current: Option<Notification>,
 }
 // ------------- Notification --------------
+// -------------- Visualizer  --------------
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VisualizerMode {
+    Spectrum, // future visualizer
+    AlbumArt, // The new ANSI art mode
+}
+// -------------- Visualizer  --------------
