@@ -99,4 +99,30 @@ pub enum VisualizerMode {
     Spectrum, // future visualizer
     AlbumArt, // The new ANSI art mode
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SpectrumStyle {
+    Cava,
+    Default,
+    Bar,
+}
+
+impl SpectrumStyle {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SpectrumStyle::Cava => "Cava",
+            SpectrumStyle::Default => "Default",
+            SpectrumStyle::Bar => "Bar",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<SpectrumStyle> {
+        match s {
+            "Cava" => Some(SpectrumStyle::Cava),
+            "Default" => Some(SpectrumStyle::Default),
+            "Bar" => Some(SpectrumStyle::Bar),
+            _ => None,
+        }
+    }
+}
 // -------------- Visualizer  --------------

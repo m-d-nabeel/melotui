@@ -54,6 +54,11 @@ pub enum AppMsg {
         position_ms: u64,
     },
 
+    /// Side-effect boundary
+    DispatchSetVisualizer {
+        active: bool,
+    },
+
     /// External facts (from IPC)
     /// Used to update the progress bar
     AudioProgress {
@@ -70,6 +75,9 @@ pub enum AppMsg {
     AudioFinished,
     AudioError {
         error: String,
+    },
+    AudioSpectrum {
+        magnitude: Vec<f32>,
     },
     // ───── Command bar ─────
     EnterCommandMode,

@@ -168,11 +168,9 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 Command::Quit => {
                     return vec![AppMsg::RequestQuit];
                 }
-
                 Command::Rescan => {
                     return vec![AppMsg::RequestRescanLibrary];
                 }
-
                 Command::Download { query } => {
                     tracing::debug!("Command::Download <- {}", query);
 
@@ -186,7 +184,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
 
                     return vec![AppMsg::RequestDownload { query }];
                 }
-
                 Command::Unknown(reason) => {
                     state.notification.current = Some(Notification {
                         kind: NotificationKind::Error,
@@ -195,6 +192,17 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                         created_at: Instant::now(),
                         dismiss_after: Some(Duration::from_secs(2)),
                     });
+                    return vec![];
+                }
+                Command::ChangeVisualizer { arg } => {
+                    state.notification.current = Some(Notification {
+                        kind: NotificationKind::Info,
+                        message: "Spectrum Style changed.".to_string(),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
+                    state.spectrum_style = arg;
                     return vec![];
                 }
             }
@@ -484,7 +492,16 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                     }
                 }
             }
+            // 2. Dispatch the command to the worker
+            let is_spectrum = state.visualizer_mode == VisualizerMode::Spectrum;
+            return vec![AppMsg::DispatchSetVisualizer {
+                active: is_spectrum,
+            }];
         }
+        AppMsg::AudioSpectrum { magnitude } => {
+            state.spectrum_raw = magnitude;
+        }
+        AppMsg::DispatchSetVisualizer { .. } => {}
         AppMsg::Noop => {}
     }
     vec![]
