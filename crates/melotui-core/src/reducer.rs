@@ -498,9 +498,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 active: is_spectrum,
             }];
         }
-        AppMsg::AudioSpectrum { magnitude } => {
-            state.spectrum_raw = magnitude;
-        }
         AppMsg::DispatchSetVisualizer { .. } => {}
         AppMsg::Noop => {}
     }

@@ -6,9 +6,9 @@ use crate::{
         DownloadState, DownloadStatus, NotificationState, PlaybackState, PlaybackStatus,
         SpectrumStyle, UIState, VisualizerMode,
     },
+    visualizer_interface::{NoOpSpectrum, SpectrumSource},
 };
 
-#[derive(Debug, Clone)]
 pub struct AppState {
     pub app_name: String,
     // navigation
@@ -23,7 +23,9 @@ pub struct AppState {
     pub current_album_art: Option<ratatui::text::Text<'static>>,
     pub spectrum_raw: Vec<f32>,    // Incoming from worker
     pub spectrum_smooth: Vec<f32>, // Rendered (smoothed)
-    pub spectrum_peaks: Vec<f32>,  // Falling peaks}
+
+    pub spectrum_source: Box<dyn SpectrumSource>,
+    pub spectrum_peaks: Vec<f32>, // Falling peaks}
     pub spectrum_style: SpectrumStyle,
 }
 
@@ -74,10 +76,11 @@ impl AppState {
             notification,
             visualizer_mode: VisualizerMode::AlbumArt,
             current_album_art: None,
-            spectrum_raw: vec![0.0; 256],
-            spectrum_smooth: vec![0.0; 256],
-            spectrum_peaks: vec![0.0; 256],
+            spectrum_raw: vec![0.0; 512],
+            spectrum_smooth: vec![0.0; 512],
+            spectrum_peaks: vec![0.0; 512],
             spectrum_style,
+            spectrum_source: Box::new(NoOpSpectrum),
         }
     }
 }
