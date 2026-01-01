@@ -1,10 +1,10 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, process::Command};
 
 use crate::{
     Library, NavMode, UIMode, UINavState,
     state_registry::{
-        DownloadState, DownloadStatus, NotificationState, PlaybackState, PlaybackStatus, UIState,
-        VisualizerMode,
+        DownloadState, DownloadStatus, NotificationState, PlaybackState, PlaybackStatus,
+        SpectrumStyle, UIState, VisualizerMode,
     },
 };
 
@@ -24,6 +24,7 @@ pub struct AppState {
     pub spectrum_raw: Vec<f32>,    // Incoming from worker
     pub spectrum_smooth: Vec<f32>, // Rendered (smoothed)
     pub spectrum_peaks: Vec<f32>,  // Falling peaks}
+    pub spectrum_style: SpectrumStyle,
 }
 
 impl AppState {
@@ -51,6 +52,17 @@ impl AppState {
             queue: VecDeque::new(),
         };
         let notification = NotificationState { current: None };
+        let spectrum_style = match Command::new("cava").arg("--version").output() {
+            Ok(_) => {
+                tracing::info!("Cava installation detected. Using it for spectrum");
+                SpectrumStyle::Cava
+            }
+            Err(_) => {
+                tracing::info!("Cava installation not detected. Switching to manual mode.");
+                tracing::info!("Install Cava for better spectrum visualization");
+                SpectrumStyle::Default
+            }
+        };
 
         Self {
             app_name: "Melotui".into(),
@@ -65,6 +77,7 @@ impl AppState {
             spectrum_raw: vec![0.0; 256],
             spectrum_smooth: vec![0.0; 256],
             spectrum_peaks: vec![0.0; 256],
+            spectrum_style,
         }
     }
 }

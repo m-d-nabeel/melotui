@@ -175,6 +175,6 @@ pub fn run(worker: impl IpcWorker) {
             }
         }
 
-        thread::sleep(Duration::from_millis(30));
+        thread::sleep(Duration::from_millis(20));
     }
 }

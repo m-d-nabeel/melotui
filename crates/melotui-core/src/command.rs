@@ -1,8 +1,11 @@
+use crate::state_registry::SpectrumStyle;
+
 #[derive(Debug)]
 pub enum Command {
     Quit,
     Rescan,
     Download { query: String },
+    ChangeVisualizer { arg: SpectrumStyle },
     Unknown(String),
 }
 
@@ -28,6 +31,17 @@ impl Command {
                     Command::Unknown("download requires a query".into())
                 } else {
                     Command::Download { query }
+                }
+            }
+
+            "v" | "vis" => {
+                let arg = parts.collect::<Vec<_>>().join(" ");
+                if arg.is_empty() {
+                    Command::Unknown("Visualizer requires an argument".into())
+                } else if let Some(style) = SpectrumStyle::from_str(&arg) {
+                    Command::ChangeVisualizer { arg: style }
+                } else {
+                    Command::Unknown("Only Cava, Default, and Bar are allowed.".into())
                 }
             }
 
