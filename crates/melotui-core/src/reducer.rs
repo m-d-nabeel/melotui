@@ -90,51 +90,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 }
             }
         },
-        AppMsg::RequestPlaySelected => {
-            if state.nav.mode != NavMode::Tracks {
-                tracing::warn!("PlaySelected called but not in Track Mode.");
-                return vec![];
-            }
-
-            let p = state.nav.selected_playlist;
-
-            let playlist = match state.library.playlists.get(p) {
-                Some(pl) => pl,
-                None => {
-                    tracing::warn!("No playlist found at index {}.", p);
-                    return vec![];
-                }
-            };
-
-            let t = state.nav.selected_tracks[p];
-
-            let track_path = match playlist.tracks.get(t) {
-                Some(path) => path.clone(),
-                None => return vec![],
-            };
-
-            state.playback.current = Some(TrackId {
-                playlist: playlist.name.clone(),
-                path: track_path.clone(),
-            });
-
-            state.playback.status = PlaybackStatus::Playing;
-
-            tracing::info!("Playing track: {}", track_path.display());
-
-            state.notification.current = Some(Notification {
-                kind: NotificationKind::Info,
-                message: format!(
-                    "Playing {}",
-                    track_path.file_name().unwrap_or_default().to_string_lossy()
-                ),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(2)),
-            });
-
-            return vec![AppMsg::DispatchPlay { path: track_path }];
-        }
         AppMsg::RequestRescanLibrary => {
             match Library::scan(state.library.root.clone()) {
                 Ok(new_library) => {
@@ -338,7 +293,174 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             return vec![];
         }
         AppMsg::DispatchDownload { .. } => {}
+        AppMsg::RequestPlaySelected => {
+            if state.nav.mode != NavMode::Tracks {
+                return vec![];
+            }
+
+            let p = state.nav.selected_playlist;
+            if let Some(playlist) = state.library.playlists.get(p) {
+                let t = state.nav.selected_tracks[p];
+                if let Some(path) = playlist.tracks.get(t) {
+                    // A. Update UI State IMMEDIATELY
+                    state.playback.current = Some(TrackId {
+                        playlist: playlist.name.clone(),
+                        path: path.clone(),
+                    });
+                    state.playback.status = PlaybackStatus::Playing;
+                    state.playback.progress_ms = 0;
+                    state.playback.duration_ms = None; // Will be filled by AudioStarted later
+
+                    state.notification.current = Some(Notification {
+                        kind: NotificationKind::Info,
+                        message: format!("Playing {}", path.file_name().unwrap().to_string_lossy()),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
+
+                    // B. Trigger Side-Effect
+                    return vec![AppMsg::DispatchPlay { path: path.clone() }];
+                }
+            }
+        }
+
+        // 2. User toggles Play/Pause
+        AppMsg::RequestTogglePlayback => {
+            match state.playback.status {
+                // Case A: Playing -> Pause
+                PlaybackStatus::Playing => {
+                    state.playback.status = PlaybackStatus::Paused;
+                    state.notification.current = Some(Notification {
+                        kind: NotificationKind::Info,
+                        message: "Paused".into(),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(1)),
+                    });
+                    return vec![AppMsg::DispatchPause];
+                }
+
+                // Case B: Paused -> Resume
+                PlaybackStatus::Paused => {
+                    if state.playback.current.is_some() {
+                        state.playback.status = PlaybackStatus::Playing;
+                        state.notification.current = Some(Notification {
+                            kind: NotificationKind::Info,
+                            message: "Resumed".into(),
+                            progress: None,
+                            created_at: Instant::now(),
+                            dismiss_after: Some(Duration::from_secs(1)),
+                        });
+                        return vec![AppMsg::DispatchResume];
+                    }
+                }
+
+                // Case C: Stopped -> Replay
+                PlaybackStatus::Stopped => {
+                    // If we have a selected track, start it over from 0
+                    if let Some(track) = &state.playback.current {
+                        state.playback.status = PlaybackStatus::Playing;
+                        state.playback.progress_ms = 0; // Reset visual progress
+
+                        state.notification.current = Some(Notification {
+                            kind: NotificationKind::Info,
+                            message: "Replaying".into(),
+                            progress: None,
+                            created_at: Instant::now(),
+                            dismiss_after: Some(Duration::from_secs(1)),
+                        });
+
+                        // We use DispatchPlay, NOT DispatchResume
+                        return vec![AppMsg::DispatchPlay {
+                            path: track.path.clone(),
+                        }];
+                    }
+                }
+            }
+            return vec![];
+        }
+
+        // 3. User stops playback
+        AppMsg::RequestStop => {
+            state.playback.status = PlaybackStatus::Stopped;
+            state.playback.progress_ms = 0;
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Info,
+                message: "Stopped".into(),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(1)),
+            });
+            return vec![AppMsg::DispatchStop];
+        }
+
+        // 4. User seeks
+        AppMsg::RequestSeek { offset_seconds } => {
+            let current = state.playback.progress_ms as i64;
+            // Default to 0 if we don't know duration yet, or huge number if we do
+            let total = state.playback.duration_ms.unwrap_or(u64::MAX) as i64;
+            let offset_ms = offset_seconds * 1000;
+
+            // Clamp logic
+            let new_pos = (current + offset_ms).max(0).min(total) as u64;
+
+            // Optimistic Update: Jump the progress bar immediately
+            state.playback.progress_ms = new_pos;
+
+            return vec![AppMsg::DispatchSeek {
+                position_ms: new_pos,
+            }];
+        }
+
+        // ───── Side-Effects (Ignored by UI) ─────
+        // These exist ONLY for the Supervisor to catch and route to IPC.
         AppMsg::DispatchPlay { .. } => {}
+        AppMsg::DispatchPause => {}
+        AppMsg::DispatchResume => {}
+        AppMsg::DispatchStop => {}
+        AppMsg::DispatchSeek { .. } => {}
+
+        // ───── External Facts (Truth from Worker) ─────
+        // We trust the worker for timing and file duration
+        AppMsg::AudioStarted {
+            path: _,
+            duration_ms,
+        } => {
+            // Worker finally parsed the file header and knows the real duration
+            state.playback.duration_ms = duration_ms;
+        }
+
+        AppMsg::AudioProgress { position_ms } => {
+            // Sync up. Even if optimistic UI set it, we correct it here.
+            // We only update if status is Playing to avoid jitter if user just hit Pause.
+            if state.playback.status == PlaybackStatus::Playing {
+                state.playback.progress_ms = position_ms;
+            }
+        }
+
+        AppMsg::AudioFinished => {
+            // Natural finish (not user requested)
+            state.playback.status = PlaybackStatus::Stopped;
+            state.playback.progress_ms = 0;
+            // TODO: Trigger "Next Track" logic here if you want auto-play
+        }
+
+        AppMsg::AudioPaused | AppMsg::AudioResumed => {
+            // No-op: We already updated the UI optimistically in RequestTogglePlayback.
+            // We ignore these to prevent the UI from "flickering" back and forth.
+        }
+
+        AppMsg::AudioError { error } => {
+            state.playback.status = PlaybackStatus::Stopped;
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Error,
+                message: format!("Audio Error: {}", error),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(4)),
+            });
+        }
         AppMsg::Noop => {}
     }
     vec![]

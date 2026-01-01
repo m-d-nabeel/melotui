@@ -87,6 +87,12 @@ pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
         AppMsg::RequestCancelDownload => Some(IpcCommand::CancelDownload),
         AppMsg::RequestQuit => Some(IpcCommand::Shutdown),
         AppMsg::DispatchPlay { path } => Some(IpcCommand::Play { path: path.clone() }),
+        AppMsg::DispatchPause => Some(IpcCommand::Pause),
+        AppMsg::DispatchResume => Some(IpcCommand::Resume),
+        AppMsg::DispatchStop => Some(IpcCommand::Stop),
+        AppMsg::DispatchSeek { position_ms } => Some(IpcCommand::Seek {
+            position_ms: *position_ms,
+        }),
         _ => None,
     }
 }
@@ -96,7 +102,17 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::DownloadProgress { percent } => AppMsg::DownloadProgress { percent },
         IpcEvent::DownloadFinished => AppMsg::DownloadFinished,
         IpcEvent::DownloadFailed { error } => AppMsg::DownloadFailed { error },
-        IpcEvent::PlaybackStarted { .. } => AppMsg::Noop,
+        IpcEvent::PlaybackStarted {
+            path,
+            total_duration_ms,
+        } => AppMsg::AudioStarted {
+            path,
+            duration_ms: Some(total_duration_ms),
+        },
+        IpcEvent::PlaybackProgress { position_ms } => AppMsg::AudioProgress { position_ms },
+        IpcEvent::PlaybackFinished => AppMsg::AudioFinished,
+        IpcEvent::PlaybackPaused => AppMsg::AudioPaused,
+        IpcEvent::PlaybackResumed => AppMsg::AudioResumed,
         _ => AppMsg::Noop,
     }
 }

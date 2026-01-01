@@ -33,7 +33,7 @@ pub struct TrackId {
     pub path: PathBuf,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)] // Added PartialEq for easier comparisons
 pub enum PlaybackStatus {
     Playing,
     Paused,
@@ -44,6 +44,9 @@ pub enum PlaybackStatus {
 pub struct PlaybackState {
     pub current: Option<TrackId>,
     pub status: PlaybackStatus,
+    // Added these for the progress bar:
+    pub progress_ms: u64,
+    pub duration_ms: Option<u64>,
 }
 // --------------- Playback ----------------
 // --------------- Download ----------------

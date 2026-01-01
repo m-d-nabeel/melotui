@@ -16,11 +16,61 @@ pub enum AppMsg {
     RequestRescanLibrary,
 
     // ───── Playback (future IPC) ─────
-    RequestPlaySelected, // intent
+    /// User intent (pure)
+    /// Triggered when user presses Enter/Space on a track
+    RequestPlaySelected,
+
+    /// User intent (pure)
+    /// Triggered when user presses Spacebar (global)
+    RequestTogglePlayback,
+
+    /// User intent (pure)
+    RequestStop,
+
+    /// User intent (pure)
+    /// e.g., "Seek forward 5s"
+    RequestSeek {
+        offset_seconds: i64,
+    },
+
+    /// Side-effect boundary (execution trigger)
+    /// IPC listens for this to start a new stream
     DispatchPlay {
         path: PathBuf,
-    }, // side-effect boundary (future)
+    },
 
+    /// Side-effect boundary
+    DispatchPause,
+
+    /// Side-effect boundary
+    DispatchResume,
+
+    /// Side-effect boundary
+    DispatchStop,
+
+    /// Side-effect boundary
+    DispatchSeek {
+        position_ms: u64,
+    },
+
+    /// External facts (from IPC)
+    /// Used to update the progress bar
+    AudioProgress {
+        position_ms: u64,
+    },
+
+    /// External facts
+    /// Used to update UI state (icon changes) or auto-advance playlist
+    AudioStarted {
+        path: String,
+        duration_ms: Option<u64>,
+    },
+    AudioPaused,
+    AudioResumed,
+    AudioFinished,
+    AudioError {
+        error: String,
+    },
     // ───── Command bar ─────
     EnterCommandMode,
     ExitCommandMode,
