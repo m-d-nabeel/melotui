@@ -15,6 +15,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                     spectrum_visualizer_view::draw_default(frame, area, state)
                 }
                 SpectrumStyle::Bar => spectrum_visualizer_view::draw_bar(frame, area, state),
+                SpectrumStyle::Particle => {
+                    spectrum_visualizer_view::draw_particle(frame, area, state)
+                }
             };
         }
         VisualizerMode::AlbumArt => {

@@ -23,6 +23,7 @@ pub struct AppState {
     pub notification: NotificationState,
     pub visualizer_mode: VisualizerMode,
     pub current_album_art: Option<ratatui::text::Text<'static>>,
+    pub track_info_art: Option<ratatui::text::Text<'static>>,
     pub spectrum_raw: Vec<f32>,    // Incoming from worker
     pub spectrum_smooth: Vec<f32>, // Rendered (smoothed)
 
@@ -80,6 +81,7 @@ impl AppState {
             notification,
             visualizer_mode: VisualizerMode::AlbumArt,
             current_album_art: None,
+            track_info_art: None,
             spectrum_raw: vec![0.0; 512],
             spectrum_smooth: vec![0.0; 512],
             spectrum_peaks: vec![0.0; 512],

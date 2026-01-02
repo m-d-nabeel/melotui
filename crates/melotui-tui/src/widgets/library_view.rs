@@ -1,16 +1,19 @@
 use crate::view::format_duration;
 use melotui_core::{AppState, NavMode};
+use ratatui::layout::{Alignment, Direction, Layout};
 use ratatui::{
     Frame,
-    layout::{Constraint, Rect},
+    layout::{Constraint, Rect}, // Removed Alignment, Direction, Layout
     style::{Color, Modifier, Style},
-    widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
+    text::{Line, Span},
+    widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState, Wrap},
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     match state.nav.mode {
         NavMode::Playlists => draw_playlists(frame, area, state),
         NavMode::Tracks => draw_tracks(frame, area, state),
+        NavMode::TrackInfo => draw_track_info(frame, area, state),
     }
 }
 
@@ -36,8 +39,10 @@ fn draw_playlists(frame: &mut Frame, area: Rect, state: &AppState) {
             });
 
             // Column 2: Track Count (Right aligned visually by the column constraint)
-            let count_cell = Cell::from(format!("{} songs ", p.tracks.len()))
-                .style(Style::default().fg(Color::DarkGray));
+            let count_line = Line::from(format!("{} songs ", p.tracks.len()))
+                .style(Style::default().fg(Color::DarkGray))
+                .alignment(Alignment::Right);
+            let count_cell = Cell::from(count_line);
 
             let row = Row::new(vec![name_cell, count_cell]);
 
@@ -52,8 +57,8 @@ fn draw_playlists(frame: &mut Frame, area: Rect, state: &AppState) {
     let table = Table::new(
         rows,
         [
-            Constraint::Percentage(70), // Name
-            Constraint::Percentage(30), // Count
+            Constraint::Fill(1), // remaining space
+            Constraint::Min(15), // minimum 15 chars
         ],
     )
     .block(
@@ -92,8 +97,7 @@ fn draw_tracks(frame: &mut Frame, area: Rect, state: &AppState) {
         Style::default()
             .fg(Color::LightBlue)
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-    )
-    .bottom_margin(1);
+    );
 
     let rows: Vec<Row> = playlist
         .tracks
@@ -108,7 +112,6 @@ fn draw_tracks(frame: &mut Frame, area: Rect, state: &AppState) {
 
             let is_selected = i == selected_track_idx;
 
-            // Status: Added spaces for "breathing room" (padding)
             let status = if is_playing {
                 " ▶"
             } else if is_selected {
@@ -125,9 +128,9 @@ fn draw_tracks(frame: &mut Frame, area: Rect, state: &AppState) {
 
             let display_title = if is_selected {
                 let title = &t.title;
-                let gap = "      "; // 6 spaces
+                let gap = " ".repeat(6); // 6 spaces
                 let speed = 3.0; // chars per second
-                let delay = 1.5; // Seconds to wait before starting
+                let delay = 3.0; // Seconds to wait before starting
 
                 // 1. Calculate time since this row was selected
                 let active_time = state.time_elapsed - state.last_nav_time;
@@ -137,7 +140,6 @@ fn draw_tracks(frame: &mut Frame, area: Rect, state: &AppState) {
                 let cycle_len = title.chars().count() + gap.chars().count();
 
                 // 3. Calculate the Cycle Duration
-                // How long does one full scroll take?
                 let scroll_duration = cycle_len as f32 / speed;
                 let total_cycle_time = delay + scroll_duration;
 
@@ -183,14 +185,10 @@ fn draw_tracks(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    // Widths:
-    // 1. Status: Fixed width of 2 to provide the "left padding" visual.
-    // 2. Title: Min(10) ensures it takes up all remaining available space.
-    // 3. Time: Fixed width of 6 for alignment.
     let widths = [
-        Constraint::Length(2),
-        Constraint::Min(10),
-        Constraint::Length(6),
+        Constraint::Length(2), // Status
+        Constraint::Min(10),   // Title
+        Constraint::Length(6), // Time
     ];
 
     let table = Table::new(rows, widths).header(header).block(
@@ -215,4 +213,152 @@ fn draw_tracks(frame: &mut Frame, area: Rect, state: &AppState) {
         area,
         &mut TableState::default().with_selected(Some(selected_track_idx)),
     );
+}
+
+fn draw_track_info(frame: &mut Frame, area: Rect, state: &AppState) {
+    let p_idx = state.nav.selected_playlist;
+    if p_idx >= state.library.playlists.len() {
+        return;
+    }
+    let playlist = &state.library.playlists[p_idx];
+
+    let t_idx = state.nav.selected_tracks[p_idx];
+    if t_idx >= playlist.tracks.len() {
+        return;
+    }
+
+    let track = &playlist.tracks[t_idx];
+
+    // 1. Container Block
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" Track Info ");
+
+    let inner_area = block.inner(area);
+    frame.render_widget(block, area);
+
+    // 2. Layout: Split into Top (Art) and Bottom (Info)
+    let art_height = if state.track_info_art.is_some() {
+        15
+    } else {
+        0
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(art_height), // Dynamic Art Section
+            Constraint::Min(10),            // Metadata Section
+        ])
+        .split(inner_area);
+
+    // 3. Render Album Art
+    if let Some(art) = &state.track_info_art {
+        let art_widget = Paragraph::new(art.clone())
+            .alignment(Alignment::Center)
+            .block(Block::default());
+        frame.render_widget(art_widget, chunks[0]);
+    }
+
+    // 4. Build Visual Content
+    let mut lines = vec![
+        // --- HEADER: Title & Artist ---
+        Line::from(""), // Top padding
+        Line::from(Span::styled(
+            &track.title,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )),
+        Line::from(Span::styled(
+            track.artist.as_deref().unwrap_or("Unknown Artist"),
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::ITALIC),
+        )),
+        // Separator
+        Line::from(Span::styled("──────", Style::default().fg(Color::DarkGray))),
+        Line::from(""),
+    ];
+
+    // --- METADATA (Icon based) ---
+    // Album
+    if let Some(album) = &track.album {
+        lines.push(Line::from(vec![
+            Span::styled("💿 ", Style::default().fg(Color::Cyan)),
+            Span::styled(album, Style::default().fg(Color::White)),
+        ]));
+        lines.push(Line::from("")); // Spacer
+    }
+
+    // Genre
+    if let Some(genre) = &track.genre {
+        lines.push(Line::from(vec![
+            Span::styled("🎹 ", Style::default().fg(Color::Cyan)),
+            Span::styled(genre, Style::default().fg(Color::White)),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    // Year
+    if let Some(year) = track.year {
+        lines.push(Line::from(vec![
+            Span::styled("📅 ", Style::default().fg(Color::Cyan)),
+            Span::styled(year.to_string(), Style::default().fg(Color::White)),
+        ]));
+        lines.push(Line::from(""));
+    }
+
+    // --- TECH SPECS ---
+    // Separator
+    lines.push(Line::from(Span::styled(
+        "──────",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(""));
+
+    // Audio Format & Bitrate
+    let bitrate = track.bitrate.unwrap_or(0);
+    let format_str = format!("{} • {} kbps", track.format, bitrate);
+    lines.push(Line::from(vec![
+        Span::styled("🔊 ", Style::default().fg(Color::Green)),
+        Span::styled(format_str, Style::default().fg(Color::Gray)),
+    ]));
+
+    // Sample Rate
+    if let Some(sample) = track.sample_rate {
+        lines.push(Line::from(vec![
+            Span::styled("📉 ", Style::default().fg(Color::Green)),
+            Span::styled(format!("{} Hz", sample), Style::default().fg(Color::Gray)),
+        ]));
+    }
+
+    // Duration
+    lines.push(Line::from(vec![
+        Span::styled("⏱  ", Style::default().fg(Color::Green)),
+        Span::styled(
+            format_duration(track.duration_ms),
+            Style::default().fg(Color::Gray),
+        ),
+    ]));
+
+    // --- FOOTER: File Name (Dimmed) ---
+    lines.push(Line::from(""));
+    lines.push(Line::from(Span::styled(
+        "File:",
+        Style::default().fg(Color::DarkGray),
+    )));
+    lines.push(Line::from(Span::styled(
+        track
+            .file_path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy(),
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    let paragraph = Paragraph::new(lines).wrap(Wrap { trim: true });
+    frame.render_widget(paragraph, chunks[1]);
 }

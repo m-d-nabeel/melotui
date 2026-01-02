@@ -18,7 +18,7 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
     // --- MAIN LAYOUT (always the same) ---
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(20), Constraint::Percentage(80)])
+        .constraints([Constraint::Percentage(22), Constraint::Percentage(78)])
         .split(area);
 
     let right_vertical = Layout::default()

@@ -9,6 +9,7 @@ pub enum AppMsg {
     // ───── Navigation ─────
     SwitchToPlaylists,
     SwitchToTracks,
+    SwitchToTrackInfo,
     MoveUp,
     MoveDown,
     ToggleArt,

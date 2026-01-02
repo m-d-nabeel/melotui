@@ -1,16 +1,27 @@
 use anyhow::Result;
-use image::{GenericImageView, Rgba};
+use image::GenericImageView;
 use ratatui::{
     style::{Color, Style},
     text::{Line, Span, Text},
 };
 use std::io::Cursor;
 
+/// Defines how the image should be resized.
+#[derive(Debug, Clone, Copy)]
+pub enum SizeMode {
+    /// Target number of terminal rows (height). Width is auto-calculated.
+    Height(u32),
+    /// Target number of terminal columns (width). Height is auto-calculated.
+    Width(u32),
+    /// Resize to fill the given dimensions, then crop the excess from the center.
+    /// (Target Width in chars, Target Height in rows)
+    Cover { width: u32, height: u32 },
+}
+
 /// Converts raw image bytes into a rectangular Ratatui Text widget.
 ///
-/// `height` is the target number of terminal rows.
-/// The width is calculated automatically to preserve aspect ratio.
-pub fn bytes_to_ascii(data: &[u8], height: u32) -> Result<Text<'static>> {
+/// Uses `Lanczos3` resampling for high quality and supports alpha transparency.
+pub fn bytes_to_ascii(data: &[u8], size_mode: SizeMode) -> Result<Text<'static>> {
     // 1. Load image
     let img = image::load(Cursor::new(data), image::ImageFormat::Jpeg)
         .or_else(|_| image::load(Cursor::new(data), image::ImageFormat::Png))
@@ -19,23 +30,63 @@ pub fn bytes_to_ascii(data: &[u8], height: u32) -> Result<Text<'static>> {
     let (orig_w, orig_h) = img.dimensions();
     let aspect_ratio = orig_w as f64 / orig_h as f64;
 
-    // 2. Calculate Dimensions
-    // Since we use half-blocks (2 pixels per char vertically), our internal image
-    // height needs to be 2x the terminal rows.
-    let resize_h = height * 2;
+    // 2. Determine Target Dimensions & Strategy
+    // Terminal cells are approx 1:2 (width:height).
+    let (target_w, target_h, do_crop) = match size_mode {
+        SizeMode::Height(h) => {
+            let internal_h = h * 2;
+            let internal_w = (internal_h as f64 * aspect_ratio).round() as u32;
+            (internal_w, internal_h, false)
+        }
+        SizeMode::Width(w) => {
+            let internal_w = w;
+            let internal_h = (internal_w as f64 / aspect_ratio).round() as u32;
+            (internal_w, internal_h, false)
+        }
+        SizeMode::Cover { width, height } => {
+            // Width is 1:1, Height is 1:2 (half-blocks)
+            (width, height * 2, true)
+        }
+    };
 
-    // Terminal characters are roughly 1:2 (width:height).
-    // To make an image look square, we need 2 horizontal chars for every 1 vertical char visual weight.
-    // However, since we are doubling the vertical resolution with half-blocks,
-    // the math simplifies: we just resize width based on aspect ratio relative to our new 2x height.
-    let resize_w = (resize_h as f64 * aspect_ratio) as u32;
+    // Prevent zero-size panics
+    let target_w = target_w.max(1);
+    let target_h = target_h.max(1);
 
-    // 3. Resize with High Quality Filter
-    let resized = img.resize_exact(resize_w, resize_h, image::imageops::FilterType::Triangle);
-    let rgba = resized.to_rgba8();
+    // 3. Resize and Optional Crop
+    let rgba = if do_crop {
+        // Resize to FILL (may result in image larger than target)
+        let mut filled =
+            img.resize_to_fill(target_w, target_h, image::imageops::FilterType::Lanczos3);
+
+        // Calculate crop offsets to center the image
+        let (fw, fh) = filled.dimensions();
+        let x = (fw.saturating_sub(target_w)) / 2;
+        let y = (fh.saturating_sub(target_h)) / 2;
+
+        // Crop exactly to target
+        filled.crop(x, y, target_w, target_h).to_rgba8()
+    } else {
+        // Standard Resize
+        img.resize_exact(target_w, target_h, image::imageops::FilterType::Lanczos3)
+            .to_rgba8()
+    };
+
     let (w, h) = rgba.dimensions();
 
-    let to_color = |p: &Rgba<u8>| Color::Rgb(p[0], p[1], p[2]);
+    // Helper to convert pixel to Option<Color> based on Alpha
+    let get_color = |x: u32, y: u32| -> Option<Color> {
+        if x >= w || y >= h {
+            return None;
+        }
+        let p = rgba.get_pixel(x, y);
+        // Alpha threshold (simple binary transparency)
+        if p[3] < 50 {
+            None
+        } else {
+            Some(Color::Rgb(p[0], p[1], p[2]))
+        }
+    };
 
     let mut lines = Vec::new();
 
@@ -43,23 +94,19 @@ pub fn bytes_to_ascii(data: &[u8], height: u32) -> Result<Text<'static>> {
     for y in (0..h).step_by(2) {
         let mut spans = Vec::new();
         for x in 0..w {
-            let p1 = rgba.get_pixel(x, y);
+            let top_color = get_color(x, y);
+            let bottom_color = get_color(x, y + 1);
 
-            // Check if there is a pixel below it (handle odd heights)
-            let y2 = y + 1;
-            let (p2, has_bottom) = if y2 < h {
-                (rgba.get_pixel(x, y2), true)
-            } else {
-                (p1, false)
-            };
-
-            // Half-Block Rendering Logic
-            let span = if has_bottom {
-                // Top pixel is BG, Bottom pixel is FG (using '▄')
-                Span::styled("▄", Style::default().bg(to_color(p1)).fg(to_color(p2)))
-            } else {
-                // Only top pixel exists (Upper half block)
-                Span::styled("▀", Style::default().fg(to_color(p1)))
+            // High-Res Half-Block Rendering Logic
+            let span = match (top_color, bottom_color) {
+                // Both pixels have color: Top is BG, Bottom is FG
+                (Some(top), Some(bottom)) => Span::styled("▄", Style::default().bg(top).fg(bottom)),
+                // Only Top has color: Use Upper Half Block
+                (Some(top), None) => Span::styled("▀", Style::default().fg(top)),
+                // Only Bottom has color: Use Lower Half Block
+                (None, Some(bottom)) => Span::styled("▄", Style::default().fg(bottom)),
+                // Both transparent: Empty space
+                (None, None) => Span::raw(" "),
             };
             spans.push(span);
         }

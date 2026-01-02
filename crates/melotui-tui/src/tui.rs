@@ -64,8 +64,16 @@ impl Tui {
                 UIMode::Normal => match key.code {
                     // --- Navigation ---
                     KeyCode::Char('q') => Some(AppMsg::RequestQuit),
-                    KeyCode::Char('[') => Some(AppMsg::SwitchToPlaylists),
-                    KeyCode::Char(']') => Some(AppMsg::SwitchToTracks),
+                    KeyCode::Char('[') | KeyCode::Left => match state.nav.mode {
+                        melotui_core::NavMode::Tracks => Some(AppMsg::SwitchToPlaylists),
+                        melotui_core::NavMode::TrackInfo => Some(AppMsg::SwitchToTracks),
+                        _ => None,
+                    },
+                    KeyCode::Char(']') | KeyCode::Right => match state.nav.mode {
+                        melotui_core::NavMode::Playlists => Some(AppMsg::SwitchToTracks),
+                        melotui_core::NavMode::Tracks => Some(AppMsg::SwitchToTrackInfo),
+                        _ => None,
+                    },
                     KeyCode::Up | KeyCode::Char('k') => Some(AppMsg::MoveUp),
                     KeyCode::Down | KeyCode::Char('j') => Some(AppMsg::MoveDown),
 
@@ -75,17 +83,15 @@ impl Tui {
                     KeyCode::Char('s') => Some(AppMsg::RequestStop),
 
                     // Seek -5s / +5s
-                    KeyCode::Left | KeyCode::Char('h') => {
-                        Some(AppMsg::RequestSeek { offset_seconds: -5 })
-                    }
-                    KeyCode::Right | KeyCode::Char('l') => {
-                        Some(AppMsg::RequestSeek { offset_seconds: 5 })
-                    }
+                    KeyCode::Char('h') => Some(AppMsg::RequestSeek { offset_seconds: -5 }),
+                    KeyCode::Char('l') => Some(AppMsg::RequestSeek { offset_seconds: 5 }),
 
                     // --- Global ---
                     KeyCode::Char('r') => Some(AppMsg::RequestRescanLibrary),
                     KeyCode::Char(':') => Some(AppMsg::EnterCommandMode),
-                    KeyCode::Char('{') | KeyCode::Char('}') => Some(AppMsg::ToggleArt),
+                    KeyCode::Char('{') | KeyCode::Char('}') | KeyCode::Tab => {
+                        Some(AppMsg::ToggleArt)
+                    }
                     KeyCode::Esc => Some(AppMsg::RequestCancelDownload),
                     _ => None,
                 },

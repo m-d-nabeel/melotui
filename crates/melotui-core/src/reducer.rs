@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     AppMsg, AppState, Command, Library, NavMode, UIMode,
-    art_converter::bytes_to_ascii,
+    art_converter::{SizeMode, bytes_to_ascii},
     state_registry::{
         DownloadJob, DownloadStatus, Notification, NotificationKind, PlaybackStatus, TrackId,
         VisualizerMode,
@@ -63,6 +63,32 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             state.last_nav_time = state.time_elapsed;
             state.nav.mode = NavMode::Tracks;
         }
+        AppMsg::SwitchToTrackInfo => {
+            tracing::debug!("Switch to TrackInfo Mode");
+            state.last_nav_time = state.time_elapsed;
+            state.nav.mode = NavMode::TrackInfo;
+
+            // --- LOAD ART FOR SIDEBAR (Center Cropped) ---
+            state.track_info_art = None;
+
+            let p_idx = state.nav.selected_playlist;
+            if let Some(playlist) = state.library.playlists.get(p_idx) {
+                let t_idx = state.nav.selected_tracks[p_idx];
+                if let Some(track) = playlist.tracks.get(t_idx)
+                    && track.has_cover
+                    && let Some((data, _)) = Library::get_album_art(&track.file_path)
+                    && let Ok(ascii) = bytes_to_ascii(
+                        &data,
+                        SizeMode::Cover {
+                            width: 32,
+                            height: 15,
+                        },
+                    )
+                {
+                    state.track_info_art = Some(ascii);
+                }
+            }
+        }
         AppMsg::MoveUp => {
             state.last_nav_time = state.time_elapsed;
             match state.nav.mode {
@@ -79,6 +105,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                         *cursor -= 1;
                     }
                 }
+                NavMode::TrackInfo => {}
             }
         }
         AppMsg::MoveDown => {
@@ -98,6 +125,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                         *cursor += 1;
                     }
                 }
+                NavMode::TrackInfo => {}
             }
         }
         AppMsg::RequestRescanLibrary => {
@@ -342,7 +370,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                         && let Some((data, _mime)) = Library::get_album_art(&track.file_path)
                     {
                         // Hardcode a reasonable width for the ASCII art, e.g., 40 columns
-                        if let Ok(ascii) = bytes_to_ascii(&data, 30) {
+                        if let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(30)) {
                             state.current_album_art = Some(ascii);
                         }
                     }
@@ -494,7 +522,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                     if let Some(track) = track_opt
                         && track.has_cover
                         && let Some((data, _mime)) = Library::get_album_art(&track.file_path)
-                        && let Ok(ascii) = bytes_to_ascii(&data, 40)
+                        && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(40))
                     {
                         state.current_album_art = Some(ascii);
                     }

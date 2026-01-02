@@ -1,10 +1,11 @@
-use std::{collections::VecDeque, path::PathBuf, time::Instant};
+use std::{collections::VecDeque, path::PathBuf, str::FromStr, time::Instant};
 
 // ----------- UI Mode & State -------------
 #[derive(Debug, Clone, PartialEq)]
 pub enum NavMode {
     Playlists,
     Tracks,
+    TrackInfo,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +106,7 @@ pub enum SpectrumStyle {
     Cava,
     Default,
     Bar,
+    Particle,
 }
 
 impl SpectrumStyle {
@@ -113,15 +115,21 @@ impl SpectrumStyle {
             SpectrumStyle::Cava => "Cava",
             SpectrumStyle::Default => "Default",
             SpectrumStyle::Bar => "Bar",
+            SpectrumStyle::Particle => "Paraticle",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Option<SpectrumStyle> {
-        match s {
-            "Cava" => Some(SpectrumStyle::Cava),
-            "Default" => Some(SpectrumStyle::Default),
-            "Bar" => Some(SpectrumStyle::Bar),
-            _ => None,
+impl FromStr for SpectrumStyle {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "cava" => Ok(SpectrumStyle::Cava),
+            "default" | "def" => Ok(SpectrumStyle::Default),
+            "bar" => Ok(SpectrumStyle::Bar),
+            "particle" | "part" | "p" => Ok(SpectrumStyle::Particle),
+            _ => Err(()),
         }
     }
 }

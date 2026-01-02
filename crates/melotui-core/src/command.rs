@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::state_registry::SpectrumStyle;
 
 #[derive(Debug)]
@@ -38,10 +40,10 @@ impl Command {
                 let arg = parts.collect::<Vec<_>>().join(" ");
                 if arg.is_empty() {
                     Command::Unknown("Visualizer requires an argument".into())
-                } else if let Some(style) = SpectrumStyle::from_str(&arg) {
+                } else if let Ok(style) = SpectrumStyle::from_str(&arg) {
                     Command::ChangeVisualizer { arg: style }
                 } else {
-                    Command::Unknown("Only Cava, Default, and Bar are allowed.".into())
+                    Command::Unknown("Allowed: Cava, Default, Bar, Particle".into())
                 }
             }
 

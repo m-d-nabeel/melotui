@@ -70,7 +70,6 @@ pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
                                 }
                                 Err(e) => {
                                     tracing::error!("Failed to start CAVA: {}", e);
-                                    // Fallback to internal
                                     backend = VisualizerBackend::Internal(SpectrumAnalyzer::new(
                                         consumer,
                                     ));
@@ -172,14 +171,11 @@ pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
                 };
 
                 if let Some(magnitude) = spectrum_opt {
-                    // OLD: worker.send(IpcEvent::SpectrumData { magnitude });
-
-                    // NEW: Atomic Write (Zero-Copy logic)
                     spectrum_producer.push(&magnitude);
                 }
             }
         }
 
-        thread::sleep(Duration::from_millis(20));
+        thread::sleep(Duration::from_millis(10));
     }
 }
