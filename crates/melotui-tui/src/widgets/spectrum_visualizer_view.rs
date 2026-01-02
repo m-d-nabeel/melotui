@@ -257,7 +257,7 @@ pub fn draw_default(frame: &mut Frame, area: Rect, state: &AppState) {
 
 pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
     let block = Block::default()
-        .title(" Visualizer (CAVA) ")
+        .title(" Visualizer ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded);
 
@@ -360,7 +360,7 @@ pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
 
 pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
     let block = Block::default()
-        .title(" Visualizer (Particle) ")
+        .title(" Visualizer ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded);
 
