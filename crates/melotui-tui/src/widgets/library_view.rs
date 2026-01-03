@@ -1,4 +1,4 @@
-use crate::view::format_duration;
+use crate::format_duration;
 use melotui_core::{AppState, NavMode};
 use ratatui::layout::{Alignment, Direction, Layout};
 use ratatui::{

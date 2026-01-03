@@ -1,5 +1,6 @@
 pub mod album_art_view;
 pub mod command_view;
+pub mod help_view;
 pub mod library_view;
 pub mod notification_popup;
 pub mod playback_view;

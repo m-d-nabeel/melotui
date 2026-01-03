@@ -1,7 +1,5 @@
-use crate::{
-    view::format_duration,
-    widgets::progress_bar_view::{ProgressBarConfig, ProgressBarTheme, render_progress_bar},
-};
+use crate::format_duration;
+use crate::widgets::progress_bar_view::{ProgressBarConfig, ProgressBarTheme, render_progress_bar};
 use melotui_core::{AppState, state_registry::PlaybackStatus};
 use ratatui::{
     Frame,

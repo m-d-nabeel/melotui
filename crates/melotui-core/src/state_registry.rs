@@ -25,6 +25,7 @@ pub enum UIMode {
 pub struct UIState {
     pub mode: UIMode,
     pub command_buffer: String,
+    pub show_help: bool,
 }
 // ----------- UI Mode & State -------------
 // --------------- Playback ----------------

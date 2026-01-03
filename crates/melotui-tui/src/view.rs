@@ -1,21 +1,21 @@
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
     widgets::{Block, Clear},
 };
 
 use melotui_core::{AppState, UIMode};
 
 use crate::widgets::{
-    command_view, library_view, notification_popup, playback_view, sound_control_view,
+    command_view, help_view, library_view, notification_popup, playback_view, sound_control_view,
     visualizer_view,
 };
 
 pub fn draw(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
 
-    // --- MAIN LAYOUT (always the same) ---
+    // --- MAIN LAYOUT (background) ---
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(22), Constraint::Percentage(78)])
@@ -23,49 +23,48 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
 
     let right_vertical = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Ratio(2, 3), // Visualizer
-            Constraint::Ratio(1, 3), // Controls
-        ])
+        .constraints([Constraint::Ratio(2, 3), Constraint::Ratio(1, 3)])
         .split(horizontal[1]);
 
     let control_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Percentage(50), // Sound control
-            Constraint::Percentage(50), // Playback
-        ])
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(right_vertical[1]);
 
     library_view::draw(frame, horizontal[0], state);
     visualizer_view::draw(frame, right_vertical[0], state);
     sound_control_view::draw(frame, control_chunks[0], state);
     playback_view::draw(frame, control_chunks[1], state);
+
     notification_popup::draw(frame, frame.area(), state);
 
     // --- COMMAND OVERLAY ---
     if state.ui.mode == UIMode::Command {
-        let backdrop = Block::default().style(Style::default().add_modifier(Modifier::DIM));
-        frame.render_widget(backdrop, area);
-        let overlay = command_overlay_rect(area);
+        // Dim background
+        frame.render_widget(
+            Block::default().style(Style::default().add_modifier(Modifier::DIM)),
+            area,
+        );
+        // ... draw command UI ...
+        let overlay = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(3)])
+            .split(area)[1];
         frame.render_widget(Clear, overlay);
         command_view::draw(frame, overlay, state);
     }
-}
 
-fn command_overlay_rect(area: Rect) -> Rect {
-    let height = 3;
-    Rect {
-        x: area.x,
-        y: area.y + area.height.saturating_sub(height),
-        width: area.width,
-        height,
+    // --- HELP OVERLAY (Topmost Modal) ---
+    if state.ui.show_help {
+        // 1. Dim the whole background first for focus
+        let dim_block = Block::default().style(
+            Style::default()
+                .bg(Color::Reset)
+                .add_modifier(Modifier::DIM),
+        );
+        frame.render_widget(dim_block, area);
+
+        // 2. Draw the help popup
+        help_view::draw(frame, area, state);
     }
-}
-
-pub fn format_duration(ms: u64) -> String {
-    let seconds = ms / 1000;
-    let minutes = seconds / 60;
-    let rem_seconds = seconds % 60;
-    format!("{:02}:{:02}", minutes, rem_seconds)
 }

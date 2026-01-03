@@ -564,6 +564,9 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 active: is_spectrum,
             }];
         }
+        AppMsg::ToggleHelp => {
+            state.ui.show_help = !state.ui.show_help;
+        }
         AppMsg::DispatchSetVisualizer { .. } => {}
         AppMsg::Noop => {}
     }

@@ -13,6 +13,7 @@ pub enum AppMsg {
     MoveUp,
     MoveDown,
     ToggleArt,
+    ToggleHelp,
 
     // ───── Library ─────
     RequestRescanLibrary,

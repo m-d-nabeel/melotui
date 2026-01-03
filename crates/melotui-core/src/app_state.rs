@@ -52,6 +52,7 @@ impl AppState {
         let ui = UIState {
             mode: UIMode::Normal,
             command_buffer: String::new(),
+            show_help: false,
         };
         let download = DownloadState {
             status: DownloadStatus::Idle,
