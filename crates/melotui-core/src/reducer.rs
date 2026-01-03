@@ -384,22 +384,34 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         }
         AppMsg::AdjustVolume(delta) => {
             state.audio.volume = (state.audio.volume + delta).clamp(0.0, 1.5);
+            return vec![AppMsg::DispatchSetVolume(state.audio.volume)];
         }
         AppMsg::AdjustSpeed(delta) => {
             state.audio.speed = (state.audio.speed + delta).clamp(0.5, 2.0);
+            return vec![AppMsg::DispatchSetSpeed(state.audio.speed)];
         }
         AppMsg::AdjustBass(delta) => {
             state.audio.bass = (state.audio.bass + delta).clamp(0.0, 5.0);
+            return vec![AppMsg::DispatchSetBass(state.audio.bass)];
         }
         AppMsg::AdjustTreble(delta) => {
             state.audio.treble = (state.audio.treble + delta).clamp(0.0, 5.0);
+            return vec![AppMsg::DispatchSetTreble(state.audio.treble)];
         }
         AppMsg::AdjustReverb(delta) => {
             state.audio.reverb = (state.audio.reverb + delta).clamp(0.0, 1.0);
+            return vec![AppMsg::DispatchSetReverb(state.audio.reverb)];
         }
         AppMsg::AdjustEcho(delta) => {
             state.audio.echo = (state.audio.echo + delta).clamp(0.0, 0.9);
+            return vec![AppMsg::DispatchSetEcho(state.audio.echo)];
         }
+        AppMsg::DispatchSetVolume(_) => {}
+        AppMsg::DispatchSetSpeed(_) => {}
+        AppMsg::DispatchSetBass(_) => {}
+        AppMsg::DispatchSetTreble(_) => {}
+        AppMsg::DispatchSetReverb(_) => {}
+        AppMsg::DispatchSetEcho(_) => {}
         AppMsg::RequestTogglePlayback => {
             match state.playback.status {
                 // Case A: Playing -> Pause

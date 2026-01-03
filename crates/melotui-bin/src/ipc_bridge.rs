@@ -52,22 +52,23 @@ impl IpcRuntime {
     /// The UI does not know *who* handles the command.
     pub fn dispatch(&self, cmd: IpcCommand) {
         match cmd {
-            // Route to Download Worker
             IpcCommand::Download { .. } | IpcCommand::CancelDownload => {
                 let _ = self.download_tx.send(cmd);
             }
-
-            // Route to Audio Worker
             IpcCommand::Play { .. }
             | IpcCommand::Pause
             | IpcCommand::Resume
             | IpcCommand::Stop
             | IpcCommand::Seek { .. }
-            | IpcCommand::SetVisualizer { .. } => {
+            | IpcCommand::SetVisualizer { .. }
+            | IpcCommand::SetVolume { .. }
+            | IpcCommand::SetSpeed { .. }
+            | IpcCommand::SetBass { .. }
+            | IpcCommand::SetTreble { .. }
+            | IpcCommand::SetReverb { .. }
+            | IpcCommand::SetEcho { .. } => {
                 let _ = self.audio_tx.send(cmd);
             }
-
-            // Lifecycle: Supervisor manages shutdown order
             IpcCommand::Shutdown => {
                 tracing::info!("IPC Runtime shutting down all workers...");
                 let _ = self.download_tx.send(IpcCommand::Shutdown);
@@ -99,6 +100,12 @@ pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
         AppMsg::DispatchSetVisualizer { active } => {
             Some(IpcCommand::SetVisualizer { active: *active })
         }
+        AppMsg::DispatchSetVolume(v) => Some(IpcCommand::SetVolume(*v)),
+        AppMsg::DispatchSetSpeed(v) => Some(IpcCommand::SetSpeed(*v)),
+        AppMsg::DispatchSetBass(v) => Some(IpcCommand::SetBass(*v)),
+        AppMsg::DispatchSetTreble(v) => Some(IpcCommand::SetTreble(*v)),
+        AppMsg::DispatchSetReverb(v) => Some(IpcCommand::SetReverb(*v)),
+        AppMsg::DispatchSetEcho(v) => Some(IpcCommand::SetEcho(*v)),
         _ => None,
     }
 }

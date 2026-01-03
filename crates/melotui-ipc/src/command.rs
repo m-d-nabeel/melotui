@@ -22,6 +22,13 @@ pub enum IpcCommand {
     SetVisualizer {
         active: bool,
     },
+    // --- Audio Filters ---
+    SetVolume(f32),
+    SetSpeed(f32),
+    SetBass(f32),
+    SetTreble(f32),
+    SetReverb(f32),
+    SetEcho(f32),
 
     // ───── Lifecycle ─────
     Shutdown,

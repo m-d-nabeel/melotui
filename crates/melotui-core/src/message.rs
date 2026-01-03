@@ -41,6 +41,13 @@ pub enum AppMsg {
         path: PathBuf,
     },
 
+    DispatchSetVolume(f32),
+    DispatchSetSpeed(f32),
+    DispatchSetBass(f32),
+    DispatchSetTreble(f32),
+    DispatchSetReverb(f32),
+    DispatchSetEcho(f32),
+
     /// Side-effect boundary
     DispatchPause,
 
