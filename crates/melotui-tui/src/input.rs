@@ -70,7 +70,8 @@ impl InputHandler {
                     }
                 } else {
                     // If in Queue, Left takes you back to Library
-                    Some(AppMsg::ToggleLibraryQueue)
+                    // Some(AppMsg::ToggleLibraryQueue)
+                    None
                 }
             }
 

@@ -1,17 +1,49 @@
 use crate::format_duration;
-use melotui_core::{AppState, state_registry::LeftPanelMode};
+use melotui_core::{
+    AppState,
+    state_registry::{LeftPanelMode, LibraryViewDepth},
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
-    text::Line, // Import Line
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
 };
 
-// SIGNATURE CHANGED: Added `title: Line`
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, title: Line) {
+pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let queue = &state.playback_queue.tracks;
     let selected_idx = state.nav.queue.selected_idx;
+
+    let lib_tab_text = match state.nav.library.depth {
+        LibraryViewDepth::Playlists => " Library ".to_string(),
+        LibraryViewDepth::Tracks | LibraryViewDepth::TrackInfo => {
+            let p_idx = state.nav.library.selected_playlist_idx;
+            if let Some(pl) = state.library.playlists.get(p_idx) {
+                let raw = &pl.name;
+                if raw.len() > 15 {
+                    format!(" {}... ", &raw[0..12])
+                } else {
+                    format!(" {} ", raw)
+                }
+            } else {
+                " Library ".to_string()
+            }
+        }
+    };
+
+    let title = Line::from(vec![
+        // Inactive Library Tab
+        Span::styled(lib_tab_text, Style::default().fg(Color::DarkGray)),
+        Span::styled("|", Style::default().fg(Color::DarkGray)),
+        // Active Queue Tab
+        Span::styled(
+            " Queue ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
 
     let header = Row::new(vec![
         Cell::from(""),
@@ -25,20 +57,16 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, title: Line) {
             .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
     );
 
-    // ... (Row generation logic remains exactly the same as before) ...
     let rows: Vec<Row> = queue
         .iter()
         .enumerate()
         .map(|(i, t)| {
-            // ... copy existing row logic ...
             let is_playing = state
                 .playback
                 .current
                 .as_ref()
                 .is_some_and(|curr| curr.playlist == "Queue" && curr.path == t.file_path);
             let is_selected = i == selected_idx;
-
-            // Re-use your existing styles here for brevity in this snippet
             let status = if is_playing {
                 " ▶"
             } else if is_selected {
@@ -70,7 +98,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, title: Line) {
                 Cell::from(format_duration(t.duration_ms))
                     .style(Style::default().fg(Color::DarkGray)),
             ]);
-
             if is_selected {
                 row.style(Style::default().bg(Color::Rgb(40, 40, 40)))
             } else {
@@ -79,22 +106,25 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, title: Line) {
         })
         .collect();
 
-    let widths = [
-        Constraint::Length(2),
-        Constraint::Length(3),
-        Constraint::Min(10),
-        Constraint::Length(6),
-    ];
-
     let border_color = if state.nav.active_panel == LeftPanelMode::Queue {
         Color::Magenta
     } else {
         Color::DarkGray
     };
 
-    let table = Table::new(rows, widths).header(header).block(
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Length(2),
+            Constraint::Length(3),
+            Constraint::Min(10),
+            Constraint::Length(6),
+        ],
+    )
+    .header(header)
+    .block(
         Block::default()
-            .title(title) // <--- USE THE SHARED TITLE HERE
+            .title(title)
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(border_color)),

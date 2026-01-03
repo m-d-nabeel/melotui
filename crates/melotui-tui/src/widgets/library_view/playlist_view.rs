@@ -6,14 +6,24 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Rect},
     style::{Color, Modifier, Style},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
 };
 
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, title: Line) {
+pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let selected_idx = state.nav.library.selected_playlist_idx;
 
-    // Convert Playlists to Table Rows
+    let title = Line::from(vec![
+        Span::styled(
+            " Library ",
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled("|", Style::default().fg(Color::DarkGray)),
+        Span::styled(" Queue ", Style::default().fg(Color::DarkGray)),
+    ]);
+
     let rows: Vec<Row> = state
         .library
         .playlists
@@ -21,8 +31,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, title: Line) {
         .enumerate()
         .map(|(i, p)| {
             let is_selected = i == selected_idx;
-
-            // Column 1: Playlist Name
             let name_cell = Cell::from(format!("  {}", p.name)).style(if is_selected {
                 Style::default()
                     .fg(Color::Yellow)
@@ -31,15 +39,11 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, title: Line) {
                 Style::default().fg(Color::Cyan)
             });
 
-            // Column 2: Track Count
-            // FIX: Apply alignment to the Line, not the Cell
             let count_line =
                 Line::from(format!("{} songs ", p.tracks.len())).alignment(Alignment::Right);
-
             let count_cell = Cell::from(count_line).style(Style::default().fg(Color::DarkGray));
 
             let row = Row::new(vec![name_cell, count_cell]);
-
             if is_selected {
                 row.style(Style::default().bg(Color::Rgb(40, 40, 40)))
             } else {
@@ -56,14 +60,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, title: Line) {
         Color::Blue
     };
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Fill(1), // remaining space
-            Constraint::Min(15), // minimum 15 chars
-        ],
-    )
-    .block(
+    let table = Table::new(rows, [Constraint::Fill(1), Constraint::Min(10)]).block(
         Block::default()
             .title(title)
             .borders(Borders::ALL)
