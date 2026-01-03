@@ -78,6 +78,14 @@ pub enum AppMsg {
         error: String,
     },
 
+    // Audio Controls
+    AdjustVolume(f32),
+    AdjustSpeed(f32),
+    AdjustBass(f32),
+    AdjustTreble(f32),
+    AdjustReverb(f32),
+    AdjustEcho(f32),
+
     // ───── Command bar ─────
     EnterCommandMode,
     ExitCommandMode,

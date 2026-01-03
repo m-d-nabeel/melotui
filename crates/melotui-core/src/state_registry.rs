@@ -50,6 +50,30 @@ pub struct PlaybackState {
     pub duration_ms: Option<u64>,
 }
 // --------------- Playback ----------------
+// ---------------- Audio ------------------
+#[derive(Debug, Clone)]
+pub struct AudioState {
+    pub volume: f32, // 0.0 - 1.0
+    pub speed: f32,  // 0.5 - 2.0
+    pub bass: f32,   // 0.0 - 3.0
+    pub treble: f32, // 0.0 - 3.0
+    pub reverb: f32, // 0.0 - 1.0
+    pub echo: f32,   // 0.0 - 1.0
+}
+
+impl Default for AudioState {
+    fn default() -> Self {
+        Self {
+            volume: 1.0,
+            speed: 1.0,
+            bass: 1.0,
+            treble: 1.0,
+            reverb: 0.0,
+            echo: 0.0,
+        }
+    }
+}
+// ---------------- Audio ------------------
 // --------------- Download ----------------
 #[derive(Debug, Clone)]
 pub struct DownloadJob {

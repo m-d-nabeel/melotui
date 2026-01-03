@@ -3,8 +3,8 @@ use std::{collections::VecDeque, process::Command};
 use crate::{
     Library, NavMode, UIMode, UINavState,
     state_registry::{
-        DownloadState, DownloadStatus, NotificationState, PlaybackState, PlaybackStatus,
-        SpectrumStyle, UIState, VisualizerMode,
+        AudioState, DownloadState, DownloadStatus, NotificationState, PlaybackState,
+        PlaybackStatus, SpectrumStyle, UIState, VisualizerMode,
     },
     visualizer_interface::{NoOpSpectrum, SpectrumSource},
 };
@@ -19,6 +19,7 @@ pub struct AppState {
     pub ui: UIState,
     pub library: Library,
     pub playback: PlaybackState,
+    pub audio: AudioState,
     pub download: DownloadState,
     pub notification: NotificationState,
     pub visualizer_mode: VisualizerMode,
@@ -76,6 +77,7 @@ impl AppState {
             nav,
             library,
             playback,
+            audio: AudioState::default(),
             ui,
             download,
             notification,

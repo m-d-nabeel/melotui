@@ -80,7 +80,31 @@ impl Tui {
                     // --- Playback Control ---
                     KeyCode::Enter => Some(AppMsg::RequestPlaySelected),
                     KeyCode::Char(' ') => Some(AppMsg::RequestTogglePlayback),
-                    KeyCode::Char('s') => Some(AppMsg::RequestStop),
+                    KeyCode::Char('x') => Some(AppMsg::RequestStop),
+
+                    // --- Audio FX Hotkeys ---
+                    KeyCode::Char('+') | KeyCode::Char('=') => Some(AppMsg::AdjustVolume(0.05)),
+                    KeyCode::Char('-') | KeyCode::Char('_') => Some(AppMsg::AdjustVolume(-0.05)),
+
+                    // Speed (s/S)
+                    KeyCode::Char('s') => Some(AppMsg::AdjustSpeed(0.1)),
+                    KeyCode::Char('S') => Some(AppMsg::AdjustSpeed(-0.1)),
+
+                    // Bass (b/B)
+                    KeyCode::Char('b') => Some(AppMsg::AdjustBass(0.1)),
+                    KeyCode::Char('B') => Some(AppMsg::AdjustBass(-0.1)),
+
+                    // Treble (t/T)
+                    KeyCode::Char('t') => Some(AppMsg::AdjustTreble(0.1)),
+                    KeyCode::Char('T') => Some(AppMsg::AdjustTreble(-0.1)),
+
+                    // Reverb (v/V)
+                    KeyCode::Char('v') => Some(AppMsg::AdjustReverb(0.05)),
+                    KeyCode::Char('V') => Some(AppMsg::AdjustReverb(-0.05)),
+
+                    // Echo (e/E)
+                    KeyCode::Char('e') => Some(AppMsg::AdjustEcho(0.05)),
+                    KeyCode::Char('E') => Some(AppMsg::AdjustEcho(-0.05)),
 
                     // Seek -5s / +5s
                     KeyCode::Char('h') => Some(AppMsg::RequestSeek { offset_seconds: -5 }),
