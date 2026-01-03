@@ -29,6 +29,12 @@ pub struct UIState {
     pub command_buffer: String,
     pub show_help: bool,
 }
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LeftPanelMode {
+    LibraryMode,
+    PlaybackQueueMode,
+}
 // ----------- UI Mode & State -------------
 // --------------- Playback ----------------
 #[derive(Debug, Clone, PartialEq, Eq)]
