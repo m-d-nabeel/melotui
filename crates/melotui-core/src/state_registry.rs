@@ -1,5 +1,7 @@
 use std::{collections::VecDeque, path::PathBuf, str::FromStr, time::Instant};
 
+use crate::library::Track;
+
 // ----------- UI Mode & State -------------
 #[derive(Debug, Clone, PartialEq)]
 pub enum NavMode {
@@ -35,7 +37,7 @@ pub struct TrackId {
     pub path: PathBuf,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)] // Added PartialEq for easier comparisons
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlaybackStatus {
     Playing,
     Paused,
@@ -46,9 +48,30 @@ pub enum PlaybackStatus {
 pub struct PlaybackState {
     pub current: Option<TrackId>,
     pub status: PlaybackStatus,
-    // Added these for the progress bar:
     pub progress_ms: u64,
     pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RepeatMode {
+    Off,
+    Track,
+    Playlist,
+}
+
+impl RepeatMode {
+    pub fn next(&self) -> Self {
+        match self {
+            RepeatMode::Off => RepeatMode::Track,
+            RepeatMode::Track => RepeatMode::Playlist,
+            RepeatMode::Playlist => RepeatMode::Off,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PlaybackQueueState {
+    pub tracks: VecDeque<Track>,
 }
 // --------------- Playback ----------------
 // ---------------- Audio ------------------

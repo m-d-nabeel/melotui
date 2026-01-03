@@ -1,10 +1,10 @@
+mod album_art_view;
+mod spectrum_visualizer_view;
 use melotui_core::{
     AppState,
     state_registry::{SpectrumStyle, VisualizerMode},
 };
 use ratatui::{Frame, layout::Rect};
-
-use crate::widgets::{album_art_view, spectrum_visualizer_view};
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     match state.visualizer_mode {

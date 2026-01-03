@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use crate::library::Track;
+
 #[derive(Debug, Clone)]
 pub enum AppMsg {
     // ───── Lifecycle ─────
@@ -14,6 +16,13 @@ pub enum AppMsg {
     MoveDown,
     ToggleArt,
     ToggleHelp,
+
+    // ───── Queue & Repeat ─────
+    AddToQueue(Track),
+    PlayNext(Track),
+    ToggleRepeatMode,
+    RemoveFromQueue(usize),
+    ClearQueue,
 
     // ───── Library ─────
     RequestRescanLibrary,

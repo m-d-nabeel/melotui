@@ -512,11 +512,9 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             // Natural finish (not user requested)
             state.playback.status = PlaybackStatus::Stopped;
             state.playback.progress_ms = 0;
-            // TODO: Trigger "Next Track" logic here if you want auto-play
         }
         AppMsg::AudioPaused | AppMsg::AudioResumed => {
             // No-op: We already updated the UI optimistically in RequestTogglePlayback.
-            // We ignore these to prevent the UI from "flickering" back and forth.
         }
         AppMsg::AudioError { error } => {
             state.playback.status = PlaybackStatus::Stopped;
@@ -569,6 +567,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         }
         AppMsg::DispatchSetVisualizer { .. } => {}
         AppMsg::Noop => {}
+        _ => {}
     }
     vec![]
 }
