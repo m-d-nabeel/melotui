@@ -1342,6 +1342,7 @@ dependencies = [
  "anyhow",
  "image",
  "lofty",
+ "rand 0.9.2",
  "ratatui",
  "serde",
  "tracing",

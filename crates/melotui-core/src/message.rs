@@ -12,6 +12,8 @@ pub enum AppMsg {
     SwitchToPlaylists,
     SwitchToTracks,
     SwitchToTrackInfo,
+    ToggleLibraryQueue,
+
     MoveUp,
     MoveDown,
     ToggleArt,
@@ -21,32 +23,29 @@ pub enum AppMsg {
     AddToQueue(Track),
     PlayNext(Track),
     ToggleRepeatMode,
+    ToggleShuffle,
     RemoveFromQueue(usize),
     ClearQueue,
 
     // ───── Library ─────
     RequestRescanLibrary,
 
-    // ───── Playback (future IPC) ─────
+    // ───── Playback ─────
     /// User intent (pure)
-    /// Triggered when user presses Enter/Space on a track
     RequestPlaySelected,
 
     /// User intent (pure)
-    /// Triggered when user presses Spacebar (global)
     RequestTogglePlayback,
 
     /// User intent (pure)
     RequestStop,
 
     /// User intent (pure)
-    /// e.g., "Seek forward 5s"
     RequestSeek {
         offset_seconds: i64,
     },
 
-    /// Side-effect boundary (execution trigger)
-    /// IPC listens for this to start a new stream
+    /// Side-effect boundary
     DispatchPlay {
         path: PathBuf,
     },
@@ -77,14 +76,11 @@ pub enum AppMsg {
         active: bool,
     },
 
-    /// External facts (from IPC)
-    /// Used to update the progress bar
+    /// External facts
     AudioProgress {
         position_ms: u64,
     },
 
-    /// External facts
-    /// Used to update UI state (icon changes) or auto-advance playlist
     AudioStarted {
         path: String,
     },
@@ -111,24 +107,17 @@ pub enum AppMsg {
     SubmitCommand(String),
 
     // ───── Downloads ─────
-    /// User intent (pure)
-    /// Example: user types `dl queen`
     RequestDownload {
         query: String,
     },
 
-    /// Internal scheduler signal (pure)
-    /// Fired when the queue should advance
     BeginNextDownload,
 
-    /// Side-effect boundary (execution trigger)
-    /// IPC listens ONLY for this
     DispatchDownload {
         query: String,
         download_path: PathBuf,
     },
 
-    /// External facts (from IPC)
     DownloadProgress {
         percent: u8,
     },
@@ -137,6 +126,5 @@ pub enum AppMsg {
         error: String,
     },
 
-    /// UI intent
     RequestCancelDownload,
 }

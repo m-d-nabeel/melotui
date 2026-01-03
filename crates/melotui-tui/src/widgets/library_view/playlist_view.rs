@@ -1,4 +1,7 @@
-use melotui_core::AppState;
+use melotui_core::{
+    AppState,
+    state_registry::{LeftPanelMode, LibraryViewDepth},
+};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Rect},
@@ -7,8 +10,8 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
 };
 
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let selected_idx = state.nav.selected_playlist;
+pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, title: Line) {
+    let selected_idx = state.nav.library.selected_playlist_idx;
 
     // Convert Playlists to Table Rows
     let rows: Vec<Row> = state
@@ -28,21 +31,30 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 Style::default().fg(Color::Cyan)
             });
 
-            // Column 2: Track Count (Right aligned visually by the column constraint)
-            let count_line = Line::from(format!("{} songs ", p.tracks.len()))
-                .style(Style::default().fg(Color::DarkGray))
-                .alignment(Alignment::Right);
-            let count_cell = Cell::from(count_line);
+            // Column 2: Track Count
+            // FIX: Apply alignment to the Line, not the Cell
+            let count_line =
+                Line::from(format!("{} songs ", p.tracks.len())).alignment(Alignment::Right);
+
+            let count_cell = Cell::from(count_line).style(Style::default().fg(Color::DarkGray));
 
             let row = Row::new(vec![name_cell, count_cell]);
 
             if is_selected {
-                row.style(Style::default().bg(Color::DarkGray))
+                row.style(Style::default().bg(Color::Rgb(40, 40, 40)))
             } else {
                 row
             }
         })
         .collect();
+
+    let border_color = if state.nav.library.depth == LibraryViewDepth::Playlists
+        && state.nav.active_panel == LeftPanelMode::Library
+    {
+        Color::Yellow
+    } else {
+        Color::Blue
+    };
 
     let table = Table::new(
         rows,
@@ -53,12 +65,11 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     )
     .block(
         Block::default()
-            .title(" Playlists ")
+            .title(title)
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Blue)),
-    )
-    .row_highlight_style(Style::default().add_modifier(Modifier::BOLD));
+            .border_style(Style::default().fg(border_color)),
+    );
 
     frame.render_stateful_widget(
         table,

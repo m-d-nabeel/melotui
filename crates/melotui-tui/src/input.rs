@@ -1,5 +1,8 @@
-use melotui_core::{AppMsg, AppState, NavMode, UIMode};
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use melotui_core::{
+    AppMsg, AppState, UIMode,
+    state_registry::{LeftPanelMode, LibraryViewDepth},
+};
+use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
 /// Helper struct for documentation generation
 pub struct KeyHelp {
@@ -13,14 +16,15 @@ pub struct InputHandler;
 impl InputHandler {
     /// The single entry point for all input
     pub fn handle(key: KeyEvent, state: &AppState) -> Option<AppMsg> {
-        // If help is open, we trap keys to only allow closing it.
+        // 1. Help Overlay Trap
         if state.ui.show_help {
             return match key.code {
                 KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => Some(AppMsg::ToggleHelp),
-                _ => None, // Swallow all other events
+                _ => None,
             };
         }
-        // 1. Command Mode (Higher Priority)
+
+        // 2. Command Mode Trap
         if state.ui.mode == UIMode::Command {
             return match key.code {
                 KeyCode::Esc => Some(AppMsg::ExitCommandMode),
@@ -31,67 +35,157 @@ impl InputHandler {
             };
         }
 
-        // 2. Global / Normal Mode
+        // 3. Normal Mode
         match key.code {
-            // --- Global Lifecycle ---
+            // ───── Global System ─────
             KeyCode::Char('?') => Some(AppMsg::ToggleHelp),
             KeyCode::Char('q') => Some(AppMsg::RequestQuit),
             KeyCode::Char(':') => Some(AppMsg::EnterCommandMode),
-            KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                Some(AppMsg::RequestRescanLibrary)
-            }
-            KeyCode::F(5) => Some(AppMsg::RequestRescanLibrary), // Moved Rescan here
+            KeyCode::F(5) => Some(AppMsg::RequestRescanLibrary),
             KeyCode::Esc => Some(AppMsg::RequestCancelDownload),
 
-            // --- Navigation ---
-            // Left Arrow / '[' : Move Focus Left
-            KeyCode::Left | KeyCode::Char('[') => match state.nav.mode {
-                NavMode::Tracks => Some(AppMsg::SwitchToPlaylists),
-                NavMode::TrackInfo => Some(AppMsg::SwitchToTracks),
-                _ => None,
-            },
-            // Right Arrow / ']' : Move Focus Right
-            KeyCode::Right | KeyCode::Char(']') => match state.nav.mode {
-                NavMode::Playlists => Some(AppMsg::SwitchToTracks),
-                NavMode::Tracks => Some(AppMsg::SwitchToTrackInfo),
-                _ => None,
-            },
-            // Up/Down
-            KeyCode::Up | KeyCode::Char('k') => Some(AppMsg::MoveUp),
+            // ───── Panel & View Switching ─────
+            // Tab: Switch between Library and Queue
+            KeyCode::Tab => Some(AppMsg::ToggleLibraryQueue),
+
+            // BackTab (Shift+Tab): Toggle Visualizer / Album Art
+            // (Alt+Tab is usually OS-reserved, so Shift+Tab is the standard TUI alternative)
+            KeyCode::BackTab => Some(AppMsg::ToggleArt),
+
+            // ───── Navigation ─────
+            // Down
             KeyCode::Down | KeyCode::Char('j') => Some(AppMsg::MoveDown),
+            // Up
+            KeyCode::Up | KeyCode::Char('k') => Some(AppMsg::MoveUp),
 
-            // Actions
+            // Left / Back
+            KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('[') => {
+                // If in Queue, maybe switch back to Library? Or just do nothing?
+                // For now, let's keep column navigation for Library
+                if state.nav.active_panel == LeftPanelMode::Library {
+                    match state.nav.library.depth {
+                        LibraryViewDepth::Tracks => Some(AppMsg::SwitchToPlaylists),
+                        LibraryViewDepth::TrackInfo => Some(AppMsg::SwitchToTracks),
+                        _ => None,
+                    }
+                } else {
+                    // If in Queue, Left takes you back to Library
+                    Some(AppMsg::ToggleLibraryQueue)
+                }
+            }
+
+            // Right / Enter
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(']') => {
+                if state.nav.active_panel == LeftPanelMode::Library {
+                    match state.nav.library.depth {
+                        LibraryViewDepth::Playlists => Some(AppMsg::SwitchToTracks),
+                        LibraryViewDepth::Tracks => Some(AppMsg::SwitchToTrackInfo),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+
+            // Play Selected
             KeyCode::Enter => Some(AppMsg::RequestPlaySelected),
-            KeyCode::Tab | KeyCode::Char('{') | KeyCode::Char('}') => Some(AppMsg::ToggleArt),
 
-            // --- Audio Control ---
+            // ───── Queue Management ─────
+            // 'a': Add current selection to Queue
+            KeyCode::Char('a') => {
+                // We need to extract the track from the current selection
+                // Logic mirrors RequestPlaySelected but wraps it in AddToQueue
+                if state.nav.active_panel == LeftPanelMode::Library
+                    && state.nav.library.depth != LibraryViewDepth::Playlists
+                {
+                    let p_idx = state.nav.library.selected_playlist_idx;
+                    // Safe access
+                    if let Some(playlist) = state.library.playlists.get(p_idx) {
+                        let t_idx = *state
+                            .nav
+                            .library
+                            .selected_tracks_curs
+                            .get(p_idx)
+                            .unwrap_or(&0);
+                        if let Some(track) = playlist.tracks.get(t_idx) {
+                            return Some(AppMsg::AddToQueue(track.clone()));
+                        }
+                    }
+                }
+                None
+            }
+
+            // 'A' (Shift+a): Play Next (Add to front of queue)
+            KeyCode::Char('A') => {
+                if state.nav.active_panel == LeftPanelMode::Library
+                    && state.nav.library.depth != LibraryViewDepth::Playlists
+                {
+                    let p_idx = state.nav.library.selected_playlist_idx;
+                    if let Some(playlist) = state.library.playlists.get(p_idx) {
+                        let t_idx = *state
+                            .nav
+                            .library
+                            .selected_tracks_curs
+                            .get(p_idx)
+                            .unwrap_or(&0);
+                        if let Some(track) = playlist.tracks.get(t_idx) {
+                            return Some(AppMsg::PlayNext(track.clone()));
+                        }
+                    }
+                }
+                None
+            }
+
+            // 'd': Remove from Queue (Only valid in Queue Panel)
+            KeyCode::Char('d') | KeyCode::Delete => {
+                if state.nav.active_panel == LeftPanelMode::Queue {
+                    Some(AppMsg::RemoveFromQueue(state.nav.queue.selected_idx))
+                } else {
+                    None
+                }
+            }
+
+            // 'D': Clear Queue
+            KeyCode::Char('D') => Some(AppMsg::ClearQueue),
+
+            // ───── Playback Control ─────
             KeyCode::Char(' ') => Some(AppMsg::RequestTogglePlayback),
             KeyCode::Char('x') => Some(AppMsg::RequestStop),
-            KeyCode::Char('h') => Some(AppMsg::RequestSeek { offset_seconds: -5 }),
-            KeyCode::Char('l') => Some(AppMsg::RequestSeek { offset_seconds: 5 }),
 
-            // --- DSP Effects ---
-            // Volume (+/-)
+            // Seeking (using comma/period for < > semantic)
+            KeyCode::Char(',') | KeyCode::Char('<') => {
+                Some(AppMsg::RequestSeek { offset_seconds: -5 })
+            }
+            KeyCode::Char('.') | KeyCode::Char('>') => {
+                Some(AppMsg::RequestSeek { offset_seconds: 5 })
+            }
+
+            // Modes
+            KeyCode::Char('z') => Some(AppMsg::ToggleShuffle),
+            KeyCode::Char('c') => Some(AppMsg::ToggleRepeatMode),
+
+            // ───── Audio FX ─────
+            // Volume
             KeyCode::Char('+') | KeyCode::Char('=') => Some(AppMsg::AdjustVolume(0.05)),
             KeyCode::Char('-') | KeyCode::Char('_') => Some(AppMsg::AdjustVolume(-0.05)),
 
-            // Speed (s/S)
+            // Speed
             KeyCode::Char('s') => Some(AppMsg::AdjustSpeed(0.1)),
             KeyCode::Char('S') => Some(AppMsg::AdjustSpeed(-0.1)),
 
-            // Bass (b/B)
+            // Bass
             KeyCode::Char('b') => Some(AppMsg::AdjustBass(0.1)),
             KeyCode::Char('B') => Some(AppMsg::AdjustBass(-0.1)),
 
-            // Treble (t/T)
+            // Treble
             KeyCode::Char('t') => Some(AppMsg::AdjustTreble(0.1)),
             KeyCode::Char('T') => Some(AppMsg::AdjustTreble(-0.1)),
 
-            // Reverb (r/R) - NOW AVAILABLE
+            // Reverb
             KeyCode::Char('r') => Some(AppMsg::AdjustReverb(0.05)),
             KeyCode::Char('R') => Some(AppMsg::AdjustReverb(-0.05)),
 
-            // Echo (e/E)
+            // Echo
             KeyCode::Char('e') => Some(AppMsg::AdjustEcho(0.05)),
             KeyCode::Char('E') => Some(AppMsg::AdjustEcho(-0.05)),
 
@@ -99,12 +193,22 @@ impl InputHandler {
         }
     }
 
-    /// Returns data to build a Help UI without hardcoding strings in the view
+    /// Returns data to build a Help UI
     pub fn get_help_docs() -> Vec<KeyHelp> {
         vec![
             KeyHelp {
+                key: "Tab",
+                desc: "Toggle Lib/Queue",
+                category: "General",
+            },
+            KeyHelp {
+                key: "Shift+Tab",
+                desc: "Toggle Visualizer",
+                category: "General",
+            },
+            KeyHelp {
                 key: "Space",
-                desc: "Toggle Playback",
+                desc: "Play/Pause",
                 category: "Playback",
             },
             KeyHelp {
@@ -113,73 +217,43 @@ impl InputHandler {
                 category: "Playback",
             },
             KeyHelp {
-                key: "x",
-                desc: "Stop",
+                key: "z",
+                desc: "Toggle Shuffle",
                 category: "Playback",
             },
             KeyHelp {
-                key: "h/l",
-                desc: "Seek -/+ 5s",
+                key: "c",
+                desc: "Cycle Repeat",
                 category: "Playback",
             },
             KeyHelp {
-                key: "j/k",
-                desc: "Move Up/Down",
+                key: "a",
+                desc: "Add to Queue",
+                category: "Queue",
+            },
+            KeyHelp {
+                key: "Shift+A",
+                desc: "Play Next",
+                category: "Queue",
+            },
+            KeyHelp {
+                key: "d",
+                desc: "Delete (Queue)",
+                category: "Queue",
+            },
+            KeyHelp {
+                key: "D",
+                desc: "Clear Queue",
+                category: "Queue",
+            },
+            KeyHelp {
+                key: "h/j/k/l",
+                desc: "Navigate",
                 category: "Navigation",
-            },
-            KeyHelp {
-                key: "←/→",
-                desc: "Switch Columns",
-                category: "Navigation",
-            },
-            KeyHelp {
-                key: "Tab",
-                desc: "Toggle Art/Vis",
-                category: "Navigation",
-            },
-            KeyHelp {
-                key: "+/-",
-                desc: "Volume",
-                category: "Audio FX",
-            },
-            KeyHelp {
-                key: "s/S",
-                desc: "Speed",
-                category: "Audio FX",
-            },
-            KeyHelp {
-                key: "b/B",
-                desc: "Bass",
-                category: "Audio FX",
-            },
-            KeyHelp {
-                key: "t/T",
-                desc: "Treble",
-                category: "Audio FX",
-            },
-            KeyHelp {
-                key: "r/R",
-                desc: "Reverb",
-                category: "Audio FX",
-            },
-            KeyHelp {
-                key: "e/E",
-                desc: "Echo",
-                category: "Audio FX",
-            },
-            KeyHelp {
-                key: "F5",
-                desc: "Rescan Library",
-                category: "System",
             },
             KeyHelp {
                 key: ":",
                 desc: "Command Mode",
-                category: "System",
-            },
-            KeyHelp {
-                key: "q",
-                desc: "Quit",
                 category: "System",
             },
         ]

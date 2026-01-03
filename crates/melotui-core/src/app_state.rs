@@ -1,10 +1,11 @@
 use std::{collections::VecDeque, process::Command};
 
 use crate::{
-    Library, NavMode, UIMode, UINavState,
+    Library,
     state_registry::{
-        AudioState, DownloadState, DownloadStatus, NotificationState, PlaybackQueueState,
-        PlaybackState, PlaybackStatus, RepeatMode, SpectrumStyle, UIState, VisualizerMode,
+        AudioState, DownloadState, DownloadStatus, LeftPanelMode, LibraryNavState,
+        LibraryViewDepth, NavigationState, NotificationState, PlaybackQueueState, PlaybackState,
+        PlaybackStatus, QueueNavState, RepeatMode, SpectrumStyle, UIMode, UIState, VisualizerMode,
     },
     visualizer_interface::{NoOpSpectrum, SpectrumSource},
 };
@@ -13,9 +14,8 @@ pub struct AppState {
     pub app_name: String,
     pub time_elapsed: f32,
     pub last_nav_time: f32,
-    // navigation
-    pub nav: UINavState,
-    // UI-only
+
+    pub nav: NavigationState,
     pub ui: UIState,
     pub library: Library,
     pub playback: PlaybackState,
@@ -27,11 +27,11 @@ pub struct AppState {
     pub visualizer_mode: VisualizerMode,
     pub current_album_art: Option<ratatui::text::Text<'static>>,
     pub track_info_art: Option<ratatui::text::Text<'static>>,
-    pub spectrum_raw: Vec<f32>,    // Incoming from worker
-    pub spectrum_smooth: Vec<f32>, // Rendered (smoothed)
+    pub spectrum_raw: Vec<f32>,
+    pub spectrum_smooth: Vec<f32>,
 
     pub spectrum_source: Box<dyn SpectrumSource>,
-    pub spectrum_peaks: Vec<f32>, // Falling peaks}
+    pub spectrum_peaks: Vec<f32>,
     pub spectrum_style: SpectrumStyle,
 }
 
@@ -39,17 +39,21 @@ impl AppState {
     pub fn new(library: Library) -> Self {
         let playlist_count = library.playlists.len();
 
-        let nav = UINavState {
-            mode: NavMode::Playlists,
-            selected_playlist: 0,
-            selected_tracks: vec![0; playlist_count],
+        let nav = NavigationState {
+            active_panel: LeftPanelMode::Library,
+            library: LibraryNavState {
+                depth: LibraryViewDepth::Playlists,
+                selected_playlist_idx: 0,
+                selected_tracks_curs: vec![0; playlist_count],
+            },
+            queue: QueueNavState { selected_idx: 0 },
         };
-
         let playback = PlaybackState {
             current: None,
             status: PlaybackStatus::Stopped,
             progress_ms: 0,
             duration_ms: None,
+            shuffle: false,
         };
         let ui = UIState {
             mode: UIMode::Normal,

@@ -8,7 +8,7 @@ use ratatui::{
 use melotui_core::{AppState, UIMode};
 
 use crate::widgets::{
-    command_view, help_view, library_view, notification_popup, playback_view, sound_control_view,
+    command_view, help_view, notification_popup, playback_view, sidebar_view, sound_control_view,
     visualizer_view,
 };
 
@@ -31,7 +31,7 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(right_vertical[1]);
 
-    library_view::draw(frame, horizontal[0], state);
+    sidebar_view::draw(frame, horizontal[0], state);
     visualizer_view::draw(frame, right_vertical[0], state);
     sound_control_view::draw(frame, control_chunks[0], state);
     playback_view::draw(frame, control_chunks[1], state);

@@ -1,22 +1,33 @@
 use crate::format_duration;
-use melotui_core::AppState;
-use melotui_core::NavMode;
+use melotui_core::{
+    AppState,
+    state_registry::{LeftPanelMode, LibraryViewDepth},
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Row, Table, TableState},
 };
 
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let p_idx = state.nav.selected_playlist;
+pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, main_title: Line) {
+    let p_idx = state.nav.library.selected_playlist_idx;
 
     if p_idx >= state.library.playlists.len() {
         return;
     }
 
     let playlist = &state.library.playlists[p_idx];
-    let selected_track_idx = state.nav.selected_tracks[p_idx];
+    let selected_track_idx = state.nav.library.selected_tracks_curs[p_idx];
+
+    let mut combined_spans = main_title.spans; // Take the tabs
+    combined_spans.push(Span::raw(" - "));
+    combined_spans.push(Span::styled(
+        format!("[ {} ]", playlist.name),
+        Style::default().fg(Color::Cyan),
+    ));
+    let final_title = Line::from(combined_spans);
 
     // Header: Only Title and Time
     let header = Row::new(vec![
@@ -122,9 +133,17 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         Constraint::Length(6), // Time
     ];
 
+    let border_style = if state.nav.library.depth == LibraryViewDepth::Tracks
+        && state.nav.active_panel == LeftPanelMode::Library
+    {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
     let table = Table::new(rows, widths).header(header).block(
         Block::default()
-            .title(format!(" {} ", playlist.name))
+            .title(final_title)
             .title_style(
                 Style::default()
                     .fg(Color::Yellow)
@@ -132,11 +151,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             )
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(if state.nav.mode == NavMode::Tracks {
-                Style::default().fg(Color::Yellow)
-            } else {
-                Style::default().fg(Color::DarkGray)
-            }),
+            .border_style(border_style),
     );
 
     frame.render_stateful_widget(

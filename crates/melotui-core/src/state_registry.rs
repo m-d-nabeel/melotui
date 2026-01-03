@@ -3,18 +3,48 @@ use std::{collections::VecDeque, path::PathBuf, str::FromStr, time::Instant};
 use crate::library::Track;
 
 // ----------- UI Mode & State -------------
-#[derive(Debug, Clone, PartialEq)]
-pub enum NavMode {
-    Playlists,
-    Tracks,
-    TrackInfo,
+
+/// Defines how "deep" we are in the Library view
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LibraryViewDepth {
+    Playlists, // Column 0: List of Playlists
+    Tracks,    // Column 1: List of Tracks
+    TrackInfo, // Column 2: Track Details
 }
 
+/// State specific to the Library Panel
 #[derive(Debug, Clone)]
-pub struct UINavState {
-    pub mode: NavMode,
-    pub selected_playlist: usize,
-    pub selected_tracks: Vec<usize>,
+pub struct LibraryNavState {
+    pub depth: LibraryViewDepth,
+    pub selected_playlist_idx: usize,
+    /// Stores the selected track index for *every* playlist.
+    pub selected_tracks_curs: Vec<usize>,
+}
+
+/// State specific to the Queue Panel
+#[derive(Debug, Clone)]
+pub struct QueueNavState {
+    pub selected_idx: usize,
+}
+
+/// High-level switch for the Sidebar
+#[derive(Debug, Clone, PartialEq)]
+pub enum LeftPanelMode {
+    Library,
+    Queue,
+}
+
+/// The Master Navigation State
+#[derive(Debug, Clone)]
+pub struct NavigationState {
+    /// Which panel is currently visible/active?
+    pub active_panel: LeftPanelMode,
+
+    /// State for the Library (persists even when viewing Queue)
+    pub library: LibraryNavState,
+
+    /// State for the Queue (persists even when viewing Library)
+    pub queue: QueueNavState,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,12 +60,6 @@ pub struct UIState {
     pub show_help: bool,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum LeftPanelMode {
-    LibraryMode,
-    PlaybackQueueMode,
-}
-// ----------- UI Mode & State -------------
 // --------------- Playback ----------------
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackId {
@@ -50,25 +74,19 @@ pub enum PlaybackStatus {
     Stopped,
 }
 
-#[derive(Debug, Clone)]
-pub struct PlaybackState {
-    pub current: Option<TrackId>,
-    pub status: PlaybackStatus,
-    pub progress_ms: u64,
-    pub duration_ms: Option<u64>,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RepeatMode {
-    Off,
-    Track,
-    Playlist,
+    Off,      // Linear: Play Next -> Next -> Stop at End (Default)
+    PlayOnce, // Play One -> Stop
+    Track,    // Loop One -> Loop
+    Playlist, // Play Next -> Loop to Start at End
 }
 
 impl RepeatMode {
     pub fn next(&self) -> Self {
         match self {
-            RepeatMode::Off => RepeatMode::Track,
+            RepeatMode::Off => RepeatMode::PlayOnce,
+            RepeatMode::PlayOnce => RepeatMode::Track,
             RepeatMode::Track => RepeatMode::Playlist,
             RepeatMode::Playlist => RepeatMode::Off,
         }
@@ -76,19 +94,29 @@ impl RepeatMode {
 }
 
 #[derive(Debug, Clone)]
+pub struct PlaybackState {
+    pub current: Option<TrackId>,
+    pub status: PlaybackStatus,
+    pub progress_ms: u64,
+    pub duration_ms: Option<u64>,
+    pub shuffle: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct PlaybackQueueState {
     pub tracks: VecDeque<Track>,
 }
 // --------------- Playback ----------------
+
 // ---------------- Audio ------------------
 #[derive(Debug, Clone)]
 pub struct AudioState {
-    pub volume: f32, // 0.0 - 1.0
+    pub volume: f32, // 0.0 - 1.5
     pub speed: f32,  // 0.5 - 2.0
-    pub bass: f32,   // 0.0 - 3.0
-    pub treble: f32, // 0.0 - 3.0
+    pub bass: f32,   // 0.0 - 5.0
+    pub treble: f32, // 0.0 - 5.0
     pub reverb: f32, // 0.0 - 1.0
-    pub echo: f32,   // 0.0 - 1.0
+    pub echo: f32,   // 0.0 - 0.9
 }
 
 impl Default for AudioState {
@@ -104,6 +132,7 @@ impl Default for AudioState {
     }
 }
 // ---------------- Audio ------------------
+
 // --------------- Download ----------------
 #[derive(Debug, Clone)]
 pub struct DownloadJob {
@@ -124,8 +153,8 @@ pub struct DownloadState {
     pub queue: VecDeque<DownloadJob>,
     pub status: DownloadStatus,
 }
-
 // --------------- Download ----------------
+
 // ------------- Notification --------------
 #[derive(Debug, Clone)]
 pub enum NotificationKind {
@@ -138,7 +167,7 @@ pub enum NotificationKind {
 pub struct Notification {
     pub kind: NotificationKind,
     pub message: String,
-    pub progress: Option<u8>, // 0–100
+    pub progress: Option<u8>,
     pub created_at: Instant,
     pub dismiss_after: Option<std::time::Duration>,
 }
@@ -148,11 +177,12 @@ pub struct NotificationState {
     pub current: Option<Notification>,
 }
 // ------------- Notification --------------
+
 // -------------- Visualizer  --------------
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VisualizerMode {
-    Spectrum, // future visualizer
-    AlbumArt, // The new ANSI art mode
+    Spectrum,
+    AlbumArt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
