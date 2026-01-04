@@ -45,7 +45,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                     if playing_from_queue && state.playback_queue.tracks.len() > 1 {
                         state.nav.queue.selected_idx = 1;
                     }
-                    // If pending or queue is length 1 then [TODO]
                     LeftPanelMode::Queue
                 }
                 LeftPanelMode::Queue => LeftPanelMode::Library,
@@ -465,7 +464,6 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
 
         AppMsg::AudioFinished => {
             tracing::info!("Audio Finished...");
-            // TODO: Check this logic thoroughly
             return handler_playback_ended(state);
         }
 
