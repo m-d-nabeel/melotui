@@ -31,19 +31,33 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .enumerate()
         .map(|(i, p)| {
             let is_selected = i == selected_idx;
-            let name_cell = Cell::from(format!("  {}", p.name)).style(if is_selected {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD)
+
+            // Check if this specific playlist is the source of the current song
+            let is_active_playlist = state
+                .playback
+                .current
+                .as_ref()
+                .is_some_and(|curr| curr.playlist == p.name);
+
+            let icon = if is_active_playlist { " 󰐑" } else { " 󰲹" };
+            let mut text_style = Style::default().add_modifier(Modifier::BOLD);
+            if is_active_playlist {
+                text_style = text_style.fg(Color::LightRed);
+            } else if is_selected {
+                text_style = text_style.fg(Color::Yellow);
             } else {
-                Style::default().fg(Color::Cyan)
-            });
+                text_style = Style::default().fg(Color::Cyan); // Remove BOLD for unselected/inactive
+            }
+
+            let name_cell = Cell::from(format!("{} {}", icon, p.name)).style(text_style);
 
             let count_line =
                 Line::from(format!("{} songs ", p.tracks.len())).alignment(Alignment::Right);
             let count_cell = Cell::from(count_line).style(Style::default().fg(Color::DarkGray));
 
             let row = Row::new(vec![name_cell, count_cell]);
+
+            // 3. Apply Selection Background (Navigation)
             if is_selected {
                 row.style(Style::default().bg(Color::Rgb(40, 40, 40)))
             } else {

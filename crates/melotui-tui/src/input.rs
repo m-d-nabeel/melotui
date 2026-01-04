@@ -140,7 +140,7 @@ impl InputHandler {
             // 'd': Remove from Queue (Only valid in Queue Panel)
             KeyCode::Char('d') | KeyCode::Delete => {
                 if state.nav.active_panel == LeftPanelMode::Queue {
-                    Some(AppMsg::RemoveFromQueue(state.nav.queue.selected_idx))
+                    Some(AppMsg::RemoveFromQueue)
                 } else {
                     None
                 }

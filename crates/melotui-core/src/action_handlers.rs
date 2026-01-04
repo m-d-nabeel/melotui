@@ -38,11 +38,23 @@ pub fn handler_play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
                     .cloned()
             }
         }
-        LeftPanelMode::Queue => state
-            .playback_queue
-            .tracks
-            .get(state.nav.queue.selected_idx)
-            .cloned(),
+        LeftPanelMode::Queue => {
+            let playing_from_queue = state
+                .playback
+                .current
+                .as_ref()
+                .is_some_and(|c| c.playlist == "Queue");
+
+            if playing_from_queue && state.nav.queue.selected_idx == 0 {
+                None
+            } else {
+                state
+                    .playback_queue
+                    .tracks
+                    .get(state.nav.queue.selected_idx)
+                    .cloned()
+            }
+        }
     };
 
     if let Some(track) = track_to_play {
@@ -225,10 +237,9 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
         };
 
         // --- CONTEXT LOGIC ---
-
         if current.playlist == "Queue" {
             // Case A: We are ALREADY in the Queue.
-            // Consumer behavior: remove the current track and play the next one
+            // Consumer behavior: remove the current track (the one that just finished)
             if let Some(idx) = state
                 .playback_queue
                 .tracks
@@ -240,18 +251,17 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
             }
 
             next_context_name = "Queue".to_string();
+            // Peek the NEW front (Index 0) to play next
             if !state.playback_queue.tracks.is_empty() {
                 next_track_info = state.playback_queue.tracks.front().cloned();
             }
         } else {
-            // Case B: We are in the Library (or a named Playlist).
+            // Case B: We are in the Library.
 
-            // **CRITICAL FIX**: Check if the Queue has pending tracks ("Play Next").
-            // If the queue is not empty, we switch context to the Queue and play index 0.
+            // FIX: Check Queue. If exists, Play but DO NOT POP yet.
             if !state.playback_queue.tracks.is_empty() {
                 next_context_name = "Queue".to_string();
-                // Play the first item in the queue (FIFO) and remove it (consumer behavior)
-                next_track_info = state.playback_queue.tracks.pop_front();
+                next_track_info = state.playback_queue.tracks.front().cloned();
                 reconcile_nav_state(state);
             } else {
                 // Queue is empty, continue with Library logic.
@@ -281,7 +291,7 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
         });
         state.playback.status = PlaybackStatus::Playing;
 
-        // UI Updates (Notification + Art)
+        // UI Updates ...
         state.notification.current = Some(Notification {
             kind: NotificationKind::Info,
             message: format!("Now Playing: {}", track.title),

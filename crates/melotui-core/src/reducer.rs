@@ -33,7 +33,21 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         AppMsg::ToggleLibraryQueue => {
             tracing::info!("Toggle Library Queue");
             state.nav.active_panel = match state.nav.active_panel {
-                LeftPanelMode::Library => LeftPanelMode::Queue,
+                LeftPanelMode::Library => {
+                    state.nav.active_panel = LeftPanelMode::Queue;
+                    // FIX: When switching TO Queue, default to Index 1 if playing
+                    let playing_from_queue = state
+                        .playback
+                        .current
+                        .as_ref()
+                        .is_some_and(|c| c.playlist == "Queue");
+
+                    if playing_from_queue && state.playback_queue.tracks.len() > 1 {
+                        state.nav.queue.selected_idx = 1;
+                    }
+                    // If pending or queue is length 1 then [TODO]
+                    LeftPanelMode::Queue
+                }
                 LeftPanelMode::Queue => LeftPanelMode::Library,
             };
         }
@@ -98,7 +112,19 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                     LibraryViewDepth::TrackInfo => {}
                 },
                 LeftPanelMode::Queue => {
-                    if state.nav.queue.selected_idx > 0 {
+                    let playing_from_queue = state
+                        .playback
+                        .current
+                        .as_ref()
+                        .is_some_and(|c| c.playlist == "Queue");
+
+                    let min_index = if playing_from_queue && state.playback_queue.tracks.len() > 1 {
+                        1
+                    } else {
+                        0
+                    };
+
+                    if state.nav.queue.selected_idx > min_index {
                         state.nav.queue.selected_idx -= 1;
                     }
                 }
@@ -127,9 +153,8 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                     LibraryViewDepth::TrackInfo => {}
                 },
                 LeftPanelMode::Queue => {
-                    if !state.playback_queue.tracks.is_empty()
-                        && state.nav.queue.selected_idx + 1 < state.playback_queue.tracks.len()
-                    {
+                    let max_len = state.playback_queue.tracks.len();
+                    if max_len > 0 && state.nav.queue.selected_idx + 1 < max_len {
                         state.nav.queue.selected_idx += 1;
                     }
                 }
@@ -147,24 +172,60 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             });
         }
 
-        AppMsg::RemoveFromQueue(idx) => {
-            if state.nav.active_panel == LeftPanelMode::Queue
-                && idx < state.playback_queue.tracks.len()
-            {
-                state.playback_queue.tracks.remove(idx);
-                reconcile_nav_state(state);
-                state.notification.current = Some(Notification {
-                    kind: NotificationKind::Info,
-                    message: "Removed from Queue".into(),
-                    progress: None,
-                    created_at: Instant::now(),
-                    dismiss_after: Some(Duration::from_secs(1)),
-                });
+        AppMsg::RemoveFromQueue => {
+            if state.nav.active_panel == LeftPanelMode::Queue {
+                let idx = state.nav.queue.selected_idx;
+
+                let playing_from_queue = state
+                    .playback
+                    .current
+                    .as_ref()
+                    .is_some_and(|c| c.playlist == "Queue");
+
+                if playing_from_queue && idx == 0 {
+                    return vec![];
+                }
+
+                if idx < state.playback_queue.tracks.len() {
+                    state.playback_queue.tracks.remove(idx);
+                    // reconcile_nav_state(state);
+
+                    // Adjust selection after removal
+                    if idx >= state.playback_queue.tracks.len() && idx > 0 {
+                        state.nav.queue.selected_idx = idx - 1;
+                    }
+
+                    // FIX: Ensure selection doesn't fall back to 0 if playing
+                    if playing_from_queue
+                        && state.nav.queue.selected_idx == 0
+                        && state.playback_queue.tracks.len() > 1
+                    {
+                        state.nav.queue.selected_idx = 1;
+                    }
+                    state.notification.current = Some(Notification {
+                        kind: NotificationKind::Info,
+                        message: "Removed from Queue".into(),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(1)),
+                    });
+                }
             }
         }
 
         AppMsg::ClearQueue => {
-            state.playback_queue.tracks.clear();
+            let playing_from_queue = state
+                .playback
+                .current
+                .as_ref()
+                .is_some_and(|c| c.playlist == "Queue");
+
+            if playing_from_queue {
+                state.playback_queue.tracks.truncate(1);
+            } else {
+                state.playback_queue.tracks.clear();
+            }
+
             reconcile_nav_state(state);
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Info,

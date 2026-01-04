@@ -24,7 +24,7 @@ pub enum AppMsg {
     PlayNext(Track),
     ToggleRepeatMode,
     ToggleShuffle,
-    RemoveFromQueue(usize),
+    RemoveFromQueue,
     ClearQueue,
 
     // ───── Library ─────
