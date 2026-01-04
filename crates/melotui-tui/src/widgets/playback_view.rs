@@ -35,12 +35,20 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     // We look up the full Track object from the library using the current ID
     // so we can get the real Title, Artist, and Duration.
     let current_track = state.playback.current.as_ref().and_then(|id| {
-        state
-            .library
-            .playlists
-            .iter()
-            .find(|p| p.name == id.playlist)
-            .and_then(|pl| pl.tracks.iter().find(|t| t.file_path == id.path))
+        if id.playlist == "Queue" {
+            state
+                .playback_queue
+                .tracks
+                .iter()
+                .find(|t| t.file_path == id.path)
+        } else {
+            state
+                .library
+                .playlists
+                .iter()
+                .find(|p| p.name == id.playlist)
+                .and_then(|pl| pl.tracks.iter().find(|t| t.file_path == id.path))
+        }
     });
 
     // --- TOP ROW: Status & Song Info ---
