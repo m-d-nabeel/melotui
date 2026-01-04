@@ -7,26 +7,26 @@ use ratatui::text::Span;
 
 pub fn get_status_icon(status: &PlaybackStatus) -> (&'static str, Color) {
     match status {
-        PlaybackStatus::Playing => ("▶", Color::Green),
-        PlaybackStatus::Paused => ("⏸", Color::Yellow),
-        PlaybackStatus::Stopped => ("⏹", Color::Red),
+        PlaybackStatus::Playing => ("󰐊", Color::Green),
+        PlaybackStatus::Paused => ("󰏤", Color::Yellow),
+        PlaybackStatus::Stopped => ("󰐌", Color::Red),
     }
 }
 
 pub fn get_repeat_icon(mode: &RepeatMode) -> Span<'static> {
     match mode {
-        RepeatMode::Off => Span::raw(""), // No icon for off to save space
-        RepeatMode::PlayOnce => Span::styled("1️⃣ ", Style::default().fg(Color::Cyan)),
-        RepeatMode::Track => Span::styled("🔂 ", Style::default().fg(Color::Magenta)),
-        RepeatMode::Playlist => Span::styled("🔁 ", Style::default().fg(Color::Green)),
+        RepeatMode::Off => Span::styled("󰑗 ", Style::default().fg(Color::DarkGray)),
+        RepeatMode::PlayOnce => Span::styled("󰑘 ", Style::default().fg(Color::Cyan)),
+        RepeatMode::Track => Span::styled("󰑖 ", Style::default().fg(Color::Magenta)),
+        RepeatMode::Playlist => Span::styled("󰑖 ", Style::default().fg(Color::Green)),
     }
 }
 
 pub fn get_shuffle_icon(active: bool) -> Span<'static> {
     if active {
-        Span::styled("🔀 ", Style::default().fg(Color::Green))
+        Span::styled(" ", Style::default().fg(Color::Green))
     } else {
-        Span::styled("🔀 ", Style::default().fg(Color::DarkGray))
+        Span::styled(" ", Style::default().fg(Color::DarkGray))
     }
 }
 
@@ -60,36 +60,32 @@ pub fn predict_next_song(state: &AppState) -> String {
     }
 
     // 3. Repeat Track
-    if state.repeat_mode == RepeatMode::Track {
-        if let Some(_current) = &state.playback.current {
-            return "Repeating Track".to_string();
-        }
+    if state.repeat_mode == RepeatMode::Track
+        && let Some(_current) = &state.playback.current
+    {
+        return "Repeating Track".to_string();
     }
 
     // 4. Sequential Library Playback
     // We need to look up the current playlist and find the next index
-    if let Some(current_id) = &state.playback.current {
-        if let Some(playlist) = state
+    if let Some(current_id) = &state.playback.current
+        && let Some(playlist) = state
             .library
             .playlists
             .iter()
             .find(|p| p.name == current_id.playlist)
+        && let Some(idx) = playlist
+            .tracks
+            .iter()
+            .position(|t| t.file_path == current_id.path)
+    {
+        let next_idx = idx + 1;
+        if next_idx < playlist.tracks.len() {
+            return playlist.tracks[next_idx].title.clone();
+        } else if state.repeat_mode == RepeatMode::Playlist
+            && let Some(first) = playlist.tracks.first()
         {
-            if let Some(idx) = playlist
-                .tracks
-                .iter()
-                .position(|t| t.file_path == current_id.path)
-            {
-                let next_idx = idx + 1;
-                if next_idx < playlist.tracks.len() {
-                    return playlist.tracks[next_idx].title.clone();
-                } else if state.repeat_mode == RepeatMode::Playlist {
-                    // Loop back to start
-                    if let Some(first) = playlist.tracks.first() {
-                        return first.title.clone();
-                    }
-                }
-            }
+            return first.title.clone();
         }
     }
 
