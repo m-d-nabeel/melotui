@@ -5,6 +5,7 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -41,7 +42,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Linux-only system dependencies (for alsa-sys)
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -63,6 +63,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Linux-only system dependencies (for alsa-sys)
-      - name: Instal
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
+
+      - name: Install Rust (stable + components)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
