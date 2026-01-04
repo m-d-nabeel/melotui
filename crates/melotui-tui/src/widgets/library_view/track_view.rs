@@ -1,5 +1,8 @@
 use crate::format_duration;
-use melotui_core::{AppState, state_registry::{LeftPanelMode, LibraryViewDepth}};
+use melotui_core::{
+    AppState,
+    state_registry::{LeftPanelMode, LibraryViewDepth},
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
