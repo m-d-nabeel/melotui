@@ -1,3 +1,4 @@
+pub mod action_handlers;
 pub mod app_state;
 pub mod art_converter;
 pub mod command;

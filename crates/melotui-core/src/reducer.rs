@@ -4,42 +4,18 @@ use std::{
 };
 
 use crate::{
-    AppMsg, AppState, Command, Library, NavMode, UIMode,
+    AppMsg, AppState, Library, UIMode,
+    action_handlers::{
+        handler_enqueue_download, handler_play_current_selection, handler_playback_ended,
+        handler_process_command_input,
+    },
     art_converter::{SizeMode, bytes_to_ascii},
+    reconcile_nav_state,
     state_registry::{
-        DownloadJob, DownloadStatus, Notification, NotificationKind, PlaybackStatus, TrackId,
-        VisualizerMode,
+        DownloadStatus, LeftPanelMode, LibraryViewDepth, Notification, NotificationKind,
+        PlaybackStatus, RepeatMode, VisualizerMode,
     },
 };
-
-fn reconcile_nav_state(state: &mut AppState) {
-    let playlist_count = state.library.playlists.len();
-
-    // Clamp selected playlist
-    if playlist_count == 0 {
-        state.nav.selected_playlist = 0;
-        state.nav.selected_tracks.clear();
-        return;
-    }
-
-    if state.nav.selected_playlist >= playlist_count {
-        state.nav.selected_playlist = playlist_count - 1;
-    }
-
-    // Resize per-playlist track cursors
-    state.nav.selected_tracks.resize(playlist_count, 0);
-
-    // Clamp each track cursor
-    for (i, playlist) in state.library.playlists.iter().enumerate() {
-        let track_count = playlist.tracks.len();
-
-        if track_count == 0 {
-            state.nav.selected_tracks[i] = 0;
-        } else if state.nav.selected_tracks[i] >= track_count {
-            state.nav.selected_tracks[i] = track_count - 1;
-        }
-    }
-}
 
 pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
     match msg {
@@ -53,27 +29,39 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 dismiss_after: None,
             });
         }
+
+        AppMsg::ToggleLibraryQueue => {
+            tracing::info!("Toggle Library Queue");
+            state.nav.active_panel = match state.nav.active_panel {
+                LeftPanelMode::Library => LeftPanelMode::Queue,
+                LeftPanelMode::Queue => LeftPanelMode::Library,
+            };
+        }
+
         AppMsg::SwitchToPlaylists => {
             tracing::debug!("Switch to Playlist Mode");
             state.last_nav_time = state.time_elapsed;
-            state.nav.mode = NavMode::Playlists;
+            state.nav.active_panel = LeftPanelMode::Library;
+            state.nav.library.depth = LibraryViewDepth::Playlists;
         }
+
         AppMsg::SwitchToTracks => {
-            tracing::debug!("Switch to Track Mode");
+            tracing::debug!("Switch to Tracks");
             state.last_nav_time = state.time_elapsed;
-            state.nav.mode = NavMode::Tracks;
+            state.nav.active_panel = LeftPanelMode::Library;
+            state.nav.library.depth = LibraryViewDepth::Tracks;
         }
+
         AppMsg::SwitchToTrackInfo => {
-            tracing::debug!("Switch to TrackInfo Mode");
+            tracing::debug!("Switch to Track Info");
             state.last_nav_time = state.time_elapsed;
-            state.nav.mode = NavMode::TrackInfo;
+            state.nav.active_panel = LeftPanelMode::Library;
+            state.nav.library.depth = LibraryViewDepth::TrackInfo;
 
-            // --- LOAD ART FOR SIDEBAR (Center Cropped) ---
             state.track_info_art = None;
-
-            let p_idx = state.nav.selected_playlist;
+            let p_idx = state.nav.library.selected_playlist_idx;
             if let Some(playlist) = state.library.playlists.get(p_idx) {
-                let t_idx = state.nav.selected_tracks[p_idx];
+                let t_idx = state.nav.library.selected_tracks_curs[p_idx];
                 if let Some(track) = playlist.tracks.get(t_idx)
                     && track.has_cover
                     && let Some((data, _)) = Library::get_album_art(&track.file_path)
@@ -89,92 +77,168 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 }
             }
         }
+
         AppMsg::MoveUp => {
             state.last_nav_time = state.time_elapsed;
-            match state.nav.mode {
-                NavMode::Playlists => {
-                    if state.nav.selected_playlist > 0 {
-                        state.nav.selected_playlist -= 1;
-                    }
-                }
-                NavMode::Tracks => {
-                    let p = state.nav.selected_playlist;
-                    let cursor = &mut state.nav.selected_tracks[p];
-
-                    if *cursor > 0 {
-                        *cursor -= 1;
-                    }
-                }
-                NavMode::TrackInfo => {}
-            }
-        }
-        AppMsg::MoveDown => {
-            state.last_nav_time = state.time_elapsed;
-            match state.nav.mode {
-                NavMode::Playlists => {
-                    if state.nav.selected_playlist + 1 < state.library.playlists.len() {
-                        state.nav.selected_playlist += 1;
-                    }
-                }
-                NavMode::Tracks => {
-                    let p = state.nav.selected_playlist;
-                    let tracks = &state.library.playlists[p].tracks;
-                    let cursor = &mut state.nav.selected_tracks[p];
-
-                    if *cursor + 1 < tracks.len() {
-                        *cursor += 1;
-                    }
-                }
-                NavMode::TrackInfo => {}
-            }
-        }
-        AppMsg::RequestRescanLibrary => {
-            match Library::scan(state.library.root.clone()) {
-                Ok(new_library) => {
-                    state.library = new_library;
-                    reconcile_nav_state(state);
-                    tracing::info!("Library rescanned");
-
-                    // reconcile playback
-                    if let Some(current) = &state.playback.current {
-                        let still_exists = state.library.playlists.iter().any(|pl| {
-                            pl.name == current.playlist
-                                && pl.tracks.iter().any(|p| p.file_path == current.path)
-                        });
-
-                        if !still_exists {
-                            state.playback.current = None;
-                            state.playback.status = PlaybackStatus::Stopped;
-                            state.notification.current = Some(Notification {
-                                kind: NotificationKind::Info,
-                                message: "Playback stopped (file removed)".into(),
-                                progress: None,
-                                created_at: Instant::now(),
-                                dismiss_after: Some(Duration::from_secs(2)),
-                            });
+            match state.nav.active_panel {
+                LeftPanelMode::Library => match state.nav.library.depth {
+                    LibraryViewDepth::Playlists => {
+                        if state.nav.library.selected_playlist_idx > 0 {
+                            state.nav.library.selected_playlist_idx -= 1;
                         }
                     }
-
-                    state.notification.current = Some(Notification {
-                        kind: NotificationKind::Info,
-                        message: "Library rescanned".into(),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
-                }
-                Err(err) => {
-                    tracing::error!("Library rescan failed: {}", err);
-                    state.notification.current = Some(Notification {
-                        kind: NotificationKind::Info,
-                        message: format!("Rescan failed: {err}"),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
+                    LibraryViewDepth::Tracks => {
+                        let p = state.nav.library.selected_playlist_idx;
+                        if p < state.nav.library.selected_tracks_curs.len()
+                            && state.nav.library.selected_tracks_curs[p] > 0
+                        {
+                            state.nav.library.selected_tracks_curs[p] -= 1;
+                        }
+                    }
+                    LibraryViewDepth::TrackInfo => {}
+                },
+                LeftPanelMode::Queue => {
+                    if state.nav.queue.selected_idx > 0 {
+                        state.nav.queue.selected_idx -= 1;
+                    }
                 }
             }
         }
+
+        AppMsg::MoveDown => {
+            state.last_nav_time = state.time_elapsed;
+            match state.nav.active_panel {
+                LeftPanelMode::Library => match state.nav.library.depth {
+                    LibraryViewDepth::Playlists => {
+                        if state.nav.library.selected_playlist_idx + 1
+                            < state.library.playlists.len()
+                        {
+                            state.nav.library.selected_playlist_idx += 1;
+                        }
+                    }
+                    LibraryViewDepth::Tracks => {
+                        let p = state.nav.library.selected_playlist_idx;
+                        if let Some(playlist) = state.library.playlists.get(p)
+                            && state.nav.library.selected_tracks_curs[p] + 1 < playlist.tracks.len()
+                        {
+                            state.nav.library.selected_tracks_curs[p] += 1;
+                        }
+                    }
+                    LibraryViewDepth::TrackInfo => {}
+                },
+                LeftPanelMode::Queue => {
+                    if !state.playback_queue.tracks.is_empty()
+                        && state.nav.queue.selected_idx + 1 < state.playback_queue.tracks.len()
+                    {
+                        state.nav.queue.selected_idx += 1;
+                    }
+                }
+            }
+        }
+
+        AppMsg::AddToQueue(track) => {
+            state.playback_queue.tracks.push_back(track);
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Info,
+                message: "Added to Queue".into(),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(1)),
+            });
+        }
+
+        AppMsg::RemoveFromQueue(idx) => {
+            if state.nav.active_panel == LeftPanelMode::Queue
+                && idx < state.playback_queue.tracks.len()
+            {
+                state.playback_queue.tracks.remove(idx);
+                reconcile_nav_state(state);
+                state.notification.current = Some(Notification {
+                    kind: NotificationKind::Info,
+                    message: "Removed from Queue".into(),
+                    progress: None,
+                    created_at: Instant::now(),
+                    dismiss_after: Some(Duration::from_secs(1)),
+                });
+            }
+        }
+
+        AppMsg::ClearQueue => {
+            state.playback_queue.tracks.clear();
+            reconcile_nav_state(state);
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Info,
+                message: "Queue Cleared".into(),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(1)),
+            });
+        }
+
+        AppMsg::ToggleShuffle => {
+            state.playback.shuffle = !state.playback.shuffle;
+            let status = if state.playback.shuffle { "On" } else { "Off" };
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Info,
+                message: format!("Shuffle: {}", status),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(1)),
+            });
+        }
+
+        AppMsg::ToggleRepeatMode => {
+            state.repeat_mode = state.repeat_mode.next();
+
+            let mode_str = match state.repeat_mode {
+                RepeatMode::Off => "Linear (Default)",
+                RepeatMode::PlayOnce => "Play Once",
+                RepeatMode::Track => "Repeat Track",
+                RepeatMode::Playlist => "Repeat List",
+            };
+
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Info,
+                message: format!("Mode: {}", mode_str),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(1)),
+            });
+
+            return vec![];
+        }
+
+        AppMsg::RequestPlaySelected => {
+            tracing::info!("Play Requested");
+            return handler_play_current_selection(state);
+        }
+
+        AppMsg::RequestRescanLibrary => match Library::scan(state.library.root.clone()) {
+            Ok(new_library) => {
+                state.library = new_library;
+                reconcile_nav_state(state);
+                tracing::info!("Library rescanned");
+
+                state.notification.current = Some(Notification {
+                    kind: NotificationKind::Info,
+                    message: "Library rescanned".into(),
+                    progress: None,
+                    created_at: Instant::now(),
+                    dismiss_after: Some(Duration::from_secs(2)),
+                });
+            }
+            Err(err) => {
+                tracing::error!("Error rescanning library: {:?}", err);
+                state.notification.current = Some(Notification {
+                    kind: NotificationKind::Error,
+                    message: format!("Rescan failed: {err}"),
+                    progress: None,
+                    created_at: Instant::now(),
+                    dismiss_after: Some(Duration::from_secs(2)),
+                });
+            }
+        },
+
         AppMsg::EnterCommandMode => {
             tracing::debug!("Enter Command Mode");
             state.ui.mode = UIMode::Command;
@@ -191,94 +255,30 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         AppMsg::BackspaceCommand => {
             state.ui.command_buffer.pop();
         }
+
         AppMsg::SubmitCommand(input) => {
-            state.ui.mode = UIMode::Normal;
-            state.ui.command_buffer.clear();
-
-            let input = input.trim();
-            if input.is_empty() {
-                return vec![];
-            }
-
-            match Command::parse(input) {
-                Command::Quit => {
-                    return vec![AppMsg::RequestQuit];
-                }
-                Command::Rescan => {
-                    return vec![AppMsg::RequestRescanLibrary];
-                }
-                Command::Download { query } => {
-                    tracing::debug!("Command::Download <- {}", query);
-
-                    state.notification.current = Some(Notification {
-                        kind: NotificationKind::Info,
-                        message: format!("Downloading: {}", query),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
-
-                    return vec![AppMsg::RequestDownload { query }];
-                }
-                Command::Unknown(reason) => {
-                    state.notification.current = Some(Notification {
-                        kind: NotificationKind::Error,
-                        message: format!("Unknown command: {}", reason),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
-                    return vec![];
-                }
-                Command::ChangeVisualizer { arg } => {
-                    state.notification.current = Some(Notification {
-                        kind: NotificationKind::Info,
-                        message: "Spectrum Style changed.".to_string(),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
-                    state.spectrum_style = arg;
-                    return vec![];
-                }
-            }
+            tracing::info!("SubmitCommand called with :{:?}", input);
+            return handler_process_command_input(state, input);
         }
+
         AppMsg::RequestDownload { query } => {
-            tracing::info!("Queueing download: {}", query);
-
-            let curr_playlist_idx = state.nav.selected_playlist;
-            let download_path = match state.library.playlists.get(curr_playlist_idx) {
-                Some(pl) => pl.path.to_path_buf(),
-                None => {
-                    tracing::warn!("No playlist found at index {}.", curr_playlist_idx);
-                    return vec![];
-                }
-            };
-
-            state.download.queue.push_back(DownloadJob {
-                query,
-                download_path,
-            });
-            // If nothing is running, start immediately
-            if matches!(state.download.status, DownloadStatus::Idle) {
-                return vec![AppMsg::BeginNextDownload];
-            }
-            return vec![];
+            tracing::info!("RequestDownload called with: {:?}", query);
+            return handler_enqueue_download(state, query);
         }
+
         AppMsg::BeginNextDownload => {
             let job = match state.download.queue.pop_front() {
                 Some(job) => job,
                 None => return vec![],
             };
-
-            tracing::info!("Starting download: {}", job.query);
+            tracing::info!("Next Download Started with: {:?}", job.query);
             state.download.status = DownloadStatus::Running { percent: 0 };
-            // THIS IS THE IPC TRIGGER
             return vec![AppMsg::DispatchDownload {
                 query: job.query,
                 download_path: job.download_path,
             }];
         }
+
         AppMsg::DownloadProgress { percent } => {
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Progress,
@@ -291,6 +291,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 state.download.status = DownloadStatus::Running { percent };
             }
         }
+
         AppMsg::DownloadFinished => {
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Info,
@@ -299,16 +300,11 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 created_at: Instant::now(),
                 dismiss_after: Some(Duration::from_secs(2)),
             });
-
             state.download.status = DownloadStatus::Idle;
-
-            return vec![
-                AppMsg::RequestRescanLibrary,
-                AppMsg::BeginNextDownload, // ← THIS is the queue
-            ];
+            return vec![AppMsg::RequestRescanLibrary, AppMsg::BeginNextDownload];
         }
+
         AppMsg::DownloadFailed { error } => {
-            tracing::error!("Download failed: {}", error);
             state.notification.current = Some(Notification {
                 kind: NotificationKind::Error,
                 message: error.clone(),
@@ -316,72 +312,19 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 created_at: Instant::now(),
                 dismiss_after: Some(Duration::from_secs(4)),
             });
-
             state.download.status = DownloadStatus::Idle;
-
             return vec![AppMsg::BeginNextDownload];
         }
+
         AppMsg::RequestCancelDownload => {
-            tracing::info!("Cancelling download");
-
-            state.notification.current = Some(Notification {
-                kind: NotificationKind::Error,
-                message: "Cancelling Download".into(),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(4)),
-            });
-
             if let DownloadStatus::Running { .. } = &state.download.status {
                 state.download.status = DownloadStatus::Cancelling;
             }
-
-            return vec![];
+            return vec![AppMsg::RequestCancelDownload];
         }
+
         AppMsg::DispatchDownload { .. } => {}
-        AppMsg::RequestPlaySelected => {
-            if state.nav.mode != NavMode::Tracks {
-                return vec![];
-            }
 
-            let p = state.nav.selected_playlist;
-            if let Some(playlist) = state.library.playlists.get(p) {
-                let t = state.nav.selected_tracks[p];
-                if let Some(track) = playlist.tracks.get(t) {
-                    // A. Update UI State IMMEDIATELY
-                    state.playback.current = Some(TrackId {
-                        playlist: playlist.name.clone(),
-                        path: track.file_path.clone(),
-                    });
-                    state.playback.status = PlaybackStatus::Playing;
-                    state.playback.progress_ms = 0;
-                    state.playback.duration_ms = None; // Will be filled by AudioStarted later
-
-                    state.notification.current = Some(Notification {
-                        kind: NotificationKind::Info,
-                        message: format!("Playing {}", track.file_path.to_string_lossy()),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
-
-                    state.current_album_art = None;
-                    if track.has_cover
-                        && let Some((data, _mime)) = Library::get_album_art(&track.file_path)
-                    {
-                        // Hardcode a reasonable width for the ASCII art, e.g., 40 columns
-                        if let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(30)) {
-                            state.current_album_art = Some(ascii);
-                        }
-                    }
-
-                    // B. Trigger Side-Effect
-                    return vec![AppMsg::DispatchPlay {
-                        path: track.file_path.clone(),
-                    }];
-                }
-            }
-        }
         AppMsg::AdjustVolume(delta) => {
             state.audio.volume = (state.audio.volume + delta).clamp(0.0, 1.5);
             return vec![AppMsg::DispatchSetVolume(state.audio.volume)];
@@ -391,7 +334,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             return vec![AppMsg::DispatchSetSpeed(state.audio.speed)];
         }
         AppMsg::AdjustBass(delta) => {
-            state.audio.bass = (state.audio.bass + delta).clamp(0.0, 5.0);
+            state.audio.bass = (state.audio.bass + delta).clamp(0.1, 5.0);
             return vec![AppMsg::DispatchSetBass(state.audio.bass)];
         }
         AppMsg::AdjustTreble(delta) => {
@@ -406,116 +349,66 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             state.audio.echo = (state.audio.echo + delta).clamp(0.0, 0.9);
             return vec![AppMsg::DispatchSetEcho(state.audio.echo)];
         }
+
         AppMsg::DispatchSetVolume(_) => {}
         AppMsg::DispatchSetSpeed(_) => {}
         AppMsg::DispatchSetBass(_) => {}
         AppMsg::DispatchSetTreble(_) => {}
         AppMsg::DispatchSetReverb(_) => {}
         AppMsg::DispatchSetEcho(_) => {}
-        AppMsg::RequestTogglePlayback => {
-            match state.playback.status {
-                // Case A: Playing -> Pause
-                PlaybackStatus::Playing => {
-                    state.playback.status = PlaybackStatus::Paused;
-                    state.notification.current = Some(Notification {
-                        kind: NotificationKind::Info,
-                        message: "Paused".into(),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(1)),
-                    });
-                    return vec![AppMsg::DispatchPause];
-                }
 
-                // Case B: Paused -> Resume
-                PlaybackStatus::Paused => {
-                    if state.playback.current.is_some() {
-                        state.playback.status = PlaybackStatus::Playing;
-                        state.notification.current = Some(Notification {
-                            kind: NotificationKind::Info,
-                            message: "Resumed".into(),
-                            progress: None,
-                            created_at: Instant::now(),
-                            dismiss_after: Some(Duration::from_secs(1)),
-                        });
-                        return vec![AppMsg::DispatchResume];
-                    }
-                }
-
-                // Case C: Stopped -> Replay
-                PlaybackStatus::Stopped => {
-                    // If we have a selected track, start it over from 0
-                    if let Some(track) = &state.playback.current {
-                        state.playback.status = PlaybackStatus::Playing;
-                        state.playback.progress_ms = 0; // Reset visual progress
-
-                        state.notification.current = Some(Notification {
-                            kind: NotificationKind::Info,
-                            message: "Replaying".into(),
-                            progress: None,
-                            created_at: Instant::now(),
-                            dismiss_after: Some(Duration::from_secs(1)),
-                        });
-
-                        // We use DispatchPlay, NOT DispatchResume
-                        return vec![AppMsg::DispatchPlay {
-                            path: track.path.clone(),
-                        }];
-                    }
+        AppMsg::RequestTogglePlayback => match state.playback.status {
+            PlaybackStatus::Playing => {
+                state.playback.status = PlaybackStatus::Paused;
+                return vec![AppMsg::DispatchPause];
+            }
+            PlaybackStatus::Paused => {
+                if state.playback.current.is_some() {
+                    state.playback.status = PlaybackStatus::Playing;
+                    return vec![AppMsg::DispatchResume];
                 }
             }
-            return vec![];
-        }
+            PlaybackStatus::Stopped => {
+                if let Some(track_id) = &state.playback.current {
+                    state.playback.status = PlaybackStatus::Playing;
+                    return vec![AppMsg::DispatchPlay {
+                        path: track_id.path.clone(),
+                    }];
+                }
+            }
+        },
+
         AppMsg::RequestStop => {
             state.playback.status = PlaybackStatus::Stopped;
+            state.playback.status = PlaybackStatus::Stopped;
             state.playback.progress_ms = 0;
-            state.notification.current = Some(Notification {
-                kind: NotificationKind::Info,
-                message: "Stopped".into(),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(1)),
-            });
             return vec![AppMsg::DispatchStop];
         }
-        AppMsg::RequestSeek { offset_seconds: _ } => {
-            // Not working correctly
-            // let current = state.playback.progress_ms as i64;
-            // // Default to 0 if we don't know duration yet, or huge number if we do
-            // let total = state.playback.duration_ms.unwrap_or(u64::MAX) as i64;
-            // let offset_ms = offset_seconds * 1000;
-            //
-            // // Clamp logic
-            // let new_pos = (current + offset_ms).max(0).min(total) as u64;
-            //
-            // // Optimistic Update: Jump the progress bar immediately
-            // state.playback.progress_ms = new_pos;
-            //
-            // return vec![AppMsg::DispatchSeek {
-            //     position_ms: new_pos,
-            // }];
+
+        AppMsg::RequestSeek { .. } => {
+            // Placeholder for seek logic
+            tracing::error!("Seeking not implemented yet");
         }
         AppMsg::DispatchPlay { .. } => {}
         AppMsg::DispatchPause => {}
         AppMsg::DispatchResume => {}
         AppMsg::DispatchStop => {}
         AppMsg::DispatchSeek { .. } => {}
-        AppMsg::AudioStarted { path: _ } => {}
+        AppMsg::AudioStarted { .. } => {}
+
         AppMsg::AudioProgress { position_ms } => {
-            // Sync up. Even if optimistic UI set it, we correct it here.
-            // We only update if status is Playing to avoid jitter if user just hit Pause.
             if state.playback.status == PlaybackStatus::Playing {
                 state.playback.progress_ms = position_ms;
             }
         }
+
         AppMsg::AudioFinished => {
-            // Natural finish (not user requested)
-            state.playback.status = PlaybackStatus::Stopped;
-            state.playback.progress_ms = 0;
+            tracing::info!("Audio Finished...");
+            // TODO: Check this logic thoroughly
+            return handler_playback_ended(state);
         }
-        AppMsg::AudioPaused | AppMsg::AudioResumed => {
-            // No-op: We already updated the UI optimistically in RequestTogglePlayback.
-        }
+
+        AppMsg::AudioPaused | AppMsg::AudioResumed => {}
         AppMsg::AudioError { error } => {
             state.playback.status = PlaybackStatus::Stopped;
             state.notification.current = Some(Notification {
@@ -527,36 +420,10 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
             });
         }
         AppMsg::ToggleArt => {
-            // 1. Flip the Mode
             state.visualizer_mode = match state.visualizer_mode {
                 VisualizerMode::Spectrum => VisualizerMode::AlbumArt,
                 VisualizerMode::AlbumArt => VisualizerMode::Spectrum,
             };
-
-            // If we just switched TO Art mode, and haven't loaded it yet, do it now.
-            if state.visualizer_mode == VisualizerMode::AlbumArt
-                && state.current_album_art.is_none()
-            {
-                // A. Resolve the current track from the Library
-                if let Some(track_id) = &state.playback.current {
-                    let track_opt = state
-                        .library
-                        .playlists
-                        .iter()
-                        .find(|p| p.name == track_id.playlist)
-                        .and_then(|pl| pl.tracks.iter().find(|t| t.file_path == track_id.path));
-
-                    // B. Load and Convert
-                    if let Some(track) = track_opt
-                        && track.has_cover
-                        && let Some((data, _mime)) = Library::get_album_art(&track.file_path)
-                        && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(40))
-                    {
-                        state.current_album_art = Some(ascii);
-                    }
-                }
-            }
-            // 2. Dispatch the command to the worker
             let is_spectrum = state.visualizer_mode == VisualizerMode::Spectrum;
             return vec![AppMsg::DispatchSetVisualizer {
                 active: is_spectrum,
@@ -567,7 +434,17 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         }
         AppMsg::DispatchSetVisualizer { .. } => {}
         AppMsg::Noop => {}
-        _ => {}
+        AppMsg::PlayNext(track) => {
+            state.playback_queue.tracks.push_front(track.clone());
+
+            state.notification.current = Some(Notification {
+                kind: NotificationKind::Info,
+                message: format!("Set to play next: {}", track.title),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(2)),
+            });
+        }
     }
     vec![]
 }
