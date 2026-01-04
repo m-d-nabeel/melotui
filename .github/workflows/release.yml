@@ -97,4 +97,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ${{ matrix.asset_name }}
-          generate_release_notes: true
+          generate_release_notes: ${{ matrix.os == 'ubuntu-latest' }}
