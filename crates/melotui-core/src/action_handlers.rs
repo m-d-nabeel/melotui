@@ -9,6 +9,7 @@ use crate::{
     AppMsg, AppState, Command, Library, UIMode,
     art_converter::{SizeMode, bytes_to_ascii},
     library::Track,
+    reconcile_nav_state,
     state_registry::{
         DownloadJob, DownloadStatus, LeftPanelMode, LibraryViewDepth, Notification,
         NotificationKind, PlaybackStatus, RepeatMode, TrackId,
@@ -227,14 +228,20 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
 
         if current.playlist == "Queue" {
             // Case A: We are ALREADY in the Queue.
-            // Continue playing the Queue until it ends or loops.
-            next_context_name = "Queue".to_string();
-            let queue = &state.playback_queue.tracks;
-
-            if let Some(idx) = queue.iter().position(|t| t.file_path == current.path)
-                && let Some(next_idx) = get_next_index(idx, queue.len())
+            // Consumer behavior: remove the current track and play the next one
+            if let Some(idx) = state
+                .playback_queue
+                .tracks
+                .iter()
+                .position(|t| t.file_path == current.path)
             {
-                next_track_info = queue.get(next_idx).cloned();
+                state.playback_queue.tracks.remove(idx);
+                reconcile_nav_state(state);
+            }
+
+            next_context_name = "Queue".to_string();
+            if !state.playback_queue.tracks.is_empty() {
+                next_track_info = state.playback_queue.tracks.front().cloned();
             }
         } else {
             // Case B: We are in the Library (or a named Playlist).
@@ -243,12 +250,9 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
             // If the queue is not empty, we switch context to the Queue and play index 0.
             if !state.playback_queue.tracks.is_empty() {
                 next_context_name = "Queue".to_string();
-                // Play the first item in the queue (FIFO)
-                next_track_info = state.playback_queue.tracks.front().cloned();
-
-                // Note: We do not remove it here, treating the Queue as a playlist.
-                // If you want "Consumer" behavior (pop after play), use:
-                // state.playback_queue.tracks.pop_front();
+                // Play the first item in the queue (FIFO) and remove it (consumer behavior)
+                next_track_info = state.playback_queue.tracks.pop_front();
+                reconcile_nav_state(state);
             } else {
                 // Queue is empty, continue with Library logic.
                 next_context_name = current.playlist.clone();
