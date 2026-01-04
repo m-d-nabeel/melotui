@@ -15,9 +15,9 @@ pub fn get_status_icon(status: &PlaybackStatus) -> (&'static str, Color) {
 
 pub fn get_repeat_icon(mode: &RepeatMode) -> Span<'static> {
     match mode {
-        RepeatMode::Off => Span::styled("󰑗 ", Style::default().fg(Color::DarkGray)),
-        RepeatMode::PlayOnce => Span::styled("󰑘 ", Style::default().fg(Color::Cyan)),
-        RepeatMode::Track => Span::styled("󰑖 ", Style::default().fg(Color::Magenta)),
+        RepeatMode::Off => Span::styled(" ", Style::default().fg(Color::DarkGray)),
+        RepeatMode::PlayOnce => Span::styled("󰑗 ", Style::default().fg(Color::Cyan)),
+        RepeatMode::Track => Span::styled("󰑘 ", Style::default().fg(Color::Magenta)),
         RepeatMode::Playlist => Span::styled("󰑖 ", Style::default().fg(Color::Green)),
     }
 }

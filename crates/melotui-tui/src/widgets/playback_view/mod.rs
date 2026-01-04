@@ -4,7 +4,7 @@ use crate::{
     format_duration,
     widgets::playback_view::progress_bar_view::{ProgressBarConfig, ProgressBarTheme},
 };
-use melotui_core::AppState;
+use melotui_core::{AppState, state_registry::RepeatMode};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -172,10 +172,16 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     // --- ROW 5: Next Song Info (dull colors) ---
     let next_area = v_chunks[4];
+    let (label, name) = match state.repeat_mode {
+        RepeatMode::Track => ("Repeating: ", "Track"),
+        RepeatMode::PlayOnce => ("Playing Once: ", "End After Track"),
+        RepeatMode::Playlist => ("Up Next (loop): ", next_song_name.as_str()),
+        RepeatMode::Off => ("Up Next: ", next_song_name.as_str()),
+    };
     let next_text = Line::from(vec![
-        Span::styled("Up Next: ", Style::default().fg(Color::DarkGray)),
+        Span::styled(label, Style::default().fg(Color::DarkGray)),
         Span::styled(
-            next_song_name,
+            name,
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC | Modifier::DIM),
