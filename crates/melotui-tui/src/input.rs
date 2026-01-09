@@ -1,6 +1,6 @@
 use melotui_core::{
     AppMsg, AppState, UIMode,
-    state_registry::{LeftPanelMode, LibraryViewDepth},
+    state::{LeftPanelMode, LibraryViewDepth},
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 

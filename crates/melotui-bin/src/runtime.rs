@@ -2,7 +2,7 @@ use std::{collections::VecDeque, time::Instant};
 
 use melotui_core::{
     AppMsg, AppState, Library,
-    state_registry::{SpectrumStyle, VisualizerMode},
+    state::{SpectrumStyle, VisualizerMode},
 };
 use melotui_ipc::spectrum_bridge;
 use melotui_tui::Tui;

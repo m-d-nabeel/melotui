@@ -2,7 +2,7 @@ use std::{collections::VecDeque, process::Command};
 
 use crate::{
     Library,
-    state_registry::{
+    state::{
         AudioState, DownloadState, DownloadStatus, LeftPanelMode, LibraryNavState,
         LibraryViewDepth, NavigationState, NotificationState, PlaybackQueueState, PlaybackState,
         PlaybackStatus, QueueNavState, RepeatMode, SpectrumStyle, UIMode, UIState, VisualizerMode,

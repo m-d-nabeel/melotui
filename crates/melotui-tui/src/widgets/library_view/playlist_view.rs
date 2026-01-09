@@ -1,6 +1,6 @@
 use melotui_core::{
     AppState,
-    state_registry::{LeftPanelMode, LibraryViewDepth, PlaybackContext},
+    state::{LeftPanelMode, LibraryViewDepth, PlaybackContext},
 };
 use ratatui::{
     Frame,

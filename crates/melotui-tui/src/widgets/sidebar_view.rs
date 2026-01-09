@@ -1,5 +1,5 @@
 use crate::widgets::{library_view, queue_view};
-use melotui_core::{AppState, state_registry::LeftPanelMode};
+use melotui_core::{AppState, state::LeftPanelMode};
 use ratatui::{Frame, layout::Rect};
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {

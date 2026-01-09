@@ -10,7 +10,7 @@ use crate::{
     art_converter::{SizeMode, bytes_to_ascii},
     library::Track,
     reconcile_nav_state,
-    state_registry::{
+    state::{
         DownloadJob, DownloadStatus, LeftPanelMode, LibraryViewDepth, Notification,
         NotificationKind, PlaybackContext, PlaybackStatus, RepeatMode, TrackId,
     },

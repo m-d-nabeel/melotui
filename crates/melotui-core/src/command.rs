@@ -1,6 +1,5 @@
+use crate::state::SpectrumStyle;
 use std::str::FromStr;
-
-use crate::state_registry::SpectrumStyle;
 
 #[derive(Debug)]
 pub enum Command {

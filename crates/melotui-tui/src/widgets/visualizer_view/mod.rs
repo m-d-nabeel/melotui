@@ -2,7 +2,7 @@ mod album_art_view;
 mod spectrum_visualizer_view;
 use melotui_core::{
     AppState,
-    state_registry::{SpectrumStyle, VisualizerMode},
+    state::{SpectrumStyle, VisualizerMode},
 };
 use ratatui::{Frame, layout::Rect};
 

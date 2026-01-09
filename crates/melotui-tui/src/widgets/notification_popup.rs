@@ -6,7 +6,7 @@ use ratatui::{
 };
 
 use melotui_core::AppState;
-use melotui_core::state_registry::NotificationKind;
+use melotui_core::state::NotificationKind;
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let Some(notification) = &state.notification.current else {
