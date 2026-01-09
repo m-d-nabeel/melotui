@@ -58,17 +58,18 @@ pub fn handler_play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
     };
 
     if let Some(track) = track_to_play {
-        let playlist_name = match state.nav.active_panel {
-            LeftPanelMode::Library => state.library.playlists
-                [state.nav.library.selected_playlist_idx]
-                .name
-                .clone(),
-            LeftPanelMode::Queue => "Queue".to_string(),
+        let context = match state.nav.active_panel {
+            LeftPanelMode::Library => PlaybackContext::Library {
+                playlist_name: state.library.playlists[state.nav.library.selected_playlist_idx]
+                    .name
+                    .clone(),
+            },
+            LeftPanelMode::Queue => PlaybackContext::Queue,
         };
 
         // A. Update UI State IMMEDIATELY
         state.playback.current = Some(TrackId {
-            context: PlaybackContext::Library { playlist_name },
+            context,
             path: track.file_path.clone(),
         });
         state.playback.status = PlaybackStatus::Playing;
