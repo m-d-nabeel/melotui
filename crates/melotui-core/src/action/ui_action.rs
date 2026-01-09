@@ -2,6 +2,7 @@ use std::time::{Duration, Instant};
 
 use crate::{
     AppMsg, AppState, Command, UIMode,
+    message::{download::DownloadMsg, library::LibraryMsg},
     state::{Notification, NotificationKind},
 };
 
@@ -53,7 +54,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::RequestQuit]
         }
         Command::Rescan => {
-            vec![AppMsg::RequestRescanLibrary]
+            vec![AppMsg::Library(LibraryMsg::RequestRescanLibrary)]
         }
         Command::Download { query } => {
             state.notification.current = Some(Notification {
@@ -63,7 +64,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 created_at: Instant::now(),
                 dismiss_after: Some(Duration::from_secs(2)),
             });
-            vec![AppMsg::RequestDownload { query }]
+            vec![AppMsg::Download(DownloadMsg::RequestDownload { query })]
         }
         Command::ChangeVisualizer { arg } => {
             state.spectrum_style = arg;

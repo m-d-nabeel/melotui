@@ -5,6 +5,7 @@ use std::{
 
 use crate::{
     AppMsg, AppState,
+    message::{download::DownloadMsg, library::LibraryMsg},
     state::{DownloadJob, DownloadStatus, Notification, NotificationKind},
 };
 
@@ -44,7 +45,7 @@ fn enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
     });
 
     if matches!(state.download.status, DownloadStatus::Idle) {
-        return vec![AppMsg::BeginNextDownload];
+        return vec![AppMsg::Download(DownloadMsg::BeginNextDownload)];
     }
     vec![]
 }
@@ -56,10 +57,10 @@ pub fn handle_begin_next_download(state: &mut AppState) -> Vec<AppMsg> {
     };
     tracing::info!("Next Download Started with: {:?}", job.query);
     state.download.status = DownloadStatus::Running { percent: 0 };
-    vec![AppMsg::DispatchDownload {
+    vec![AppMsg::Download(DownloadMsg::DispatchDownload {
         query: job.query,
         download_path: job.download_path,
-    }]
+    })]
 }
 
 pub fn handle_download_progress(state: &mut AppState, percent: u8) -> Vec<AppMsg> {
@@ -85,7 +86,10 @@ pub fn handle_download_finished(state: &mut AppState) -> Vec<AppMsg> {
         dismiss_after: Some(Duration::from_secs(2)),
     });
     state.download.status = DownloadStatus::Idle;
-    vec![AppMsg::RequestRescanLibrary, AppMsg::BeginNextDownload]
+    vec![
+        AppMsg::Library(LibraryMsg::RequestRescanLibrary),
+        AppMsg::Download(DownloadMsg::BeginNextDownload),
+    ]
 }
 
 pub fn handle_download_failed(state: &mut AppState, error: String) -> Vec<AppMsg> {
@@ -97,14 +101,14 @@ pub fn handle_download_failed(state: &mut AppState, error: String) -> Vec<AppMsg
         dismiss_after: Some(Duration::from_secs(4)),
     });
     state.download.status = DownloadStatus::Idle;
-    vec![AppMsg::BeginNextDownload]
+    vec![AppMsg::Download(DownloadMsg::BeginNextDownload)]
 }
 
 pub fn handle_request_cancel_download(state: &mut AppState) -> Vec<AppMsg> {
     if let DownloadStatus::Running { .. } = &state.download.status {
         state.download.status = DownloadStatus::Cancelling;
     }
-    vec![AppMsg::RequestCancelDownload]
+    vec![AppMsg::Download(DownloadMsg::RequestCancelDownload)]
 }
 
 pub fn handle_dispatch_download(

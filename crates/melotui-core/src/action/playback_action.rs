@@ -6,6 +6,7 @@ use crate::{
     AppMsg, AppState, Library,
     art_converter::{SizeMode, bytes_to_ascii},
     library::Track,
+    message::playback::PlaybackMsg,
     reconcile_nav_state,
     state::{
         LeftPanelMode, LibraryViewDepth, Notification, NotificationKind, PlaybackContext,
@@ -94,9 +95,9 @@ fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
             state.current_album_art = Some(ascii);
         }
 
-        return vec![AppMsg::DispatchPlay {
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
             path: track.file_path.clone(),
-        }];
+        })];
     }
     vec![]
 }
@@ -105,12 +106,12 @@ pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
     match state.playback.status {
         PlaybackStatus::Playing => {
             state.playback.status = PlaybackStatus::Paused;
-            vec![AppMsg::DispatchPause]
+            vec![AppMsg::Playback(PlaybackMsg::DispatchPause)]
         }
         PlaybackStatus::Paused => {
             if state.playback.current.is_some() {
                 state.playback.status = PlaybackStatus::Playing;
-                vec![AppMsg::DispatchResume]
+                vec![AppMsg::Playback(PlaybackMsg::DispatchResume)]
             } else {
                 vec![]
             }
@@ -118,9 +119,9 @@ pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
         PlaybackStatus::Stopped => {
             if let Some(track_id) = &state.playback.current {
                 state.playback.status = PlaybackStatus::Playing;
-                vec![AppMsg::DispatchPlay {
+                vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
                     path: track_id.path.clone(),
-                }]
+                })]
             } else {
                 vec![]
             }
@@ -131,7 +132,7 @@ pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
 pub fn handle_request_stop(state: &mut AppState) -> Vec<AppMsg> {
     state.playback.status = PlaybackStatus::Stopped;
     state.playback.progress_ms = 0;
-    vec![AppMsg::DispatchStop]
+    vec![AppMsg::Playback(PlaybackMsg::DispatchStop)]
 }
 
 pub fn handle_request_seek(state: &mut AppState, _offset_seconds: i64) -> Vec<AppMsg> {
@@ -181,9 +182,9 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
         VisualizerMode::AlbumArt => VisualizerMode::Spectrum,
     };
     let is_spectrum = state.visualizer_mode == VisualizerMode::Spectrum;
-    vec![AppMsg::DispatchSetVisualizer {
+    vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
         active: is_spectrum,
-    }]
+    })]
 }
 
 // Side-effect boundaries that do nothing in reducer
@@ -221,9 +222,9 @@ fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
         && let Some(current) = &state.playback.current
     {
         state.playback.status = PlaybackStatus::Playing;
-        return vec![AppMsg::DispatchPlay {
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
             path: current.path.clone(),
-        }];
+        })];
     }
 
     // 2. PRIORITY: Play Single (Stop)
@@ -351,9 +352,9 @@ fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
             state.current_album_art = Some(ascii);
         }
 
-        return vec![AppMsg::DispatchPlay {
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
             path: track.file_path.clone(),
-        }];
+        })];
     }
 
     vec![]
