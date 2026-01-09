@@ -1,18 +1,18 @@
-pub mod action_handlers;
+pub mod action;
 pub mod app_state;
 pub mod art_converter;
 pub mod command;
 pub mod library;
 pub mod message;
 pub mod reducer;
-pub mod state_registry;
+pub mod state;
 pub mod visualizer_interface;
 
 pub use app_state::AppState;
 pub use command::Command;
 pub use library::{Library, Playlist};
 pub use message::AppMsg;
-pub use state_registry::UIMode;
+pub use state::{SessionState, UIMode};
 
 /// Helper to ensure cursors don't go out of bounds (e.g. after a rescan or delete)
 pub fn reconcile_nav_state(state: &mut AppState) {

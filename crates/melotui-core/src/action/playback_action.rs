@@ -1,22 +1,25 @@
-use std::{
-    fs,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 
 use rand::Rng;
 
 use crate::{
-    AppMsg, AppState, Command, Library, UIMode,
+    AppMsg, AppState, Library,
     art_converter::{SizeMode, bytes_to_ascii},
     library::Track,
+    message::playback::PlaybackMsg,
     reconcile_nav_state,
-    state_registry::{
-        DownloadJob, DownloadStatus, LeftPanelMode, LibraryViewDepth, Notification,
-        NotificationKind, PlaybackContext, PlaybackStatus, RepeatMode, TrackId,
+    state::{
+        LeftPanelMode, LibraryViewDepth, Notification, NotificationKind, PlaybackContext,
+        PlaybackStatus, RepeatMode, TrackId, VisualizerMode,
     },
 };
 
-pub fn handler_play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
+pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
+    tracing::info!("Play Requested");
+    play_current_selection(state)
+}
+
+fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
     let track_to_play = match state.nav.active_panel {
         LeftPanelMode::Library => {
             if state.nav.library.depth == LibraryViewDepth::Playlists {
@@ -92,93 +95,124 @@ pub fn handler_play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
             state.current_album_art = Some(ascii);
         }
 
-        return vec![AppMsg::DispatchPlay {
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
             path: track.file_path.clone(),
-        }];
+        })];
     }
     vec![]
 }
 
-pub fn handler_process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
-    state.ui.mode = UIMode::Normal;
-    state.ui.command_buffer.clear();
-
-    let input = input.trim();
-    if input.is_empty() {
-        return vec![];
-    }
-
-    match crate::Command::parse(input) {
-        Command::Quit => {
-            vec![AppMsg::RequestQuit]
+pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
+    match state.playback.status {
+        PlaybackStatus::Playing => {
+            state.playback.status = PlaybackStatus::Paused;
+            vec![AppMsg::Playback(PlaybackMsg::DispatchPause)]
         }
-        Command::Rescan => {
-            vec![AppMsg::RequestRescanLibrary]
+        PlaybackStatus::Paused => {
+            if state.playback.current.is_some() {
+                state.playback.status = PlaybackStatus::Playing;
+                vec![AppMsg::Playback(PlaybackMsg::DispatchResume)]
+            } else {
+                vec![]
+            }
         }
-        Command::Download { query } => {
-            state.notification.current = Some(Notification {
-                kind: NotificationKind::Info,
-                message: format!("Downloading: {}", query),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(2)),
-            });
-            vec![AppMsg::RequestDownload { query }]
-        }
-        Command::ChangeVisualizer { arg } => {
-            state.spectrum_style = arg;
-            vec![]
-        }
-        Command::Unknown(reason) => {
-            state.notification.current = Some(Notification {
-                kind: NotificationKind::Error,
-                message: format!("Unknown command: {}", reason),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(2)),
-            });
-            vec![]
+        PlaybackStatus::Stopped => {
+            if let Some(track_id) = &state.playback.current {
+                state.playback.status = PlaybackStatus::Playing;
+                vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
+                    path: track_id.path.clone(),
+                })]
+            } else {
+                vec![]
+            }
         }
     }
 }
 
-pub fn handler_enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
-    let root = &state.library.root;
-    let download_dir = root.join("Downloads");
+pub fn handle_request_stop(state: &mut AppState) -> Vec<AppMsg> {
+    state.playback.status = PlaybackStatus::Stopped;
+    state.playback.progress_ms = 0;
+    vec![AppMsg::Playback(PlaybackMsg::DispatchStop)]
+}
 
-    if !download_dir.exists()
-        && let Err(e) = fs::create_dir_all(&download_dir)
-    {
-        state.notification.current = Some(Notification {
-            kind: NotificationKind::Error,
-            message: format!("Failed to create Downloads folder: {e}"),
-            progress: None,
-            created_at: Instant::now(),
-            dismiss_after: Some(Duration::from_secs(4)),
-        });
-        return vec![];
+pub fn handle_request_seek(state: &mut AppState, _offset_seconds: i64) -> Vec<AppMsg> {
+    let _ = state;
+    // Placeholder for seek logic
+    tracing::error!("Seeking not implemented yet");
+    vec![]
+}
+
+pub fn handle_audio_progress(state: &mut AppState, position_ms: u64) -> Vec<AppMsg> {
+    if state.playback.status == PlaybackStatus::Playing {
+        state.playback.progress_ms = position_ms;
     }
+    vec![]
+}
 
-    state.download.queue.push_back(DownloadJob {
-        query: query.clone(),
-        download_path: download_dir,
-    });
+pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
+    tracing::info!("Audio Finished...");
+    playback_ended(state)
+}
 
+pub fn handle_audio_paused(state: &mut AppState) -> Vec<AppMsg> {
+    let _ = state;
+    vec![]
+}
+
+pub fn handle_audio_resumed(state: &mut AppState) -> Vec<AppMsg> {
+    let _ = state;
+    vec![]
+}
+
+pub fn handle_audio_error(state: &mut AppState, error: String) -> Vec<AppMsg> {
+    state.playback.status = PlaybackStatus::Stopped;
     state.notification.current = Some(Notification {
-        kind: NotificationKind::Info,
-        message: format!("Queued: {}", query),
+        kind: NotificationKind::Error,
+        message: format!("Audio Error: {}", error),
         progress: None,
         created_at: Instant::now(),
-        dismiss_after: Some(Duration::from_secs(2)),
+        dismiss_after: Some(Duration::from_secs(4)),
     });
-
-    if matches!(state.download.status, DownloadStatus::Idle) {
-        return vec![AppMsg::BeginNextDownload];
-    }
     vec![]
 }
 
-pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
+pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
+    state.visualizer_mode = match state.visualizer_mode {
+        VisualizerMode::Spectrum => VisualizerMode::AlbumArt,
+        VisualizerMode::AlbumArt => VisualizerMode::Spectrum,
+    };
+    let is_spectrum = state.visualizer_mode == VisualizerMode::Spectrum;
+    vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+        active: is_spectrum,
+    })]
+}
+
+// Side-effect boundaries that do nothing in reducer
+pub fn handle_dispatch_play(_state: &mut AppState, _path: std::path::PathBuf) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_pause(_state: &mut AppState) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_resume(_state: &mut AppState) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_stop(_state: &mut AppState) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_seek(_state: &mut AppState, _position_ms: u64) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_audio_started(_state: &mut AppState, _path: String) -> Vec<AppMsg> {
+    vec![]
+}
+
+fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
     state.playback.status = PlaybackStatus::Stopped;
     state.playback.progress_ms = 0;
 
@@ -188,9 +222,9 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
         && let Some(current) = &state.playback.current
     {
         state.playback.status = PlaybackStatus::Playing;
-        return vec![AppMsg::DispatchPlay {
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
             path: current.path.clone(),
-        }];
+        })];
     }
 
     // 2. PRIORITY: Play Single (Stop)
@@ -318,9 +352,9 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
             state.current_album_art = Some(ascii);
         }
 
-        return vec![AppMsg::DispatchPlay {
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
             path: track.file_path.clone(),
-        }];
+        })];
     }
 
     vec![]

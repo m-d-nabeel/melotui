@@ -6,7 +6,7 @@ use crate::{
 };
 use melotui_core::{
     AppState,
-    state_registry::{PlaybackContext, RepeatMode},
+    state::{PlaybackContext, RepeatMode},
 };
 use ratatui::{
     Frame,

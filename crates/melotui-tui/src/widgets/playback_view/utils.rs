@@ -1,6 +1,6 @@
 use melotui_core::{
     AppState,
-    state_registry::{PlaybackContext, PlaybackStatus, RepeatMode},
+    state::{PlaybackContext, PlaybackStatus, RepeatMode},
 };
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;

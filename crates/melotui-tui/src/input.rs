@@ -1,6 +1,10 @@
 use melotui_core::{
     AppMsg, AppState, UIMode,
-    state_registry::{LeftPanelMode, LibraryViewDepth},
+    message::{
+        audio::AudioMsg, download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
+        playback::PlaybackMsg, ui::UIMsg,
+    },
+    state::{LeftPanelMode, LibraryViewDepth},
 };
 use ratatui::crossterm::event::{KeyCode, KeyEvent};
 
@@ -19,7 +23,9 @@ impl InputHandler {
         // 1. Help Overlay Trap
         if state.ui.show_help {
             return match key.code {
-                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => Some(AppMsg::ToggleHelp),
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('?') => {
+                    Some(AppMsg::UI(UIMsg::ToggleHelp))
+                }
                 _ => None,
             };
         }
@@ -27,10 +33,12 @@ impl InputHandler {
         // 2. Command Mode Trap
         if state.ui.mode == UIMode::Command {
             return match key.code {
-                KeyCode::Esc => Some(AppMsg::ExitCommandMode),
-                KeyCode::Enter => Some(AppMsg::SubmitCommand(state.ui.command_buffer.clone())),
-                KeyCode::Backspace => Some(AppMsg::BackspaceCommand),
-                KeyCode::Char(c) => Some(AppMsg::UpdateCommand(c)),
+                KeyCode::Esc => Some(AppMsg::UI(UIMsg::ExitCommandMode)),
+                KeyCode::Enter => Some(AppMsg::UI(UIMsg::SubmitCommand(
+                    state.ui.command_buffer.clone(),
+                ))),
+                KeyCode::Backspace => Some(AppMsg::UI(UIMsg::BackspaceCommand)),
+                KeyCode::Char(c) => Some(AppMsg::UI(UIMsg::UpdateCommand(c))),
                 _ => None,
             };
         }
@@ -38,25 +46,18 @@ impl InputHandler {
         // 3. Normal Mode
         match key.code {
             // ───── Global System ─────
-            KeyCode::Char('?') => Some(AppMsg::ToggleHelp),
+            KeyCode::Char('?') => Some(AppMsg::UI(UIMsg::ToggleHelp)),
             KeyCode::Char('q') => Some(AppMsg::RequestQuit),
-            KeyCode::Char(':') => Some(AppMsg::EnterCommandMode),
-            KeyCode::F(5) => Some(AppMsg::RequestRescanLibrary),
-            KeyCode::Esc => Some(AppMsg::RequestCancelDownload),
+            KeyCode::Char(':') => Some(AppMsg::UI(UIMsg::EnterCommandMode)),
+            KeyCode::F(5) => Some(AppMsg::Library(LibraryMsg::RequestRescanLibrary)),
+            KeyCode::Esc => Some(AppMsg::Download(DownloadMsg::RequestCancelDownload)),
 
             // ───── Panel & View Switching ─────
             // Tab: Switch between Library and Queue
-            KeyCode::Tab => Some(AppMsg::ToggleLibraryQueue),
-
-            // BackTab (Shift+Tab): Toggle Visualizer / Album Art
-            // (Alt+Tab is usually OS-reserved, so Shift+Tab is the standard TUI alternative)
-            KeyCode::BackTab => Some(AppMsg::ToggleArt),
-
-            // ───── Navigation ─────
-            // Down
-            KeyCode::Down | KeyCode::Char('j') => Some(AppMsg::MoveDown),
-            // Up
-            KeyCode::Up | KeyCode::Char('k') => Some(AppMsg::MoveUp),
+            KeyCode::Tab => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
+            KeyCode::BackTab => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
+            KeyCode::Down | KeyCode::Char('j') => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
+            KeyCode::Up | KeyCode::Char('k') => Some(AppMsg::Navigation(NavigationMsg::MoveUp)),
 
             // Left / Back
             KeyCode::Left | KeyCode::Char('h') | KeyCode::Char('[') => {
@@ -64,8 +65,12 @@ impl InputHandler {
                 // For now, let's keep column navigation for Library
                 if state.nav.active_panel == LeftPanelMode::Library {
                     match state.nav.library.depth {
-                        LibraryViewDepth::Tracks => Some(AppMsg::SwitchToPlaylists),
-                        LibraryViewDepth::TrackInfo => Some(AppMsg::SwitchToTracks),
+                        LibraryViewDepth::Tracks => {
+                            Some(AppMsg::Navigation(NavigationMsg::SwitchToPlaylists))
+                        }
+                        LibraryViewDepth::TrackInfo => {
+                            Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
+                        }
                         _ => None,
                     }
                 } else {
@@ -79,8 +84,12 @@ impl InputHandler {
             KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(']') => {
                 if state.nav.active_panel == LeftPanelMode::Library {
                     match state.nav.library.depth {
-                        LibraryViewDepth::Playlists => Some(AppMsg::SwitchToTracks),
-                        LibraryViewDepth::Tracks => Some(AppMsg::SwitchToTrackInfo),
+                        LibraryViewDepth::Playlists => {
+                            Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
+                        }
+                        LibraryViewDepth::Tracks => {
+                            Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))
+                        }
                         _ => None,
                     }
                 } else {
@@ -89,7 +98,7 @@ impl InputHandler {
             }
 
             // Play Selected
-            KeyCode::Enter => Some(AppMsg::RequestPlaySelected),
+            KeyCode::Enter => Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected)),
 
             // ───── Queue Management ─────
             // 'a': Add current selection to Queue
@@ -109,7 +118,7 @@ impl InputHandler {
                             .get(p_idx)
                             .unwrap_or(&0);
                         if let Some(track) = playlist.tracks.get(t_idx) {
-                            return Some(AppMsg::AddToQueue(track.clone()));
+                            return Some(AppMsg::Library(LibraryMsg::AddToQueue(track.clone())));
                         }
                     }
                 }
@@ -130,7 +139,7 @@ impl InputHandler {
                             .get(p_idx)
                             .unwrap_or(&0);
                         if let Some(track) = playlist.tracks.get(t_idx) {
-                            return Some(AppMsg::PlayNext(track.clone()));
+                            return Some(AppMsg::Library(LibraryMsg::PlayNext(track.clone())));
                         }
                     }
                 }
@@ -140,55 +149,63 @@ impl InputHandler {
             // 'd': Remove from Queue (Only valid in Queue Panel)
             KeyCode::Char('d') | KeyCode::Delete => {
                 if state.nav.active_panel == LeftPanelMode::Queue {
-                    Some(AppMsg::RemoveFromQueue)
+                    Some(AppMsg::Library(LibraryMsg::RemoveFromQueue))
                 } else {
                     None
                 }
             }
 
             // 'D': Clear Queue
-            KeyCode::Char('D') => Some(AppMsg::ClearQueue),
+            KeyCode::Char('D') => Some(AppMsg::Library(LibraryMsg::ClearQueue)),
 
             // ───── Playback Control ─────
-            KeyCode::Char(' ') => Some(AppMsg::RequestTogglePlayback),
-            KeyCode::Char('x') => Some(AppMsg::RequestStop),
+            KeyCode::Char(' ') => Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)),
+            KeyCode::Char('x') => Some(AppMsg::Playback(PlaybackMsg::RequestStop)),
 
             // Seeking (using comma/period for < > semantic)
             KeyCode::Char(',') | KeyCode::Char('<') => {
-                Some(AppMsg::RequestSeek { offset_seconds: -5 })
+                Some(AppMsg::Playback(PlaybackMsg::RequestSeek {
+                    offset_seconds: -5,
+                }))
             }
             KeyCode::Char('.') | KeyCode::Char('>') => {
-                Some(AppMsg::RequestSeek { offset_seconds: 5 })
+                Some(AppMsg::Playback(PlaybackMsg::RequestSeek {
+                    offset_seconds: 5,
+                }))
             }
 
             // Modes
-            KeyCode::Char('z') => Some(AppMsg::ToggleShuffle),
-            KeyCode::Char('c') => Some(AppMsg::ToggleRepeatMode),
+            KeyCode::Char('z') => Some(AppMsg::Library(LibraryMsg::ToggleShuffle)),
+            KeyCode::Char('c') => Some(AppMsg::Library(LibraryMsg::ToggleRepeatMode)),
 
             // ───── Audio FX ─────
             // Volume
-            KeyCode::Char('+') | KeyCode::Char('=') => Some(AppMsg::AdjustVolume(0.05)),
-            KeyCode::Char('-') | KeyCode::Char('_') => Some(AppMsg::AdjustVolume(-0.05)),
+            KeyCode::Char('+') | KeyCode::Char('=') => {
+                Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05)))
+            }
+            KeyCode::Char('-') | KeyCode::Char('_') => {
+                Some(AppMsg::Audio(AudioMsg::AdjustVolume(-0.05)))
+            }
 
             // Speed
-            KeyCode::Char('s') => Some(AppMsg::AdjustSpeed(0.1)),
-            KeyCode::Char('S') => Some(AppMsg::AdjustSpeed(-0.1)),
+            KeyCode::Char('s') => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(0.1))),
+            KeyCode::Char('S') => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(-0.1))),
 
             // Bass
-            KeyCode::Char('b') => Some(AppMsg::AdjustBass(0.1)),
-            KeyCode::Char('B') => Some(AppMsg::AdjustBass(-0.1)),
+            KeyCode::Char('b') => Some(AppMsg::Audio(AudioMsg::AdjustBass(0.1))),
+            KeyCode::Char('B') => Some(AppMsg::Audio(AudioMsg::AdjustBass(-0.1))),
 
             // Treble
-            KeyCode::Char('t') => Some(AppMsg::AdjustTreble(0.1)),
-            KeyCode::Char('T') => Some(AppMsg::AdjustTreble(-0.1)),
+            KeyCode::Char('t') => Some(AppMsg::Audio(AudioMsg::AdjustTreble(0.1))),
+            KeyCode::Char('T') => Some(AppMsg::Audio(AudioMsg::AdjustTreble(-0.1))),
 
             // Reverb
-            KeyCode::Char('r') => Some(AppMsg::AdjustReverb(0.05)),
-            KeyCode::Char('R') => Some(AppMsg::AdjustReverb(-0.05)),
+            KeyCode::Char('r') => Some(AppMsg::Audio(AudioMsg::AdjustReverb(0.05))),
+            KeyCode::Char('R') => Some(AppMsg::Audio(AudioMsg::AdjustReverb(-0.05))),
 
             // Echo
-            KeyCode::Char('e') => Some(AppMsg::AdjustEcho(0.05)),
-            KeyCode::Char('E') => Some(AppMsg::AdjustEcho(-0.05)),
+            KeyCode::Char('e') => Some(AppMsg::Audio(AudioMsg::AdjustEcho(0.05))),
+            KeyCode::Char('E') => Some(AppMsg::Audio(AudioMsg::AdjustEcho(-0.05))),
 
             _ => None,
         }

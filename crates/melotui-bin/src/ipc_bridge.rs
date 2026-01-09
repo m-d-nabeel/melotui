@@ -61,58 +61,78 @@ impl IpcRuntime {
 }
 
 pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
+    use melotui_core::message::{audio::AudioMsg, download::DownloadMsg, playback::PlaybackMsg};
+
     match msg {
         // --- Download ---
-        AppMsg::DispatchDownload {
-            query,
-            download_path,
-        } => Some(IpcCommand::Download(DownloadCommand::Request {
-            query: query.clone(),
-            download_path: download_path.clone(),
-        })),
-        AppMsg::RequestCancelDownload => Some(IpcCommand::Download(DownloadCommand::Cancel)),
+        AppMsg::Download(download_msg) => match download_msg {
+            DownloadMsg::DispatchDownload {
+                query,
+                download_path,
+            } => Some(IpcCommand::Download(DownloadCommand::Request {
+                query: query.clone(),
+                download_path: download_path.clone(),
+            })),
+            DownloadMsg::RequestCancelDownload => {
+                Some(IpcCommand::Download(DownloadCommand::Cancel))
+            }
+            _ => None,
+        },
 
-        // --- Audio Lifecycle ---
-        AppMsg::DispatchPlay { path } => {
-            Some(IpcCommand::Audio(AudioCommand::Play { path: path.clone() }))
-        }
-        AppMsg::DispatchPause => Some(IpcCommand::Audio(AudioCommand::Pause)),
-        AppMsg::DispatchResume => Some(IpcCommand::Audio(AudioCommand::Resume)),
-        AppMsg::DispatchStop => Some(IpcCommand::Audio(AudioCommand::Stop)),
-        AppMsg::DispatchSeek { position_ms } => Some(IpcCommand::Audio(AudioCommand::Seek {
-            position_ms: *position_ms,
-        })),
-        AppMsg::DispatchSetVisualizer { active } => {
-            Some(IpcCommand::Audio(AudioCommand::SetVisualizer {
-                active: *active,
-            }))
-        }
+        // --- Audio ---
+        AppMsg::Playback(playback_msg) => match playback_msg {
+            PlaybackMsg::DispatchPlay { path } => {
+                Some(IpcCommand::Audio(AudioCommand::Play { path: path.clone() }))
+            }
+            PlaybackMsg::DispatchPause => Some(IpcCommand::Audio(AudioCommand::Pause)),
+            PlaybackMsg::DispatchResume => Some(IpcCommand::Audio(AudioCommand::Resume)),
+            PlaybackMsg::DispatchStop => Some(IpcCommand::Audio(AudioCommand::Stop)),
+            PlaybackMsg::DispatchSeek { position_ms } => {
+                Some(IpcCommand::Audio(AudioCommand::Seek {
+                    position_ms: *position_ms,
+                }))
+            }
+            PlaybackMsg::DispatchSetVisualizer { active } => {
+                Some(IpcCommand::Audio(AudioCommand::SetVisualizer {
+                    active: *active,
+                }))
+            }
+            _ => None,
+        },
 
-        // --- Audio Effects ---
-        AppMsg::DispatchSetVolume(v) => Some(IpcCommand::Audio(AudioCommand::SetVolume(*v))),
-        AppMsg::DispatchSetSpeed(v) => Some(IpcCommand::Audio(AudioCommand::SetSpeed(*v))),
-        AppMsg::DispatchSetBass(v) => Some(IpcCommand::Audio(AudioCommand::SetBass(*v))),
-        AppMsg::DispatchSetTreble(v) => Some(IpcCommand::Audio(AudioCommand::SetTreble(*v))),
-        AppMsg::DispatchSetReverb(v) => Some(IpcCommand::Audio(AudioCommand::SetReverb(*v))),
-        AppMsg::DispatchSetEcho(v) => Some(IpcCommand::Audio(AudioCommand::SetEcho(*v))),
-
-        // --- Global ---
-        AppMsg::RequestQuit => Some(IpcCommand::Shutdown),
+        // --- Audio Controls ---
+        AppMsg::Audio(audio_msg) => match audio_msg {
+            AudioMsg::DispatchSetVolume(v) => Some(IpcCommand::Audio(AudioCommand::SetVolume(*v))),
+            AudioMsg::DispatchSetSpeed(v) => Some(IpcCommand::Audio(AudioCommand::SetSpeed(*v))),
+            AudioMsg::DispatchSetBass(v) => Some(IpcCommand::Audio(AudioCommand::SetBass(*v))),
+            AudioMsg::DispatchSetTreble(v) => Some(IpcCommand::Audio(AudioCommand::SetTreble(*v))),
+            AudioMsg::DispatchSetReverb(v) => Some(IpcCommand::Audio(AudioCommand::SetReverb(*v))),
+            AudioMsg::DispatchSetEcho(v) => Some(IpcCommand::Audio(AudioCommand::SetEcho(*v))),
+            _ => None,
+        },
 
         _ => None,
     }
 }
 
 pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
+    use melotui_core::message::{download::DownloadMsg, playback::PlaybackMsg};
+
     match evt {
-        IpcEvent::DownloadProgress { percent } => AppMsg::DownloadProgress { percent },
-        IpcEvent::DownloadFinished => AppMsg::DownloadFinished,
-        IpcEvent::DownloadFailed { error } => AppMsg::DownloadFailed { error },
-        IpcEvent::PlaybackStarted { path } => AppMsg::AudioStarted { path },
-        IpcEvent::PlaybackProgress { position_ms } => AppMsg::AudioProgress { position_ms },
-        IpcEvent::PlaybackFinished => AppMsg::AudioFinished,
-        IpcEvent::PlaybackPaused => AppMsg::AudioPaused,
-        IpcEvent::PlaybackResumed => AppMsg::AudioResumed,
+        IpcEvent::DownloadProgress { percent } => {
+            AppMsg::Download(DownloadMsg::DownloadProgress { percent })
+        }
+        IpcEvent::DownloadFinished => AppMsg::Download(DownloadMsg::DownloadFinished),
+        IpcEvent::DownloadFailed { error } => {
+            AppMsg::Download(DownloadMsg::DownloadFailed { error })
+        }
+        IpcEvent::PlaybackStarted { path } => AppMsg::Playback(PlaybackMsg::AudioStarted { path }),
+        IpcEvent::PlaybackProgress { position_ms } => {
+            AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms })
+        }
+        IpcEvent::PlaybackFinished => AppMsg::Playback(PlaybackMsg::AudioFinished),
+        IpcEvent::PlaybackPaused => AppMsg::Playback(PlaybackMsg::AudioPaused),
+        IpcEvent::PlaybackResumed => AppMsg::Playback(PlaybackMsg::AudioResumed),
         _ => AppMsg::Noop,
     }
 }
