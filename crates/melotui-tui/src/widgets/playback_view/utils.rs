@@ -1,6 +1,6 @@
 use melotui_core::{
     AppState,
-    state_registry::{PlaybackStatus, RepeatMode},
+    state_registry::{PlaybackContext, PlaybackStatus, RepeatMode},
 };
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;
@@ -37,7 +37,7 @@ pub fn predict_next_song(state: &AppState) -> String {
         .playback
         .current
         .as_ref()
-        .is_some_and(|c| c.playlist == "Queue");
+        .is_some_and(|c| matches!(c.context, PlaybackContext::Queue));
 
     // If playing from Queue, the active song is Index 0. Next is Index 1.
     if playing_from_queue {
@@ -73,7 +73,7 @@ pub fn predict_next_song(state: &AppState) -> String {
             .library
             .playlists
             .iter()
-            .find(|p| p.name == current_id.playlist)
+            .find(|p| matches!(current_id.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &p.name))
         && let Some(idx) = playlist
             .tracks
             .iter()

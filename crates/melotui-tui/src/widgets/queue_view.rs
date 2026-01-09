@@ -1,7 +1,7 @@
 use crate::format_duration;
 use melotui_core::{
     AppState,
-    state_registry::{LeftPanelMode, LibraryViewDepth},
+    state_registry::{LeftPanelMode, LibraryViewDepth, PlaybackContext},
 };
 use ratatui::{
     Frame,
@@ -84,7 +84,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .playback
         .current
         .as_ref()
-        .is_some_and(|curr| curr.playlist == "Queue");
+        .is_some_and(|curr| matches!(curr.context, PlaybackContext::Queue));
 
     if playing_from_queue {
         // --- SPLIT LAYOUT ---

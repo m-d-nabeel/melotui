@@ -62,8 +62,14 @@ pub struct UIState {
 
 // --------------- Playback ----------------
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlaybackContext {
+    Library { playlist_name: String },
+    Queue,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TrackId {
-    pub playlist: String,
+    pub context: PlaybackContext,
     pub path: PathBuf,
 }
 

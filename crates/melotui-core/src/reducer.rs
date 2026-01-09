@@ -13,7 +13,7 @@ use crate::{
     reconcile_nav_state,
     state_registry::{
         DownloadStatus, LeftPanelMode, LibraryViewDepth, Notification, NotificationKind,
-        PlaybackStatus, RepeatMode, VisualizerMode,
+        PlaybackContext, PlaybackStatus, RepeatMode, VisualizerMode,
     },
 };
 
@@ -40,7 +40,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                         .playback
                         .current
                         .as_ref()
-                        .is_some_and(|c| c.playlist == "Queue");
+                        .is_some_and(|c| c.context == PlaybackContext::Queue);
 
                     if playing_from_queue && state.playback_queue.tracks.len() > 1 {
                         state.nav.queue.selected_idx = 1;
@@ -115,7 +115,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                         .playback
                         .current
                         .as_ref()
-                        .is_some_and(|c| c.playlist == "Queue");
+                        .is_some_and(|c| c.context == PlaybackContext::Queue);
 
                     let min_index = if playing_from_queue && state.playback_queue.tracks.len() > 1 {
                         1
@@ -179,7 +179,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                     .playback
                     .current
                     .as_ref()
-                    .is_some_and(|c| c.playlist == "Queue");
+                    .is_some_and(|c| c.context == PlaybackContext::Queue);
 
                 if playing_from_queue && idx == 0 {
                     return vec![];
@@ -217,7 +217,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
                 .playback
                 .current
                 .as_ref()
-                .is_some_and(|c| c.playlist == "Queue");
+                .is_some_and(|c| c.context == PlaybackContext::Queue);
 
             if playing_from_queue {
                 state.playback_queue.tracks.truncate(1);
