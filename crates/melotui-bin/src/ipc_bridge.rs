@@ -2,43 +2,37 @@ use std::{sync::mpsc, thread};
 
 use melotui_core::AppMsg;
 use melotui_ipc::{
-    channel::inprocess, command::IpcCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
+    channel::inprocess,
+    command::{AudioCommand, DownloadCommand, IpcCommand},
+    event::IpcEvent,
+    spectrum_bridge::SpectrumProducer,
 };
 
-/// The "Supervisor" that manages all workers and routing.
-/// The UI holds this struct.
 pub struct IpcRuntime {
-    // 1. Egress: Events coming FROM workers (Single Event Stream)
-    // We keep the Receiver here so the UI can poll it.
+    // Egress: Events coming FROM workers
     pub event_rx: mpsc::Receiver<IpcEvent>,
 
-    // 2. Ingress: Routers to specific workers
-    // Private! The UI doesn't get to touch these.
-    download_tx: mpsc::Sender<IpcCommand>,
-    audio_tx: mpsc::Sender<IpcCommand>,
+    // Ingress: Typed routers
+    download_tx: mpsc::Sender<DownloadCommand>,
+    audio_tx: mpsc::Sender<AudioCommand>,
 }
 
 impl IpcRuntime {
-    /// Boot up the runtime and all workers
     pub fn new(spectrum_producer: SpectrumProducer) -> Self {
-        // A. Create the "Bus" (The single event stream)
-        // If you used mpsc::channel(), you would get (Sender, Receiver)
-        // for that reason we use inprocess::hub to get the consistency
         let (ui_rx, bus_tx) = inprocess::hub();
 
-        // B. Spawn Download Worker (The Child)
-        // bus_tx is now correctly a Sender, so it can be cloned.
-        let (dl_tx, dl_worker) = inprocess::join_worker(bus_tx.clone());
+        // Spawn Download Worker
+        let (dl_tx, dl_worker) = inprocess::join_worker::<DownloadCommand>(bus_tx.clone());
         thread::spawn(move || {
             melotui_download::run(dl_worker);
         });
 
-        // C. Spawn Audio Worker (The Child)
-        // Pass the producer to the audio worker
-        let (audio_tx, audio_worker) = inprocess::join_worker(bus_tx.clone());
+        // Spawn Audio Worker
+        let (audio_tx, audio_worker) = inprocess::join_worker::<AudioCommand>(bus_tx.clone());
         thread::spawn(move || {
             melotui_audio::run(audio_worker, spectrum_producer);
         });
+
         tracing::info!("IPC Runtime initialized with Download and Audio workers");
 
         Self {
@@ -48,64 +42,63 @@ impl IpcRuntime {
         }
     }
 
-    /// The SINGLE method the UI calls to send commands.
-    /// The UI does not know *who* handles the command.
     pub fn dispatch(&self, cmd: IpcCommand) {
         match cmd {
-            IpcCommand::Download { .. } | IpcCommand::CancelDownload => {
-                let _ = self.download_tx.send(cmd);
+            IpcCommand::Download(c) => {
+                let _ = self.download_tx.send(c);
             }
-            IpcCommand::Play { .. }
-            | IpcCommand::Pause
-            | IpcCommand::Resume
-            | IpcCommand::Stop
-            | IpcCommand::Seek { .. }
-            | IpcCommand::SetVisualizer { .. }
-            | IpcCommand::SetVolume { .. }
-            | IpcCommand::SetSpeed { .. }
-            | IpcCommand::SetBass { .. }
-            | IpcCommand::SetTreble { .. }
-            | IpcCommand::SetReverb { .. }
-            | IpcCommand::SetEcho { .. } => {
-                let _ = self.audio_tx.send(cmd);
+            IpcCommand::Audio(c) => {
+                let _ = self.audio_tx.send(c);
             }
             IpcCommand::Shutdown => {
                 tracing::info!("IPC Runtime shutting down all workers...");
-                let _ = self.download_tx.send(IpcCommand::Shutdown);
-                let _ = self.audio_tx.send(IpcCommand::Shutdown);
+                let _ = self.download_tx.send(DownloadCommand::Shutdown);
+                let _ = self.audio_tx.send(AudioCommand::Shutdown);
             }
+            _ => {}
         }
     }
 }
 
-// Helper converters
 pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
     match msg {
+        // --- Download ---
         AppMsg::DispatchDownload {
             query,
             download_path,
-        } => Some(IpcCommand::Download {
+        } => Some(IpcCommand::Download(DownloadCommand::Request {
             query: query.clone(),
             download_path: download_path.clone(),
-        }),
-        AppMsg::RequestCancelDownload => Some(IpcCommand::CancelDownload),
-        AppMsg::RequestQuit => Some(IpcCommand::Shutdown),
-        AppMsg::DispatchPlay { path } => Some(IpcCommand::Play { path: path.clone() }),
-        AppMsg::DispatchPause => Some(IpcCommand::Pause),
-        AppMsg::DispatchResume => Some(IpcCommand::Resume),
-        AppMsg::DispatchStop => Some(IpcCommand::Stop),
-        AppMsg::DispatchSeek { position_ms } => Some(IpcCommand::Seek {
-            position_ms: *position_ms,
-        }),
-        AppMsg::DispatchSetVisualizer { active } => {
-            Some(IpcCommand::SetVisualizer { active: *active })
+        })),
+        AppMsg::RequestCancelDownload => Some(IpcCommand::Download(DownloadCommand::Cancel)),
+
+        // --- Audio Lifecycle ---
+        AppMsg::DispatchPlay { path } => {
+            Some(IpcCommand::Audio(AudioCommand::Play { path: path.clone() }))
         }
-        AppMsg::DispatchSetVolume(v) => Some(IpcCommand::SetVolume(*v)),
-        AppMsg::DispatchSetSpeed(v) => Some(IpcCommand::SetSpeed(*v)),
-        AppMsg::DispatchSetBass(v) => Some(IpcCommand::SetBass(*v)),
-        AppMsg::DispatchSetTreble(v) => Some(IpcCommand::SetTreble(*v)),
-        AppMsg::DispatchSetReverb(v) => Some(IpcCommand::SetReverb(*v)),
-        AppMsg::DispatchSetEcho(v) => Some(IpcCommand::SetEcho(*v)),
+        AppMsg::DispatchPause => Some(IpcCommand::Audio(AudioCommand::Pause)),
+        AppMsg::DispatchResume => Some(IpcCommand::Audio(AudioCommand::Resume)),
+        AppMsg::DispatchStop => Some(IpcCommand::Audio(AudioCommand::Stop)),
+        AppMsg::DispatchSeek { position_ms } => Some(IpcCommand::Audio(AudioCommand::Seek {
+            position_ms: *position_ms,
+        })),
+        AppMsg::DispatchSetVisualizer { active } => {
+            Some(IpcCommand::Audio(AudioCommand::SetVisualizer {
+                active: *active,
+            }))
+        }
+
+        // --- Audio Effects ---
+        AppMsg::DispatchSetVolume(v) => Some(IpcCommand::Audio(AudioCommand::SetVolume(*v))),
+        AppMsg::DispatchSetSpeed(v) => Some(IpcCommand::Audio(AudioCommand::SetSpeed(*v))),
+        AppMsg::DispatchSetBass(v) => Some(IpcCommand::Audio(AudioCommand::SetBass(*v))),
+        AppMsg::DispatchSetTreble(v) => Some(IpcCommand::Audio(AudioCommand::SetTreble(*v))),
+        AppMsg::DispatchSetReverb(v) => Some(IpcCommand::Audio(AudioCommand::SetReverb(*v))),
+        AppMsg::DispatchSetEcho(v) => Some(IpcCommand::Audio(AudioCommand::SetEcho(*v))),
+
+        // --- Global ---
+        AppMsg::RequestQuit => Some(IpcCommand::Shutdown),
+
         _ => None,
     }
 }

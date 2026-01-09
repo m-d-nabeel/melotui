@@ -1,5 +1,5 @@
 use melotui_ipc::{
-    channel::IpcWorker, command::IpcCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
+    channel::IpcWorker, command::AudioCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
 };
 use ringbuf::{HeapRb, traits::Split};
 use rodio::{Decoder, Source};
@@ -41,7 +41,7 @@ impl AudioParams {
     }
 }
 
-pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
+pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProducer) {
     tracing::info!("Audio worker started");
 
     let stream_handle =
@@ -72,7 +72,7 @@ pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
         // 1. Handle Commands
         if let Some(cmd) = worker.try_recv() {
             match cmd {
-                IpcCommand::Play { path } => {
+                AudioCommand::Play { path } => {
                     if !sink.empty() {
                         sink.stop();
                     }
@@ -131,7 +131,7 @@ pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
                         });
                     }
                 }
-                IpcCommand::Pause => {
+                AudioCommand::Pause => {
                     if is_playing {
                         sink.pause();
                         is_playing = false;
@@ -146,7 +146,7 @@ pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
                         worker.send(IpcEvent::PlaybackPaused);
                     }
                 }
-                IpcCommand::Resume => {
+                AudioCommand::Resume => {
                     if !is_playing && !sink.empty() {
                         sink.play();
                         is_playing = true;
@@ -154,14 +154,14 @@ pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
                         worker.send(IpcEvent::PlaybackResumed);
                     }
                 }
-                IpcCommand::Stop => {
+                AudioCommand::Stop => {
                     sink.stop();
                     is_playing = false;
                     accumulated_time = Duration::ZERO;
                     last_resume_time = None;
                     backend = VisualizerBackend::None;
                 }
-                IpcCommand::Seek { position_ms } => {
+                AudioCommand::Seek { position_ms } => {
                     let seek_dur = Duration::from_millis(position_ms);
                     if let Err(e) = sink.try_seek(seek_dur) {
                         tracing::error!("Seek Error: {:?}", e);
@@ -173,13 +173,13 @@ pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
                         }
                     }
                 }
-                IpcCommand::SetVisualizer { active } => {
+                AudioCommand::SetVisualizer { active } => {
                     visualizer_active = active;
                 }
 
                 // --- AUDIO CONTROLS ---
-                IpcCommand::SetVolume(v) => sink.set_volume(v),
-                IpcCommand::SetSpeed(v) => {
+                AudioCommand::SetVolume(v) => sink.set_volume(v),
+                AudioCommand::SetSpeed(v) => {
                     // 1. Commit the time spent at the OLD speed
                     if is_playing && let Some(start) = last_resume_time {
                         let elapsed = start.elapsed().as_secs_f32();
@@ -191,13 +191,12 @@ pub fn run(worker: impl IpcWorker, spectrum_producer: SpectrumProducer) {
                     current_speed = v;
                     sink.set_speed(v);
                 }
-                IpcCommand::SetBass(v) => dsp_params.bass.set_value(v),
-                IpcCommand::SetTreble(v) => dsp_params.treble.set_value(v),
-                IpcCommand::SetReverb(v) => dsp_params.reverb.set_value(v),
-                IpcCommand::SetEcho(v) => dsp_params.echo.set_value(v),
+                AudioCommand::SetBass(v) => dsp_params.bass.set_value(v),
+                AudioCommand::SetTreble(v) => dsp_params.treble.set_value(v),
+                AudioCommand::SetReverb(v) => dsp_params.reverb.set_value(v),
+                AudioCommand::SetEcho(v) => dsp_params.echo.set_value(v),
 
-                IpcCommand::Shutdown => break,
-                _ => {}
+                AudioCommand::Shutdown => break,
             }
         }
 

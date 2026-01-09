@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use melotui_ipc::{channel::IpcWorker, command::IpcCommand, event::IpcEvent};
+use melotui_ipc::{channel::IpcWorker, command::DownloadCommand, event::IpcEvent};
 
 use crate::progress::parse_progress;
 
@@ -21,7 +21,7 @@ enum InternalEvent {
     Failed(String),
 }
 
-pub fn run(worker: impl IpcWorker) {
+pub fn run(worker: impl IpcWorker<DownloadCommand>) {
     tracing::info!("Download worker started");
 
     // Bridge between the download thread and this IPC loop
@@ -31,12 +31,11 @@ pub fn run(worker: impl IpcWorker) {
     let mut cancel_flag: Option<Arc<AtomicBool>> = None;
 
     loop {
-        // 1. Check IPC commands (Non-blocking)
         if let Some(cmd) = worker.try_recv() {
             tracing::debug!("Worker received command: {:?}", cmd);
 
             match cmd {
-                IpcCommand::Download {
+                DownloadCommand::Request {
                     query,
                     download_path,
                 } => {
@@ -55,32 +54,29 @@ pub fn run(worker: impl IpcWorker) {
 
                     let tx = internal_tx.clone();
 
-                    // Spawn the heavy lifting in a separate thread
                     thread::spawn(move || {
                         download_task(query, download_path, tx, flag);
                     });
                 }
 
-                IpcCommand::CancelDownload => {
+                DownloadCommand::Cancel => {
                     if let Some(flag) = &cancel_flag {
                         tracing::info!("Signaling cancellation...");
                         flag.store(true, Ordering::SeqCst);
                     }
                 }
 
-                IpcCommand::Shutdown => {
+                DownloadCommand::Shutdown => {
                     tracing::info!("Worker: shutdown requested");
                     if let Some(flag) = &cancel_flag {
                         flag.store(true, Ordering::SeqCst);
                     }
                     break;
                 }
-
-                _ => {}
             }
         }
 
-        // 2. Check Download Progress (Non-blocking)
+        // Check Download Progress
         while let Ok(evt) = internal_rx.try_recv() {
             match evt {
                 InternalEvent::Progress(percent) => {
@@ -97,7 +93,6 @@ pub fn run(worker: impl IpcWorker) {
             }
         }
 
-        // 3. Sleep to prevent CPU spinning
         thread::sleep(Duration::from_millis(50));
     }
 
@@ -128,7 +123,7 @@ fn download_task(
         .arg(format!("ytsearch1:{}", query))
         .arg("--newline") // Crucial for progress parsing
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped()) // Progress often comes on stderr in some versions
+        .stderr(Stdio::piped()) // Progress might come on stderr
         .spawn();
 
     let mut child = match cmd {
