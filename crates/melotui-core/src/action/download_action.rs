@@ -1,14 +1,52 @@
-use std::time::{Duration, Instant};
+use std::{
+    fs,
+    time::{Duration, Instant},
+};
 
 use crate::{
     AppMsg, AppState,
-    action_handlers::handler_enqueue_download,
-    state::{DownloadStatus, Notification, NotificationKind},
+    state::{DownloadJob, DownloadStatus, Notification, NotificationKind},
 };
 
 pub fn handle_request_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
     tracing::info!("RequestDownload called with: {:?}", query);
-    handler_enqueue_download(state, query)
+    enqueue_download(state, query)
+}
+
+fn enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
+    let root = &state.library.root;
+    let download_dir = root.join("Downloads");
+
+    if !download_dir.exists()
+        && let Err(e) = fs::create_dir_all(&download_dir)
+    {
+        state.notification.current = Some(Notification {
+            kind: NotificationKind::Error,
+            message: format!("Failed to create Downloads folder: {e}"),
+            progress: None,
+            created_at: Instant::now(),
+            dismiss_after: Some(Duration::from_secs(4)),
+        });
+        return vec![];
+    }
+
+    state.download.queue.push_back(DownloadJob {
+        query: query.clone(),
+        download_path: download_dir,
+    });
+
+    state.notification.current = Some(Notification {
+        kind: NotificationKind::Info,
+        message: format!("Queued: {}", query),
+        progress: None,
+        created_at: Instant::now(),
+        dismiss_after: Some(Duration::from_secs(2)),
+    });
+
+    if matches!(state.download.status, DownloadStatus::Idle) {
+        return vec![AppMsg::BeginNextDownload];
+    }
+    vec![]
 }
 
 pub fn handle_begin_next_download(state: &mut AppState) -> Vec<AppMsg> {

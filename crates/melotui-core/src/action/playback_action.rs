@@ -1,14 +1,104 @@
 use std::time::{Duration, Instant};
 
+use rand::Rng;
+
 use crate::{
-    AppMsg, AppState,
-    action_handlers::{handler_play_current_selection, handler_playback_ended},
-    state::{Notification, NotificationKind, PlaybackStatus, VisualizerMode},
+    AppMsg, AppState, Library,
+    art_converter::{SizeMode, bytes_to_ascii},
+    library::Track,
+    reconcile_nav_state,
+    state::{
+        LeftPanelMode, LibraryViewDepth, Notification, NotificationKind, PlaybackContext,
+        PlaybackStatus, RepeatMode, TrackId, VisualizerMode,
+    },
 };
 
 pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
     tracing::info!("Play Requested");
-    handler_play_current_selection(state)
+    play_current_selection(state)
+}
+
+fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
+    let track_to_play = match state.nav.active_panel {
+        LeftPanelMode::Library => {
+            if state.nav.library.depth == LibraryViewDepth::Playlists {
+                None
+            } else {
+                let p = state.nav.library.selected_playlist_idx;
+                let t = state
+                    .nav
+                    .library
+                    .selected_tracks_curs
+                    .get(p)
+                    .copied()
+                    .unwrap_or(0);
+                state
+                    .library
+                    .playlists
+                    .get(p)
+                    .and_then(|pl| pl.tracks.get(t))
+                    .cloned()
+            }
+        }
+        LeftPanelMode::Queue => {
+            let playing_from_queue = state
+                .playback
+                .current
+                .as_ref()
+                .is_some_and(|c| c.context == PlaybackContext::Queue);
+
+            if playing_from_queue && state.nav.queue.selected_idx == 0 {
+                None
+            } else {
+                state
+                    .playback_queue
+                    .tracks
+                    .get(state.nav.queue.selected_idx)
+                    .cloned()
+            }
+        }
+    };
+
+    if let Some(track) = track_to_play {
+        let context = match state.nav.active_panel {
+            LeftPanelMode::Library => PlaybackContext::Library {
+                playlist_name: state.library.playlists[state.nav.library.selected_playlist_idx]
+                    .name
+                    .clone(),
+            },
+            LeftPanelMode::Queue => PlaybackContext::Queue,
+        };
+
+        // A. Update UI State IMMEDIATELY
+        state.playback.current = Some(TrackId {
+            context,
+            path: track.file_path.clone(),
+        });
+        state.playback.status = PlaybackStatus::Playing;
+        state.playback.progress_ms = 0;
+        state.playback.duration_ms = None;
+
+        state.notification.current = Some(Notification {
+            kind: NotificationKind::Info,
+            message: format!("Playing {}", track.title),
+            progress: None,
+            created_at: Instant::now(),
+            dismiss_after: Some(Duration::from_secs(2)),
+        });
+
+        state.current_album_art = None;
+        if track.has_cover
+            && let Some((data, _mime)) = Library::get_album_art(&track.file_path)
+            && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(30))
+        {
+            state.current_album_art = Some(ascii);
+        }
+
+        return vec![AppMsg::DispatchPlay {
+            path: track.file_path.clone(),
+        }];
+    }
+    vec![]
 }
 
 pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
@@ -60,7 +150,7 @@ pub fn handle_audio_progress(state: &mut AppState, position_ms: u64) -> Vec<AppM
 
 pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
     tracing::info!("Audio Finished...");
-    handler_playback_ended(state)
+    playback_ended(state)
 }
 
 pub fn handle_audio_paused(state: &mut AppState) -> Vec<AppMsg> {
@@ -118,5 +208,153 @@ pub fn handle_dispatch_seek(_state: &mut AppState, _position_ms: u64) -> Vec<App
 }
 
 pub fn handle_audio_started(_state: &mut AppState, _path: String) -> Vec<AppMsg> {
+    vec![]
+}
+
+fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
+    state.playback.status = PlaybackStatus::Stopped;
+    state.playback.progress_ms = 0;
+
+    // 1. PRIORITY: Repeat One Track
+    // If Repeat is Track, we ignore Shuffle and Queue logic, just loop.
+    if state.repeat_mode == RepeatMode::Track
+        && let Some(current) = &state.playback.current
+    {
+        state.playback.status = PlaybackStatus::Playing;
+        return vec![AppMsg::DispatchPlay {
+            path: current.path.clone(),
+        }];
+    }
+
+    // 2. PRIORITY: Play Single (Stop)
+    // If Single mode is on, we stop here.
+    if state.repeat_mode == RepeatMode::PlayOnce {
+        state.notification.current = Some(Notification {
+            kind: NotificationKind::Info,
+            message: "Playback Finished (Single)".into(),
+            progress: None,
+            created_at: Instant::now(),
+            dismiss_after: Some(Duration::from_secs(2)),
+        });
+        return vec![];
+    }
+
+    // 3. LOGIC: Calculate Next Track
+    let mut next_track_info: Option<Track> = None;
+    let mut next_context: Option<PlaybackContext> = None;
+
+    if let Some(current) = &state.playback.current {
+        // Helper closure to pick a track index based on mode
+        let get_next_index = |current_idx: usize, total_len: usize| -> Option<usize> {
+            // A. SHUFFLE MODE
+            if state.playback.shuffle {
+                if total_len <= 1 {
+                    return None;
+                }
+                let mut rng = rand::rng();
+                return Some(rng.random_range(0..total_len));
+            }
+
+            // B. SEQUENTIAL MODE
+            let next = current_idx + 1;
+            if next < total_len {
+                return Some(next);
+            }
+
+            // C. END OF LIST -> Loop if Repeat Playlist is on
+            if state.repeat_mode == RepeatMode::Playlist {
+                return Some(0);
+            }
+
+            // RepeatMode::Off -> Stop at end
+            None
+        };
+
+        // --- CONTEXT LOGIC ---
+        match &current.context {
+            PlaybackContext::Queue => {
+                // Case A: We are ALREADY in the Queue.
+                // Consumer behavior: remove the current track (the one that just finished)
+                if let Some(idx) = state
+                    .playback_queue
+                    .tracks
+                    .iter()
+                    .position(|t| t.file_path == current.path)
+                {
+                    state.playback_queue.tracks.remove(idx);
+                    reconcile_nav_state(state);
+                }
+
+                next_context = Some(PlaybackContext::Queue);
+                // Peek the NEW front (Index 0) to play next
+                if !state.playback_queue.tracks.is_empty() {
+                    next_track_info = state.playback_queue.tracks.front().cloned();
+                }
+            }
+            PlaybackContext::Library { playlist_name } => {
+                // Case B: We are in the Library.
+
+                // FIX: Check Queue. If exists, Play but DO NOT POP yet.
+                if !state.playback_queue.tracks.is_empty() {
+                    next_context = Some(PlaybackContext::Queue);
+                    next_track_info = state.playback_queue.tracks.front().cloned();
+                    reconcile_nav_state(state);
+                } else {
+                    // Queue is empty, continue with Library logic.
+                    next_context = Some(PlaybackContext::Library {
+                        playlist_name: playlist_name.clone(),
+                    });
+
+                    if let Some(playlist) = state
+                        .library
+                        .playlists
+                        .iter()
+                        .find(|p| p.name == *playlist_name)
+                        && let Some(idx) = playlist
+                            .tracks
+                            .iter()
+                            .position(|t| t.file_path == current.path)
+                        && let Some(next_idx) = get_next_index(idx, playlist.tracks.len())
+                    {
+                        next_track_info = playlist.tracks.get(next_idx).cloned();
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. EXECUTE
+    if let Some(track) = next_track_info {
+        // Use the context calculated in Step 3
+        let context = next_context.unwrap_or(PlaybackContext::Queue);
+
+        state.playback.current = Some(TrackId {
+            context,
+            path: track.file_path.clone(),
+        });
+        state.playback.status = PlaybackStatus::Playing;
+
+        // UI Updates ...
+        state.notification.current = Some(Notification {
+            kind: NotificationKind::Info,
+            message: format!("Now Playing: {}", track.title),
+            progress: None,
+            created_at: Instant::now(),
+            dismiss_after: Some(Duration::from_secs(2)),
+        });
+
+        state.current_album_art = None;
+        if track.has_cover
+            && let Some((data, _)) = Library::get_album_art(&track.file_path)
+            && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(30))
+        {
+            state.current_album_art = Some(ascii);
+        }
+
+        return vec![AppMsg::DispatchPlay {
+            path: track.file_path.clone(),
+        }];
+    }
+
     vec![]
 }
