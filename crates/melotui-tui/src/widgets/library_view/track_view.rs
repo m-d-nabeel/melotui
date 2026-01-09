@@ -1,7 +1,7 @@
 use crate::format_duration;
 use melotui_core::{
     AppState,
-    state_registry::{LeftPanelMode, LibraryViewDepth},
+    state_registry::{LeftPanelMode, LibraryViewDepth, PlaybackContext},
 };
 use ratatui::{
     Frame,
@@ -58,7 +58,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 .playback
                 .current
                 .as_ref()
-                .is_some_and(|curr| curr.playlist == playlist.name && curr.path == t.file_path);
+                .is_some_and(|curr| matches!(curr.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &playlist.name) && curr.path == t.file_path);
             let is_selected = i == selected_track_idx;
 
             let status = if is_playing {

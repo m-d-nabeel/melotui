@@ -4,7 +4,10 @@ use crate::{
     format_duration,
     widgets::playback_view::progress_bar_view::{ProgressBarConfig, ProgressBarTheme},
 };
-use melotui_core::{AppState, state_registry::RepeatMode};
+use melotui_core::{
+    AppState,
+    state_registry::{PlaybackContext, RepeatMode},
+};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -44,7 +47,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     // --- PREPARE DATA ---
     let current_track = state.playback.current.as_ref().and_then(|id| {
-        if id.playlist == "Queue" {
+        if matches!(id.context, PlaybackContext::Queue) {
             state
                 .playback_queue
                 .tracks
@@ -55,7 +58,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 .library
                 .playlists
                 .iter()
-                .find(|p| p.name == id.playlist)
+                .find(|p| matches!(id.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &p.name))
                 .and_then(|pl| pl.tracks.iter().find(|t| t.file_path == id.path))
         }
     });
@@ -66,7 +69,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .playback
         .current
         .as_ref()
-        .map(|id| id.playlist == "Queue")
+        .map(|id| matches!(id.context, PlaybackContext::Queue))
         .unwrap_or(false)
     {
         ("Q", Color::Yellow)

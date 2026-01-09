@@ -12,7 +12,7 @@ use crate::{
     reconcile_nav_state,
     state_registry::{
         DownloadJob, DownloadStatus, LeftPanelMode, LibraryViewDepth, Notification,
-        NotificationKind, PlaybackStatus, RepeatMode, TrackId,
+        NotificationKind, PlaybackContext, PlaybackStatus, RepeatMode, TrackId,
     },
 };
 
@@ -43,7 +43,7 @@ pub fn handler_play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
                 .playback
                 .current
                 .as_ref()
-                .is_some_and(|c| c.playlist == "Queue");
+                .is_some_and(|c| c.context == PlaybackContext::Queue);
 
             if playing_from_queue && state.nav.queue.selected_idx == 0 {
                 None
@@ -68,7 +68,7 @@ pub fn handler_play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
 
         // A. Update UI State IMMEDIATELY
         state.playback.current = Some(TrackId {
-            playlist: playlist_name,
+            context: PlaybackContext::Library { playlist_name },
             path: track.file_path.clone(),
         });
         state.playback.status = PlaybackStatus::Playing;
@@ -207,7 +207,7 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
 
     // 3. LOGIC: Calculate Next Track
     let mut next_track_info: Option<Track> = None;
-    let mut next_context_name = String::new();
+    let mut next_context: Option<PlaybackContext> = None;
 
     if let Some(current) = &state.playback.current {
         // Helper closure to pick a track index based on mode
@@ -237,47 +237,53 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
         };
 
         // --- CONTEXT LOGIC ---
-        if current.playlist == "Queue" {
-            // Case A: We are ALREADY in the Queue.
-            // Consumer behavior: remove the current track (the one that just finished)
-            if let Some(idx) = state
-                .playback_queue
-                .tracks
-                .iter()
-                .position(|t| t.file_path == current.path)
-            {
-                state.playback_queue.tracks.remove(idx);
-                reconcile_nav_state(state);
-            }
-
-            next_context_name = "Queue".to_string();
-            // Peek the NEW front (Index 0) to play next
-            if !state.playback_queue.tracks.is_empty() {
-                next_track_info = state.playback_queue.tracks.front().cloned();
-            }
-        } else {
-            // Case B: We are in the Library.
-
-            // FIX: Check Queue. If exists, Play but DO NOT POP yet.
-            if !state.playback_queue.tracks.is_empty() {
-                next_context_name = "Queue".to_string();
-                next_track_info = state.playback_queue.tracks.front().cloned();
-                reconcile_nav_state(state);
-            } else {
-                // Queue is empty, continue with Library logic.
-                next_context_name = current.playlist.clone();
-                if let Some(playlist) = state
-                    .library
-                    .playlists
+        match &current.context {
+            PlaybackContext::Queue => {
+                // Case A: We are ALREADY in the Queue.
+                // Consumer behavior: remove the current track (the one that just finished)
+                if let Some(idx) = state
+                    .playback_queue
+                    .tracks
                     .iter()
-                    .find(|p| p.name == current.playlist)
-                    && let Some(idx) = playlist
-                        .tracks
-                        .iter()
-                        .position(|t| t.file_path == current.path)
-                    && let Some(next_idx) = get_next_index(idx, playlist.tracks.len())
+                    .position(|t| t.file_path == current.path)
                 {
-                    next_track_info = playlist.tracks.get(next_idx).cloned();
+                    state.playback_queue.tracks.remove(idx);
+                    reconcile_nav_state(state);
+                }
+
+                next_context = Some(PlaybackContext::Queue);
+                // Peek the NEW front (Index 0) to play next
+                if !state.playback_queue.tracks.is_empty() {
+                    next_track_info = state.playback_queue.tracks.front().cloned();
+                }
+            }
+            PlaybackContext::Library { playlist_name } => {
+                // Case B: We are in the Library.
+
+                // FIX: Check Queue. If exists, Play but DO NOT POP yet.
+                if !state.playback_queue.tracks.is_empty() {
+                    next_context = Some(PlaybackContext::Queue);
+                    next_track_info = state.playback_queue.tracks.front().cloned();
+                    reconcile_nav_state(state);
+                } else {
+                    // Queue is empty, continue with Library logic.
+                    next_context = Some(PlaybackContext::Library {
+                        playlist_name: playlist_name.clone(),
+                    });
+
+                    if let Some(playlist) = state
+                        .library
+                        .playlists
+                        .iter()
+                        .find(|p| p.name == *playlist_name)
+                        && let Some(idx) = playlist
+                            .tracks
+                            .iter()
+                            .position(|t| t.file_path == current.path)
+                        && let Some(next_idx) = get_next_index(idx, playlist.tracks.len())
+                    {
+                        next_track_info = playlist.tracks.get(next_idx).cloned();
+                    }
                 }
             }
         }
@@ -285,8 +291,11 @@ pub fn handler_playback_ended(state: &mut AppState) -> Vec<AppMsg> {
 
     // 4. EXECUTE
     if let Some(track) = next_track_info {
+        // Use the context calculated in Step 3
+        let context = next_context.unwrap_or(PlaybackContext::Queue);
+
         state.playback.current = Some(TrackId {
-            playlist: next_context_name,
+            context,
             path: track.file_path.clone(),
         });
         state.playback.status = PlaybackStatus::Playing;
