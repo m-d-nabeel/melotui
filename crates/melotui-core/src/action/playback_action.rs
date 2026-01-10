@@ -8,8 +8,8 @@ use crate::{
     message::playback::PlaybackMsg,
     reconcile_nav_state,
     state::{
-        LeftPanelMode, LibraryViewDepth, Notification, NotificationKind, PlaybackContext,
-        PlaybackStatus, RepeatMode, ActiveTrack, VisualizerMode,
+        ActiveTrack, LeftPanelMode, LibraryViewDepth, Notification, NotificationKind,
+        PlaybackContext, PlaybackStatus, RepeatMode, VisualizerMode,
     },
     utils::{SizeMode, bytes_to_ascii},
 };

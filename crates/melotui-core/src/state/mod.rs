@@ -15,7 +15,7 @@ pub use navigation::{
 };
 pub use notification::{Notification, NotificationKind, NotificationState};
 pub use playback::{
-    PlaybackContext, PlaybackQueueState, PlaybackState, PlaybackStatus, RepeatMode, ActiveTrack,
+    ActiveTrack, PlaybackContext, PlaybackQueueState, PlaybackState, PlaybackStatus, RepeatMode,
 };
 pub use session::SessionState;
 pub use ui::{UIMode, UIState};

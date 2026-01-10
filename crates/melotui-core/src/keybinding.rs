@@ -231,16 +231,20 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('x'), KeyAction::Stop, "Stop"),
                 KeyBinding::new(KeyCode::F(5), KeyAction::RescanLibrary, "Rescan"),
                 KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel, "Switch Panel"),
-                KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer, "Visualizer"),
+                KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer, "Visualizer")
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward, "Seek -5s"),
-                KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward, "Seek -5s"),
+                KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward, "Seek -5s")
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('.'), KeyAction::SeekForward, "Seek +5s"),
-                KeyBinding::new(KeyCode::Char('>'), KeyAction::SeekForward, "Seek +5s"),
+                KeyBinding::new(KeyCode::Char('>'), KeyAction::SeekForward, "Seek +5s")
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Esc, KeyAction::CancelDownload, "Cancel DL"),
                 KeyBinding::new(KeyCode::Char('+'), KeyAction::VolUp, "Vol+"),
                 KeyBinding::new(KeyCode::Char('='), KeyAction::VolUp, "Vol+"),
                 KeyBinding::new(KeyCode::Char('-'), KeyAction::VolDown, "Vol-"),
-                KeyBinding::new(KeyCode::Char('_'), KeyAction::VolDown, "Vol-"),
+                KeyBinding::new(KeyCode::Char('_'), KeyAction::VolDown, "Vol-")
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('z'), KeyAction::ToggleShuffle, "Shuffle"),
                 KeyBinding::new(KeyCode::Char('c'), KeyAction::CycleRepeat, "Repeat"),
                 KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedUp, "Speed+"),
