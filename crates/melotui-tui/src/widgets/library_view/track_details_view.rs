@@ -9,19 +9,10 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let p_idx = state.session.nav.library.selected_playlist_idx;
-
-    if p_idx >= state.library.playlists.len() {
-        return;
-    }
-    let playlist = &state.library.playlists[p_idx];
-
-    let t_idx = state.session.nav.library.selected_tracks_curs[p_idx];
-    if t_idx >= playlist.tracks.len() {
-        return;
-    }
-
-    let track = &playlist.tracks[t_idx];
+    let track = match state.get_selected_track() {
+        Some(t) => t,
+        None => return,
+    };
 
     // 1. Container Block
     let block = Block::default()

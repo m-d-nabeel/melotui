@@ -4,10 +4,7 @@ use crate::{
     format_duration,
     widgets::playback_view::progress_bar_view::{ProgressBarConfig, ProgressBarTheme},
 };
-use melotui_core::{
-    AppState,
-    state::{PlaybackContext, RepeatMode},
-};
+use melotui_core::{AppState, state::RepeatMode};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
@@ -43,29 +40,10 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let v_chunks = layout.split(inner_area);
 
     // --- PREPARE DATA ---
-    let current_track = state.session.playback.current.as_ref().and_then(|id| {
-        if matches!(id.context, PlaybackContext::Queue) {
-            state.session.playback_queue.tracks.iter().find(|t| t.file_path == id.path)
-        } else {
-            state
-                .library
-                .playlists
-                .iter()
-                .find(|p| matches!(id.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &p.name))
-                .and_then(|pl| pl.tracks.iter().find(|t| t.file_path == id.path))
-        }
-    });
-
-    let next_song_name = utils::predict_next_song(state);
+    let current_track = state.get_playing_track();
+    let next_song_name = state.predict_next_song();
     let (status_icon, status_color) = utils::get_status_icon(&state.session.playback.status);
-    let (source_icon, source_color) = if state
-        .session
-        .playback
-        .current
-        .as_ref()
-        .map(|id| matches!(id.context, PlaybackContext::Queue))
-        .unwrap_or(false)
-    {
+    let (source_icon, source_color) = if state.is_playing_from_queue() {
         ("Q", Color::Yellow)
     } else {
         ("♪", Color::Blue)

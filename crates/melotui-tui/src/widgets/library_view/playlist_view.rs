@@ -1,6 +1,6 @@
 use melotui_core::{
     AppState,
-    state::{LeftPanelMode, LibraryViewDepth, PlaybackContext},
+    state::{LeftPanelMode, LibraryViewDepth},
 };
 use ratatui::{
     Frame,
@@ -33,7 +33,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             let is_selected = i == selected_idx;
 
             // Check if this specific playlist is the source of the current song
-            let is_active_playlist = state.session.playback.current.as_ref().is_some_and(|curr| matches!(curr.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &p.name));
+            let is_active_playlist = state
+                .get_playing_playlist_name()
+                .is_some_and(|playing_name| playing_name == p.name);
 
             let icon = if is_active_playlist { " 󰐑" } else { " 󰲹" };
             let mut text_style = Style::default().add_modifier(Modifier::BOLD);

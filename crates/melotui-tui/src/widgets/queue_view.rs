@@ -1,7 +1,7 @@
 use crate::format_duration;
 use melotui_core::{
     AppState,
-    state::{LeftPanelMode, LibraryViewDepth, PlaybackContext},
+    state::{LeftPanelMode, LibraryViewDepth},
 };
 use ratatui::{
     Frame,
@@ -16,8 +16,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let selected_idx = state.session.nav.queue.selected_idx;
     let is_active_panel = state.session.nav.active_panel == LeftPanelMode::Queue;
 
-    // 1. Prepare Main Container Block
-    // This creates the single "unified" look the user requested.
+    // Container block for unified look
     let lib_tab_text = match state.session.nav.library.depth {
         LibraryViewDepth::Playlists => " Library ".to_string(),
         LibraryViewDepth::Tracks | LibraryViewDepth::TrackInfo => {
@@ -61,7 +60,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = container.inner(area);
     frame.render_widget(container, area);
 
-    // 2. Empty Queue Handling
+    // Handle empty queue
     if queue.is_empty() {
         let p = Paragraph::new("Queue is empty")
             .alignment(Alignment::Center)
@@ -79,32 +78,17 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         return;
     }
 
-    // 3. Context Check
-    let playing_from_queue = state
-        .session
-        .playback
-        .current
-        .as_ref()
-        .is_some_and(|curr| matches!(curr.context, PlaybackContext::Queue));
-
-    if playing_from_queue {
-        // --- SPLIT LAYOUT ---
-        // Top: Now Playing (Index 0)
-        // Mid: Separator
-        // Bot: Up Next List (Indices 1..)
-
+    if state.is_playing_from_queue() {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Now Playing Card
-                Constraint::Length(2), // Separator (Padding + Text)
-                Constraint::Min(0),    // The Table
+                Constraint::Length(3), // Now Playing
+                Constraint::Length(2), // Separator
+                Constraint::Min(0),    // Up Next table
             ])
             .split(inner_area);
 
-        // A. Now Playing Section
         if let Some(current_track) = queue.front() {
-            // Visuals: Green Title, Dimmed Meta. NO Selection highlight logic here.
             let time_str = format_duration(current_track.duration_ms);
 
             let lines = vec![
@@ -135,7 +119,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 ]),
             ];
 
-            // Render slightly indented
             let np_area = Rect {
                 x: chunks[0].x + 1,
                 width: chunks[0].width.saturating_sub(2),
@@ -144,7 +127,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             frame.render_widget(Paragraph::new(lines), np_area);
         }
 
-        // B. Separator
         let sep_line = Line::from(vec![
             Span::styled(
                 " 󰲸 Up Next ",
@@ -159,14 +141,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         ]);
         frame.render_widget(Paragraph::new(sep_line), chunks[1]);
 
-        // C. Up Next Table
         if queue.len() > 1 {
             let up_next_slice = queue.iter().skip(1);
-
-            // Selection Logic Fix:
-            // Since we skipped 1 item, table row 0 corresponds to Queue Index 1.
-            // If selected_idx is 0 (Now Playing), we show NOTHING selected in the table.
-            // If selected_idx is 1 (First Up Next), we select table row 0.
             let table_selected_idx = if selected_idx > 0 {
                 Some(selected_idx - 1)
             } else {
@@ -188,8 +164,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             );
         }
     } else {
-        // --- PENDING MODE (Not Playing) ---
-        // Render whole list normally
         draw_simple_table(
             frame,
             inner_area,
@@ -209,7 +183,6 @@ fn draw_simple_table<'a>(
     is_active: bool,
     index_offset: usize,
 ) {
-    // Columns: #, Title, Time
     let header = Row::new(vec![
         Cell::from("#"),
         Cell::from("Title"),
@@ -247,7 +220,6 @@ fn draw_simple_table<'a>(
                 } else {
                     Style::default()
                 }),
-                // Time in Dark Gray as requested
                 Cell::from(format_duration(t.duration_ms))
                     .style(Style::default().fg(Color::DarkGray)),
             ])

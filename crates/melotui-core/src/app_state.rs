@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::{
     Library, Playlist,
     library::{LibraryPersistence, Track},
-    state::{LeftPanelMode, PlaybackContext, SessionState},
+    state::{LeftPanelMode, PlaybackContext, RepeatMode, SessionState},
     utils::{NoOpSpectrum, SpectrumSource},
 };
 
@@ -76,5 +76,65 @@ impl AppState {
                 .playback_queue
                 .get_selected_track(&self.session.nav.queue),
         }
+    }
+
+    pub fn is_playing_from_queue(&self) -> bool {
+        self.session
+            .playback
+            .current
+            .as_ref()
+            .is_some_and(|c| matches!(c.context, PlaybackContext::Queue))
+    }
+
+    pub fn get_playing_playlist_name(&self) -> Option<&str> {
+        self.session.playback.current.as_ref().and_then(|active| {
+            if let PlaybackContext::Library { playlist_name } = &active.context {
+                Some(playlist_name.as_str())
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn predict_next_song(&self) -> String {
+        if self.is_playing_from_queue() {
+            if self.session.playback_queue.tracks.len() > 1 {
+                return self.session.playback_queue.tracks[1].title.clone();
+            } else {
+                return "None (End of Queue)".to_string();
+            }
+        }
+
+        if !self.session.playback_queue.tracks.is_empty() {
+            return self.session.playback_queue.tracks[0].title.clone();
+        }
+
+        if self.session.playback.shuffle {
+            return "Random (Shuffle)".to_string();
+        }
+
+        if self.session.repeat_mode == RepeatMode::Track && self.session.playback.current.is_some()
+        {
+            return "Repeating Track".to_string();
+        }
+
+        if let Some(current) = &self.session.playback.current
+            && let Some(playlist) = self.library.playlists.iter().find(|p| {
+                matches!(current.context, PlaybackContext::Library { ref playlist_name }
+                    if playlist_name == &p.name)
+            })
+            && let Some(idx) = playlist.tracks.iter().position(|t| t.id == current.id)
+        {
+            let next_idx = idx + 1;
+            if next_idx < playlist.tracks.len() {
+                return playlist.tracks[next_idx].title.clone();
+            } else if self.session.repeat_mode == RepeatMode::Playlist
+                && let Some(first) = playlist.tracks.first()
+            {
+                return first.title.clone();
+            }
+        }
+
+        "None".to_string()
     }
 }
