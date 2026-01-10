@@ -4,7 +4,6 @@ use rand::Rng;
 
 use crate::{
     AppMsg, AppState, Library,
-    art_converter::{SizeMode, bytes_to_ascii},
     library::Track,
     message::playback::PlaybackMsg,
     reconcile_nav_state,
@@ -12,6 +11,7 @@ use crate::{
         LeftPanelMode, LibraryViewDepth, Notification, NotificationKind, PlaybackContext,
         PlaybackStatus, RepeatMode, TrackId, VisualizerMode,
     },
+    utils::{SizeMode, bytes_to_ascii},
 };
 
 pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {

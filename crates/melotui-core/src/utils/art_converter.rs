@@ -19,10 +19,8 @@ pub enum SizeMode {
 }
 
 /// Converts raw image bytes into a rectangular Ratatui Text widget.
-///
-/// Uses `Lanczos3` resampling for high quality and supports alpha transparency.
+/// Uses Lanczos3 resampling for high quality and supports alpha transparency.
 pub fn bytes_to_ascii(data: &[u8], size_mode: SizeMode) -> Result<Text<'static>> {
-    // 1. Load image
     let img = image::load(Cursor::new(data), image::ImageFormat::Jpeg)
         .or_else(|_| image::load(Cursor::new(data), image::ImageFormat::Png))
         .or_else(|_| image::load(Cursor::new(data), image::ImageFormat::WebP))?;
@@ -30,8 +28,7 @@ pub fn bytes_to_ascii(data: &[u8], size_mode: SizeMode) -> Result<Text<'static>>
     let (orig_w, orig_h) = img.dimensions();
     let aspect_ratio = orig_w as f64 / orig_h as f64;
 
-    // 2. Determine Target Dimensions & Strategy
-    // Terminal cells are approx 1:2 (width:height).
+    // Terminal cells are approx 1:2 (width:height)
     let (target_w, target_h, do_crop) = match size_mode {
         SizeMode::Height(h) => {
             let internal_h = h * 2;
@@ -49,38 +46,28 @@ pub fn bytes_to_ascii(data: &[u8], size_mode: SizeMode) -> Result<Text<'static>>
         }
     };
 
-    // Prevent zero-size panics
     let target_w = target_w.max(1);
     let target_h = target_h.max(1);
 
-    // 3. Resize and Optional Crop
     let rgba = if do_crop {
-        // Resize to FILL (may result in image larger than target)
         let mut filled =
             img.resize_to_fill(target_w, target_h, image::imageops::FilterType::Lanczos3);
-
-        // Calculate crop offsets to center the image
         let (fw, fh) = filled.dimensions();
         let x = (fw.saturating_sub(target_w)) / 2;
         let y = (fh.saturating_sub(target_h)) / 2;
-
-        // Crop exactly to target
         filled.crop(x, y, target_w, target_h).to_rgba8()
     } else {
-        // Standard Resize
         img.resize_exact(target_w, target_h, image::imageops::FilterType::Lanczos3)
             .to_rgba8()
     };
 
     let (w, h) = rgba.dimensions();
 
-    // Helper to convert pixel to Option<Color> based on Alpha
     let get_color = |x: u32, y: u32| -> Option<Color> {
         if x >= w || y >= h {
             return None;
         }
         let p = rgba.get_pixel(x, y);
-        // Alpha threshold (simple binary transparency)
         if p[3] < 50 {
             None
         } else {
@@ -89,8 +76,6 @@ pub fn bytes_to_ascii(data: &[u8], size_mode: SizeMode) -> Result<Text<'static>>
     };
 
     let mut lines = Vec::new();
-
-    // 4. Iterate 2 pixels at a time (y, y+1)
     for y in (0..h).step_by(2) {
         let mut spans = Vec::new();
         for x in 0..w {

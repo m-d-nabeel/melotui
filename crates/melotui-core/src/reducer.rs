@@ -8,11 +8,8 @@ use crate::{
 
 pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
     match msg {
-        // ───── Lifecycle ─────
         AppMsg::RequestQuit => action::library_action::handle_request_quit(state),
         AppMsg::Noop => vec![],
-
-        // ───── Domain-specific messages ─────
         AppMsg::Navigation(nav_msg) => handle_navigation_message(state, nav_msg),
         AppMsg::Playback(playback_msg) => handle_playback_message(state, playback_msg),
         AppMsg::Audio(audio_msg) => handle_audio_message(state, audio_msg),

@@ -1,4 +1,4 @@
-use melotui_core::visualizer_interface::SpectrumSource;
+use melotui_core::utils::SpectrumSource;
 use std::sync::{Arc, RwLock};
 
 /// The container for our single shared buffer.

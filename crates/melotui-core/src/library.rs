@@ -16,14 +16,12 @@ pub struct Track {
     pub title: String,
     pub artist: Option<String>,
     pub album: Option<String>,
-    // --- Extra Metadata ---
     pub genre: Option<String>,
     pub year: Option<u32>,
     pub track_number: Option<u32>,
     pub bitrate: Option<u32>,     // kbps
     pub sample_rate: Option<u32>, // Hz
     pub format: String,           // e.g. "MP3"
-    // -----------------------
     pub duration_ms: u64,
     pub has_cover: bool,
 }

@@ -7,7 +7,7 @@ use crate::{
         LibraryViewDepth, NavigationState, NotificationState, PlaybackQueueState, PlaybackState,
         PlaybackStatus, QueueNavState, RepeatMode, SpectrumStyle, UIMode, UIState, VisualizerMode,
     },
-    visualizer_interface::{NoOpSpectrum, SpectrumSource},
+    utils::{NoOpSpectrum, SpectrumSource},
 };
 
 pub struct AppState {

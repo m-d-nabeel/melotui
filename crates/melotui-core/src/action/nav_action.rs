@@ -1,7 +1,7 @@
 use crate::{
     AppMsg, AppState, Library,
-    art_converter::{SizeMode, bytes_to_ascii},
     state::{LeftPanelMode, LibraryViewDepth},
+    utils::{SizeMode, bytes_to_ascii},
 };
 
 pub fn handle_toggle_library_queue(state: &mut AppState) -> Vec<AppMsg> {

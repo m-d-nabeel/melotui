@@ -18,11 +18,10 @@ impl Command {
             return Command::Unknown("empty command".into());
         }
 
-        // trimmed not empty will always return
         let mut parts = trimmed.split_whitespace();
         let cmd = parts.next().unwrap();
 
-        let result_cmd = match cmd {
+        match cmd {
             "q" | "quit" | "exit" => Command::Quit,
             "r" | "rescan" | "scan" => Command::Rescan,
 
@@ -47,8 +46,6 @@ impl Command {
             }
 
             _ => Command::Unknown(cmd.to_string()),
-        };
-        tracing::info!("Result CMD: {:?}", result_cmd);
-        result_cmd
+        }
     }
 }
