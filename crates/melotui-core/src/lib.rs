@@ -1,6 +1,7 @@
 pub mod action;
 pub mod app_state;
 pub mod command;
+pub mod keybinding;
 pub mod library;
 pub mod message;
 pub mod reducer;
@@ -42,7 +43,7 @@ pub fn reconcile_nav_state(state: &mut AppState) {
         }
     }
 
-    // 2. Reconcile Queue
+    // Adjust queue cursor
     let queue_len = state.playback_queue.tracks.len();
     if queue_len == 0 {
         state.nav.queue.selected_idx = 0;
