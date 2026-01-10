@@ -9,11 +9,10 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, _state: &AppState) {
-    // 1. Calculate Centered Rect
-    // We use a vertical layout first to squish the height, then horizontal for width.
+    // Center the popup
     let popup_layout_v = Layout::vertical([
         Constraint::Fill(1),
-        Constraint::Length(25), // Fixed height for consistency
+        Constraint::Length(25), // Fixed height
         Constraint::Fill(1),
     ])
     .split(area);
@@ -31,53 +30,30 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &AppState) {
         .fg(Color::Cyan)
         .add_modifier(Modifier::BOLD);
 
-    // Header Row Style: Dark background to create a "bar" effect
-    let category_row_style = Style::default().bg(Color::Rgb(40, 40, 40));
-    let category_text_style = Style::default()
-        .fg(Color::Yellow)
-        .add_modifier(Modifier::BOLD);
-
     let key_style = Style::default()
         .fg(Color::Green)
         .add_modifier(Modifier::BOLD);
     let desc_style = Style::default().fg(Color::White);
 
-    // 2. Prepare Table Data
+    // Prepare table data
     let docs = InputHandler::get_help_docs();
     let mut rows = Vec::new();
-    let mut last_category = "";
 
     for item in docs {
-        // If category changes, insert a "Section Header" row
-        if item.category != last_category {
-            rows.push(
-                Row::new(vec![
-                    Cell::from(format!("  {}  ", item.category.to_uppercase()))
-                        .style(category_text_style),
-                    Cell::from(""), // Empty second cell, but background covers it
-                ])
-                .style(category_row_style) // Apply background to whole row
-                .height(1),
-            );
-            last_category = item.category;
-        }
+        // Format the key nicely (e.g. "Char('q')" -> "q")
+        let key_str = format!("{:?}", item.key)
+            .replace("Char('", "")
+            .replace("')", "");
 
-        // Key Binding Row
+        // Add row for binding
         rows.push(Row::new(vec![
-            Cell::from(format!("  {}", item.key)).style(key_style),
+            Cell::from(format!("  {}", key_str)).style(key_style),
             Cell::from(item.desc).style(desc_style),
         ]));
     }
 
-    // 3. Build the Table Widget
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Length(15), // Fixed width for Keys (keeps alignment clean)
-            Constraint::Fill(1),    // Description takes remaining space
-        ],
-    )
-    .block(
+    // Build table widget
+    let table = Table::new(rows, [Constraint::Length(15), Constraint::Fill(1)]).block(
         Block::default()
             .title(
                 Line::from(" Keyboard Shortcuts ")
@@ -85,14 +61,12 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &AppState) {
                     .style(title_style),
             )
             .borders(Borders::ALL)
-            .border_type(BorderType::Thick) // Thick border looks cleaner
+            .border_type(BorderType::Thick)
             .border_style(border_style)
-            // No internal padding on the block itself to allow header rows to touch edges if desired,
-            // but we add a bit to keep text off the border.
             .padding(Padding::horizontal(1)),
     );
 
-    // 4. Render
-    frame.render_widget(Clear, popup_area); // Clear background
-    frame.render_widget(table, popup_area); // Draw popup
+    // Render popup
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(table, popup_area);
 }
