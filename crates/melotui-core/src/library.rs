@@ -4,14 +4,23 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
-use lofty::tag::Accessor; // Needed for year/genre/track
+use lofty::tag::Accessor;
 use serde::{Deserialize, Serialize};
 
-// Supported audio extensions to scan
+use crate::state::LibraryNavState;
+
 const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "m4a", "wav", "ogg", "opus"];
+
+pub type TrackId = usize;
+
+pub trait LibraryPersistence: Send + Sync {
+    fn get_track(&self, id: TrackId) -> Option<&Track>;
+    fn search(&self, query: &str) -> Vec<&Track>;
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Track {
+    pub id: TrackId,
     pub file_path: PathBuf,
     pub title: String,
     pub artist: Option<String>,
@@ -29,7 +38,6 @@ pub struct Track {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Playlist {
     pub name: String,
-    pub path: PathBuf,
     pub tracks: Vec<Track>,
 }
 
@@ -37,6 +45,35 @@ pub struct Playlist {
 pub struct Library {
     pub root: PathBuf,
     pub playlists: Vec<Playlist>,
+}
+
+impl LibraryPersistence for Library {
+    fn get_track(&self, id: TrackId) -> Option<&Track> {
+        for playlist in &self.playlists {
+            for track in &playlist.tracks {
+                if track.id == id {
+                    return Some(track);
+                }
+            }
+        }
+        None
+    }
+
+    fn search(&self, query: &str) -> Vec<&Track> {
+        let q = query.to_lowercase();
+        self.playlists
+            .iter()
+            .flat_map(|p| &p.tracks)
+            .filter(|t| {
+                t.title.to_lowercase().contains(&q)
+                    || t.artist
+                        .as_deref()
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .contains(&q)
+            })
+            .collect()
+    }
 }
 
 impl Library {
@@ -47,12 +84,13 @@ impl Library {
 
         let mut playlists = Vec::new();
         let mut untitled_tracks = Vec::new();
+        let mut next_id: TrackId = 1;
 
         for entry in fs::read_dir(&root)?.flatten() {
             let path = entry.path();
 
             if path.is_file() {
-                if let Some(track) = process_file(&path) {
+                if let Some(track) = process_file(&path, &mut next_id) {
                     untitled_tracks.push(track);
                 }
                 continue;
@@ -70,7 +108,7 @@ impl Library {
                     for sub_entry in entries.flatten() {
                         let sub_path = sub_entry.path();
                         if sub_path.is_file()
-                            && let Some(track) = process_file(&sub_path)
+                            && let Some(track) = process_file(&sub_path, &mut next_id)
                         {
                             tracks.push(track);
                         }
@@ -79,7 +117,7 @@ impl Library {
 
                 if !tracks.is_empty() {
                     tracks.sort_by(|a, b| a.file_path.cmp(&b.file_path));
-                    playlists.push(Playlist { name, path, tracks });
+                    playlists.push(Playlist { name, tracks });
                 }
             }
         }
@@ -90,7 +128,6 @@ impl Library {
                 0,
                 Playlist {
                     name: "Untitled".into(),
-                    path: root.clone(),
                     tracks: untitled_tracks,
                 },
             );
@@ -107,9 +144,28 @@ impl Library {
         let picture = tag.pictures().first()?;
         Some((picture.data().to_vec(), picture.mime_type()?.to_string()))
     }
+
+    pub fn get_selected_playlist(&self, nav: &LibraryNavState) -> Option<&Playlist> {
+        self.playlists.get(nav.selected_playlist_idx)
+    }
+
+    pub fn get_selected_track(&self, nav: &LibraryNavState) -> Option<&Track> {
+        let playlist = self.get_selected_playlist(nav)?;
+
+        let track_idx = *nav
+            .selected_tracks_curs
+            .get(nav.selected_playlist_idx)
+            .unwrap_or(&0);
+
+        playlist.tracks.get(track_idx)
+    }
+
+    pub fn get_track_at(&self, playlist_idx: usize, track_idx: usize) -> Option<&Track> {
+        self.playlists.get(playlist_idx)?.tracks.get(track_idx)
+    }
 }
 
-fn process_file(path: &Path) -> Option<Track> {
+fn process_file(path: &Path, id_counter: &mut TrackId) -> Option<Track> {
     let ext = path.extension()?.to_string_lossy().to_lowercase();
     if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
         return None;
@@ -142,10 +198,12 @@ fn process_file(path: &Path) -> Option<Track> {
     let genre = tag.and_then(|t| t.genre().map(|s| s.to_string()));
     let year = tag.and_then(|t| t.year());
     let track_number = tag.and_then(|t| t.track());
-
     let has_cover = tag.map(|t| !t.pictures().is_empty()).unwrap_or(false);
+    let id = *id_counter;
+    *id_counter += 1;
 
     Some(Track {
+        id,
         file_path: path.to_path_buf(),
         title,
         artist,

@@ -1,4 +1,7 @@
-use crate::library::Track;
+use crate::{
+    library::{Track, TrackId},
+    state::QueueNavState,
+};
 use std::{collections::VecDeque, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,6 +12,7 @@ pub enum PlaybackContext {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActiveTrack {
+    pub id: TrackId,
     pub path: PathBuf,
     pub context: PlaybackContext,
 }
@@ -53,4 +57,14 @@ pub struct PlaybackState {
 #[derive(Debug, Clone, Default)]
 pub struct PlaybackQueueState {
     pub tracks: VecDeque<Track>,
+}
+
+impl PlaybackQueueState {
+    pub fn get_selected_track(&self, nav: &QueueNavState) -> Option<&Track> {
+        self.tracks.get(nav.selected_idx)
+    }
+
+    pub fn get_track_by_id(&self, id: usize) -> Option<&Track> {
+        self.tracks.iter().find(|t| t.id == id)
+    }
 }

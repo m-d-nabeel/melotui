@@ -76,6 +76,7 @@ fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
 
         // A. Update UI State IMMEDIATELY
         state.session.playback.current = Some(ActiveTrack {
+            id: track.id,
             context,
             path: track.file_path.clone(),
         });
@@ -335,6 +336,7 @@ fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
         let context = next_context.unwrap_or(PlaybackContext::Queue);
 
         state.session.playback.current = Some(ActiveTrack {
+            id: track.id,
             context,
             path: track.file_path.clone(),
         });

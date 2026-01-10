@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use crate::{
-    Library,
-    state::SessionState,
+    Library, Playlist,
+    library::{LibraryPersistence, Track},
+    state::{LeftPanelMode, PlaybackContext, SessionState},
     utils::{NoOpSpectrum, SpectrumSource},
 };
 
@@ -48,6 +49,32 @@ impl AppState {
             spectrum_source: Box::new(NoOpSpectrum),
             current_album_art: None,
             track_info_art: None,
+        }
+    }
+}
+
+impl AppState {
+    pub fn get_playing_track(&self) -> Option<&Track> {
+        let active = self.session.playback.current.as_ref()?;
+
+        match &active.context {
+            PlaybackContext::Library { .. } => self.library.get_track(active.id),
+            PlaybackContext::Queue => self.session.playback_queue.get_track_by_id(active.id),
+        }
+    }
+
+    pub fn get_selected_playlist(&self) -> Option<&Playlist> {
+        self.library
+            .get_selected_playlist(&self.session.nav.library)
+    }
+
+    pub fn get_selected_track(&self) -> Option<&Track> {
+        match self.session.nav.active_panel {
+            LeftPanelMode::Library => self.library.get_selected_track(&self.session.nav.library),
+            LeftPanelMode::Queue => self
+                .session
+                .playback_queue
+                .get_selected_track(&self.session.nav.queue),
         }
     }
 }
