@@ -1,11 +1,8 @@
-use std::{collections::VecDeque, process::Command};
-
 use crate::{
     Library,
     state::{
-        AudioState, DownloadState, DownloadStatus, LeftPanelMode, LibraryNavState,
-        LibraryViewDepth, NavigationState, NotificationState, PlaybackQueueState, PlaybackState,
-        PlaybackStatus, QueueNavState, RepeatMode, SpectrumStyle, UIMode, UIState, VisualizerMode,
+        AudioState, DownloadState, NavigationState, NotificationState, PlaybackQueueState,
+        PlaybackState, RepeatMode, SpectrumStyle, UIState, VisualizerMode,
     },
     utils::{NoOpSpectrum, SpectrumSource},
 };
@@ -39,67 +36,26 @@ impl AppState {
     pub fn new(library: Library) -> Self {
         let playlist_count = library.playlists.len();
 
-        let nav = NavigationState {
-            active_panel: LeftPanelMode::Library,
-            library: LibraryNavState {
-                depth: LibraryViewDepth::Playlists,
-                selected_playlist_idx: 0,
-                selected_tracks_curs: vec![0; playlist_count],
-            },
-            queue: QueueNavState { selected_idx: 0 },
-        };
-        let playback = PlaybackState {
-            current: None,
-            status: PlaybackStatus::Stopped,
-            progress_ms: 0,
-            duration_ms: None,
-            shuffle: false,
-        };
-        let ui = UIState {
-            mode: UIMode::Normal,
-            command_buffer: String::new(),
-            show_help: false,
-        };
-        let download = DownloadState {
-            status: DownloadStatus::Idle,
-            queue: VecDeque::new(),
-        };
-        let notification = NotificationState { current: None };
-        let spectrum_style = match Command::new("cava").arg("--version").output() {
-            Ok(_) => {
-                tracing::info!("Cava installation detected. Using it for spectrum");
-                SpectrumStyle::Cava
-            }
-            Err(_) => {
-                tracing::info!("Cava installation not detected. Switching to manual mode.");
-                tracing::info!("Install Cava for better spectrum visualization");
-                SpectrumStyle::Default
-            }
-        };
-        let playback_queue = PlaybackQueueState {
-            tracks: VecDeque::new(),
-        };
-
         Self {
             app_name: "Melotui".into(),
             time_elapsed: 0.0,
             last_nav_time: 0.0,
-            nav,
+            nav: NavigationState::new(playlist_count),
             library,
-            playback,
-            playback_queue,
+            playback: PlaybackState::default(),
+            playback_queue: PlaybackQueueState::default(),
             repeat_mode: RepeatMode::Off,
             audio: AudioState::default(),
-            ui,
-            download,
-            notification,
+            ui: UIState::default(),
+            download: DownloadState::default(),
+            notification: NotificationState::default(),
             visualizer_mode: VisualizerMode::AlbumArt,
             current_album_art: None,
             track_info_art: None,
             spectrum_raw: vec![0.0; 512],
             spectrum_smooth: vec![0.0; 512],
             spectrum_peaks: vec![0.0; 512],
-            spectrum_style,
+            spectrum_style: SpectrumStyle::default(),
             spectrum_source: Box::new(NoOpSpectrum),
         }
     }

@@ -8,7 +8,7 @@ pub enum PlaybackContext {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TrackId {
+pub struct ActiveTrack {
     pub path: PathBuf,
     pub context: PlaybackContext,
 }
@@ -43,7 +43,7 @@ impl RepeatMode {
 
 #[derive(Debug, Clone, Default)]
 pub struct PlaybackState {
-    pub current: Option<TrackId>,
+    pub current: Option<ActiveTrack>,
     pub status: PlaybackStatus,
     pub progress_ms: u64,
     pub duration_ms: Option<u64>,

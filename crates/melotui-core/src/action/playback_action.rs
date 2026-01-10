@@ -9,7 +9,7 @@ use crate::{
     reconcile_nav_state,
     state::{
         LeftPanelMode, LibraryViewDepth, Notification, NotificationKind, PlaybackContext,
-        PlaybackStatus, RepeatMode, TrackId, VisualizerMode,
+        PlaybackStatus, RepeatMode, ActiveTrack, VisualizerMode,
     },
     utils::{SizeMode, bytes_to_ascii},
 };
@@ -71,7 +71,7 @@ fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
         };
 
         // A. Update UI State IMMEDIATELY
-        state.playback.current = Some(TrackId {
+        state.playback.current = Some(ActiveTrack {
             context,
             path: track.file_path.clone(),
         });
@@ -329,7 +329,7 @@ fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
         // Use the context calculated in Step 3
         let context = next_context.unwrap_or(PlaybackContext::Queue);
 
-        state.playback.current = Some(TrackId {
+        state.playback.current = Some(ActiveTrack {
             context,
             path: track.file_path.clone(),
         });
