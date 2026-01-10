@@ -16,21 +16,17 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let selected_idx = state.session.nav.queue.selected_idx;
     let is_active_panel = state.session.nav.active_panel == LeftPanelMode::Queue;
 
-    // Container block for unified look
+    // --- 1. CONTAINER & TITLE ---
     let lib_tab_text = match state.session.nav.library.depth {
         LibraryViewDepth::Playlists => " Library ".to_string(),
         LibraryViewDepth::Tracks | LibraryViewDepth::TrackInfo => {
             let p_idx = state.session.nav.library.selected_playlist_idx;
-            if let Some(pl) = state.library.playlists.get(p_idx) {
-                let raw = &pl.name;
-                if raw.len() > 15 {
-                    format!(" {}... ", &raw[0..12])
-                } else {
-                    format!(" {} ", raw)
-                }
-            } else {
-                " Library ".to_string()
-            }
+            state
+                .library
+                .playlists
+                .get(p_idx)
+                .map(|pl| format!(" {} ", pl.name))
+                .unwrap_or_else(|| " Library ".to_string())
         }
     };
 
@@ -50,7 +46,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     } else {
         Color::DarkGray
     };
-
     let container = Block::default()
         .title(title)
         .borders(Borders::ALL)
@@ -60,37 +55,28 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = container.inner(area);
     frame.render_widget(container, area);
 
-    // Handle empty queue
     if queue.is_empty() {
         let p = Paragraph::new("Queue is empty")
             .alignment(Alignment::Center)
             .style(Style::default().fg(Color::DarkGray));
-
-        let v_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Fill(1),
-                Constraint::Length(1),
-                Constraint::Fill(1),
-            ])
-            .split(inner_area);
-        frame.render_widget(p, v_chunks[1]);
+        frame.render_widget(p, inner_area);
         return;
     }
 
+    // --- 2. HEADER: NOW PLAYING (Fixed Logic) ---
+    // Only show header if we are actually playing from the Queue
     if state.is_playing_from_queue() {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3), // Now Playing
-                Constraint::Length(2), // Separator
-                Constraint::Min(0),    // Up Next table
+                Constraint::Length(3), // Now Playing Header
+                Constraint::Min(0),    // The List
             ])
             .split(inner_area);
 
-        if let Some(current_track) = queue.front() {
+        // Use the ROBUST Selector, not .front()
+        if let Some(current_track) = state.get_playing_track() {
             let time_str = format_duration(current_track.duration_ms);
-
             let lines = vec![
                 Line::from(vec![
                     Span::styled(
@@ -118,72 +104,47 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                     Span::styled(time_str, Style::default().fg(Color::DarkGray)),
                 ]),
             ];
-
-            let np_area = Rect {
-                x: chunks[0].x + 1,
-                width: chunks[0].width.saturating_sub(2),
-                ..chunks[0]
-            };
-            frame.render_widget(Paragraph::new(lines), np_area);
+            frame.render_widget(Paragraph::new(lines), chunks[0]);
         }
 
-        let sep_line = Line::from(vec![
-            Span::styled(
-                " 󰲸 Up Next ",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::styled(
-                "───────────────────────────────────────────────────",
-                Style::default().fg(Color::DarkGray),
-            ),
-        ]);
-        frame.render_widget(Paragraph::new(sep_line), chunks[1]);
-
-        if queue.len() > 1 {
-            let up_next_slice = queue.iter().skip(1);
-            let table_selected_idx = if selected_idx > 0 {
-                Some(selected_idx - 1)
-            } else {
-                None
-            };
-
-            draw_simple_table(
-                frame,
-                chunks[2],
-                up_next_slice,
-                table_selected_idx,
-                is_active_panel,
-                1, // Visual offset for # column (Start at 2)
-            );
-        } else {
-            frame.render_widget(
-                Paragraph::new("   (End of Queue)").style(Style::default().fg(Color::DarkGray)),
-                chunks[2],
-            );
-        }
+        // Render the FULL list below
+        draw_queue_table(
+            frame,
+            chunks[1],
+            state,
+            queue,
+            selected_idx,
+            is_active_panel,
+        );
     } else {
-        draw_simple_table(
+        // Just the list
+        draw_queue_table(
             frame,
             inner_area,
-            queue.iter(),
-            Some(selected_idx),
+            state,
+            queue,
+            selected_idx,
             is_active_panel,
-            0,
         );
     }
 }
 
-fn draw_simple_table<'a>(
+fn draw_queue_table(
     frame: &mut Frame,
     area: Rect,
-    tracks: impl Iterator<Item = &'a melotui_core::library::Track>,
-    selected_idx: Option<usize>,
+    state: &AppState,
+    tracks: &std::collections::VecDeque<melotui_core::library::Track>,
+    selected_idx: usize,
     is_active: bool,
-    index_offset: usize,
 ) {
+    let playing_track_id = if state.is_playing_from_queue() {
+        state.get_playing_track().map(|track| track.id)
+    } else {
+        None
+    };
+
     let header = Row::new(vec![
+        Cell::from(""),
         Cell::from("#"),
         Cell::from("Title"),
         Cell::from("Time"),
@@ -192,34 +153,49 @@ fn draw_simple_table<'a>(
         Style::default()
             .fg(Color::DarkGray)
             .add_modifier(Modifier::BOLD),
-    )
-    .bottom_margin(0);
+    );
 
     let rows: Vec<Row> = tracks
+        .iter()
         .enumerate()
         .map(|(i, t)| {
-            let is_selected = selected_idx == Some(i);
+            let is_selected = selected_idx == i;
+            let is_playing = playing_track_id == Some(t.id);
 
             let mut style = Style::default();
             if is_selected {
-                if is_active {
-                    style = style.bg(Color::Rgb(40, 40, 40)).fg(Color::White);
+                style = if is_active {
+                    style.bg(Color::Rgb(40, 40, 40)).fg(Color::White)
                 } else {
-                    style = style.bg(Color::Rgb(30, 30, 30));
-                }
+                    style.bg(Color::Rgb(30, 30, 30))
+                };
             } else {
                 style = style.fg(Color::Gray);
             }
 
-            let display_num = (i + 1 + index_offset).to_string();
+            // Status Column
+            let status = if is_playing { "▶" } else { "" };
+            let status_style = if is_playing {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default()
+            };
+
+            // Title Column
+            let title_style = if is_playing {
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD)
+            } else if is_selected {
+                Style::default().add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
 
             Row::new(vec![
-                Cell::from(display_num).style(Style::default().fg(Color::DarkGray)),
-                Cell::from(t.title.clone()).style(if is_selected {
-                    Style::default().add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default()
-                }),
+                Cell::from(status).style(status_style),
+                Cell::from((i + 1).to_string()).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(t.title.clone()).style(title_style),
                 Cell::from(format_duration(t.duration_ms))
                     .style(Style::default().fg(Color::DarkGray)),
             ])
@@ -230,15 +206,16 @@ fn draw_simple_table<'a>(
     let table = Table::new(
         rows,
         [
-            Constraint::Length(4), // #
-            Constraint::Fill(1),   // Title
-            Constraint::Length(6), // Time
+            Constraint::Length(2),
+            Constraint::Length(4),
+            Constraint::Fill(1),
+            Constraint::Length(6),
         ],
     )
     .header(header);
 
-    let mut state = TableState::default();
-    state.select(selected_idx);
+    let mut table_state = TableState::default();
+    table_state.select(Some(selected_idx));
 
-    frame.render_stateful_widget(table, area, &mut state);
+    frame.render_stateful_widget(table, area, &mut table_state);
 }

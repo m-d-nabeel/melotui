@@ -20,50 +20,31 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
+    let selected_track = state.get_selected_track();
     let track_to_play = match state.session.nav.active_panel {
         LeftPanelMode::Library => {
             if state.session.nav.library.depth == LibraryViewDepth::Playlists {
                 None
             } else {
-                let p = state.session.nav.library.selected_playlist_idx;
-                let t = state
-                    .session
-                    .nav
-                    .library
-                    .selected_tracks_curs
-                    .get(p)
-                    .copied()
-                    .unwrap_or(0);
-                state
-                    .library
-                    .playlists
-                    .get(p)
-                    .and_then(|pl| pl.tracks.get(t))
-                    .cloned()
+                selected_track.as_ref()
             }
         }
         LeftPanelMode::Queue => {
-            let playing_from_queue = state
-                .session
-                .playback
-                .current
-                .as_ref()
-                .is_some_and(|c| c.context == PlaybackContext::Queue);
-
-            if playing_from_queue && state.session.nav.queue.selected_idx == 0 {
-                None
+            if state.is_playing_from_queue() {
+                selected_track.as_ref()
             } else {
-                state
-                    .session
-                    .playback_queue
-                    .tracks
-                    .get(state.session.nav.queue.selected_idx)
-                    .cloned()
+                None
             }
         }
     };
 
     if let Some(track) = track_to_play {
+        // Clone necessary fields to release borrow before mutating state
+        let track_id = track.id;
+        let track_path = track.file_path.clone();
+        let track_title = track.title.clone();
+        let has_cover = track.has_cover;
+
         let context = match state.session.nav.active_panel {
             LeftPanelMode::Library => PlaybackContext::Library {
                 playlist_name: state.library.playlists
@@ -76,9 +57,9 @@ fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
 
         // A. Update UI State IMMEDIATELY
         state.session.playback.current = Some(ActiveTrack {
-            id: track.id,
+            id: track_id,
             context,
-            path: track.file_path.clone(),
+            path: track_path.clone(),
         });
         state.session.playback.status = PlaybackStatus::Playing;
         state.session.playback.progress_ms = 0;
@@ -86,22 +67,22 @@ fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
 
         state.session.notification.current = Some(Notification {
             kind: NotificationKind::Info,
-            message: format!("Playing {}", track.title),
+            message: format!("Playing {}", track_title),
             progress: None,
             created_at: Instant::now(),
             dismiss_after: Some(Duration::from_secs(2)),
         });
 
         state.current_album_art = None;
-        if track.has_cover
-            && let Some((data, _mime)) = Library::get_album_art(&track.file_path)
+        if has_cover
+            && let Some((data, _mime)) = Library::get_album_art(&track_path)
             && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(30))
         {
             state.current_album_art = Some(ascii);
         }
 
         return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
-            path: track.file_path.clone(),
+            path: track_path,
         })];
     }
     vec![]

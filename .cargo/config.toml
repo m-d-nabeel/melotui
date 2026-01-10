@@ -1,3 +1,3 @@
 [alias]
-run = "run -p melotui-bin --release"
+rrun = "run -p melotui-bin --release"
 check-all = "check --workspace"

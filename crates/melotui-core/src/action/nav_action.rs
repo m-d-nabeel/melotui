@@ -9,14 +9,7 @@ pub fn handle_toggle_library_queue(state: &mut AppState) -> Vec<AppMsg> {
     state.session.nav.active_panel = match state.session.nav.active_panel {
         LeftPanelMode::Library => {
             state.session.nav.active_panel = LeftPanelMode::Queue;
-            // FIX: When switching TO Queue, default to Index 1 if playing
-            let playing_from_queue = state
-                .session
-                .playback
-                .current
-                .as_ref()
-                .is_some_and(|c| c.context == crate::state::PlaybackContext::Queue);
-
+            let playing_from_queue = state.is_playing_from_queue();
             if playing_from_queue && state.session.playback_queue.tracks.len() > 1 {
                 state.session.nav.queue.selected_idx = 1;
             }
@@ -90,20 +83,7 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
             LibraryViewDepth::TrackInfo => {}
         },
         LeftPanelMode::Queue => {
-            let playing_from_queue = state
-                .session
-                .playback
-                .current
-                .as_ref()
-                .is_some_and(|c| c.context == crate::state::PlaybackContext::Queue);
-
-            let min_index = if playing_from_queue && state.session.playback_queue.tracks.len() > 1 {
-                1
-            } else {
-                0
-            };
-
-            if state.session.nav.queue.selected_idx > min_index {
+            if state.session.nav.queue.selected_idx > 0 {
                 state.session.nav.queue.selected_idx -= 1;
             }
         }

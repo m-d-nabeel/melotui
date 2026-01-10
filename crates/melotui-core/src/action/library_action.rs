@@ -105,12 +105,7 @@ pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
     if state.session.nav.active_panel == crate::state::LeftPanelMode::Queue {
         let idx = state.session.nav.queue.selected_idx;
 
-        let playing_from_queue = state
-            .session
-            .playback
-            .current
-            .as_ref()
-            .is_some_and(|c| c.context == PlaybackContext::Queue);
+        let playing_from_queue = state.is_playing_from_queue();
 
         if playing_from_queue && idx == 0 {
             return vec![];
