@@ -12,12 +12,12 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let p_idx = state.nav.library.selected_playlist_idx;
+    let p_idx = state.session.nav.library.selected_playlist_idx;
     if p_idx >= state.library.playlists.len() {
         return;
     }
     let playlist = &state.library.playlists[p_idx];
-    let selected_track_idx = state.nav.library.selected_tracks_curs[p_idx];
+    let selected_track_idx = state.session.nav.library.selected_tracks_curs[p_idx];
 
     let raw_name = &playlist.name;
     let display_name = if raw_name.len() > 15 {
@@ -54,11 +54,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .iter()
         .enumerate()
         .map(|(i, t)| {
-            let is_playing = state
-                .playback
-                .current
-                .as_ref()
-                .is_some_and(|curr| matches!(curr.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &playlist.name) && curr.path == t.file_path);
+            let is_playing = state.session.playback.current.as_ref().is_some_and(|curr| matches!(curr.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &playlist.name) && curr.path == t.file_path);
             let is_selected = i == selected_track_idx;
 
             let status = if is_playing {
@@ -100,8 +96,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    let border_style = if state.nav.library.depth == LibraryViewDepth::Tracks
-        && state.nav.active_panel == LeftPanelMode::Library
+    let border_style = if state.session.nav.library.depth == LibraryViewDepth::Tracks
+        && state.session.nav.active_panel == LeftPanelMode::Library
     {
         Style::default().fg(Color::Yellow)
     } else {

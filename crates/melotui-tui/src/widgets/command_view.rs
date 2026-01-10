@@ -12,7 +12,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .borders(Borders::TOP)
         .border_type(BorderType::Rounded);
 
-    let text = format!(":{}▌", state.ui.command_buffer);
+    let text = format!(":{}▌", state.session.ui.command_buffer);
 
     let paragraph = Paragraph::new(text).block(block);
 

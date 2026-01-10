@@ -12,16 +12,16 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let queue = &state.playback_queue.tracks;
-    let selected_idx = state.nav.queue.selected_idx;
-    let is_active_panel = state.nav.active_panel == LeftPanelMode::Queue;
+    let queue = &state.session.playback_queue.tracks;
+    let selected_idx = state.session.nav.queue.selected_idx;
+    let is_active_panel = state.session.nav.active_panel == LeftPanelMode::Queue;
 
     // 1. Prepare Main Container Block
     // This creates the single "unified" look the user requested.
-    let lib_tab_text = match state.nav.library.depth {
+    let lib_tab_text = match state.session.nav.library.depth {
         LibraryViewDepth::Playlists => " Library ".to_string(),
         LibraryViewDepth::Tracks | LibraryViewDepth::TrackInfo => {
-            let p_idx = state.nav.library.selected_playlist_idx;
+            let p_idx = state.session.nav.library.selected_playlist_idx;
             if let Some(pl) = state.library.playlists.get(p_idx) {
                 let raw = &pl.name;
                 if raw.len() > 15 {
@@ -81,6 +81,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     // 3. Context Check
     let playing_from_queue = state
+        .session
         .playback
         .current
         .as_ref()

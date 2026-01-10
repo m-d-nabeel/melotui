@@ -43,13 +43,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let v_chunks = layout.split(inner_area);
 
     // --- PREPARE DATA ---
-    let current_track = state.playback.current.as_ref().and_then(|id| {
+    let current_track = state.session.playback.current.as_ref().and_then(|id| {
         if matches!(id.context, PlaybackContext::Queue) {
-            state
-                .playback_queue
-                .tracks
-                .iter()
-                .find(|t| t.file_path == id.path)
+            state.session.playback_queue.tracks.iter().find(|t| t.file_path == id.path)
         } else {
             state
                 .library
@@ -61,8 +57,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     });
 
     let next_song_name = utils::predict_next_song(state);
-    let (status_icon, status_color) = utils::get_status_icon(&state.playback.status);
+    let (status_icon, status_color) = utils::get_status_icon(&state.session.playback.status);
     let (source_icon, source_color) = if state
+        .session
         .playback
         .current
         .as_ref()
@@ -111,9 +108,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         let controls_line = Line::from(vec![
             Span::styled(source_icon, Style::default().fg(source_color).bold()),
             Span::raw(" "),
-            utils::get_shuffle_icon(state.playback.shuffle),
+            utils::get_shuffle_icon(state.session.playback.shuffle),
             Span::raw(" "),
-            utils::get_repeat_icon(&state.repeat_mode),
+            utils::get_repeat_icon(&state.session.repeat_mode),
         ]);
         frame.render_widget(
             Paragraph::new(controls_line).alignment(Alignment::Right),
@@ -133,10 +130,10 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             ])
             .split(progress_area);
 
-        let current_ms = state.playback.progress_ms;
+        let current_ms = state.session.playback.progress_ms;
         let duration_ms = current_track
             .map(|t| t.duration_ms)
-            .or(state.playback.duration_ms)
+            .or(state.session.playback.duration_ms)
             .unwrap_or(0);
 
         let ratio = if duration_ms > 0 {
@@ -177,7 +174,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     // --- ROW 5: Next Song Info (dull colors) ---
     if v_chunks[4].height > 0 {
         let next_area = v_chunks[4];
-        let (label, name) = match state.repeat_mode {
+        let (label, name) = match state.session.repeat_mode {
             RepeatMode::Track => ("Repeating: ", "Track"),
             RepeatMode::PlayOnce => ("Playing Once: ", "End After Track"),
             RepeatMode::Playlist => ("Up Next (loop): ", next_song_name.as_str()),

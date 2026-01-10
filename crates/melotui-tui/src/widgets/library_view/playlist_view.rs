@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let selected_idx = state.nav.library.selected_playlist_idx;
+    let selected_idx = state.session.nav.library.selected_playlist_idx;
 
     let title = Line::from(vec![
         Span::styled(
@@ -33,11 +33,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             let is_selected = i == selected_idx;
 
             // Check if this specific playlist is the source of the current song
-            let is_active_playlist = state
-                .playback
-                .current
-                .as_ref()
-                .is_some_and(|curr| matches!(curr.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &p.name));
+            let is_active_playlist = state.session.playback.current.as_ref().is_some_and(|curr| matches!(curr.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &p.name));
 
             let icon = if is_active_playlist { " 󰐑" } else { " 󰲹" };
             let mut text_style = Style::default().add_modifier(Modifier::BOLD);
@@ -66,8 +62,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    let border_color = if state.nav.library.depth == LibraryViewDepth::Playlists
-        && state.nav.active_panel == LeftPanelMode::Library
+    let border_color = if state.session.nav.library.depth == LibraryViewDepth::Playlists
+        && state.session.nav.active_panel == LeftPanelMode::Library
     {
         Color::Yellow
     } else {

@@ -7,9 +7,9 @@ use melotui_core::{
 use ratatui::{Frame, layout::Rect};
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    match state.visualizer_mode {
+    match state.session.visualizer_mode {
         VisualizerMode::Spectrum => {
-            match state.spectrum_style {
+            match state.session.spectrum_style {
                 SpectrumStyle::Cava => spectrum_visualizer_view::draw_cava(frame, area, state),
                 SpectrumStyle::Default => {
                     spectrum_visualizer_view::draw_default(frame, area, state)

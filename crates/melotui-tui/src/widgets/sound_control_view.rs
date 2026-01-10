@@ -16,7 +16,7 @@ struct SliderConfig<'a> {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let audio = &state.audio;
+    let audio = &state.session.audio;
 
     // 1. Container Block with Margins
     // We use Padding to ensure content doesn't touch the borders

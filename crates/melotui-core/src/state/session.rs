@@ -8,9 +8,9 @@ use super::{
     visualizer::{SpectrumStyle, VisualizerMode},
 };
 
-/// The Transient State: Lives only while the app is running.
-/// Reset on restart.
-#[derive(Debug, Clone, Default)]
+/// The SessionState groups all "Volatile" state.
+/// This is the state that changes rapidly based on user input.
+#[derive(Debug, Clone)]
 pub struct SessionState {
     pub nav: NavigationState,
     pub ui: UIState,
@@ -20,8 +20,25 @@ pub struct SessionState {
     pub download: DownloadState,
     pub notification: NotificationState,
 
-    // Preferences that might become persistent later
+    // View/Preference modes (Transient for now)
     pub repeat_mode: RepeatMode,
     pub visualizer_mode: VisualizerMode,
     pub spectrum_style: SpectrumStyle,
+}
+
+impl Default for SessionState {
+    fn default() -> Self {
+        Self {
+            nav: NavigationState::default(),
+            ui: UIState::default(),
+            playback: PlaybackState::default(),
+            playback_queue: PlaybackQueueState::default(),
+            audio: AudioState::default(),
+            download: DownloadState::default(),
+            notification: NotificationState::default(),
+            repeat_mode: RepeatMode::Off,
+            visualizer_mode: VisualizerMode::AlbumArt,
+            spectrum_style: SpectrumStyle::Default,
+        }
+    }
 }

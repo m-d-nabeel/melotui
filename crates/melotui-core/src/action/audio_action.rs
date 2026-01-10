@@ -1,39 +1,45 @@
 use crate::{AppMsg, AppState, message::audio::AudioMsg};
 
 pub fn handle_adjust_volume(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.volume = (state.audio.volume + delta).clamp(0.0, 1.5);
+    state.session.audio.volume = (state.session.audio.volume + delta).clamp(0.0, 1.5);
     vec![AppMsg::Audio(AudioMsg::DispatchSetVolume(
-        state.audio.volume,
+        state.session.audio.volume,
     ))]
 }
 
 pub fn handle_adjust_speed(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.speed = (state.audio.speed + delta).clamp(0.5, 2.0);
-    vec![AppMsg::Audio(AudioMsg::DispatchSetSpeed(state.audio.speed))]
+    state.session.audio.speed = (state.session.audio.speed + delta).clamp(0.5, 2.0);
+    vec![AppMsg::Audio(AudioMsg::DispatchSetSpeed(
+        state.session.audio.speed,
+    ))]
 }
 
 pub fn handle_adjust_bass(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.bass = (state.audio.bass + delta).clamp(0.1, 5.0);
-    vec![AppMsg::Audio(AudioMsg::DispatchSetBass(state.audio.bass))]
+    state.session.audio.bass = (state.session.audio.bass + delta).clamp(0.1, 5.0);
+    vec![AppMsg::Audio(AudioMsg::DispatchSetBass(
+        state.session.audio.bass,
+    ))]
 }
 
 pub fn handle_adjust_treble(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.treble = (state.audio.treble + delta).clamp(0.0, 5.0);
+    state.session.audio.treble = (state.session.audio.treble + delta).clamp(0.0, 5.0);
     vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(
-        state.audio.treble,
+        state.session.audio.treble,
     ))]
 }
 
 pub fn handle_adjust_reverb(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.reverb = (state.audio.reverb + delta).clamp(0.0, 1.0);
+    state.session.audio.reverb = (state.session.audio.reverb + delta).clamp(0.0, 1.0);
     vec![AppMsg::Audio(AudioMsg::DispatchSetReverb(
-        state.audio.reverb,
+        state.session.audio.reverb,
     ))]
 }
 
 pub fn handle_adjust_echo(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.echo = (state.audio.echo + delta).clamp(0.0, 0.9);
-    vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(state.audio.echo))]
+    state.session.audio.echo = (state.session.audio.echo + delta).clamp(0.0, 0.9);
+    vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(
+        state.session.audio.echo,
+    ))]
 }
 
 // Dispatch handlers that do nothing in reducer

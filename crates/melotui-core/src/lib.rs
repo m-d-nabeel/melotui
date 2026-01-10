@@ -20,14 +20,15 @@ pub fn reconcile_nav_state(state: &mut AppState) {
     let playlist_count = state.library.playlists.len();
 
     if playlist_count == 0 {
-        state.nav.library.selected_playlist_idx = 0;
-        state.nav.library.selected_tracks_curs.clear();
+        state.session.nav.library.selected_playlist_idx = 0;
+        state.session.nav.library.selected_tracks_curs.clear();
     } else {
-        if state.nav.library.selected_playlist_idx >= playlist_count {
-            state.nav.library.selected_playlist_idx = playlist_count - 1;
+        if state.session.nav.library.selected_playlist_idx >= playlist_count {
+            state.session.nav.library.selected_playlist_idx = playlist_count - 1;
         }
         // Resize cursor vector if playlists changed
         state
+            .session
             .nav
             .library
             .selected_tracks_curs
@@ -36,18 +37,18 @@ pub fn reconcile_nav_state(state: &mut AppState) {
         for (i, playlist) in state.library.playlists.iter().enumerate() {
             let track_count = playlist.tracks.len();
             if track_count == 0 {
-                state.nav.library.selected_tracks_curs[i] = 0;
-            } else if state.nav.library.selected_tracks_curs[i] >= track_count {
-                state.nav.library.selected_tracks_curs[i] = track_count - 1;
+                state.session.nav.library.selected_tracks_curs[i] = 0;
+            } else if state.session.nav.library.selected_tracks_curs[i] >= track_count {
+                state.session.nav.library.selected_tracks_curs[i] = track_count - 1;
             }
         }
     }
 
     // Adjust queue cursor
-    let queue_len = state.playback_queue.tracks.len();
+    let queue_len = state.session.playback_queue.tracks.len();
     if queue_len == 0 {
-        state.nav.queue.selected_idx = 0;
-    } else if state.nav.queue.selected_idx >= queue_len {
-        state.nav.queue.selected_idx = queue_len - 1;
+        state.session.nav.queue.selected_idx = 0;
+    } else if state.session.nav.queue.selected_idx >= queue_len {
+        state.session.nav.queue.selected_idx = queue_len - 1;
     }
 }

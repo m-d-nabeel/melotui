@@ -76,11 +76,11 @@ pub fn run() -> anyhow::Result<()> {
         }
 
         // 4. Cleanup Notifications
-        if let Some(n) = &state.notification.current
+        if let Some(n) = &state.session.notification.current
             && let Some(timeout) = n.dismiss_after
             && n.created_at.elapsed() >= timeout
         {
-            state.notification.current = None;
+            state.session.notification.current = None;
         }
     }
 
@@ -88,7 +88,7 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 fn update_visualizer_physics(state: &mut AppState, dt: f32) {
-    if state.visualizer_mode != VisualizerMode::Spectrum {
+    if state.session.visualizer_mode != VisualizerMode::Spectrum {
         return;
     }
 
@@ -118,7 +118,7 @@ fn update_visualizer_physics(state: &mut AppState, dt: f32) {
     }
 
     // 3. CAVA Mode: Direct Pass-through
-    if state.spectrum_style == SpectrumStyle::Cava {
+    if state.session.spectrum_style == SpectrumStyle::Cava {
         state.spectrum_smooth.copy_from_slice(&state.spectrum_raw);
         // Copy peaks logic for CAVA if you want "falling peaks" on CAVA too,
         // otherwise just direct copy:

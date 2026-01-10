@@ -21,19 +21,19 @@ impl InputHandler {
         let mut contexts = Vec::with_capacity(3);
 
         // Help overlay takes priority
-        if state.ui.show_help {
+        if state.session.ui.show_help {
             contexts.push(KeyContext::Help);
             return contexts;
         }
 
         // Command mode
-        if state.ui.mode == UIMode::Command {
+        if state.session.ui.mode == UIMode::Command {
             contexts.push(KeyContext::CommandMode);
             return contexts;
         }
 
         // Active panel
-        match state.nav.active_panel {
+        match state.session.nav.active_panel {
             LeftPanelMode::Library => contexts.push(KeyContext::Library),
             LeftPanelMode::Queue => contexts.push(KeyContext::Queue),
         }
@@ -62,7 +62,7 @@ impl InputHandler {
 
         // Fallback for typing in command mode
         let Some(act) = action else {
-            if state.ui.mode == UIMode::Command
+            if state.session.ui.mode == UIMode::Command
                 && let KeyCode::Char(c) = key.code
             {
                 return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
@@ -73,8 +73,8 @@ impl InputHandler {
         match act {
             // Collapse view
             KeyAction::CollapseView => {
-                if state.nav.active_panel == LeftPanelMode::Library {
-                    match state.nav.library.depth {
+                if state.session.nav.active_panel == LeftPanelMode::Library {
+                    match state.session.nav.library.depth {
                         LibraryViewDepth::Tracks => {
                             Some(AppMsg::Navigation(NavigationMsg::SwitchToPlaylists))
                         }
@@ -90,8 +90,8 @@ impl InputHandler {
 
             // Expand view
             KeyAction::ExpandView => {
-                if state.nav.active_panel == LeftPanelMode::Library {
-                    match state.nav.library.depth {
+                if state.session.nav.active_panel == LeftPanelMode::Library {
+                    match state.session.nav.library.depth {
                         LibraryViewDepth::Playlists => {
                             Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
                         }
@@ -107,12 +107,13 @@ impl InputHandler {
 
             // Add to queue
             KeyAction::AddToQueue => {
-                if state.nav.active_panel == LeftPanelMode::Library
-                    && state.nav.library.depth != LibraryViewDepth::Playlists
+                if state.session.nav.active_panel == LeftPanelMode::Library
+                    && state.session.nav.library.depth != LibraryViewDepth::Playlists
                 {
-                    let p_idx = state.nav.library.selected_playlist_idx;
+                    let p_idx = state.session.nav.library.selected_playlist_idx;
                     if let Some(playlist) = state.library.playlists.get(p_idx) {
                         let t_idx = *state
+                            .session
                             .nav
                             .library
                             .selected_tracks_curs
@@ -128,12 +129,13 @@ impl InputHandler {
 
             // Play next
             KeyAction::PlayNext => {
-                if state.nav.active_panel == LeftPanelMode::Library
-                    && state.nav.library.depth != LibraryViewDepth::Playlists
+                if state.session.nav.active_panel == LeftPanelMode::Library
+                    && state.session.nav.library.depth != LibraryViewDepth::Playlists
                 {
-                    let p_idx = state.nav.library.selected_playlist_idx;
+                    let p_idx = state.session.nav.library.selected_playlist_idx;
                     if let Some(playlist) = state.library.playlists.get(p_idx) {
                         let t_idx = *state
+                            .session
                             .nav
                             .library
                             .selected_tracks_curs
@@ -149,7 +151,7 @@ impl InputHandler {
 
             // Submit command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
-                state.ui.command_buffer.clone(),
+                state.session.ui.command_buffer.clone(),
             ))),
 
             // Direct mapping
