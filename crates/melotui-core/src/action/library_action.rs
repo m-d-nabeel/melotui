@@ -47,19 +47,34 @@ pub fn handle_add_to_queue(state: &mut AppState, track: crate::library::Track) -
 }
 
 pub fn handle_play_next(state: &mut AppState, track: crate::library::Track) -> Vec<AppMsg> {
-    state
-        .session
-        .playback_queue
-        .tracks
-        .push_front(track.clone());
+    let mut insert_idx = 0;
 
-    state.session.notification.current = Some(Notification {
-        kind: NotificationKind::Info,
-        message: format!("Set to play next: {}", track.title),
-        progress: None,
-        created_at: Instant::now(),
-        dismiss_after: Some(Duration::from_secs(2)),
-    });
+    if state.is_playing_from_queue()
+        && let Some(current) = &state.session.playback.current
+        && let Some(idx) = state
+            .session
+            .playback_queue
+            .tracks
+            .iter()
+            .position(|t| t.id == current.id)
+    {
+        insert_idx = idx + 1;
+    }
+
+    if insert_idx >= state.session.playback_queue.tracks.len() {
+        state.session.playback_queue.tracks.push_back(track.clone());
+    } else {
+        state
+            .session
+            .playback_queue
+            .tracks
+            .insert(insert_idx, track.clone());
+    }
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Set to play next: {}", track.title),
+    ));
     vec![]
 }
 
@@ -113,14 +128,11 @@ pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
 
         if idx < state.session.playback_queue.tracks.len() {
             state.session.playback_queue.tracks.remove(idx);
-            // reconcile_nav_state(state);
 
-            // Adjust selection after removal
             if idx >= state.session.playback_queue.tracks.len() && idx > 0 {
                 state.session.nav.queue.selected_idx = idx - 1;
             }
 
-            // FIX: Ensure selection doesn't fall back to 0 if playing
             if playing_from_queue
                 && state.session.nav.queue.selected_idx == 0
                 && state.session.playback_queue.tracks.len() > 1

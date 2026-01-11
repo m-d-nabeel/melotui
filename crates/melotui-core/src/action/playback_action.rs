@@ -29,13 +29,7 @@ fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
                 selected_track.as_ref()
             }
         }
-        LeftPanelMode::Queue => {
-            if state.is_playing_from_queue() {
-                selected_track.as_ref()
-            } else {
-                None
-            }
-        }
+        LeftPanelMode::Queue => selected_track.as_ref(),
     };
 
     if let Some(track) = track_to_play {
