@@ -250,13 +250,17 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedUp, "Speed+"),
                 KeyBinding::new(KeyCode::Char('S'), KeyAction::SpeedDown, "Speed-"),
                 KeyBinding::new(KeyCode::Char('b'), KeyAction::BassUp, "Bass+"),
-                KeyBinding::new(KeyCode::Char('B'), KeyAction::BassDown, "Bass-"),
+                KeyBinding::new(KeyCode::Char('B'), KeyAction::BassDown, "Bass-")
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('t'), KeyAction::TrebleUp, "Treble+"),
-                KeyBinding::new(KeyCode::Char('T'), KeyAction::TrebleDown, "Treble-"),
+                KeyBinding::new(KeyCode::Char('T'), KeyAction::TrebleDown, "Treble-")
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::ReverbUp, "Reverb+"),
-                KeyBinding::new(KeyCode::Char('R'), KeyAction::ReverbDown, "Reverb-"),
+                KeyBinding::new(KeyCode::Char('R'), KeyAction::ReverbDown, "Reverb-")
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoUp, "Echo+"),
-                KeyBinding::new(KeyCode::Char('E'), KeyAction::EchoDown, "Echo-"),
+                KeyBinding::new(KeyCode::Char('E'), KeyAction::EchoDown, "Echo-")
+                    .with_mod(KeyModifiers::SHIFT),
             ],
         );
 
