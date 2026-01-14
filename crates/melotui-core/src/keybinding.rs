@@ -248,7 +248,8 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('z'), KeyAction::ToggleShuffle, "Shuffle"),
                 KeyBinding::new(KeyCode::Char('c'), KeyAction::CycleRepeat, "Repeat"),
                 KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedUp, "Speed+"),
-                KeyBinding::new(KeyCode::Char('S'), KeyAction::SpeedDown, "Speed-"),
+                KeyBinding::new(KeyCode::Char('S'), KeyAction::SpeedDown, "Speed-")
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('b'), KeyAction::BassUp, "Bass+"),
                 KeyBinding::new(KeyCode::Char('B'), KeyAction::BassDown, "Bass-")
                     .with_mod(KeyModifiers::SHIFT),
