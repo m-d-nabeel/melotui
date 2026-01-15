@@ -242,10 +242,12 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
 
 /// Helper to build the Fundsp Graph
 fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit> {
-    // 1. Mono Effects Construction
+    let headroom = constant(0.707);
 
-    // Bass (Low Shelf): Freq=100Hz, Q=0.7
-    let bass_node = (pass() | constant(100.0) | constant(0.7) | var(&params.bass)) >> lowshelf();
+    let bass_node = ((pass() * headroom) | constant(80.0) | constant(0.707) | var(&params.bass))
+        >> lowshelf()
+        >> (pass() | constant(60.0) | constant(0.8) | constant(3.5))
+        >> lowshelf();
 
     // Treble (High Shelf): Freq=3000Hz, Q=0.7
     let treble_node =
