@@ -2,9 +2,9 @@ use std::time::{Duration, Instant};
 
 use crate::{
     AppMsg, AppState, Command, UIMode,
-    message::{download::DownloadMsg, library::LibraryMsg},
+    message::{download::DownloadMsg, library::LibraryMsg, playback::PlaybackMsg},
     state::{
-        Notification, NotificationKind,
+        Notification, NotificationKind, VisualizerMode,
         visualizer::{SpectrumStyle, is_cava_available},
     },
 };
@@ -79,10 +79,14 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                     created_at: Instant::now(),
                     dismiss_after: Some(Duration::from_secs(5)),
                 });
+                vec![]
             } else {
-                state.session.spectrum_style = arg;
+                state.session.spectrum_style = arg.clone();
+                state.session.visualizer_mode = VisualizerMode::Spectrum;
+                vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+                    spectrum_style: Some(arg),
+                })]
             }
-            vec![]
         }
         Command::Unknown(reason) => {
             state.session.notification.current = Some(Notification {

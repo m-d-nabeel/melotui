@@ -28,6 +28,10 @@ where
         }
     }
 
+    pub fn into_consumer(self) -> C {
+        self.consumer
+    }
+
     pub fn next_spectrum(&mut self) -> Option<Vec<f32>> {
         while let Some(sample) = self.consumer.try_pop() {
             if self.buffer.len() < FFT_SIZE {

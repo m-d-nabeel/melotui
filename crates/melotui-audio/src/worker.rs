@@ -1,7 +1,11 @@
+use melotui_core::state::SpectrumStyle;
 use melotui_ipc::{
     channel::IpcWorker, command::AudioCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
 };
-use ringbuf::{HeapRb, traits::Split};
+use ringbuf::{
+    HeapRb,
+    traits::{Consumer, Split},
+};
 use rodio::{Decoder, Source};
 use std::{
     fs::File,
@@ -57,7 +61,13 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
     }
 
     let mut backend = VisualizerBackend::None;
-    let mut visualizer_active = false;
+    let mut idle_consumer: Option<AudioConsumer> = None;
+    let mut visualizer_enabled = false;
+    let mut current_style = if use_cava {
+        SpectrumStyle::Cava
+    } else {
+        SpectrumStyle::Default
+    };
     let mut is_playing = false;
 
     // --- TIME KEEPING STATE ---
@@ -77,6 +87,9 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                         sink.stop();
                     }
 
+                    backend = VisualizerBackend::None;
+                    idle_consumer = None;
+
                     if let Ok(file) = File::open(&path)
                         && let Ok(decoder) = Decoder::try_from(file)
                     {
@@ -95,22 +108,14 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                         let ring = HeapRb::<f32>::new(8192);
                         let (producer, consumer) = ring.split();
 
-                        // Initialize Backend
-                        if use_cava {
-                            match Cava::new() {
-                                Ok(c) => {
-                                    backend = VisualizerBackend::External(c);
-                                }
-                                Err(e) => {
-                                    tracing::error!("Failed to start CAVA: {}", e);
-                                    backend = VisualizerBackend::Internal(SpectrumAnalyzer::new(
-                                        consumer,
-                                    ));
-                                }
-                            }
-                        } else {
-                            backend = VisualizerBackend::Internal(SpectrumAnalyzer::new(consumer));
-                        }
+                        idle_consumer = Some(consumer);
+
+                        reconcile_backend(
+                            &mut backend,
+                            &mut idle_consumer,
+                            visualizer_enabled,
+                            &current_style,
+                        );
 
                         let source_with_sniffer = SpectrumSniffer {
                             input: dsp_source,
@@ -174,11 +179,11 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                 }
                 AudioCommand::SetVisualizer { spectrum_style } => match spectrum_style {
                     Some(s) => {
-                        let _ = s;
-                        visualizer_active = true;
+                        current_style = s;
+                        visualizer_enabled = true;
                     }
                     None => {
-                        visualizer_active = false;
+                        visualizer_enabled = false;
                     }
                 },
 
@@ -205,6 +210,16 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
             }
         }
 
+        // Apply dynamic switching if visualizer state changed via command
+        if is_playing {
+            reconcile_backend(
+                &mut backend,
+                &mut idle_consumer,
+                visualizer_enabled,
+                &current_style,
+            );
+        }
+
         // 2. Loop Actions
         if is_playing {
             // A. Progress Calculation with Speed Correction
@@ -227,8 +242,15 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                 });
             }
 
-            // B. Spectrum
-            if visualizer_active {
+            // If we are using CAVA or no visualizer, the internal audio tap is still running.
+            // We must drain it to prevent old data from piling up, ensuring that if we switch
+            // back to Internal, we have fresh data.
+            if let Some(consumer) = &mut idle_consumer {
+                while consumer.try_pop().is_some() {}
+            }
+
+            // C. Spectrum
+            if visualizer_enabled {
                 let spectrum_opt = match &mut backend {
                     VisualizerBackend::Internal(analyzer) => analyzer.next_spectrum(),
                     VisualizerBackend::External(cava) => cava.next_spectrum(),
@@ -242,6 +264,66 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
         }
 
         thread::sleep(Duration::from_millis(10));
+    }
+}
+
+/// Dynamically swaps the backend based on style preference while preserving the audio consumer.
+fn reconcile_backend(
+    backend: &mut VisualizerBackend,
+    idle_consumer: &mut Option<AudioConsumer>,
+    enabled: bool,
+    style: &SpectrumStyle,
+) {
+    if !enabled {
+        take_consumer_to_idle(backend, idle_consumer);
+        *backend = VisualizerBackend::None;
+        return;
+    }
+
+    match style {
+        SpectrumStyle::Cava => {
+            // Switch TO Cava
+            if !matches!(backend, VisualizerBackend::External(_)) {
+                tracing::info!("Switching Visualizer to CAVA");
+                take_consumer_to_idle(backend, idle_consumer);
+
+                match Cava::new() {
+                    Ok(c) => *backend = VisualizerBackend::External(c),
+                    Err(e) => {
+                        tracing::error!("Failed to start CAVA: {}. Falling back to Internal.", e);
+                        if let Some(c) = idle_consumer.take() {
+                            *backend = VisualizerBackend::Internal(SpectrumAnalyzer::new(c));
+                        }
+                    }
+                }
+            }
+        }
+        _ => {
+            // Switch TO Internal (Default, Bar, Particle)
+            if !matches!(backend, VisualizerBackend::Internal(_)) {
+                tracing::info!("Switching Visualizer to Internal (FFT)");
+                if let Some(c) = idle_consumer.take() {
+                    *backend = VisualizerBackend::Internal(SpectrumAnalyzer::new(c));
+                } else {
+                    // It's possible the stream is gone or failed to initialize,
+                    // but usually idle_consumer should have it if we came from CAVA.
+                    tracing::warn!("Cannot switch to Internal Visualizer: Audio stream missing");
+                    *backend = VisualizerBackend::None;
+                }
+            }
+        }
+    }
+}
+
+/// Helper to strip the consumer out of the active backend if it exists
+fn take_consumer_to_idle(
+    backend: &mut VisualizerBackend,
+    idle_consumer: &mut Option<AudioConsumer>,
+) {
+    // Replace backend with None to take ownership of the old one
+    let old_backend = std::mem::replace(backend, VisualizerBackend::None);
+    if let VisualizerBackend::Internal(analyzer) = old_backend {
+        *idle_consumer = Some(analyzer.into_consumer());
     }
 }
 
