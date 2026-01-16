@@ -1,4 +1,5 @@
 mod playlist_view;
+pub mod queue_view;
 mod track_details_view;
 mod track_view;
 

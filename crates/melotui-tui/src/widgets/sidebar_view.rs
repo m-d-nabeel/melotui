@@ -1,4 +1,4 @@
-use crate::widgets::{library_view, queue_view};
+use crate::widgets::library_view::{self, queue_view};
 use melotui_core::{AppState, state::LeftPanelMode};
 use ratatui::{Frame, layout::Rect};
 
