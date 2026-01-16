@@ -82,33 +82,6 @@ impl AppState {
     pub fn echo(&self) -> f32 {
         self.session.audio.echo
     }
-
-    // --- Mutators (Internal for Reducer) ---
-    // Usage: state.set_volume(new_vol) instead of state.session.audio.volume = new_vol
-
-    pub(crate) fn set_volume(&mut self, value: f32) {
-        self.session.audio.volume = value.clamp(0.0, 1.5);
-    }
-
-    pub(crate) fn set_speed(&mut self, value: f32) {
-        self.session.audio.speed = value.clamp(0.5, 2.0);
-    }
-
-    pub(crate) fn set_bass(&mut self, value: f32) {
-        self.session.audio.bass = value.clamp(0.1, 5.0);
-    }
-
-    pub(crate) fn set_treble(&mut self, value: f32) {
-        self.session.audio.treble = value.clamp(0.0, 5.0);
-    }
-
-    pub(crate) fn set_reverb(&mut self, value: f32) {
-        self.session.audio.reverb = value.clamp(0.0, 1.0);
-    }
-
-    pub(crate) fn set_echo(&mut self, value: f32) {
-        self.session.audio.echo = value.clamp(0.0, 0.9);
-    }
 }
 
 /// ─── Playback & Progress Access ─────────────────────────────────────────────
