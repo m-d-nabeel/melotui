@@ -1,36 +1,19 @@
 use std::time::{Duration, Instant};
 
 use crate::{
-    AppMsg, AppState, Library, reconcile_nav_state,
+    AppMsg, AppState, reconcile_nav_state,
     state::{Notification, NotificationKind, PlaybackContext, RepeatMode},
 };
 
 pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
-    match Library::scan(state.library.root.clone()) {
-        Ok(new_library) => {
-            state.library = new_library.into();
-            reconcile_nav_state(state);
-            tracing::info!("Library rescanned");
+    state.session.notification.current = Some(Notification {
+        kind: NotificationKind::Info,
+        message: "Scanning Library...".into(),
+        progress: None,
+        created_at: Instant::now(),
+        dismiss_after: None,
+    });
 
-            state.session.notification.current = Some(Notification {
-                kind: NotificationKind::Info,
-                message: "Library rescanned".into(),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(2)),
-            });
-        }
-        Err(err) => {
-            tracing::error!("Error rescanning library: {:?}", err);
-            state.session.notification.current = Some(Notification {
-                kind: NotificationKind::Error,
-                message: format!("Rescan failed: {err}"),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(2)),
-            });
-        }
-    }
     vec![]
 }
 

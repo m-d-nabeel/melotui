@@ -252,6 +252,10 @@ impl AppState {
     }
 
     // --- Notification Mutator ---
+    pub fn set_notification(&mut self, notification: Notification) {
+        self.session.notification.current = Some(notification);
+    }
+
     pub fn clear_current_notification(&mut self) {
         self.session.notification.current = None;
     }

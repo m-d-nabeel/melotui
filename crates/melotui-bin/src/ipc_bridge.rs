@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::mpsc, thread};
 
-use melotui_core::AppMsg;
+use melotui_core::{AppMsg, message::library::LibraryMsg};
 use melotui_ipc::{
     channel::inprocess,
     command::{AudioCommand, DatabaseCommand, DownloadCommand, IpcCommand},
@@ -59,13 +59,16 @@ impl IpcRuntime {
             IpcCommand::Audio(c) => {
                 let _ = self.audio_tx.send(c);
             }
+            IpcCommand::Database(c) => {
+                tracing::info!("Dispatching database command: {:?}", c);
+                let _ = self.db_tx.send(c);
+            }
             IpcCommand::Shutdown => {
                 tracing::info!("IPC Runtime shutting down all workers...");
                 let _ = self.download_tx.send(DownloadCommand::Shutdown);
                 let _ = self.audio_tx.send(AudioCommand::Shutdown);
                 let _ = self.db_tx.send(DatabaseCommand::Shutdown);
             }
-            _ => {}
         }
     }
 }
@@ -120,6 +123,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
             AudioMsg::DispatchSetEcho(v) => Some(IpcCommand::Audio(AudioCommand::SetEcho(*v))),
             _ => None,
         },
+
+        // --- Database Controls ---
+        AppMsg::Library(LibraryMsg::RequestRescanLibrary) => Some(IpcCommand::Database(
+            melotui_ipc::command::DatabaseCommand::ScanLibrary,
+        )),
 
         _ => None,
     }

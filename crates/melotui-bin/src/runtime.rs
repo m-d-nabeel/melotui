@@ -1,7 +1,8 @@
 use std::{collections::VecDeque, time::Instant};
 
-use melotui_core::{AppMsg, AppState, Library, state::SpectrumStyle};
-use melotui_ipc::spectrum_bridge;
+use melotui_core::{AppMsg, AppState, state::SpectrumStyle};
+use melotui_db::load_library_from_db;
+use melotui_ipc::{event::IpcEvent, spectrum_bridge};
 use melotui_tui::Tui;
 
 use crate::ipc_bridge::{IpcRuntime, appmsg_to_ipc, ipc_to_appmsg};
@@ -14,15 +15,36 @@ pub fn run() -> anyhow::Result<()> {
         .join("melotui");
     std::fs::create_dir_all(&db_root).expect("Failed to create app data directory");
 
+    let db_path = db_root.join("library.db");
     let music_root = dirs::audio_dir().expect("Music directory not found");
-    let library = Library::scan(music_root)?;
+
+    let library = match load_library_from_db(&db_path, music_root.clone()) {
+        Ok(lib) => {
+            tracing::info!(
+                "Loaded {} tracks from database",
+                lib.playlists.first().map(|p| p.tracks.len()).unwrap_or(0)
+            );
+            lib
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to load from DB (fresh install?): {}. Starting empty.",
+                e
+            );
+            melotui_core::Library {
+                root: music_root.clone(),
+                playlists: vec![],
+            }
+        }
+    };
+
     let mut state = AppState::new(library);
     let mut tui = Tui::new()?;
 
     let (producer, consumer) = spectrum_bridge::create_bridge();
-    state.spectrum_source = Box::new(consumer);
     let ipc = IpcRuntime::new(producer, db_root.join("library.db"));
 
+    state.spectrum_source = Box::new(consumer);
     let mut ipc_alive = true;
     let mut running = true;
     let mut effect_queue = VecDeque::new();
@@ -43,10 +65,38 @@ pub fn run() -> anyhow::Result<()> {
             effect_queue.push_back(msg);
         }
 
-        // 2. Runtime Input (Single Event Stream)
         if ipc_alive {
             while let Ok(evt) = ipc.event_rx.try_recv() {
-                effect_queue.push_back(ipc_to_appmsg(evt));
+                match evt {
+                    // NEW: Hot-reload the library when scan finishes
+                    IpcEvent::LibraryRescanned => {
+                        tracing::info!("Database updated. Reloading library into memory...");
+
+                        // 1. Load from DB
+                        match load_library_from_db(&db_root.join("library.db"), music_root.clone())
+                        {
+                            Ok(new_lib) => {
+                                // 2. Hot-Swap State
+                                state.library = std::sync::Arc::new(new_lib);
+                                melotui_core::reconcile_nav_state(&mut state);
+
+                                // 3. Notify User
+                                state.set_notification(melotui_core::state::Notification {
+                                    kind: melotui_core::state::NotificationKind::Info,
+                                    message: "Library Updated".into(),
+                                    progress: None,
+                                    created_at: Instant::now(),
+                                    dismiss_after: Some(std::time::Duration::from_secs(3)),
+                                });
+                            }
+                            Err(e) => {
+                                tracing::error!("Failed to reload library: {}", e);
+                            }
+                        }
+                    }
+                    // Pass other events to the reducer
+                    _ => effect_queue.push_back(ipc_to_appmsg(evt)),
+                }
             }
         }
 

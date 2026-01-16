@@ -16,4 +16,7 @@ pub enum IpcEvent {
 
     // ───── Errors ─────
     Error { message: String },
+
+    // ───── Database ─────
+    LibraryRescanned,
 }

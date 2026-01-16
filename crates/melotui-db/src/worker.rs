@@ -6,6 +6,7 @@ use anyhow::Result;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::Accessor;
+use melotui_ipc::event::IpcEvent;
 use rusqlite::params;
 use tracing::{error, info};
 
@@ -22,61 +23,83 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
     loop {
         match worker.try_recv() {
             Some(DatabaseCommand::ScanLibrary) => {
+                tracing::info!("Starting Library Scan...");
                 if let Err(e) = handle_scan_library(&conn) {
-                    error!("Failed to scan library: {:?}", e);
+                    tracing::error!("Failed to scan library: {:?}", e);
+                    worker.send(IpcEvent::Error {
+                        message: e.to_string(),
+                    });
+                } else {
+                    tracing::info!("Library Scan Complete.");
+                    worker.send(IpcEvent::LibraryRescanned);
                 }
             }
             Some(DatabaseCommand::GetAllTracks) => {
-                // TODO: Implement
+                todo!();
             }
-            Some(DatabaseCommand::SearchTracks { query }) => {
-                // TODO: Implement
+            Some(DatabaseCommand::SearchTracks { query: _ }) => {
+                todo!();
             }
             Some(DatabaseCommand::GetPlaylists) => {
-                // TODO: Implement
+                todo!();
             }
-            Some(DatabaseCommand::CreatePlaylist { name }) => {
-                // TODO: Implement
+            Some(DatabaseCommand::CreatePlaylist { name: _ }) => {
+                todo!();
             }
             Some(DatabaseCommand::AddTrackToPlaylist {
                 playlist_id,
                 track_id,
             }) => {
-                // TODO: Implement
+                let _ = playlist_id;
+                let _ = track_id;
+                todo!()
             }
             Some(DatabaseCommand::Query { sql }) => {
                 if let Err(e) = handle_query(&conn, &sql) {
                     error!("Failed to execute query: {:?}", e);
                 }
             }
+
             Some(DatabaseCommand::Shutdown) => {
                 info!("Database worker shutting down");
                 break;
             }
             None => {
-                // No command, small delay to avoid busy waiting
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
     }
 }
 
+#[tracing::instrument(skip(conn))]
 fn handle_scan_library(conn: &rusqlite::Connection) -> Result<()> {
     let music_dir =
         dirs::audio_dir().ok_or_else(|| anyhow::anyhow!("Could not find audio directory"))?;
     info!("Scanning library at: {:?}", music_dir);
 
     // Clear existing tracks
+    let clear_start = std::time::Instant::now();
     conn.execute("DELETE FROM tracks", [])?;
+    let clear_elapsed = clear_start.elapsed();
+    tracing::info!("Cleared tracks table in {:?}", clear_elapsed);
 
     let mut count = 0;
+    let scan_start = std::time::Instant::now();
     scan_directory(conn, &music_dir, &mut count)?;
+    let scan_elapsed = scan_start.elapsed();
+    tracing::info!(
+        "Scanned directory and inserted {} tracks in {:?}",
+        count,
+        scan_elapsed
+    );
 
     info!("Scanned {} tracks", count);
     Ok(())
 }
 
+#[tracing::instrument(skip(conn))]
 fn scan_directory(conn: &rusqlite::Connection, dir: &Path, count: &mut usize) -> Result<()> {
+    tracing::info!("Scanning directory: {:?}", dir);
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
@@ -88,11 +111,15 @@ fn scan_directory(conn: &rusqlite::Connection, dir: &Path, count: &mut usize) ->
         {
             insert_track(conn, &track_data)?;
             *count += 1;
+            if *count % 100 == 0 {
+                tracing::info!("Processed {} tracks so far", *count);
+            }
         }
     }
     Ok(())
 }
 
+#[tracing::instrument]
 fn extract_track_data(path: &Path) -> Option<TrackData> {
     let ext = path.extension()?.to_string_lossy().to_lowercase();
     if !SUPPORTED_EXTENSIONS.contains(&ext.as_str()) {
@@ -172,10 +199,15 @@ struct TrackData {
     modified_at: i64,
 }
 
+#[tracing::instrument(skip(conn))]
 fn insert_track(conn: &rusqlite::Connection, data: &TrackData) -> Result<()> {
+    let start = std::time::Instant::now();
     conn.execute(
-        "INSERT INTO tracks (file_path, title, artist, album, genre, year, track_number, duration_ms, bitrate, sample_rate, format, has_cover, file_size, modified_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tracks (
+            file_path, title, artist, album, genre, year, track_number,
+            duration_ms, bitrate, sample_rate, format, has_cover,
+            file_size, modified_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             data.file_path,
             data.title,
@@ -184,7 +216,7 @@ fn insert_track(conn: &rusqlite::Connection, data: &TrackData) -> Result<()> {
             data.genre,
             data.year,
             data.track_number,
-            (data.duration_ms as i64),
+            data.duration_ms as i64,
             data.bitrate,
             data.sample_rate,
             data.format,
@@ -193,18 +225,33 @@ fn insert_track(conn: &rusqlite::Connection, data: &TrackData) -> Result<()> {
             data.modified_at,
         ],
     )?;
+    let elapsed = start.elapsed();
+    tracing::debug!("Insert track '{}' took {:?}", data.title, elapsed);
     Ok(())
 }
 
+#[tracing::instrument(skip(conn))]
 fn handle_query(conn: &rusqlite::Connection, sql: &str) -> Result<()> {
+    tracing::info!("Executing query: {}", sql);
+    let start = std::time::Instant::now();
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
 
+    let mut row_count = 0;
     for row in rows {
         match row {
-            Ok(value) => info!("Query result: {}", value),
+            Ok(value) => {
+                info!("Query result: {}", value);
+                row_count += 1;
+            }
             Err(e) => error!("Error in query result: {:?}", e),
         }
     }
+    let elapsed = start.elapsed();
+    tracing::info!(
+        "Query executed in {:?}, returned {} rows",
+        elapsed,
+        row_count
+    );
     Ok(())
 }
