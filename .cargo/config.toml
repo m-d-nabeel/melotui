@@ -1,3 +1,4 @@
 [alias]
-rrun = "run -p melotui-bin --release"
 check-all = "check --workspace"
+dev = "run -p melotui-bin --profile release"
+prod = "build --profile production"
