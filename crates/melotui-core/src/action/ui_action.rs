@@ -97,6 +97,9 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
     }
 }
 
-pub fn handle_dispatch_set_visualizer(_state: &mut AppState, _active: bool) -> Vec<AppMsg> {
+pub fn handle_dispatch_set_visualizer(
+    _state: &mut AppState,
+    _active: Option<SpectrumStyle>,
+) -> Vec<AppMsg> {
     vec![]
 }

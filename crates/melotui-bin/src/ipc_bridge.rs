@@ -105,9 +105,9 @@ pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
                     position_ms: *position_ms,
                 }))
             }
-            PlaybackMsg::DispatchSetVisualizer { active } => {
+            PlaybackMsg::DispatchSetVisualizer { spectrum_style } => {
                 Some(IpcCommand::Audio(AudioCommand::SetVisualizer {
-                    active: *active,
+                    spectrum_style: spectrum_style.clone(),
                 }))
             }
             _ => None,

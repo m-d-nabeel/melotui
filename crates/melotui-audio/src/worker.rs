@@ -172,9 +172,15 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                         }
                     }
                 }
-                AudioCommand::SetVisualizer { active } => {
-                    visualizer_active = active;
-                }
+                AudioCommand::SetVisualizer { spectrum_style } => match spectrum_style {
+                    Some(s) => {
+                        let _ = s;
+                        visualizer_active = true;
+                    }
+                    None => {
+                        visualizer_active = false;
+                    }
+                },
 
                 // --- AUDIO CONTROLS ---
                 AudioCommand::SetVolume(v) => sink.set_volume(v),

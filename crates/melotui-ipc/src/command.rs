@@ -1,13 +1,21 @@
 use std::path::PathBuf;
 
+use melotui_core::state::SpectrumStyle;
+
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
-    Play { path: PathBuf },
+    Play {
+        path: PathBuf,
+    },
     Pause,
     Resume,
     Stop,
-    Seek { position_ms: u64 },
-    SetVisualizer { active: bool },
+    Seek {
+        position_ms: u64,
+    },
+    SetVisualizer {
+        spectrum_style: Option<SpectrumStyle>,
+    },
     SetVolume(f32),
     SetSpeed(f32),
     SetBass(f32),
