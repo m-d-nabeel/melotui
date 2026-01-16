@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - master
     tags:
       - "v*"
 
@@ -85,7 +87,7 @@ jobs:
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
-          cd target/${{ matrix.target }}/release
+          cd target/${{ matrix.target }}/production
           strip ${{ matrix.cargo_bin_name }} || true
           mv ${{ matrix.cargo_bin_name }} ${{ matrix.final_bin_name }}
           tar -czf ../../../${{ matrix.asset_name }} ${{ matrix.final_bin_name }}
@@ -95,7 +97,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          cd target/${{ matrix.target }}/release
+          cd target/${{ matrix.target }}/production
           Move-Item ${{ matrix.cargo_bin_name }} ${{ matrix.final_bin_name }}
           Compress-Archive -Path ${{ matrix.final_bin_name }} -DestinationPath ..\..\..\${{ matrix.asset_name }}
 
