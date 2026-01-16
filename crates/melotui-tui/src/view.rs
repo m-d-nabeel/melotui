@@ -39,7 +39,7 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
     notification_popup::draw(frame, frame.area(), state);
 
     // --- COMMAND OVERLAY ---
-    if state.session.ui.mode == UIMode::Command {
+    if *state.ui_mode() == UIMode::Command {
         // Dim background
         frame.render_widget(
             Block::default().style(Style::default().add_modifier(Modifier::DIM)),
@@ -55,7 +55,7 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
     }
 
     // --- HELP OVERLAY (Topmost Modal) ---
-    if state.session.ui.show_help {
+    if state.ui_show_help() {
         // 1. Dim the whole background first for focus
         let dim_block = Block::default().style(
             Style::default()

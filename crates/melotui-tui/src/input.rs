@@ -5,7 +5,7 @@ use melotui_core::{
     AppMsg, AppState,
     keybinding::{KeyAction, KeyBinding, KeyContext, KeyRegistry},
     message::{library::LibraryMsg, navigation::NavigationMsg, ui::UIMsg},
-    state::{LeftPanelMode, LibraryViewDepth, UIMode},
+    state::UIMode,
 };
 
 static REGISTRY: OnceLock<KeyRegistry> = OnceLock::new();
@@ -21,21 +21,22 @@ impl InputHandler {
         let mut contexts = Vec::with_capacity(3);
 
         // Help overlay takes priority
-        if state.session.ui.show_help {
+        if state.ui_show_help() {
             contexts.push(KeyContext::Help);
             return contexts;
         }
 
         // Command mode
-        if state.session.ui.mode == UIMode::Command {
+        if *state.ui_mode() == UIMode::Command {
             contexts.push(KeyContext::CommandMode);
             return contexts;
         }
 
         // Active panel
-        match state.session.nav.active_panel {
-            LeftPanelMode::Library => contexts.push(KeyContext::Library),
-            LeftPanelMode::Queue => contexts.push(KeyContext::Queue),
+        if state.is_library_focused() {
+            contexts.push(KeyContext::Library);
+        } else if state.is_queue_focused() {
+            contexts.push(KeyContext::Queue);
         }
 
         // Global
@@ -62,7 +63,7 @@ impl InputHandler {
 
         // Fallback for typing in command mode
         let Some(act) = action else {
-            if state.session.ui.mode == UIMode::Command
+            if *state.ui_mode() == UIMode::Command
                 && let KeyCode::Char(c) = key.code
             {
                 return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
@@ -73,15 +74,13 @@ impl InputHandler {
         match act {
             // Collapse view
             KeyAction::CollapseView => {
-                if state.session.nav.active_panel == LeftPanelMode::Library {
-                    match state.session.nav.library.depth {
-                        LibraryViewDepth::Tracks => {
-                            Some(AppMsg::Navigation(NavigationMsg::SwitchToPlaylists))
-                        }
-                        LibraryViewDepth::TrackInfo => {
-                            Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
-                        }
-                        _ => None,
+                if state.is_library_focused() {
+                    if state.is_track_list_view() {
+                        Some(AppMsg::Navigation(NavigationMsg::SwitchToPlaylists))
+                    } else if state.is_track_info_view() {
+                        Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
+                    } else {
+                        None
                     }
                 } else {
                     None
@@ -90,15 +89,13 @@ impl InputHandler {
 
             // Expand view
             KeyAction::ExpandView => {
-                if state.session.nav.active_panel == LeftPanelMode::Library {
-                    match state.session.nav.library.depth {
-                        LibraryViewDepth::Playlists => {
-                            Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
-                        }
-                        LibraryViewDepth::Tracks => {
-                            Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))
-                        }
-                        _ => None,
+                if state.is_library_focused() {
+                    if state.is_playlist_view() {
+                        Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
+                    } else if state.is_track_list_view() {
+                        Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))
+                    } else {
+                        None
                     }
                 } else {
                     None
@@ -107,18 +104,10 @@ impl InputHandler {
 
             // Add to queue
             KeyAction::AddToQueue => {
-                if state.session.nav.active_panel == LeftPanelMode::Library
-                    && state.session.nav.library.depth != LibraryViewDepth::Playlists
-                {
-                    let p_idx = state.session.nav.library.selected_playlist_idx;
+                if state.is_library_focused() && !state.is_playlist_view() {
+                    let p_idx = state.selected_playlist_index();
                     if let Some(playlist) = state.library.playlists.get(p_idx) {
-                        let t_idx = *state
-                            .session
-                            .nav
-                            .library
-                            .selected_tracks_curs
-                            .get(p_idx)
-                            .unwrap_or(&0);
+                        let t_idx = state.selected_track_index_for_playlist(p_idx);
                         if let Some(track) = playlist.tracks.get(t_idx) {
                             return Some(AppMsg::Library(LibraryMsg::AddToQueue(track.clone())));
                         }
@@ -129,18 +118,10 @@ impl InputHandler {
 
             // Play next
             KeyAction::PlayNext => {
-                if state.session.nav.active_panel == LeftPanelMode::Library
-                    && state.session.nav.library.depth != LibraryViewDepth::Playlists
-                {
-                    let p_idx = state.session.nav.library.selected_playlist_idx;
+                if state.is_library_focused() && !state.is_playlist_view() {
+                    let p_idx = state.selected_playlist_index();
                     if let Some(playlist) = state.library.playlists.get(p_idx) {
-                        let t_idx = *state
-                            .session
-                            .nav
-                            .library
-                            .selected_tracks_curs
-                            .get(p_idx)
-                            .unwrap_or(&0);
+                        let t_idx = state.selected_track_index_for_playlist(p_idx);
                         if let Some(track) = playlist.tracks.get(t_idx) {
                             return Some(AppMsg::Library(LibraryMsg::PlayNext(track.clone())));
                         }
@@ -151,7 +132,7 @@ impl InputHandler {
 
             // Submit command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
-                state.session.ui.command_buffer.clone(),
+                state.ui_command_buffer().clone(),
             ))),
 
             // Direct mapping

@@ -1,8 +1,5 @@
 use crate::format_duration;
-use melotui_core::{
-    AppState,
-    state::{LeftPanelMode, LibraryViewDepth},
-};
+use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
@@ -95,9 +92,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    let border_style = if state.session.nav.library.depth == LibraryViewDepth::Tracks
-        && state.session.nav.active_panel == LeftPanelMode::Library
-    {
+    let border_style = if state.is_track_list_view() && state.is_library_focused() {
         Style::default().fg(Color::Yellow)
     } else {
         Style::default().fg(Color::DarkGray)

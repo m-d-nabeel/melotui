@@ -42,7 +42,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     // --- PREPARE DATA ---
     let current_track = state.get_playing_track();
     let next_song_name = state.predict_next_song();
-    let (status_icon, status_color) = utils::get_status_icon(&state.session.playback.status);
+    let (status_icon, status_color) = utils::get_status_icon(state.playback_status());
     let (source_icon, source_color) = if state.is_playing_from_queue() {
         ("Q", Color::Yellow)
     } else {
@@ -86,9 +86,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         let controls_line = Line::from(vec![
             Span::styled(source_icon, Style::default().fg(source_color).bold()),
             Span::raw(" "),
-            utils::get_shuffle_icon(state.session.playback.shuffle),
+            utils::get_shuffle_icon(state.shuffle_active()),
             Span::raw(" "),
-            utils::get_repeat_icon(&state.session.repeat_mode),
+            utils::get_repeat_icon(state.repeat_mode()),
         ]);
         frame.render_widget(
             Paragraph::new(controls_line).alignment(Alignment::Right),
@@ -108,17 +108,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             ])
             .split(progress_area);
 
-        let current_ms = state.session.playback.progress_ms;
-        let duration_ms = current_track
-            .map(|t| t.duration_ms)
-            .or(state.session.playback.duration_ms)
-            .unwrap_or(0);
-
-        let ratio = if duration_ms > 0 {
-            (current_ms as f64 / duration_ms as f64).min(1.0)
-        } else {
-            0.0
-        };
+        let current_ms = state.progress_ms();
+        let duration_ms = state.total_duration_ms();
+        let ratio = state.progress_ratio();
 
         // Render Time Left
         frame.render_widget(
@@ -152,7 +144,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     // --- ROW 5: Next Song Info (dull colors) ---
     if v_chunks[4].height > 0 {
         let next_area = v_chunks[4];
-        let (label, name) = match state.session.repeat_mode {
+        let (label, name) = match state.repeat_mode() {
             RepeatMode::Track => ("Repeating: ", "Track"),
             RepeatMode::PlayOnce => ("Playing Once: ", "End After Track"),
             RepeatMode::Playlist => ("Up Next (loop): ", next_song_name.as_str()),

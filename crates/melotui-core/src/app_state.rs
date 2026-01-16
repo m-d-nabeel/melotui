@@ -1,9 +1,12 @@
-use std::sync::Arc;
+use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
     Library, Playlist,
     library::{LibraryPersistence, Track},
-    state::{LeftPanelMode, PlaybackContext, RepeatMode, SessionState},
+    state::{
+        LeftPanelMode, LibraryViewDepth, PlaybackContext, PlaybackStatus, RepeatMode, SessionState,
+        SpectrumStyle, VisualizerMode, notification::Notification, ui::UIMode,
+    },
     utils::{NoOpSpectrum, SpectrumSource},
 };
 
@@ -14,7 +17,7 @@ pub struct AppState {
     pub library: Arc<Library>,
 
     // User session state
-    pub session: SessionState,
+    pub(crate) session: SessionState,
 
     // Runtime buffers
     pub time_elapsed: f32,
@@ -52,8 +55,126 @@ impl AppState {
         }
     }
 }
-
+/// ─── Audio Feature Access ───────────────────────────────────────────────────
+/// Contains Selectors for UI rendering and Mutators for Reducer actions.
 impl AppState {
+    // --- Selectors (Public for UI) ---
+    pub fn volume(&self) -> f32 {
+        self.session.audio.volume
+    }
+
+    pub fn speed(&self) -> f32 {
+        self.session.audio.speed
+    }
+
+    pub fn bass(&self) -> f32 {
+        self.session.audio.bass
+    }
+
+    pub fn treble(&self) -> f32 {
+        self.session.audio.treble
+    }
+
+    pub fn reverb(&self) -> f32 {
+        self.session.audio.reverb
+    }
+
+    pub fn echo(&self) -> f32 {
+        self.session.audio.echo
+    }
+
+    // --- Mutators (Internal for Reducer) ---
+    // Usage: state.set_volume(new_vol) instead of state.session.audio.volume = new_vol
+
+    pub(crate) fn set_volume(&mut self, value: f32) {
+        self.session.audio.volume = value.clamp(0.0, 1.5);
+    }
+
+    pub(crate) fn set_speed(&mut self, value: f32) {
+        self.session.audio.speed = value.clamp(0.5, 2.0);
+    }
+
+    pub(crate) fn set_bass(&mut self, value: f32) {
+        self.session.audio.bass = value.clamp(0.1, 5.0);
+    }
+
+    pub(crate) fn set_treble(&mut self, value: f32) {
+        self.session.audio.treble = value.clamp(0.0, 5.0);
+    }
+
+    pub(crate) fn set_reverb(&mut self, value: f32) {
+        self.session.audio.reverb = value.clamp(0.0, 1.0);
+    }
+
+    pub(crate) fn set_echo(&mut self, value: f32) {
+        self.session.audio.echo = value.clamp(0.0, 0.9);
+    }
+}
+
+/// ─── Playback & Progress Access ─────────────────────────────────────────────
+/// Encapsulates playback status checks and progress math.
+impl AppState {
+    // --- Status Checks ---
+    pub fn is_playing(&self) -> bool {
+        matches!(self.session.playback.status, PlaybackStatus::Playing)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        matches!(self.session.playback.status, PlaybackStatus::Paused)
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        matches!(self.session.playback.status, PlaybackStatus::Stopped)
+    }
+
+    pub fn playback_status(&self) -> &PlaybackStatus {
+        &self.session.playback.status
+    }
+
+    pub fn shuffle_active(&self) -> bool {
+        self.session.playback.shuffle
+    }
+
+    pub fn repeat_mode(&self) -> &RepeatMode {
+        &self.session.repeat_mode
+    }
+
+    pub fn is_playing_from_queue(&self) -> bool {
+        self.session
+            .playback
+            .current
+            .as_ref()
+            .is_some_and(|c| matches!(c.context, PlaybackContext::Queue))
+    }
+
+    // --- Progress Calculations ---
+
+    /// Returns the current progress ratio (0.0 to 1.0)
+    pub fn progress_ratio(&self) -> f64 {
+        let current = self.session.playback.progress_ms as f64;
+        let total = self.total_duration_ms() as f64;
+
+        if total > 0.0 {
+            (current / total).clamp(0.0, 1.0)
+        } else {
+            0.0
+        }
+    }
+
+    pub fn progress_ms(&self) -> u64 {
+        self.session.playback.progress_ms
+    }
+
+    /// Smart duration fetcher: gets from track, fallback to state, fallback to 0
+    pub fn total_duration_ms(&self) -> u64 {
+        self.get_playing_track()
+            .map(|t| t.duration_ms)
+            .or(self.session.playback.duration_ms)
+            .unwrap_or(0)
+    }
+
+    // --- Track Info Getters ---
+
     pub fn get_playing_track(&self) -> Option<&Track> {
         let active = self.session.playback.current.as_ref()?;
 
@@ -63,6 +184,43 @@ impl AppState {
         }
     }
 
+    pub fn get_playing_playlist_name(&self) -> Option<&str> {
+        self.session.playback.current.as_ref().and_then(|active| {
+            if let PlaybackContext::Library { playlist_name } = &active.context {
+                Some(playlist_name.as_str())
+            } else {
+                None
+            }
+        })
+    }
+}
+
+/// ─── Navigation & View Access ───────────────────────────────────────────────
+/// Helpers for Sidebar, Input, and Layout logic.
+impl AppState {
+    // --- Active Panel Checks ---
+    pub fn is_library_focused(&self) -> bool {
+        matches!(self.session.nav.active_panel, LeftPanelMode::Library)
+    }
+
+    pub fn is_queue_focused(&self) -> bool {
+        matches!(self.session.nav.active_panel, LeftPanelMode::Queue)
+    }
+
+    // --- View Depth Checks ---
+    pub fn is_playlist_view(&self) -> bool {
+        self.session.nav.library.depth == LibraryViewDepth::Playlists
+    }
+
+    pub fn is_track_list_view(&self) -> bool {
+        self.session.nav.library.depth == LibraryViewDepth::Tracks
+    }
+
+    pub fn is_track_info_view(&self) -> bool {
+        self.session.nav.library.depth == LibraryViewDepth::TrackInfo
+    }
+
+    // --- Selection Getters ---
     pub fn get_selected_playlist(&self) -> Option<&Playlist> {
         self.library
             .get_selected_playlist(&self.session.nav.library)
@@ -78,24 +236,73 @@ impl AppState {
         }
     }
 
-    pub fn is_playing_from_queue(&self) -> bool {
+    // Direct queue access for UI list rendering
+    pub fn queue(&self) -> &VecDeque<Track> {
+        &self.session.playback_queue.tracks
+    }
+
+    // --- Selection Index Getters (for UI rendering/navigation) ---
+    pub fn selected_playlist_index(&self) -> usize {
+        self.session.nav.library.selected_playlist_idx
+    }
+
+    pub fn selected_queue_index(&self) -> usize {
+        self.session.nav.queue.selected_idx
+    }
+
+    pub fn selected_track_index_for_playlist(&self, playlist_idx: usize) -> usize {
         self.session
-            .playback
-            .current
-            .as_ref()
-            .is_some_and(|c| matches!(c.context, PlaybackContext::Queue))
+            .nav
+            .library
+            .selected_tracks_curs
+            .get(playlist_idx)
+            .copied()
+            .unwrap_or(0)
     }
 
-    pub fn get_playing_playlist_name(&self) -> Option<&str> {
-        self.session.playback.current.as_ref().and_then(|active| {
-            if let PlaybackContext::Library { playlist_name } = &active.context {
-                Some(playlist_name.as_str())
-            } else {
-                None
-            }
-        })
+    // --- UI State Accessors ---
+    pub fn ui_mode(&self) -> &UIMode {
+        &self.session.ui.mode
     }
 
+    pub fn ui_show_help(&self) -> bool {
+        self.session.ui.show_help
+    }
+
+    pub fn ui_command_buffer(&self) -> &String {
+        &self.session.ui.command_buffer
+    }
+
+    // --- Notification Accessor ---
+    pub fn current_notification(&self) -> Option<&Notification> {
+        self.session.notification.current.as_ref()
+    }
+
+    // --- Notification Mutator ---
+    pub fn clear_current_notification(&mut self) {
+        self.session.notification.current = None;
+    }
+}
+
+/// ─── Visualizer Access ──────────────────────────────────────────────────────
+/// Helpers for the Visualizer View.
+impl AppState {
+    pub fn should_draw_spectrum(&self) -> bool {
+        self.session.visualizer_mode == VisualizerMode::Spectrum
+    }
+
+    pub fn spectrum_style(&self) -> &SpectrumStyle {
+        &self.session.spectrum_style
+    }
+
+    /// Returns a tuple of (Smooth Data, Peak Data)
+    pub fn get_spectrum_data(&self) -> (&Vec<f32>, &Vec<f32>) {
+        (&self.spectrum_smooth, &self.spectrum_peaks)
+    }
+}
+
+/// ─── Prediction Logic ───────────────────────────────────────────────────────
+impl AppState {
     pub fn predict_next_song(&self) -> String {
         if self.is_playing_from_queue() {
             if self.session.playback_queue.tracks.len() > 1 {

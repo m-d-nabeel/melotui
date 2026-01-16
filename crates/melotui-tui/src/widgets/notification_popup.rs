@@ -9,7 +9,7 @@ use melotui_core::AppState;
 use melotui_core::state::NotificationKind;
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let Some(notification) = &state.session.notification.current else {
+    let Some(notification) = state.current_notification() else {
         return;
     };
 

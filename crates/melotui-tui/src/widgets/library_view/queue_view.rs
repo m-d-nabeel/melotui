@@ -1,8 +1,5 @@
 use crate::format_duration;
-use melotui_core::{
-    AppState,
-    state::{LeftPanelMode, LibraryViewDepth},
-};
+use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -12,22 +9,23 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let queue = &state.session.playback_queue.tracks;
-    let selected_idx = state.session.nav.queue.selected_idx;
-    let is_active_panel = state.session.nav.active_panel == LeftPanelMode::Queue;
+    let queue = state.queue();
+    let selected_idx = state.selected_queue_index();
+    let is_active_panel = state.is_queue_focused();
 
     // --- 1. CONTAINER & TITLE ---
-    let lib_tab_text = match state.session.nav.library.depth {
-        LibraryViewDepth::Playlists => " Library ".to_string(),
-        LibraryViewDepth::Tracks | LibraryViewDepth::TrackInfo => {
-            let p_idx = state.session.nav.library.selected_playlist_idx;
-            state
-                .library
-                .playlists
-                .get(p_idx)
-                .map(|pl| format!(" {} ", pl.name))
-                .unwrap_or_else(|| " Library ".to_string())
-        }
+    let lib_tab_text = if state.is_playlist_view() {
+        " Library ".to_string()
+    } else if state.is_track_list_view() || state.is_track_info_view() {
+        let p_idx = state.selected_playlist_index();
+        state
+            .library
+            .playlists
+            .get(p_idx)
+            .map(|pl| format!(" {} ", pl.name))
+            .unwrap_or_else(|| " Library ".to_string())
+    } else {
+        " Library ".to_string()
     };
 
     let title = Line::from(vec![

@@ -1,9 +1,6 @@
 use std::{collections::VecDeque, time::Instant};
 
-use melotui_core::{
-    AppMsg, AppState, Library,
-    state::{SpectrumStyle, VisualizerMode},
-};
+use melotui_core::{AppMsg, AppState, Library, state::SpectrumStyle};
 use melotui_ipc::spectrum_bridge;
 use melotui_tui::Tui;
 
@@ -76,11 +73,11 @@ pub fn run() -> anyhow::Result<()> {
         }
 
         // 4. Cleanup Notifications
-        if let Some(n) = &state.session.notification.current
+        if let Some(n) = state.current_notification()
             && let Some(timeout) = n.dismiss_after
             && n.created_at.elapsed() >= timeout
         {
-            state.session.notification.current = None;
+            state.clear_current_notification();
         }
     }
 
@@ -88,7 +85,7 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 fn update_visualizer_physics(state: &mut AppState, dt: f32) {
-    if state.session.visualizer_mode != VisualizerMode::Spectrum {
+    if !state.should_draw_spectrum() {
         return;
     }
 
@@ -118,7 +115,7 @@ fn update_visualizer_physics(state: &mut AppState, dt: f32) {
     }
 
     // 3. CAVA Mode: Direct Pass-through
-    if state.session.spectrum_style == SpectrumStyle::Cava {
+    if *state.spectrum_style() == SpectrumStyle::Cava {
         state.spectrum_smooth.copy_from_slice(&state.spectrum_raw);
         // Copy peaks logic for CAVA if you want "falling peaks" on CAVA too,
         // otherwise just direct copy:

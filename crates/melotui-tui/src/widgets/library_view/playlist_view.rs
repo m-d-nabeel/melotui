@@ -1,7 +1,4 @@
-use melotui_core::{
-    AppState,
-    state::{LeftPanelMode, LibraryViewDepth},
-};
+use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Rect},
@@ -11,7 +8,7 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let selected_idx = state.session.nav.library.selected_playlist_idx;
+    let selected_idx = state.selected_playlist_index();
 
     let title = Line::from(vec![
         Span::styled(
@@ -64,9 +61,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    let border_color = if state.session.nav.library.depth == LibraryViewDepth::Playlists
-        && state.session.nav.active_panel == LeftPanelMode::Library
-    {
+    let border_color = if state.is_playlist_view() && state.is_library_focused() {
         Color::Yellow
     } else {
         Color::Blue

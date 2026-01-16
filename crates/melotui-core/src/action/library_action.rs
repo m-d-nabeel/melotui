@@ -50,18 +50,13 @@ pub fn handle_play_next(state: &mut AppState, track: crate::library::Track) -> V
     let mut insert_idx = 0;
 
     if state.is_playing_from_queue()
-        && let Some(current) = &state.session.playback.current
-        && let Some(idx) = state
-            .session
-            .playback_queue
-            .tracks
-            .iter()
-            .position(|t| t.id == current.id)
+        && let Some(current) = state.get_playing_track()
+        && let Some(idx) = state.queue().iter().position(|t| t.id == current.id)
     {
         insert_idx = idx + 1;
     }
 
-    if insert_idx >= state.session.playback_queue.tracks.len() {
+    if insert_idx >= state.queue().len() {
         state.session.playback_queue.tracks.push_back(track.clone());
     } else {
         state
@@ -100,12 +95,9 @@ pub fn handle_toggle_repeat_mode(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_toggle_shuffle(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.playback.shuffle = !state.session.playback.shuffle;
-    let status = if state.session.playback.shuffle {
-        "On"
-    } else {
-        "Off"
-    };
+    let new_shuffle = !state.shuffle_active();
+    state.session.playback.shuffle = new_shuffle;
+    let status = if new_shuffle { "On" } else { "Off" };
     state.session.notification.current = Some(Notification {
         kind: NotificationKind::Info,
         message: format!("Shuffle: {}", status),
@@ -117,8 +109,8 @@ pub fn handle_toggle_shuffle(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
-    if state.session.nav.active_panel == crate::state::LeftPanelMode::Queue {
-        let idx = state.session.nav.queue.selected_idx;
+    if state.is_queue_focused() {
+        let mut idx = state.selected_queue_index();
 
         let playing_from_queue = state.is_playing_from_queue();
 
@@ -126,19 +118,19 @@ pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
             return vec![];
         }
 
-        if idx < state.session.playback_queue.tracks.len() {
+        if idx < state.queue().len() {
             state.session.playback_queue.tracks.remove(idx);
 
-            if idx >= state.session.playback_queue.tracks.len() && idx > 0 {
-                state.session.nav.queue.selected_idx = idx - 1;
+            if idx >= state.queue().len() && idx > 0 {
+                idx -= 1;
+                state.session.nav.queue.selected_idx = idx;
             }
 
-            if playing_from_queue
-                && state.session.nav.queue.selected_idx == 0
-                && state.session.playback_queue.tracks.len() > 1
-            {
-                state.session.nav.queue.selected_idx = 1;
+            if playing_from_queue && idx == 0 && state.queue().len() > 1 {
+                idx = 1;
+                state.session.nav.queue.selected_idx = idx;
             }
+
             state.session.notification.current = Some(Notification {
                 kind: NotificationKind::Info,
                 message: "Removed from Queue".into(),
