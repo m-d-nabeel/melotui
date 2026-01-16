@@ -60,7 +60,7 @@ pub fn run() -> anyhow::Result<()> {
         update_visualizer_physics(&mut state, dt);
         tui.draw(&state)?;
 
-        // 1. UI Input
+        // UI Input
         if let Some(msg) = tui.poll_event(&state)? {
             effect_queue.push_back(msg);
         }
@@ -68,19 +68,19 @@ pub fn run() -> anyhow::Result<()> {
         if ipc_alive {
             while let Ok(evt) = ipc.event_rx.try_recv() {
                 match evt {
-                    // NEW: Hot-reload the library when scan finishes
+                    // Hot-reload library on scan finish
                     IpcEvent::LibraryRescanned => {
                         tracing::info!("Database updated. Reloading library into memory...");
 
-                        // 1. Load from DB
+                        // Load from DB
                         match load_library_from_db(&db_root.join("library.db"), music_root.clone())
                         {
                             Ok(new_lib) => {
-                                // 2. Hot-Swap State
+                                // Hot-swap state
                                 state.library = std::sync::Arc::new(new_lib);
                                 melotui_core::reconcile_nav_state(&mut state);
 
-                                // 3. Notify User
+                                // Notify user
                                 state.set_notification(melotui_core::state::Notification {
                                     kind: melotui_core::state::NotificationKind::Info,
                                     message: "Library Updated".into(),
@@ -94,15 +94,15 @@ pub fn run() -> anyhow::Result<()> {
                             }
                         }
                     }
-                    // Pass other events to the reducer
+                    // Pass events to reducer
                     _ => effect_queue.push_back(ipc_to_appmsg(evt)),
                 }
             }
         }
 
-        // 3. Process Effects
+        // Process effects
         while let Some(msg) = effect_queue.pop_front() {
-            // Lifecycle Check
+            // Lifecycle check
             if matches!(msg, AppMsg::RequestQuit) {
                 if ipc_alive {
                     ipc.dispatch(melotui_ipc::command::IpcCommand::Shutdown);
@@ -112,17 +112,17 @@ pub fn run() -> anyhow::Result<()> {
                 break;
             }
 
-            // A) Dispatch Side Effects (UI -> Runtime)
+            // Dispatch side effects
             if ipc_alive && let Some(cmd) = appmsg_to_ipc(&msg) {
                 ipc.dispatch(cmd);
             }
 
-            // B) State Mutation
+            // State mutation
             let next_effects = melotui_core::reducer::reduce(&mut state, msg);
             effect_queue.extend(next_effects);
         }
 
-        // 4. Cleanup Notifications
+        // Cleanup notifications
         if let Some(n) = state.current_notification()
             && let Some(timeout) = n.dismiss_after
             && n.created_at.elapsed() >= timeout
@@ -139,23 +139,23 @@ fn update_visualizer_physics(state: &mut AppState, dt: f32) {
         return;
     }
 
-    // 1. PULL Strategy
-    // Ensure we have enough capacity for the largest backend (512 is safe)
-    // We resize UP to 512 so the buffer is big enough to receive data.
+    // Pull strategy
+    // Ensure capacity for largest backend
+    // Resize up to 512 for data
     if state.spectrum_raw.len() < 512 {
         state.spectrum_raw.resize(512, 0.0);
     }
 
-    // Read the data. 'count' is the actual number of bins written (e.g. 200 or 512).
+    // Read data, count is bins written
     let count = state.spectrum_source.get_latest(&mut state.spectrum_raw);
 
-    // Resize DOWN to the actual data length.
-    // This ensures the visualizer calculates 'step' correctly to fill the screen.
+    // Resize down to data length
+    // Ensures visualizer fills screen
     if count > 0 {
         state.spectrum_raw.truncate(count);
     }
 
-    // 2. Resize Render Buffers
+    // Resize render buffers
     let len = state.spectrum_raw.len();
     if state.spectrum_smooth.len() != len {
         state.spectrum_smooth.resize(len, 0.0);
@@ -164,16 +164,14 @@ fn update_visualizer_physics(state: &mut AppState, dt: f32) {
         state.spectrum_peaks.resize(len, 0.0);
     }
 
-    // 3. CAVA Mode: Direct Pass-through
+    // CAVA mode pass-through
     if *state.spectrum_style() == SpectrumStyle::Cava {
         state.spectrum_smooth.copy_from_slice(&state.spectrum_raw);
-        // Copy peaks logic for CAVA if you want "falling peaks" on CAVA too,
-        // otherwise just direct copy:
         for i in 0..len {
             if state.spectrum_smooth[i] > state.spectrum_peaks[i] {
                 state.spectrum_peaks[i] = state.spectrum_smooth[i];
             } else {
-                state.spectrum_peaks[i] -= 2.0 * dt; // Simple gravity
+                state.spectrum_peaks[i] -= 2.0 * dt;
                 if state.spectrum_peaks[i] < 0.0 {
                     state.spectrum_peaks[i] = 0.0;
                 }
@@ -182,7 +180,7 @@ fn update_visualizer_physics(state: &mut AppState, dt: f32) {
         return;
     }
 
-    // 4. Internal Mode: Apply Physics (Smoothing + Gravity)
+    // Internal mode physics
     let gravity = 4.0;
     let smoothing_speed = 15.0;
 

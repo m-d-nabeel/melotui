@@ -4,6 +4,7 @@ use std::time::Instant;
 pub enum NotificationKind {
     Info,
     Progress,
+    Warning,
     Error,
 }
 

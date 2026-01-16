@@ -111,7 +111,7 @@ fn scan_directory(conn: &rusqlite::Connection, dir: &Path, count: &mut usize) ->
         {
             insert_track(conn, &track_data)?;
             *count += 1;
-            if *count % 100 == 0 {
+            if (*count).is_multiple_of(100) {
                 tracing::info!("Processed {} tracks so far", *count);
             }
         }

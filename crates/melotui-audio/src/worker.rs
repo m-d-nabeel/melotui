@@ -119,7 +119,6 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
 
                         sink.append(source_with_sniffer);
                         sink.play();
-                        // Apply current speed to the new track immediately
                         sink.set_speed(current_speed);
 
                         worker.send(IpcEvent::PlaybackStarted {
@@ -258,7 +257,7 @@ fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit>
 
     let mono_chain = bass_node >> treble_node >> echo_node;
 
-    // 2. Stereo Reverb & Mixer Construction
+    // Stereo Reverb & Mixer Construction
 
     let wet_vol = var(&params.reverb);
     let wet_stereo = wet_vol.clone() | wet_vol; // [WetL, WetR]
@@ -277,7 +276,7 @@ fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit>
     let feeder = stereo_pass.clone() ^ stereo_pass; // Split input to both paths
     let stereo_mixer = feeder >> mixer_core;
 
-    // 3. Limiter
+    // Limiter
     let limiter_stereo = limiter(0.001, 0.1) | limiter(0.001, 0.1);
 
     if channels == 1 {

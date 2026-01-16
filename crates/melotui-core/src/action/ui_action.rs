@@ -3,7 +3,10 @@ use std::time::{Duration, Instant};
 use crate::{
     AppMsg, AppState, Command, UIMode,
     message::{download::DownloadMsg, library::LibraryMsg},
-    state::{Notification, NotificationKind},
+    state::{
+        Notification, NotificationKind,
+        visualizer::{SpectrumStyle, is_cava_available},
+    },
 };
 
 pub fn handle_toggle_help(state: &mut AppState) -> Vec<AppMsg> {
@@ -67,7 +70,18 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::Download(DownloadMsg::RequestDownload { query })]
         }
         Command::ChangeVisualizer { arg } => {
-            state.session.spectrum_style = arg;
+            if arg == SpectrumStyle::Cava && !is_cava_available() {
+                state.session.notification.current = Some(Notification {
+                    kind: NotificationKind::Warning,
+                    message: "CAVA is not available. Install CAVA for the CAVA visualizer style."
+                        .to_string(),
+                    progress: None,
+                    created_at: Instant::now(),
+                    dismiss_after: Some(Duration::from_secs(5)),
+                });
+            } else {
+                state.session.spectrum_style = arg;
+            }
             vec![]
         }
         Command::Unknown(reason) => {

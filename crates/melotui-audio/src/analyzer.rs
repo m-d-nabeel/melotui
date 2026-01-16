@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 const FFT_SIZE: usize = 4096;
 const NUM_BINS: usize = 512;
-const MIN_FREQ: f32 = 30.0; // Lowered to catch sub-bass
+const MIN_FREQ: f32 = 30.0; // to catch sub-bass
 const MAX_FREQ: f32 = 18_000.0;
 
 pub struct SpectrumAnalyzer<C>
@@ -70,7 +70,7 @@ where
         let log_max = MAX_FREQ.ln();
         let log_range = log_max - log_min;
 
-        // 1. Convert sparse map to dense vectors for easier searching
+        // Convert sparse map to dense vectors for easier searching
         let freqs: Vec<f32> = data.keys().map(|&k| k as f32).collect();
         let vals: Vec<f32> = data.values().copied().collect();
 
@@ -83,7 +83,6 @@ where
             let norm_pos = i as f32 / (bin_count as f32 - 1.0);
             let target_freq = (log_min + norm_pos * log_range).exp();
 
-            // 2. Range Search (Max Pooling)
             // Define a window around the target freq.
             // At low freqs, the window is small. At high freqs, it's large.
             // We ensure the window is at least the size of one FFT bin step (~10Hz)
