@@ -1,8 +1,5 @@
 use crate::format_duration;
-use melotui_core::{
-    AppState,
-    state::{LeftPanelMode, LibraryViewDepth, PlaybackContext},
-};
+use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Constraint, Rect},
@@ -12,12 +9,12 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let p_idx = state.nav.library.selected_playlist_idx;
-    if p_idx >= state.library.playlists.len() {
-        return;
-    }
-    let playlist = &state.library.playlists[p_idx];
-    let selected_track_idx = state.nav.library.selected_tracks_curs[p_idx];
+    let playlist = match state.get_selected_playlist() {
+        Some(p) => p,
+        None => return,
+    };
+    let selected_track = state.get_selected_track();
+    let playing_track = state.get_playing_track();
 
     let raw_name = &playlist.name;
     let display_name = if raw_name.len() > 15 {
@@ -26,7 +23,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         raw_name.clone()
     };
 
-    // 2. Build Title: "[ Playlist... ] | Queue"
+    // Build title with playlist name
     let title = Line::from(vec![
         Span::styled(
             format!(" {} ", display_name),
@@ -52,14 +49,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let rows: Vec<Row> = playlist
         .tracks
         .iter()
-        .enumerate()
-        .map(|(i, t)| {
-            let is_playing = state
-                .playback
-                .current
-                .as_ref()
-                .is_some_and(|curr| matches!(curr.context, PlaybackContext::Library { ref playlist_name } if playlist_name == &playlist.name) && curr.path == t.file_path);
-            let is_selected = i == selected_track_idx;
+        .map(|t| {
+            let is_playing = playing_track.map(|pt| pt.id == t.id).unwrap_or(false);
+            let is_selected = selected_track.map(|st| st.id == t.id).unwrap_or(false);
 
             let status = if is_playing {
                 " ▶"
@@ -100,9 +92,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         })
         .collect();
 
-    let border_style = if state.nav.library.depth == LibraryViewDepth::Tracks
-        && state.nav.active_panel == LeftPanelMode::Library
-    {
+    let border_style = if state.is_track_list_view() && state.is_library_focused() {
         Style::default().fg(Color::Yellow)
     } else {
         Style::default().fg(Color::DarkGray)
@@ -125,9 +115,12 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             .border_style(border_style),
     );
 
+    let selected_index =
+        selected_track.and_then(|st| playlist.tracks.iter().position(|t| t.id == st.id));
+
     frame.render_stateful_widget(
         table,
         area,
-        &mut TableState::default().with_selected(Some(selected_track_idx)),
+        &mut TableState::default().with_selected(selected_index),
     );
 }

@@ -1,39 +1,39 @@
 use crate::{AppMsg, AppState, message::audio::AudioMsg};
 
 pub fn handle_adjust_volume(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.volume = (state.audio.volume + delta).clamp(0.0, 1.5);
-    vec![AppMsg::Audio(AudioMsg::DispatchSetVolume(
-        state.audio.volume,
-    ))]
+    let new_volume = (state.volume() + delta).clamp(0.0, 1.5);
+    state.session.audio.volume = new_volume;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetVolume(new_volume))]
 }
 
 pub fn handle_adjust_speed(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.speed = (state.audio.speed + delta).clamp(0.5, 2.0);
-    vec![AppMsg::Audio(AudioMsg::DispatchSetSpeed(state.audio.speed))]
+    let new_speed = (state.speed() + delta).clamp(0.5, 2.0);
+    state.session.audio.speed = new_speed;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetSpeed(new_speed))]
 }
 
 pub fn handle_adjust_bass(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.bass = (state.audio.bass + delta).clamp(0.1, 5.0);
-    vec![AppMsg::Audio(AudioMsg::DispatchSetBass(state.audio.bass))]
+    let new_bass = (state.bass() + delta).clamp(0.1, 5.0);
+    state.session.audio.bass = new_bass;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetBass(new_bass))]
 }
 
 pub fn handle_adjust_treble(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.treble = (state.audio.treble + delta).clamp(0.0, 5.0);
-    vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(
-        state.audio.treble,
-    ))]
+    let new_treble = (state.treble() + delta).clamp(0.0, 5.0);
+    state.session.audio.treble = new_treble;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(new_treble))]
 }
 
 pub fn handle_adjust_reverb(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.reverb = (state.audio.reverb + delta).clamp(0.0, 1.0);
-    vec![AppMsg::Audio(AudioMsg::DispatchSetReverb(
-        state.audio.reverb,
-    ))]
+    let new_reverb = (state.reverb() + delta).clamp(0.0, 1.0);
+    state.session.audio.reverb = new_reverb;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetReverb(new_reverb))]
 }
 
 pub fn handle_adjust_echo(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    state.audio.echo = (state.audio.echo + delta).clamp(0.0, 0.9);
-    vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(state.audio.echo))]
+    let new_echo = (state.echo() + delta).clamp(0.0, 0.9);
+    state.session.audio.echo = new_echo;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(new_echo))]
 }
 
 // Dispatch handlers that do nothing in reducer

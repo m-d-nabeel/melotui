@@ -8,11 +8,11 @@ use crate::{
 pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
     match Library::scan(state.library.root.clone()) {
         Ok(new_library) => {
-            state.library = new_library;
+            state.library = new_library.into();
             reconcile_nav_state(state);
             tracing::info!("Library rescanned");
 
-            state.notification.current = Some(Notification {
+            state.session.notification.current = Some(Notification {
                 kind: NotificationKind::Info,
                 message: "Library rescanned".into(),
                 progress: None,
@@ -22,7 +22,7 @@ pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
         }
         Err(err) => {
             tracing::error!("Error rescanning library: {:?}", err);
-            state.notification.current = Some(Notification {
+            state.session.notification.current = Some(Notification {
                 kind: NotificationKind::Error,
                 message: format!("Rescan failed: {err}"),
                 progress: None,
@@ -35,8 +35,8 @@ pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_add_to_queue(state: &mut AppState, track: crate::library::Track) -> Vec<AppMsg> {
-    state.playback_queue.tracks.push_back(track);
-    state.notification.current = Some(Notification {
+    state.session.playback_queue.tracks.push_back(track);
+    state.session.notification.current = Some(Notification {
         kind: NotificationKind::Info,
         message: "Added to Queue".into(),
         progress: None,
@@ -47,29 +47,43 @@ pub fn handle_add_to_queue(state: &mut AppState, track: crate::library::Track) -
 }
 
 pub fn handle_play_next(state: &mut AppState, track: crate::library::Track) -> Vec<AppMsg> {
-    state.playback_queue.tracks.push_front(track.clone());
+    let mut insert_idx = 0;
 
-    state.notification.current = Some(Notification {
-        kind: NotificationKind::Info,
-        message: format!("Set to play next: {}", track.title),
-        progress: None,
-        created_at: Instant::now(),
-        dismiss_after: Some(Duration::from_secs(2)),
-    });
+    if state.is_playing_from_queue()
+        && let Some(current) = state.get_playing_track()
+        && let Some(idx) = state.queue().iter().position(|t| t.id == current.id)
+    {
+        insert_idx = idx + 1;
+    }
+
+    if insert_idx >= state.queue().len() {
+        state.session.playback_queue.tracks.push_back(track.clone());
+    } else {
+        state
+            .session
+            .playback_queue
+            .tracks
+            .insert(insert_idx, track.clone());
+    }
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Set to play next: {}", track.title),
+    ));
     vec![]
 }
 
 pub fn handle_toggle_repeat_mode(state: &mut AppState) -> Vec<AppMsg> {
-    state.repeat_mode = state.repeat_mode.next();
+    state.session.repeat_mode = state.session.repeat_mode.next();
 
-    let mode_str = match state.repeat_mode {
+    let mode_str = match state.session.repeat_mode {
         RepeatMode::Off => "Linear (Default)",
         RepeatMode::PlayOnce => "Play Once",
         RepeatMode::Track => "Repeat Track",
         RepeatMode::Playlist => "Repeat List",
     };
 
-    state.notification.current = Some(Notification {
+    state.session.notification.current = Some(Notification {
         kind: NotificationKind::Info,
         message: format!("Mode: {}", mode_str),
         progress: None,
@@ -81,9 +95,10 @@ pub fn handle_toggle_repeat_mode(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_toggle_shuffle(state: &mut AppState) -> Vec<AppMsg> {
-    state.playback.shuffle = !state.playback.shuffle;
-    let status = if state.playback.shuffle { "On" } else { "Off" };
-    state.notification.current = Some(Notification {
+    let new_shuffle = !state.shuffle_active();
+    state.session.playback.shuffle = new_shuffle;
+    let status = if new_shuffle { "On" } else { "Off" };
+    state.session.notification.current = Some(Notification {
         kind: NotificationKind::Info,
         message: format!("Shuffle: {}", status),
         progress: None,
@@ -94,36 +109,29 @@ pub fn handle_toggle_shuffle(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
-    if state.nav.active_panel == crate::state::LeftPanelMode::Queue {
-        let idx = state.nav.queue.selected_idx;
+    if state.is_queue_focused() {
+        let mut idx = state.selected_queue_index();
 
-        let playing_from_queue = state
-            .playback
-            .current
-            .as_ref()
-            .is_some_and(|c| c.context == PlaybackContext::Queue);
+        let playing_from_queue = state.is_playing_from_queue();
 
         if playing_from_queue && idx == 0 {
             return vec![];
         }
 
-        if idx < state.playback_queue.tracks.len() {
-            state.playback_queue.tracks.remove(idx);
-            // reconcile_nav_state(state);
+        if idx < state.queue().len() {
+            state.session.playback_queue.tracks.remove(idx);
 
-            // Adjust selection after removal
-            if idx >= state.playback_queue.tracks.len() && idx > 0 {
-                state.nav.queue.selected_idx = idx - 1;
+            if idx >= state.queue().len() && idx > 0 {
+                idx -= 1;
+                state.session.nav.queue.selected_idx = idx;
             }
 
-            // FIX: Ensure selection doesn't fall back to 0 if playing
-            if playing_from_queue
-                && state.nav.queue.selected_idx == 0
-                && state.playback_queue.tracks.len() > 1
-            {
-                state.nav.queue.selected_idx = 1;
+            if playing_from_queue && idx == 0 && state.queue().len() > 1 {
+                idx = 1;
+                state.session.nav.queue.selected_idx = idx;
             }
-            state.notification.current = Some(Notification {
+
+            state.session.notification.current = Some(Notification {
                 kind: NotificationKind::Info,
                 message: "Removed from Queue".into(),
                 progress: None,
@@ -137,19 +145,20 @@ pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_clear_queue(state: &mut AppState) -> Vec<AppMsg> {
     let playing_from_queue = state
+        .session
         .playback
         .current
         .as_ref()
         .is_some_and(|c| c.context == PlaybackContext::Queue);
 
     if playing_from_queue {
-        state.playback_queue.tracks.truncate(1);
+        state.session.playback_queue.tracks.truncate(1);
     } else {
-        state.playback_queue.tracks.clear();
+        state.session.playback_queue.tracks.clear();
     }
 
     reconcile_nav_state(state);
-    state.notification.current = Some(Notification {
+    state.session.notification.current = Some(Notification {
         kind: NotificationKind::Info,
         message: "Queue Cleared".into(),
         progress: None,
@@ -161,7 +170,7 @@ pub fn handle_clear_queue(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_request_quit(state: &mut AppState) -> Vec<AppMsg> {
     tracing::info!("Application quit requested");
-    state.notification.current = Some(Notification {
+    state.session.notification.current = Some(Notification {
         kind: NotificationKind::Info,
         message: "Quit".into(),
         progress: None,

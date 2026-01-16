@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{process::Command, str::FromStr};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum VisualizerMode {
@@ -7,13 +7,28 @@ pub enum VisualizerMode {
     AlbumArt,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpectrumStyle {
     Cava,
-    #[default]
     Default,
     Bar,
     Particle,
+}
+
+impl Default for SpectrumStyle {
+    fn default() -> Self {
+        match Command::new("cava").arg("--version").output() {
+            Ok(_) => {
+                tracing::info!("Cava installation detected. Using it for spectrum");
+                SpectrumStyle::Cava
+            }
+            Err(_) => {
+                tracing::info!("Cava installation not detected. Switching to manual mode.");
+                tracing::info!("Install Cava for better spectrum visualization");
+                SpectrumStyle::Default
+            }
+        }
+    }
 }
 
 impl SpectrumStyle {

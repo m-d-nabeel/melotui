@@ -32,3 +32,17 @@ pub struct NavigationState {
     pub library: LibraryNavState,
     pub queue: QueueNavState,
 }
+
+impl NavigationState {
+    pub fn new(playlist_count: usize) -> Self {
+        NavigationState {
+            active_panel: LeftPanelMode::Library,
+            library: LibraryNavState {
+                depth: LibraryViewDepth::Playlists,
+                selected_playlist_idx: 0,
+                selected_tracks_curs: vec![0; playlist_count],
+            },
+            queue: QueueNavState { selected_idx: 0 },
+        }
+    }
+}

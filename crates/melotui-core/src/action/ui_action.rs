@@ -7,31 +7,31 @@ use crate::{
 };
 
 pub fn handle_toggle_help(state: &mut AppState) -> Vec<AppMsg> {
-    state.ui.show_help = !state.ui.show_help;
+    state.session.ui.show_help = !state.session.ui.show_help;
     vec![]
 }
 
 pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     tracing::debug!("Enter Command Mode");
-    state.ui.mode = UIMode::Command;
-    state.ui.command_buffer.clear();
+    state.session.ui.mode = UIMode::Command;
+    state.session.ui.command_buffer.clear();
     vec![]
 }
 
 pub fn handle_exit_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     tracing::debug!("Exit Command Mode");
-    state.ui.mode = UIMode::Normal;
-    state.ui.command_buffer.clear();
+    state.session.ui.mode = UIMode::Normal;
+    state.session.ui.command_buffer.clear();
     vec![]
 }
 
 pub fn handle_update_command(state: &mut AppState, c: char) -> Vec<AppMsg> {
-    state.ui.command_buffer.push(c);
+    state.session.ui.command_buffer.push(c);
     vec![]
 }
 
 pub fn handle_backspace_command(state: &mut AppState) -> Vec<AppMsg> {
-    state.ui.command_buffer.pop();
+    state.session.ui.command_buffer.pop();
     vec![]
 }
 
@@ -41,8 +41,8 @@ pub fn handle_submit_command(state: &mut AppState, input: String) -> Vec<AppMsg>
 }
 
 fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
-    state.ui.mode = UIMode::Normal;
-    state.ui.command_buffer.clear();
+    state.session.ui.mode = UIMode::Normal;
+    state.session.ui.command_buffer.clear();
 
     let input = input.trim();
     if input.is_empty() {
@@ -57,7 +57,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::Library(LibraryMsg::RequestRescanLibrary)]
         }
         Command::Download { query } => {
-            state.notification.current = Some(Notification {
+            state.session.notification.current = Some(Notification {
                 kind: NotificationKind::Info,
                 message: format!("Downloading: {}", query),
                 progress: None,
@@ -67,11 +67,11 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::Download(DownloadMsg::RequestDownload { query })]
         }
         Command::ChangeVisualizer { arg } => {
-            state.spectrum_style = arg;
+            state.session.spectrum_style = arg;
             vec![]
         }
         Command::Unknown(reason) => {
-            state.notification.current = Some(Notification {
+            state.session.notification.current = Some(Notification {
                 kind: NotificationKind::Error,
                 message: format!("Unknown command: {}", reason),
                 progress: None,

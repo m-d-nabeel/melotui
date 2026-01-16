@@ -16,8 +16,6 @@ struct SliderConfig<'a> {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let audio = &state.audio;
-
     // 1. Container Block with Margins
     // We use Padding to ensure content doesn't touch the borders
     let block = Block::default()
@@ -75,7 +73,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         c1[0],
         &SliderConfig {
             label: "Volume",
-            val: audio.volume,
+            val: state.volume(),
             min: 0.0,
             max: 1.5,
             color: Color::Green,
@@ -86,7 +84,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         c1[2],
         &SliderConfig {
             label: "Speed",
-            val: audio.speed,
+            val: state.speed(),
             min: 0.5,
             max: 2.0,
             color: Color::Blue,
@@ -99,7 +97,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         c2[0],
         &SliderConfig {
             label: "Bass",
-            val: audio.bass,
+            val: state.bass(),
             min: 0.0,
             max: 5.0,
             color: Color::Yellow,
@@ -110,7 +108,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         c2[2],
         &SliderConfig {
             label: "Treble",
-            val: audio.treble,
+            val: state.treble(),
             min: 0.0,
             max: 5.0,
             color: Color::Cyan,
@@ -123,7 +121,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         c3[0],
         &SliderConfig {
             label: "Reverb",
-            val: audio.reverb,
+            val: state.reverb(),
             min: 0.0,
             max: 1.0,
             color: Color::Magenta,
@@ -134,7 +132,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         c3[2],
         &SliderConfig {
             label: "Echo",
-            val: audio.echo,
+            val: state.echo(),
             min: 0.0,
             max: 0.9,
             color: Color::Red,

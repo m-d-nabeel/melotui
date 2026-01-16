@@ -8,8 +8,8 @@ use crate::{
     message::playback::PlaybackMsg,
     reconcile_nav_state,
     state::{
-        LeftPanelMode, LibraryViewDepth, Notification, NotificationKind, PlaybackContext,
-        PlaybackStatus, RepeatMode, TrackId, VisualizerMode,
+        ActiveTrack, Notification, NotificationKind, PlaybackContext, PlaybackStatus, RepeatMode,
+        VisualizerMode,
     },
     utils::{SizeMode, bytes_to_ascii},
 };
@@ -20,108 +20,88 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
-    let track_to_play = match state.nav.active_panel {
-        LeftPanelMode::Library => {
-            if state.nav.library.depth == LibraryViewDepth::Playlists {
-                None
-            } else {
-                let p = state.nav.library.selected_playlist_idx;
-                let t = state
-                    .nav
-                    .library
-                    .selected_tracks_curs
-                    .get(p)
-                    .copied()
-                    .unwrap_or(0);
-                state
-                    .library
-                    .playlists
-                    .get(p)
-                    .and_then(|pl| pl.tracks.get(t))
-                    .cloned()
-            }
+    let selected_track = state.get_selected_track();
+    let track_to_play = if state.is_library_focused() {
+        if state.is_playlist_view() {
+            None
+        } else {
+            selected_track.as_ref()
         }
-        LeftPanelMode::Queue => {
-            let playing_from_queue = state
-                .playback
-                .current
-                .as_ref()
-                .is_some_and(|c| c.context == PlaybackContext::Queue);
-
-            if playing_from_queue && state.nav.queue.selected_idx == 0 {
-                None
-            } else {
-                state
-                    .playback_queue
-                    .tracks
-                    .get(state.nav.queue.selected_idx)
-                    .cloned()
-            }
-        }
+    } else if state.is_queue_focused() {
+        selected_track.as_ref()
+    } else {
+        None
     };
 
     if let Some(track) = track_to_play {
-        let context = match state.nav.active_panel {
-            LeftPanelMode::Library => PlaybackContext::Library {
-                playlist_name: state.library.playlists[state.nav.library.selected_playlist_idx]
+        // Clone necessary fields to release borrow before mutating state
+        let track_id = track.id;
+        let track_path = track.file_path.clone();
+        let track_title = track.title.clone();
+        let has_cover = track.has_cover;
+
+        let context = if state.is_library_focused() {
+            PlaybackContext::Library {
+                playlist_name: state.library.playlists[state.selected_playlist_index()]
                     .name
                     .clone(),
-            },
-            LeftPanelMode::Queue => PlaybackContext::Queue,
+            }
+        } else {
+            PlaybackContext::Queue
         };
 
         // A. Update UI State IMMEDIATELY
-        state.playback.current = Some(TrackId {
+        state.session.playback.current = Some(ActiveTrack {
+            id: track_id,
             context,
-            path: track.file_path.clone(),
+            path: track_path.clone(),
         });
-        state.playback.status = PlaybackStatus::Playing;
-        state.playback.progress_ms = 0;
-        state.playback.duration_ms = None;
+        state.session.playback.status = PlaybackStatus::Playing;
+        state.session.playback.progress_ms = 0;
+        state.session.playback.duration_ms = None;
 
-        state.notification.current = Some(Notification {
+        state.session.notification.current = Some(Notification {
             kind: NotificationKind::Info,
-            message: format!("Playing {}", track.title),
+            message: format!("Playing {}", track_title),
             progress: None,
             created_at: Instant::now(),
             dismiss_after: Some(Duration::from_secs(2)),
         });
 
         state.current_album_art = None;
-        if track.has_cover
-            && let Some((data, _mime)) = Library::get_album_art(&track.file_path)
+        if has_cover
+            && let Some((data, _mime)) = Library::get_album_art(&track_path)
             && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(30))
         {
             state.current_album_art = Some(ascii);
         }
 
         return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
-            path: track.file_path.clone(),
+            path: track_path,
         })];
     }
     vec![]
 }
 
 pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
-    match state.playback.status {
+    match state.playback_status() {
         PlaybackStatus::Playing => {
-            state.playback.status = PlaybackStatus::Paused;
+            state.session.playback.status = PlaybackStatus::Paused;
             vec![AppMsg::Playback(PlaybackMsg::DispatchPause)]
         }
         PlaybackStatus::Paused => {
-            if state.playback.current.is_some() {
-                state.playback.status = PlaybackStatus::Playing;
+            if state.get_playing_track().is_some() {
+                state.session.playback.status = PlaybackStatus::Playing;
                 vec![AppMsg::Playback(PlaybackMsg::DispatchResume)]
             } else {
                 vec![]
             }
         }
         PlaybackStatus::Stopped => {
-            if let Some(track_id) = &state.playback.current {
-                state.playback.status = PlaybackStatus::Playing;
-                vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
-                    path: track_id.path.clone(),
-                })]
+            if let Some(track) = state.get_playing_track() {
+                let path = track.file_path.clone();
+                state.session.playback.status = PlaybackStatus::Playing;
+                vec![AppMsg::Playback(PlaybackMsg::DispatchPlay { path })]
             } else {
                 vec![]
             }
@@ -130,8 +110,8 @@ pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_request_stop(state: &mut AppState) -> Vec<AppMsg> {
-    state.playback.status = PlaybackStatus::Stopped;
-    state.playback.progress_ms = 0;
+    state.session.playback.status = PlaybackStatus::Stopped;
+    state.session.playback.progress_ms = 0;
     vec![AppMsg::Playback(PlaybackMsg::DispatchStop)]
 }
 
@@ -143,8 +123,8 @@ pub fn handle_request_seek(state: &mut AppState, _offset_seconds: i64) -> Vec<Ap
 }
 
 pub fn handle_audio_progress(state: &mut AppState, position_ms: u64) -> Vec<AppMsg> {
-    if state.playback.status == PlaybackStatus::Playing {
-        state.playback.progress_ms = position_ms;
+    if state.is_playing() {
+        state.session.playback.progress_ms = position_ms;
     }
     vec![]
 }
@@ -165,8 +145,8 @@ pub fn handle_audio_resumed(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_audio_error(state: &mut AppState, error: String) -> Vec<AppMsg> {
-    state.playback.status = PlaybackStatus::Stopped;
-    state.notification.current = Some(Notification {
+    state.session.playback.status = PlaybackStatus::Stopped;
+    state.session.notification.current = Some(Notification {
         kind: NotificationKind::Error,
         message: format!("Audio Error: {}", error),
         progress: None,
@@ -177,11 +157,11 @@ pub fn handle_audio_error(state: &mut AppState, error: String) -> Vec<AppMsg> {
 }
 
 pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
-    state.visualizer_mode = match state.visualizer_mode {
+    state.session.visualizer_mode = match state.session.visualizer_mode {
         VisualizerMode::Spectrum => VisualizerMode::AlbumArt,
         VisualizerMode::AlbumArt => VisualizerMode::Spectrum,
     };
-    let is_spectrum = state.visualizer_mode == VisualizerMode::Spectrum;
+    let is_spectrum = state.should_draw_spectrum();
     vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
         active: is_spectrum,
     })]
@@ -213,24 +193,23 @@ pub fn handle_audio_started(_state: &mut AppState, _path: String) -> Vec<AppMsg>
 }
 
 fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
-    state.playback.status = PlaybackStatus::Stopped;
-    state.playback.progress_ms = 0;
+    state.session.playback.status = PlaybackStatus::Stopped;
+    state.session.playback.progress_ms = 0;
 
     // 1. PRIORITY: Repeat One Track
     // If Repeat is Track, we ignore Shuffle and Queue logic, just loop.
-    if state.repeat_mode == RepeatMode::Track
-        && let Some(current) = &state.playback.current
+    if *state.repeat_mode() == RepeatMode::Track
+        && let Some(current) = state.get_playing_track()
     {
-        state.playback.status = PlaybackStatus::Playing;
-        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
-            path: current.path.clone(),
-        })];
+        let path = current.file_path.clone();
+        state.session.playback.status = PlaybackStatus::Playing;
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay { path })];
     }
 
     // 2. PRIORITY: Play Single (Stop)
     // If Single mode is on, we stop here.
-    if state.repeat_mode == RepeatMode::PlayOnce {
-        state.notification.current = Some(Notification {
+    if *state.repeat_mode() == RepeatMode::PlayOnce {
+        state.session.notification.current = Some(Notification {
             kind: NotificationKind::Info,
             message: "Playback Finished (Single)".into(),
             progress: None,
@@ -244,11 +223,11 @@ fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
     let mut next_track_info: Option<Track> = None;
     let mut next_context: Option<PlaybackContext> = None;
 
-    if let Some(current) = &state.playback.current {
+    if let Some(current) = &state.session.playback.current {
         // Helper closure to pick a track index based on mode
         let get_next_index = |current_idx: usize, total_len: usize| -> Option<usize> {
             // A. SHUFFLE MODE
-            if state.playback.shuffle {
+            if state.shuffle_active() {
                 if total_len <= 1 {
                     return None;
                 }
@@ -263,7 +242,7 @@ fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
             }
 
             // C. END OF LIST -> Loop if Repeat Playlist is on
-            if state.repeat_mode == RepeatMode::Playlist {
+            if *state.repeat_mode() == RepeatMode::Playlist {
                 return Some(0);
             }
 
@@ -277,28 +256,29 @@ fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
                 // Case A: We are ALREADY in the Queue.
                 // Consumer behavior: remove the current track (the one that just finished)
                 if let Some(idx) = state
+                    .session
                     .playback_queue
                     .tracks
                     .iter()
                     .position(|t| t.file_path == current.path)
                 {
-                    state.playback_queue.tracks.remove(idx);
+                    state.session.playback_queue.tracks.remove(idx);
                     reconcile_nav_state(state);
                 }
 
                 next_context = Some(PlaybackContext::Queue);
                 // Peek the NEW front (Index 0) to play next
-                if !state.playback_queue.tracks.is_empty() {
-                    next_track_info = state.playback_queue.tracks.front().cloned();
+                if !state.session.playback_queue.tracks.is_empty() {
+                    next_track_info = state.session.playback_queue.tracks.front().cloned();
                 }
             }
             PlaybackContext::Library { playlist_name } => {
                 // Case B: We are in the Library.
 
                 // FIX: Check Queue. If exists, Play but DO NOT POP yet.
-                if !state.playback_queue.tracks.is_empty() {
+                if !state.session.playback_queue.tracks.is_empty() {
                     next_context = Some(PlaybackContext::Queue);
-                    next_track_info = state.playback_queue.tracks.front().cloned();
+                    next_track_info = state.session.playback_queue.tracks.front().cloned();
                     reconcile_nav_state(state);
                 } else {
                     // Queue is empty, continue with Library logic.
@@ -329,14 +309,15 @@ fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
         // Use the context calculated in Step 3
         let context = next_context.unwrap_or(PlaybackContext::Queue);
 
-        state.playback.current = Some(TrackId {
+        state.session.playback.current = Some(ActiveTrack {
+            id: track.id,
             context,
             path: track.file_path.clone(),
         });
-        state.playback.status = PlaybackStatus::Playing;
+        state.session.playback.status = PlaybackStatus::Playing;
 
         // UI Updates ...
-        state.notification.current = Some(Notification {
+        state.session.notification.current = Some(Notification {
             kind: NotificationKind::Info,
             message: format!("Now Playing: {}", track.title),
             progress: None,
