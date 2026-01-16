@@ -9,21 +9,21 @@ use crate::ipc_bridge::{IpcRuntime, appmsg_to_ipc, ipc_to_appmsg};
 pub fn run() -> anyhow::Result<()> {
     tracing::info!("Starting melotui application");
 
+    let db_root = dirs::data_dir()
+        .expect("Could not determine data directory")
+        .join("melotui");
+    std::fs::create_dir_all(&db_root).expect("Failed to create app data directory");
+
     let music_root = dirs::audio_dir().expect("Music directory not found");
     let library = Library::scan(music_root)?;
     let mut state = AppState::new(library);
     let mut tui = Tui::new()?;
 
-    // 1. Create the Bridge
     let (producer, consumer) = spectrum_bridge::create_bridge();
-
-    // 2. Install Consumer into UI State
     state.spectrum_source = Box::new(consumer);
+    let ipc = IpcRuntime::new(producer, db_root.join("library.db"));
 
-    // 3. Pass Producer to IPC Runtime (which passes it to Audio Worker)
-    let ipc = IpcRuntime::new(producer);
     let mut ipc_alive = true;
-
     let mut running = true;
     let mut effect_queue = VecDeque::new();
     let mut last_tick = Instant::now();

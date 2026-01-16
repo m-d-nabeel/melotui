@@ -29,7 +29,12 @@ pub enum DownloadCommand {
 
 #[derive(Debug, Clone)]
 pub enum DatabaseCommand {
-    ScanLibrary { root: PathBuf },
+    ScanLibrary,
+    GetAllTracks,
+    SearchTracks { query: String },
+    GetPlaylists,
+    CreatePlaylist { name: String },
+    AddTrackToPlaylist { playlist_id: i64, track_id: i64 },
     Query { sql: String },
     Shutdown,
 }

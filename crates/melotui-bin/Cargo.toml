@@ -9,6 +9,7 @@ melotui-tui      = { path = "../melotui-tui" }
 melotui-audio    = { path = "../melotui-audio" }
 melotui-ipc      = { path = "../melotui-ipc" }
 melotui-download = { path = "../melotui-download" }
+melotui-db       = { path = "../melotui-db" }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

@@ -1,9 +1,9 @@
-use std::{sync::mpsc, thread};
+use std::{path::PathBuf, sync::mpsc, thread};
 
 use melotui_core::AppMsg;
 use melotui_ipc::{
     channel::inprocess,
-    command::{AudioCommand, DownloadCommand, IpcCommand},
+    command::{AudioCommand, DatabaseCommand, DownloadCommand, IpcCommand},
     event::IpcEvent,
     spectrum_bridge::SpectrumProducer,
 };
@@ -15,30 +15,39 @@ pub struct IpcRuntime {
     // Ingress: Typed routers
     download_tx: mpsc::Sender<DownloadCommand>,
     audio_tx: mpsc::Sender<AudioCommand>,
+    db_tx: mpsc::Sender<DatabaseCommand>,
 }
 
 impl IpcRuntime {
-    pub fn new(spectrum_producer: SpectrumProducer) -> Self {
+    pub fn new(spectrum_producer: SpectrumProducer, db_path: PathBuf) -> Self {
         let (ui_rx, bus_tx) = inprocess::hub();
 
         // Spawn Download Worker
         let (dl_tx, dl_worker) = inprocess::join_worker::<DownloadCommand>(bus_tx.clone());
         thread::spawn(move || {
             melotui_download::run(dl_worker);
+            tracing::info!("IPC Runtime initialized with Download worker");
         });
 
         // Spawn Audio Worker
         let (audio_tx, audio_worker) = inprocess::join_worker::<AudioCommand>(bus_tx.clone());
         thread::spawn(move || {
             melotui_audio::run(audio_worker, spectrum_producer);
+            tracing::info!("IPC Runtime initialized with Audio worker");
         });
 
-        tracing::info!("IPC Runtime initialized with Download and Audio workers");
+        // Spawn Audio Worker
+        let (db_tx, db_worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx.clone());
+        thread::spawn(move || {
+            melotui_db::run(db_worker, db_path);
+            tracing::info!("IPC Runtime initialized with Database worker");
+        });
 
         Self {
             event_rx: ui_rx,
             download_tx: dl_tx,
             audio_tx,
+            db_tx,
         }
     }
 
@@ -54,6 +63,7 @@ impl IpcRuntime {
                 tracing::info!("IPC Runtime shutting down all workers...");
                 let _ = self.download_tx.send(DownloadCommand::Shutdown);
                 let _ = self.audio_tx.send(AudioCommand::Shutdown);
+                let _ = self.db_tx.send(DatabaseCommand::Shutdown);
             }
             _ => {}
         }
