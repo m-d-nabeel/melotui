@@ -79,7 +79,7 @@ jobs:
       - name: Build
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
-        run: cargo build --release --bin melotui-bin --target ${{ matrix.target }}
+        run: cargo build --profile production --bin melotui-bin --target ${{ matrix.target }}
 
       # 5. Package & Strip (Unix)
       - name: Package (Unix)
