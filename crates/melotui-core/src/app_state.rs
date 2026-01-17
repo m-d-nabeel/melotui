@@ -2,7 +2,7 @@ use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
     Library, Playlist,
-    library::{LibraryPersistence, Track},
+    library::Track,
     state::{
         LeftPanelMode, LibraryViewDepth, PlaybackContext, PlaybackStatus, RepeatMode, SessionState,
         SpectrumStyle, VisualizerMode, notification::Notification, ui::UIMode,

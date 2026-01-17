@@ -37,7 +37,7 @@ pub enum DownloadCommand {
 
 #[derive(Debug, Clone)]
 pub enum DatabaseCommand {
-    ScanLibrary,
+    ScanLibrary { root: PathBuf },
     GetAllTracks,
     SearchTracks { query: String },
     GetPlaylists,

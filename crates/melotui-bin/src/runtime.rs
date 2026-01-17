@@ -113,7 +113,7 @@ pub fn run() -> anyhow::Result<()> {
             }
 
             // Dispatch side effects
-            if ipc_alive && let Some(cmd) = appmsg_to_ipc(&msg) {
+            if ipc_alive && let Some(cmd) = appmsg_to_ipc(&msg, &state) {
                 ipc.dispatch(cmd);
             }
 
