@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use super::{
     audio::AudioState,
     download::DownloadState,
@@ -24,6 +26,7 @@ pub struct SessionState {
     pub repeat_mode: RepeatMode,
     pub visualizer_mode: VisualizerMode,
     pub spectrum_style: SpectrumStyle,
+    pub last_seek_time: Option<Instant>,
 }
 
 impl Default for SessionState {
@@ -39,6 +42,7 @@ impl Default for SessionState {
             download: DownloadState::default(),
             notification: NotificationState::default(),
             spectrum_style: SpectrumStyle::default(),
+            last_seek_time: None,
         }
     }
 }

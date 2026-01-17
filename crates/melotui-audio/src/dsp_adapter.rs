@@ -1,6 +1,7 @@
 use fundsp::buffer::BufferVec;
 use fundsp::hacker32::*;
 use rodio::Source;
+use rodio::source::SeekError;
 use std::time::Duration;
 
 /// Wrapper to make FunDSP graphs compatible with Rodio.
@@ -135,5 +136,19 @@ where
 
     fn total_duration(&self) -> Option<Duration> {
         self.source.total_duration()
+    }
+
+    fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
+        self.source.try_seek(pos)?;
+
+        // Flush internal buffers
+        self.output_queue.clear();
+        self.current_idx = 0;
+
+        // Reset DSP
+        self.unit.reset();
+        self.unit.set_sample_rate(self.source.sample_rate() as f64);
+
+        Ok(())
     }
 }
