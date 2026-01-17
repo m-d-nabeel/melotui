@@ -10,10 +10,6 @@ use crate::{
 };
 
 pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
-    play_current_selection(state)
-}
-
-fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
     let mut track_to_start: Option<Track> = None;
     let mut new_context: Option<(Vec<Track>, String, usize)> = None;
     let mut is_priority = false;
@@ -58,100 +54,6 @@ fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
     }
 }
 
-fn start_playback(state: &mut AppState, track: Track, from_queue: bool) -> Vec<AppMsg> {
-    let path = track.file_path.clone();
-    let title = track.title.clone();
-    let has_cover = track.has_cover;
-
-    state.session.playback.current = Some(track);
-    state.session.playback.playing_from_queue = from_queue;
-
-    state.session.playback.status = PlaybackStatus::Playing;
-    state.session.playback.progress_ms = 0;
-    state.session.playback.duration_ms = None;
-
-    state.session.notification.current = Some(Notification {
-        kind: NotificationKind::Info,
-        message: format!("Playing {}", title),
-        progress: None,
-        created_at: Instant::now(),
-        dismiss_after: Some(Duration::from_secs(2)),
-    });
-
-    // Art Loading
-    state.current_album_art = None;
-    if has_cover
-        && let Some((data, _)) = Library::get_album_art(&path)
-        && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(30))
-    {
-        state.current_album_art = Some(ascii);
-    }
-
-    vec![AppMsg::Playback(PlaybackMsg::DispatchPlay { path })]
-}
-
-fn playback_ended(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.playback.status = PlaybackStatus::Stopped;
-    state.session.playback.progress_ms = 0;
-
-    // REPEAT TRACK (Override)
-    if *state.repeat_mode() == RepeatMode::Track
-        && let Some(current) = &state.session.playback.current
-    {
-        let path = current.file_path.clone();
-        state.session.playback.status = PlaybackStatus::Playing;
-        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay { path })];
-    }
-
-    // PLAY ONCE (Stop)
-    if *state.repeat_mode() == RepeatMode::PlayOnce {
-        return vec![];
-    }
-
-    // Always consume the User Queue first.
-    if let Some(track) = state.session.playback_queue.items.pop_front() {
-        state.reconcile_nav();
-        return start_playback(state, track, true);
-    }
-
-    if let Some(track) = get_next_context_track(state) {
-        return start_playback(state, track, false);
-    }
-
-    vec![]
-}
-
-fn get_next_context_track(state: &mut AppState) -> Option<Track> {
-    let len = state.session.playback.context_queue.len();
-    if len == 0 {
-        return None;
-    }
-
-    let next_idx = if state.shuffle_active() {
-        if len > 1 {
-            rand::rng().random_range(0..len)
-        } else {
-            0
-        }
-    } else {
-        // Sequential: Pick up exactly where we left off + 1
-        let next = state.session.playback.context_idx + 1;
-        if next < len {
-            next
-        } else {
-            // Loop Context
-            if *state.repeat_mode() == RepeatMode::Playlist {
-                0
-            } else {
-                return None;
-            }
-        }
-    };
-
-    state.session.playback.context_idx = next_idx;
-    state.session.playback.context_queue.get(next_idx).cloned()
-}
-
 pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
     match state.playback_status() {
         PlaybackStatus::Playing => {
@@ -184,19 +86,62 @@ pub fn handle_request_stop(state: &mut AppState) -> Vec<AppMsg> {
     vec![AppMsg::Playback(PlaybackMsg::DispatchStop)]
 }
 
-pub fn handle_request_seek(_: &mut AppState, _: i64) -> Vec<AppMsg> {
-    vec![]
+pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<AppMsg> {
+    if !state.is_playing() && !state.is_paused() {
+        return vec![];
+    }
+
+    let current = state.progress_ms() as i64;
+    let duration = state.total_duration_ms() as i64;
+
+    let new_ms = (current + (offset_seconds * 1000)).clamp(0, duration);
+
+    state.session.playback.progress_ms = new_ms as u64;
+
+    vec![AppMsg::Playback(PlaybackMsg::DispatchSeek {
+        position_ms: new_ms as u64,
+    })]
 }
+
 pub fn handle_audio_progress(state: &mut AppState, position_ms: u64) -> Vec<AppMsg> {
     if state.is_playing() {
         state.session.playback.progress_ms = position_ms;
     }
     vec![]
 }
+
 pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
     tracing::info!("Audio Finished...");
-    playback_ended(state)
+    state.session.playback.status = PlaybackStatus::Stopped;
+    state.session.playback.progress_ms = 0;
+
+    // REPEAT TRACK (Override)
+    if *state.repeat_mode() == RepeatMode::Track
+        && let Some(current) = &state.session.playback.current
+    {
+        let path = current.file_path.clone();
+        state.session.playback.status = PlaybackStatus::Playing;
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay { path })];
+    }
+
+    // PLAY ONCE (Stop)
+    if *state.repeat_mode() == RepeatMode::PlayOnce {
+        return vec![];
+    }
+
+    // Always consume the User Queue first.
+    if let Some(track) = state.session.playback_queue.items.pop_front() {
+        state.reconcile_nav();
+        return start_playback(state, track, true);
+    }
+
+    if let Some(track) = get_next_context_track(state) {
+        return start_playback(state, track, false);
+    }
+
+    vec![]
 }
+
 pub fn handle_audio_error(state: &mut AppState, error: String) -> Vec<AppMsg> {
     state.session.playback.status = PlaybackStatus::Stopped;
     state.session.notification.current = Some(Notification {
@@ -208,6 +153,7 @@ pub fn handle_audio_error(state: &mut AppState, error: String) -> Vec<AppMsg> {
     });
     vec![]
 }
+
 pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
     state.session.visualizer_mode = match state.session.visualizer_mode {
         VisualizerMode::Spectrum => VisualizerMode::AlbumArt,
@@ -222,6 +168,7 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
         },
     })]
 }
+
 // Dispatch no-ops
 pub fn handle_dispatch_play(_: &mut AppState, _: std::path::PathBuf) -> Vec<AppMsg> {
     vec![]
@@ -247,3 +194,65 @@ pub fn handle_audio_paused(_: &mut AppState) -> Vec<AppMsg> {
 pub fn handle_audio_resumed(_: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
+
+// --- Helpers ---
+fn start_playback(state: &mut AppState, track: Track, from_queue: bool) -> Vec<AppMsg> {
+    let path = track.file_path.clone();
+    let title = track.title.clone();
+    let has_cover = track.has_cover;
+
+    state.session.playback.current = Some(track);
+    state.session.playback.playing_from_queue = from_queue;
+
+    state.session.playback.status = PlaybackStatus::Playing;
+    state.session.playback.progress_ms = 0;
+    state.session.playback.duration_ms = None;
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Playing {}", title),
+    ));
+
+    // Art Loading
+    state.current_album_art = None;
+    if has_cover
+        && let Some((data, _)) = Library::get_album_art(&path)
+        && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(30))
+    {
+        state.current_album_art = Some(ascii);
+    }
+
+    vec![AppMsg::Playback(PlaybackMsg::DispatchPlay { path })]
+}
+
+fn get_next_context_track(state: &mut AppState) -> Option<Track> {
+    let len = state.session.playback.context_queue.len();
+    if len == 0 {
+        return None;
+    }
+
+    let next_idx = if state.shuffle_active() {
+        if len > 1 {
+            rand::rng().random_range(0..len)
+        } else {
+            0
+        }
+    } else {
+        // Sequential: Pick up exactly where we left off + 1
+        let next = state.session.playback.context_idx + 1;
+        if next < len {
+            next
+        } else {
+            // Loop Context
+            if *state.repeat_mode() == RepeatMode::Playlist {
+                0
+            } else {
+                return None;
+            }
+        }
+    };
+
+    state.session.playback.context_idx = next_idx;
+    state.session.playback.context_queue.get(next_idx).cloned()
+}
+// --- Helpers ---

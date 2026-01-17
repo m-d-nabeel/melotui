@@ -72,6 +72,8 @@ pub enum KeyAction {
     EchoDown,
 }
 
+const OFFSET_SECONDS: i64 = 10;
+
 impl KeyAction {
     pub fn to_msg(&self) -> Option<AppMsg> {
         match self {
@@ -97,10 +99,10 @@ impl KeyAction {
             KeyAction::PlayPause => Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)),
             KeyAction::Stop => Some(AppMsg::Playback(PlaybackMsg::RequestStop)),
             KeyAction::SeekForward => Some(AppMsg::Playback(PlaybackMsg::RequestSeek {
-                offset_seconds: 5,
+                offset_seconds: OFFSET_SECONDS,
             })),
             KeyAction::SeekBackward => Some(AppMsg::Playback(PlaybackMsg::RequestSeek {
-                offset_seconds: -5,
+                offset_seconds: -OFFSET_SECONDS,
             })),
 
             KeyAction::ToggleShuffle => Some(AppMsg::Library(LibraryMsg::ToggleShuffle)),

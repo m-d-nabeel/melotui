@@ -170,7 +170,6 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                     if let Err(e) = sink.try_seek(seek_dur) {
                         tracing::error!("Seek Error: {:?}", e);
                     } else {
-                        // Reset our counter to the new position
                         accumulated_time = seek_dur;
                         if is_playing {
                             last_resume_time = Some(Instant::now());
