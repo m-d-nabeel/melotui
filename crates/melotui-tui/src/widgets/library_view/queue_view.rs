@@ -61,18 +61,16 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         return;
     }
 
-    // --- 2. HEADER: NOW PLAYING (Fixed Logic) ---
-    // Only show header if we are actually playing from the Queue
+    // show the active song
     if state.is_playing_from_queue() {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3), // Now Playing Header
-                Constraint::Min(0),    // The List
+                Constraint::Min(0),    // The Upcoming List
             ])
             .split(inner_area);
 
-        // Use the ROBUST Selector, not .front()
         if let Some(current_track) = state.get_playing_track() {
             let time_str = format_duration(current_track.duration_ms);
             let lines = vec![
@@ -105,7 +103,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             frame.render_widget(Paragraph::new(lines), chunks[0]);
         }
 
-        // Render the FULL list below
         draw_queue_table(
             frame,
             chunks[1],
@@ -115,7 +112,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             is_active_panel,
         );
     } else {
-        // Just the list
         draw_queue_table(
             frame,
             inner_area,
@@ -130,17 +126,11 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 fn draw_queue_table(
     frame: &mut Frame,
     area: Rect,
-    state: &AppState,
+    _: &AppState,
     tracks: &std::collections::VecDeque<melotui_core::library::Track>,
     selected_idx: usize,
     is_active: bool,
 ) {
-    let playing_track_id = if state.is_playing_from_queue() {
-        state.get_playing_track().map(|track| track.id)
-    } else {
-        None
-    };
-
     let header = Row::new(vec![
         Cell::from(""),
         Cell::from("#"),
@@ -158,7 +148,6 @@ fn draw_queue_table(
         .enumerate()
         .map(|(i, t)| {
             let is_selected = selected_idx == i;
-            let is_playing = playing_track_id == Some(t.id);
 
             let mut style = Style::default();
             if is_selected {
@@ -171,27 +160,14 @@ fn draw_queue_table(
                 style = style.fg(Color::Gray);
             }
 
-            // Status Column
-            let status = if is_playing { "▶" } else { "" };
-            let status_style = if is_playing {
-                Style::default().fg(Color::Green)
-            } else {
-                Style::default()
-            };
-
-            // Title Column
-            let title_style = if is_playing {
-                Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_selected {
+            let title_style = if is_selected {
                 Style::default().add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
 
             Row::new(vec![
-                Cell::from(status).style(status_style),
+                Cell::from(" "),
                 Cell::from((i + 1).to_string()).style(Style::default().fg(Color::DarkGray)),
                 Cell::from(t.title.clone()).style(title_style),
                 Cell::from(format_duration(t.duration_ms))

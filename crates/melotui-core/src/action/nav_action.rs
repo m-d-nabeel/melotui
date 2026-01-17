@@ -1,17 +1,15 @@
 use crate::{
-    AppMsg, AppState, Library,
+    AppMsg, AppState,
     state::{LeftPanelMode, LibraryViewDepth},
-    utils::{SizeMode, bytes_to_ascii},
 };
 
 pub fn handle_toggle_library_queue(state: &mut AppState) -> Vec<AppMsg> {
     tracing::info!("Toggle Library Queue");
+
     state.session.nav.active_panel = match state.session.nav.active_panel {
         LeftPanelMode::Library => {
-            state.session.nav.active_panel = LeftPanelMode::Queue;
-            let playing_from_queue = state.is_playing_from_queue();
-            if playing_from_queue && state.session.playback_queue.tracks.len() > 1 {
-                state.session.nav.queue.selected_idx = 1;
+            if !state.queue().is_empty() {
+                state.session.nav.queue.selected_idx = 0;
             }
             LeftPanelMode::Queue
         }
@@ -29,61 +27,72 @@ pub fn handle_switch_to_playlists(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_switch_to_tracks(state: &mut AppState) -> Vec<AppMsg> {
-    tracing::debug!("Switch to Tracks");
+    tracing::info!("Switch to Tracks / List");
     state.last_nav_time = state.time_elapsed;
-    state.session.nav.active_panel = LeftPanelMode::Library;
-    state.session.nav.library.depth = LibraryViewDepth::Tracks;
-    vec![]
-}
 
-pub fn handle_switch_to_track_info(state: &mut AppState) -> Vec<AppMsg> {
-    tracing::debug!("Switch to Track Info");
-    state.last_nav_time = state.time_elapsed;
-    state.session.nav.active_panel = LeftPanelMode::Library;
-    state.session.nav.library.depth = LibraryViewDepth::TrackInfo;
-
-    state.track_info_art = None;
-    let p_idx = state.session.nav.library.selected_playlist_idx;
-    if let Some(playlist) = state.library.playlists.get(p_idx) {
-        let t_idx = state.session.nav.library.selected_tracks_curs[p_idx];
-        if let Some(track) = playlist.tracks.get(t_idx)
-            && track.has_cover
-            && let Some((data, _)) = Library::get_album_art(&track.file_path)
-            && let Ok(ascii) = bytes_to_ascii(
-                &data,
-                SizeMode::Cover {
-                    width: 32,
-                    height: 15,
-                },
-            )
-        {
-            state.track_info_art = Some(ascii);
+    match state.session.nav.active_panel {
+        LeftPanelMode::Library => {
+            state.session.nav.library.depth = LibraryViewDepth::Tracks;
+        }
+        LeftPanelMode::Queue => {
+            state.session.nav.queue.show_info = false;
         }
     }
     vec![]
 }
 
+pub fn handle_switch_to_track_info(state: &mut AppState) -> Vec<AppMsg> {
+    tracing::info!("Switch to Track Info");
+    state.last_nav_time = state.time_elapsed;
+
+    // Cloning will make the immutable borrow expire immediately
+    let track_to_load = match state.session.nav.active_panel {
+        LeftPanelMode::Library => {
+            state.session.nav.library.depth = LibraryViewDepth::TrackInfo;
+
+            let p_idx = state.selected_playlist_index();
+            state.library.playlists.get(p_idx).and_then(|playlist| {
+                let t_idx = state.selected_track_index_for_playlist(p_idx);
+                playlist.tracks.get(t_idx).cloned()
+            })
+        }
+        LeftPanelMode::Queue => {
+            state.session.nav.queue.show_info = true;
+            let q_idx = state.selected_queue_index();
+            state.get_queue_item(q_idx).cloned()
+        }
+    };
+
+    // mutable borrow
+    if let Some(track) = track_to_load {
+        state.load_track_info_art(&track);
+    }
+
+    vec![]
+}
+
 pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
+
     match state.session.nav.active_panel {
         LeftPanelMode::Library => match state.session.nav.library.depth {
             LibraryViewDepth::Playlists => {
-                if state.session.nav.library.selected_playlist_idx > 0 {
+                if state.selected_playlist_index() > 0 {
                     state.session.nav.library.selected_playlist_idx -= 1;
                 }
             }
             LibraryViewDepth::Tracks => {
-                let p = state.session.nav.library.selected_playlist_idx;
-                if p < state.session.nav.library.selected_tracks_curs.len()
-                    && state.session.nav.library.selected_tracks_curs[p] > 0
+                let p_idx = state.selected_playlist_index();
+                if p_idx < state.session.nav.library.selected_tracks_curs.len()
+                    && state.session.nav.library.selected_tracks_curs[p_idx] > 0
                 {
-                    state.session.nav.library.selected_tracks_curs[p] -= 1;
+                    state.session.nav.library.selected_tracks_curs[p_idx] -= 1;
                 }
             }
             LibraryViewDepth::TrackInfo => {}
         },
         LeftPanelMode::Queue => {
-            if state.session.nav.queue.selected_idx > 0 {
+            if state.selected_queue_index() > 0 {
                 state.session.nav.queue.selected_idx -= 1;
             }
         }
@@ -93,28 +102,27 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
+
     match state.session.nav.active_panel {
         LeftPanelMode::Library => match state.session.nav.library.depth {
             LibraryViewDepth::Playlists => {
-                if state.session.nav.library.selected_playlist_idx + 1
-                    < state.library.playlists.len()
-                {
+                if state.selected_playlist_index() + 1 < state.library.playlists.len() {
                     state.session.nav.library.selected_playlist_idx += 1;
                 }
             }
             LibraryViewDepth::Tracks => {
-                let p = state.session.nav.library.selected_playlist_idx;
-                if let Some(playlist) = state.library.playlists.get(p)
-                    && state.session.nav.library.selected_tracks_curs[p] + 1 < playlist.tracks.len()
+                let p_idx = state.selected_playlist_index();
+                if let Some(playlist) = state.library.playlists.get(p_idx)
+                    && state.selected_track_index_for_playlist(p_idx) + 1 < playlist.tracks.len()
                 {
-                    state.session.nav.library.selected_tracks_curs[p] += 1;
+                    state.session.nav.library.selected_tracks_curs[p_idx] += 1;
                 }
             }
             LibraryViewDepth::TrackInfo => {}
         },
         LeftPanelMode::Queue => {
-            let max_len = state.session.playback_queue.tracks.len();
-            if max_len > 0 && state.session.nav.queue.selected_idx + 1 < max_len {
+            let max_len = state.queue().len();
+            if max_len > 0 && state.selected_queue_index() + 1 < max_len {
                 state.session.nav.queue.selected_idx += 1;
             }
         }

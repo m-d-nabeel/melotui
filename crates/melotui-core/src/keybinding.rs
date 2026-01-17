@@ -212,6 +212,12 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp, "Up"),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::CollapseView, "Back"),
+                KeyBinding::new(KeyCode::Left, KeyAction::CollapseView, "Back"),
+                KeyBinding::new(KeyCode::Char('['), KeyAction::CollapseView, "Back"),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::ExpandView, "Expand"),
+                KeyBinding::new(KeyCode::Right, KeyAction::ExpandView, "Expand"),
+                KeyBinding::new(KeyCode::Char(']'), KeyAction::ExpandView, "Expand"),
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::RemoveFromQueue, "Remove"),
                 KeyBinding::new(KeyCode::Delete, KeyAction::RemoveFromQueue, "Remove"),
                 KeyBinding::new(KeyCode::Char('D'), KeyAction::ClearQueue, "Clear All")

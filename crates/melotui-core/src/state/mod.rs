@@ -14,9 +14,7 @@ pub use navigation::{
     LeftPanelMode, LibraryNavState, LibraryViewDepth, NavigationState, QueueNavState,
 };
 pub use notification::{Notification, NotificationKind, NotificationState};
-pub use playback::{
-    ActiveTrack, PlaybackContext, PlaybackQueueState, PlaybackState, PlaybackStatus, RepeatMode,
-};
+pub use playback::{PlaybackQueueState, PlaybackState, PlaybackStatus, RepeatMode};
 pub use session::SessionState;
 pub use ui::{UIMode, UIState};
 pub use visualizer::{SpectrumStyle, VisualizerMode};

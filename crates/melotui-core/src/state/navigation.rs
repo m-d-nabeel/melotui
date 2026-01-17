@@ -17,6 +17,7 @@ pub struct LibraryNavState {
 #[derive(Debug, Clone, Default)]
 pub struct QueueNavState {
     pub selected_idx: usize,
+    pub show_info: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -42,7 +43,10 @@ impl NavigationState {
                 selected_playlist_idx: 0,
                 selected_tracks_curs: vec![0; playlist_count],
             },
-            queue: QueueNavState { selected_idx: 0 },
+            queue: QueueNavState {
+                selected_idx: 0,
+                show_info: false,
+            },
         }
     }
 }
