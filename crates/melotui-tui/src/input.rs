@@ -72,7 +72,6 @@ impl InputHandler {
         };
 
         match act {
-            // Collapse view
             KeyAction::CollapseView => {
                 if state.is_library_focused() {
                     if state.is_track_list_view() {
@@ -82,12 +81,14 @@ impl InputHandler {
                     } else {
                         None
                     }
+                } else if state.is_queue_focused() && state.is_queue_info_view() {
+                    tracing::info!("CollapseView: Switching queue to tracks list");
+                    Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
                 } else {
                     None
                 }
             }
 
-            // Expand view
             KeyAction::ExpandView => {
                 if state.is_library_focused() {
                     if state.is_playlist_view() {
@@ -97,11 +98,13 @@ impl InputHandler {
                     } else {
                         None
                     }
+                } else if state.is_queue_focused() && !state.is_queue_info_view() {
+                    tracing::info!("ExpandView: Switching queue to track info");
+                    Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))
                 } else {
                     None
                 }
             }
-
             // Add to queue
             KeyAction::AddToQueue => {
                 if state.is_library_focused() && !state.is_playlist_view() {

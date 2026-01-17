@@ -1,6 +1,6 @@
 mod playlist_view;
 pub mod queue_view;
-mod track_details_view;
+pub mod track_details_view;
 mod track_view;
 
 use melotui_core::AppState;

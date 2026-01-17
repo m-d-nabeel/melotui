@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
-    Library, Playlist,
+    Library, Playlist, SizeMode, bytes_to_ascii,
     library::Track,
     state::{
         LeftPanelMode, LibraryViewDepth, Notification, PlaybackStatus, RepeatMode, SessionState,
@@ -106,6 +106,10 @@ impl AppState {
 
     pub fn is_playing_from_queue(&self) -> bool {
         self.session.playback.playing_from_queue
+    }
+
+    pub fn is_queue_info_view(&self) -> bool {
+        self.session.nav.queue.show_info
     }
 
     // --- Progress Calculations ---
@@ -338,6 +342,23 @@ impl AppState {
             self.session.nav.queue.selected_idx = 0;
         } else if self.selected_queue_index() >= queue_len {
             self.session.nav.queue.selected_idx = queue_len - 1;
+        }
+    }
+
+    pub fn load_track_info_art(&mut self, track: &Track) {
+        self.track_info_art = None;
+
+        if track.has_cover
+            && let Some((data, _)) = Library::get_album_art(&track.file_path)
+            && let Ok(ascii) = bytes_to_ascii(
+                &data,
+                SizeMode::Cover {
+                    width: 32,
+                    height: 15,
+                },
+            )
+        {
+            self.track_info_art = Some(ascii);
         }
     }
 }
