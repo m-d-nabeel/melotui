@@ -1,15 +1,12 @@
 name: Release
-
 on:
   push:
     branches:
       - master
     tags:
       - "v*"
-
 permissions:
   contents: write
-
 jobs:
   build-and-release:
     name: Release for ${{ matrix.os }} (${{ matrix.target }})
@@ -18,72 +15,52 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # --- Linux ---
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             cargo_bin_name: melotui-bin
             final_bin_name: melotui
             asset_name: melotui-linux-x86_64.tar.gz
-
-          # --- Windows ---
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             cargo_bin_name: melotui-bin.exe
             final_bin_name: melotui.exe
             asset_name: melotui-windows-x86_64.zip
-
-          # --- macOS (Intel) ---
           - os: macos-latest
             target: x86_64-apple-darwin
             cargo_bin_name: melotui-bin
             final_bin_name: melotui
             asset_name: melotui-macos-x86_64.tar.gz
             deployment_target: "10.15"
-
-          # --- macOS (Apple Silicon M1/M2) ---
           - os: macos-latest
             target: aarch64-apple-darwin
             cargo_bin_name: melotui-bin
             final_bin_name: melotui
             asset_name: melotui-macos-aarch64.tar.gz
             deployment_target: "11.0"
-
     steps:
-      # Corrected: Using v6 as you requested
       - name: Checkout code
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
       - name: Update latest tag
         if: github.ref == 'refs/heads/master'
         run: |
           git tag -f latest
           git push origin latest --force
-
-      # 1. Install System Dependencies (Linux only)
       - name: Install Linux Dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libasound2-dev pkg-config
-
-      # 2. Setup Rust
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      # 3. Cache Dependencies
       - uses: Swatinem/rust-cache@v2
-
-      # 4. Build Binary
       - name: Build
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
         run: cargo build --profile production --bin melotui-bin --target ${{ matrix.target }}
-
-      # 5. Package & Strip (Unix)
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
@@ -91,8 +68,6 @@ jobs:
           strip ${{ matrix.cargo_bin_name }} || true
           mv ${{ matrix.cargo_bin_name }} ${{ matrix.final_bin_name }}
           tar -czf ../../../${{ matrix.asset_name }} ${{ matrix.final_bin_name }}
-
-      # 6. Package (Windows)
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -100,12 +75,15 @@ jobs:
           cd target/${{ matrix.target }}/production
           Move-Item ${{ matrix.cargo_bin_name }} ${{ matrix.final_bin_name }}
           Compress-Archive -Path ${{ matrix.final_bin_name }} -DestinationPath ..\..\..\${{ matrix.asset_name }}
-
-      # 7. Upload to GitHub Release
-      - name: Upload Release Assets
+      - name: Create Release
+        if: runner.os == 'Linux'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref == 'refs/heads/master' && 'latest' || github.ref_name }}
           prerelease: ${{ github.ref == 'refs/heads/master' }}
+          generate_release_notes: true
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref == 'refs/heads/master' && 'latest' || github.ref_name }}
           files: ${{ matrix.asset_name }}
-          generate_release_notes: ${{ matrix.os == 'ubuntu-latest' }}
