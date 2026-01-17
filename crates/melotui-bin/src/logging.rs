@@ -12,9 +12,10 @@ pub fn init() -> tracing_appender::non_blocking::WorkerGuard {
     tracing_subscriber::fmt()
         .with_writer(non_blocking)
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| "info,melotui=debug".into()),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,melotui=debug,symphonia=error".into()),
         )
-        .with_ansi(false) // IMPORTANT for files
+        .with_ansi(false)
         .with_target(true)
         .with_thread_ids(true)
         .with_thread_names(true)

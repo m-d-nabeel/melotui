@@ -181,7 +181,7 @@ fn draw_queue_table(
         rows,
         [
             Constraint::Length(2),
-            Constraint::Length(4),
+            Constraint::Length(2),
             Constraint::Fill(1),
             Constraint::Length(6),
         ],
