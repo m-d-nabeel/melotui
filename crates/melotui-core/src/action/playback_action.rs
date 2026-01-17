@@ -91,6 +91,13 @@ pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<App
         return vec![];
     }
 
+    if let Some(last) = state.session.last_seek_time
+        && last.elapsed() < Duration::from_millis(200)
+    {
+        return vec![];
+    }
+    state.session.last_seek_time = Some(Instant::now());
+
     let current = state.progress_ms() as i64;
     let duration = state.total_duration_ms() as i64;
 
