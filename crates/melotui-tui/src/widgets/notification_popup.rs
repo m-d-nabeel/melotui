@@ -22,6 +22,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let (base_color, title, icon) = match notification.kind {
         NotificationKind::Progress => (Color::Cyan, "Downloading", "⟳"),
         NotificationKind::Info => (Color::Blue, "Info", "ℹ"),
+        NotificationKind::Warning => (Color::Yellow, "Warning", "⚠"),
         NotificationKind::Error => (Color::Red, "Error", "✖"),
     };
 

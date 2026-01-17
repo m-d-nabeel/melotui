@@ -29,6 +29,8 @@ pub struct SessionState {
 impl Default for SessionState {
     fn default() -> Self {
         Self {
+            repeat_mode: RepeatMode::Off,
+            visualizer_mode: VisualizerMode::AlbumArt,
             nav: NavigationState::default(),
             ui: UIState::default(),
             playback: PlaybackState::default(),
@@ -36,9 +38,7 @@ impl Default for SessionState {
             audio: AudioState::default(),
             download: DownloadState::default(),
             notification: NotificationState::default(),
-            repeat_mode: RepeatMode::Off,
-            visualizer_mode: VisualizerMode::AlbumArt,
-            spectrum_style: SpectrumStyle::Default,
+            spectrum_style: SpectrumStyle::default(),
         }
     }
 }

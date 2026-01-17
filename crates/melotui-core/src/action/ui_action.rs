@@ -2,8 +2,11 @@ use std::time::{Duration, Instant};
 
 use crate::{
     AppMsg, AppState, Command, UIMode,
-    message::{download::DownloadMsg, library::LibraryMsg},
-    state::{Notification, NotificationKind},
+    message::{download::DownloadMsg, library::LibraryMsg, playback::PlaybackMsg},
+    state::{
+        Notification, NotificationKind, VisualizerMode,
+        visualizer::{SpectrumStyle, is_cava_available},
+    },
 };
 
 pub fn handle_toggle_help(state: &mut AppState) -> Vec<AppMsg> {
@@ -67,8 +70,23 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::Download(DownloadMsg::RequestDownload { query })]
         }
         Command::ChangeVisualizer { arg } => {
-            state.session.spectrum_style = arg;
-            vec![]
+            if arg == SpectrumStyle::Cava && !is_cava_available() {
+                state.session.notification.current = Some(Notification {
+                    kind: NotificationKind::Warning,
+                    message: "CAVA is not available. Install CAVA for the CAVA visualizer style."
+                        .to_string(),
+                    progress: None,
+                    created_at: Instant::now(),
+                    dismiss_after: Some(Duration::from_secs(5)),
+                });
+                vec![]
+            } else {
+                state.session.spectrum_style = arg.clone();
+                state.session.visualizer_mode = VisualizerMode::Spectrum;
+                vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+                    spectrum_style: Some(arg),
+                })]
+            }
         }
         Command::Unknown(reason) => {
             state.session.notification.current = Some(Notification {
@@ -83,6 +101,9 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
     }
 }
 
-pub fn handle_dispatch_set_visualizer(_state: &mut AppState, _active: bool) -> Vec<AppMsg> {
+pub fn handle_dispatch_set_visualizer(
+    _state: &mut AppState,
+    _active: Option<SpectrumStyle>,
+) -> Vec<AppMsg> {
     vec![]
 }

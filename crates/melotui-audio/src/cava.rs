@@ -17,11 +17,11 @@ pub struct Cava {
 
 impl Cava {
     pub fn is_available() -> bool {
-        Command::new("cava").arg("--version").output().is_ok()
+        melotui_core::state::visualizer::is_cava_available()
     }
 
     pub fn new() -> anyhow::Result<Self> {
-        let num_bars = 200; // Fixed resolution, UI will scale it
+        let num_bars = 200;
         let config_path = create_cava_config(num_bars)?;
 
         let mut process = Command::new("cava")
@@ -63,7 +63,7 @@ impl Cava {
     }
 
     pub fn next_spectrum(&self) -> Option<Vec<f32>> {
-        // Drain channel to get the very latest frame
+        // drain channel to get the very latest frame
         let mut last_frame = None;
         loop {
             match self.receiver.try_recv() {
@@ -88,7 +88,7 @@ fn create_cava_config(bars: usize) -> anyhow::Result<std::path::PathBuf> {
     let temp_dir = std::env::temp_dir();
     let config_path = temp_dir.join("melotui_cava.conf");
 
-    // Simple config: standard bars, raw binary output
+    // simple config: standard bars, raw binary output
     let config = format!(
         r#"
 [general]

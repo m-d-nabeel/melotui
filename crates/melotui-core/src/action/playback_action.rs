@@ -163,7 +163,11 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
     };
     let is_spectrum = state.should_draw_spectrum();
     vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-        active: is_spectrum,
+        spectrum_style: if is_spectrum {
+            Some(state.spectrum_style().clone())
+        } else {
+            None
+        },
     })]
 }
 

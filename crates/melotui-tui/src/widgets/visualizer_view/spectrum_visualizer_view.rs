@@ -67,7 +67,7 @@ pub fn draw_bar(frame: &mut Frame, area: Rect, state: &AppState) {
                     continue;
                 }
 
-                // --- COLOR: The "Cyberpunk" Blue/Cyan look ---
+                // Cyberpunk color scheme
                 // Low freq = Blue, High freq = Cyan/White
                 // Modulate slightly with time for "shimmer"
                 let freq_ratio = i as f64 / num_bars as f64;

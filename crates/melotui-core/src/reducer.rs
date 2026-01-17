@@ -52,8 +52,8 @@ fn handle_playback_message(state: &mut AppState, msg: PlaybackMsg) -> Vec<AppMsg
         PlaybackMsg::DispatchSeek { position_ms } => {
             action::playback_action::handle_dispatch_seek(state, position_ms)
         }
-        PlaybackMsg::DispatchSetVisualizer { active } => {
-            action::ui_action::handle_dispatch_set_visualizer(state, active)
+        PlaybackMsg::DispatchSetVisualizer { spectrum_style } => {
+            action::ui_action::handle_dispatch_set_visualizer(state, spectrum_style)
         }
         PlaybackMsg::AudioProgress { position_ms } => {
             action::playback_action::handle_audio_progress(state, position_ms)
