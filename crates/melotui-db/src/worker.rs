@@ -22,9 +22,9 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
 
     loop {
         match worker.try_recv() {
-            Some(DatabaseCommand::ScanLibrary) => {
-                tracing::info!("Starting Library Scan...");
-                if let Err(e) = handle_scan_library(&conn) {
+            Some(DatabaseCommand::ScanLibrary { root }) => {
+                tracing::info!("Starting Library Scan at {:?}...", root);
+                if let Err(e) = handle_scan_library(&conn, &root) {
                     tracing::error!("Failed to scan library: {:?}", e);
                     worker.send(IpcEvent::Error {
                         message: e.to_string(),
@@ -72,12 +72,9 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
 }
 
 #[tracing::instrument(skip(conn))]
-fn handle_scan_library(conn: &rusqlite::Connection) -> Result<()> {
-    let music_dir =
-        dirs::audio_dir().ok_or_else(|| anyhow::anyhow!("Could not find audio directory"))?;
-    info!("Scanning library at: {:?}", music_dir);
+fn handle_scan_library(conn: &rusqlite::Connection, root: &Path) -> Result<()> {
+    info!("Scanning library at: {:?}", root);
 
-    // Clear existing tracks
     let clear_start = std::time::Instant::now();
     conn.execute("DELETE FROM tracks", [])?;
     let clear_elapsed = clear_start.elapsed();
@@ -85,7 +82,9 @@ fn handle_scan_library(conn: &rusqlite::Connection) -> Result<()> {
 
     let mut count = 0;
     let scan_start = std::time::Instant::now();
-    scan_directory(conn, &music_dir, &mut count)?;
+
+    scan_directory(conn, root, &mut count)?;
+
     let scan_elapsed = scan_start.elapsed();
     tracing::info!(
         "Scanned directory and inserted {} tracks in {:?}",

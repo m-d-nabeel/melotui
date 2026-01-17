@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::mpsc, thread};
 
-use melotui_core::{AppMsg, message::library::LibraryMsg};
+use melotui_core::{AppMsg, AppState, message::library::LibraryMsg};
 use melotui_ipc::{
     channel::inprocess,
     command::{AudioCommand, DatabaseCommand, DownloadCommand, IpcCommand},
@@ -73,7 +73,7 @@ impl IpcRuntime {
     }
 }
 
-pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
+pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
     use melotui_core::message::{audio::AudioMsg, download::DownloadMsg, playback::PlaybackMsg};
 
     match msg {
@@ -126,7 +126,9 @@ pub fn appmsg_to_ipc(msg: &AppMsg) -> Option<IpcCommand> {
 
         // --- Database Controls ---
         AppMsg::Library(LibraryMsg::RequestRescanLibrary) => Some(IpcCommand::Database(
-            melotui_ipc::command::DatabaseCommand::ScanLibrary,
+            melotui_ipc::command::DatabaseCommand::ScanLibrary {
+                root: state.library.root.clone(),
+            },
         )),
 
         _ => None,
