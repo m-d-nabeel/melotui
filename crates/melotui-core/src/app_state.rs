@@ -4,8 +4,8 @@ use crate::{
     Library, Playlist,
     library::Track,
     state::{
-        LeftPanelMode, LibraryViewDepth, PlaybackContext, PlaybackStatus, RepeatMode, SessionState,
-        SpectrumStyle, VisualizerMode, notification::Notification, ui::UIMode,
+        LeftPanelMode, LibraryViewDepth, Notification, PlaybackStatus, RepeatMode, SessionState,
+        SpectrumStyle, VisualizerMode, ui::UIMode,
     },
     utils::{NoOpSpectrum, SpectrumSource},
 };
@@ -55,39 +55,31 @@ impl AppState {
         }
     }
 }
+
 /// ─── Audio Feature Access ───────────────────────────────────────────────────
-/// Contains Selectors for UI rendering and Mutators for Reducer actions.
 impl AppState {
-    // --- Selectors (Public for UI) ---
     pub fn volume(&self) -> f32 {
         self.session.audio.volume
     }
-
     pub fn speed(&self) -> f32 {
         self.session.audio.speed
     }
-
     pub fn bass(&self) -> f32 {
         self.session.audio.bass
     }
-
     pub fn treble(&self) -> f32 {
         self.session.audio.treble
     }
-
     pub fn reverb(&self) -> f32 {
         self.session.audio.reverb
     }
-
     pub fn echo(&self) -> f32 {
         self.session.audio.echo
     }
 }
 
 /// ─── Playback & Progress Access ─────────────────────────────────────────────
-/// Encapsulates playback status checks and progress math.
 impl AppState {
-    // --- Status Checks ---
     pub fn is_playing(&self) -> bool {
         matches!(self.session.playback.status, PlaybackStatus::Playing)
     }
@@ -113,16 +105,10 @@ impl AppState {
     }
 
     pub fn is_playing_from_queue(&self) -> bool {
-        self.session
-            .playback
-            .current
-            .as_ref()
-            .is_some_and(|c| matches!(c.context, PlaybackContext::Queue))
+        self.session.playback.playing_from_queue
     }
 
     // --- Progress Calculations ---
-
-    /// Returns the current progress ratio (0.0 to 1.0)
     pub fn progress_ratio(&self) -> f64 {
         let current = self.session.playback.progress_ms as f64;
         let total = self.total_duration_ms() as f64;
@@ -138,7 +124,6 @@ impl AppState {
         self.session.playback.progress_ms
     }
 
-    /// Smart duration fetcher: gets from track, fallback to state, fallback to 0
     pub fn total_duration_ms(&self) -> u64 {
         self.get_playing_track()
             .map(|t| t.duration_ms)
@@ -147,31 +132,32 @@ impl AppState {
     }
 
     // --- Track Info Getters ---
-
     pub fn get_playing_track(&self) -> Option<&Track> {
-        let active = self.session.playback.current.as_ref()?;
+        self.session.playback.current.as_ref()
+    }
 
-        match &active.context {
-            PlaybackContext::Library { .. } => self.library.get_track(active.id),
-            PlaybackContext::Queue => self.session.playback_queue.get_track_by_id(active.id),
+    /// Returns the name of the current source (e.g. "Playlist: Jazz", "User Queue").
+    pub fn get_playing_source_name(&self) -> &str {
+        if self.session.playback.playing_from_queue {
+            "User Queue"
+        } else if self.session.playback.source_name.is_empty() {
+            "Unknown"
+        } else {
+            &self.session.playback.source_name
         }
     }
 
     pub fn get_playing_playlist_name(&self) -> Option<&str> {
-        self.session.playback.current.as_ref().and_then(|active| {
-            if let PlaybackContext::Library { playlist_name } = &active.context {
-                Some(playlist_name.as_str())
-            } else {
-                None
-            }
-        })
+        if self.session.playback.source_name.is_empty() {
+            None
+        } else {
+            Some(&self.session.playback.source_name)
+        }
     }
 }
 
 /// ─── Navigation & View Access ───────────────────────────────────────────────
-/// Helpers for Sidebar, Input, and Layout logic.
 impl AppState {
-    // --- Active Panel Checks ---
     pub fn is_library_focused(&self) -> bool {
         matches!(self.session.nav.active_panel, LeftPanelMode::Library)
     }
@@ -180,7 +166,6 @@ impl AppState {
         matches!(self.session.nav.active_panel, LeftPanelMode::Queue)
     }
 
-    // --- View Depth Checks ---
     pub fn is_playlist_view(&self) -> bool {
         self.session.nav.library.depth == LibraryViewDepth::Playlists
     }
@@ -193,7 +178,6 @@ impl AppState {
         self.session.nav.library.depth == LibraryViewDepth::TrackInfo
     }
 
-    // --- Selection Getters ---
     pub fn get_selected_playlist(&self) -> Option<&Playlist> {
         self.library
             .get_selected_playlist(&self.session.nav.library)
@@ -209,12 +193,22 @@ impl AppState {
         }
     }
 
-    // Direct queue access for UI list rendering
     pub fn queue(&self) -> &VecDeque<Track> {
-        &self.session.playback_queue.tracks
+        &self.session.playback_queue.items
     }
 
-    // --- Selection Index Getters (for UI rendering/navigation) ---
+    pub fn get_queue_item(&self, idx: usize) -> Option<&Track> {
+        self.session.playback_queue.items.get(idx)
+    }
+
+    pub fn context_queue(&self) -> &Vec<Track> {
+        &self.session.playback.context_queue
+    }
+
+    pub fn current_context_index(&self) -> usize {
+        self.session.playback.context_idx
+    }
+
     pub fn selected_playlist_index(&self) -> usize {
         self.session.nav.library.selected_playlist_idx
     }
@@ -262,7 +256,6 @@ impl AppState {
 }
 
 /// ─── Visualizer Access ──────────────────────────────────────────────────────
-/// Helpers for the Visualizer View.
 impl AppState {
     pub fn should_draw_spectrum(&self) -> bool {
         self.session.visualizer_mode == VisualizerMode::Spectrum
@@ -272,7 +265,6 @@ impl AppState {
         &self.session.spectrum_style
     }
 
-    /// Returns a tuple of (Smooth Data, Peak Data)
     pub fn get_spectrum_data(&self) -> (&Vec<f32>, &Vec<f32>) {
         (&self.spectrum_smooth, &self.spectrum_peaks)
     }
@@ -281,44 +273,71 @@ impl AppState {
 /// ─── Prediction Logic ───────────────────────────────────────────────────────
 impl AppState {
     pub fn predict_next_song(&self) -> String {
-        if self.is_playing_from_queue() {
-            if self.session.playback_queue.tracks.len() > 1 {
-                return self.session.playback_queue.tracks[1].title.clone();
-            } else {
-                return "None (End of Queue)".to_string();
-            }
-        }
-
-        if !self.session.playback_queue.tracks.is_empty() {
-            return self.session.playback_queue.tracks[0].title.clone();
+        if let Some(next) = self.session.playback_queue.items.front() {
+            return next.title.clone();
         }
 
         if self.session.playback.shuffle {
             return "Random (Shuffle)".to_string();
         }
 
-        if self.session.repeat_mode == RepeatMode::Track && self.session.playback.current.is_some()
-        {
-            return "Repeating Track".to_string();
-        }
+        let ctx_len = self.session.playback.context_queue.len();
+        if ctx_len > 0 {
+            if self.session.repeat_mode == RepeatMode::Track && self.is_playing() {
+                return self
+                    .get_playing_track()
+                    .map(|t| t.title.clone())
+                    .unwrap_or_else(|| "Repeating Track".into());
+            }
 
-        if let Some(current) = &self.session.playback.current
-            && let Some(playlist) = self.library.playlists.iter().find(|p| {
-                matches!(current.context, PlaybackContext::Library { ref playlist_name }
-                    if playlist_name == &p.name)
-            })
-            && let Some(idx) = playlist.tracks.iter().position(|t| t.id == current.id)
-        {
-            let next_idx = idx + 1;
-            if next_idx < playlist.tracks.len() {
-                return playlist.tracks[next_idx].title.clone();
-            } else if self.session.repeat_mode == RepeatMode::Playlist
-                && let Some(first) = playlist.tracks.first()
-            {
-                return first.title.clone();
+            let next_idx = self.session.playback.context_idx + 1;
+            if next_idx < ctx_len {
+                return self.session.playback.context_queue[next_idx].title.clone();
+            }
+
+            if self.session.repeat_mode == RepeatMode::Playlist {
+                return self.session.playback.context_queue[0].title.clone();
             }
         }
 
         "None".to_string()
+    }
+
+    pub fn reconcile_nav(&mut self) {
+        let playlist_count = self.library.playlists.len();
+
+        if playlist_count == 0 {
+            self.session.nav.library.selected_playlist_idx = 0;
+            self.session.nav.library.selected_tracks_curs.clear();
+        } else {
+            if self.selected_playlist_index() >= playlist_count {
+                self.session.nav.library.selected_playlist_idx = playlist_count - 1;
+            }
+
+            self.session
+                .nav
+                .library
+                .selected_tracks_curs
+                .resize(playlist_count, 0);
+
+            for (i, playlist) in self.library.playlists.iter().enumerate() {
+                let track_count = playlist.tracks.len();
+                let cursor = self.session.nav.library.selected_tracks_curs[i];
+
+                if track_count == 0 {
+                    self.session.nav.library.selected_tracks_curs[i] = 0;
+                } else if cursor >= track_count {
+                    self.session.nav.library.selected_tracks_curs[i] = track_count - 1;
+                }
+            }
+        }
+
+        let queue_len = self.queue().len();
+
+        if queue_len == 0 {
+            self.session.nav.queue.selected_idx = 0;
+        } else if self.selected_queue_index() >= queue_len {
+            self.session.nav.queue.selected_idx = queue_len - 1;
+        }
     }
 }

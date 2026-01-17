@@ -134,7 +134,7 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) {
 
                 // Hot-swap
                 state.library = std::sync::Arc::new(new_lib);
-                melotui_core::reconcile_nav_state(state);
+                state.reconcile_nav();
 
                 // Notify
                 state.set_notification(Notification {

@@ -1,21 +1,5 @@
-use crate::{
-    library::{Track, TrackId},
-    state::QueueNavState,
-};
-use std::{collections::VecDeque, path::PathBuf};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PlaybackContext {
-    Library { playlist_name: String },
-    Queue,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ActiveTrack {
-    pub id: TrackId,
-    pub path: PathBuf,
-    pub context: PlaybackContext,
-}
+use crate::{library::Track, state::QueueNavState};
+use std::collections::VecDeque;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PlaybackStatus {
@@ -47,7 +31,11 @@ impl RepeatMode {
 
 #[derive(Debug, Clone, Default)]
 pub struct PlaybackState {
-    pub current: Option<ActiveTrack>,
+    pub current: Option<Track>,
+    pub playing_from_queue: bool,
+    pub source_name: String,       // "Playlist: Jazz", "All Tracks"
+    pub context_queue: Vec<Track>, // persistent playlist
+    pub context_idx: usize,
     pub status: PlaybackStatus,
     pub progress_ms: u64,
     pub duration_ms: Option<u64>,
@@ -56,15 +44,15 @@ pub struct PlaybackState {
 
 #[derive(Debug, Clone, Default)]
 pub struct PlaybackQueueState {
-    pub tracks: VecDeque<Track>,
+    pub items: VecDeque<Track>,
 }
 
 impl PlaybackQueueState {
     pub fn get_selected_track(&self, nav: &QueueNavState) -> Option<&Track> {
-        self.tracks.get(nav.selected_idx)
+        self.items.get(nav.selected_idx)
     }
 
     pub fn get_track_by_id(&self, id: usize) -> Option<&Track> {
-        self.tracks.iter().find(|t| t.id == id)
+        self.items.iter().find(|t| t.id == id)
     }
 }
