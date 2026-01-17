@@ -15,7 +15,6 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
 
 fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
     let mut track_to_start: Option<Track> = None;
-    // Replace the Shadow Context if the user explicitly plays from the Library.
     let mut new_context: Option<(Vec<Track>, String, usize)> = None;
     let mut is_priority = false;
 
@@ -24,7 +23,6 @@ fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
             track_to_start = Some(track.clone());
             is_priority = true;
 
-            // Remove from the pending queue since we are playing it now
             let idx = state.selected_queue_index();
             if idx < state.session.playback_queue.items.len() {
                 state.session.playback_queue.items.remove(idx);
@@ -35,20 +33,12 @@ fn play_current_selection(state: &mut AppState) -> Vec<AppMsg> {
         && let Some(track) = state.get_selected_track()
     {
         track_to_start = Some(track.clone());
+        let p_idx = state.selected_playlist_index();
 
-        let (list, name) = if state.is_playlist_view() {
-            let p = &state.library.playlists[state.selected_playlist_index()];
+        let (list, name) = if let Some(p) = state.library.playlists.get(p_idx) {
             (p.tracks.clone(), p.name.clone())
         } else {
-            (
-                state
-                    .library
-                    .playlists
-                    .iter()
-                    .flat_map(|p| p.tracks.clone())
-                    .collect(),
-                "Library".to_string(),
-            )
+            (vec![], "Unknown".to_string())
         };
 
         let idx = list.iter().position(|t| t.id == track.id).unwrap_or(0);
