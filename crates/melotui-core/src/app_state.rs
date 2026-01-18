@@ -1,12 +1,12 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use crate::{
-    Library, Playlist, SizeMode, bytes_to_ascii,
-    library::Track,
-    state::{
-        LeftPanelMode, LibraryViewDepth, Notification, PlaybackStatus, RepeatMode, SessionState,
-        SpectrumStyle, VisualizerMode, ui::UIMode,
-    },
+    SizeMode, bytes_to_ascii,
+    domain::{PlaylistMeta, TrackId, TrackMeta},
+    library::Library,
+    navigation::state::{LeftPanelMode, LibraryNavState, LibraryViewDepth, NavigationState},
+    playback::state::{PlaybackStatus, RepeatMode},
+    state::{Notification, SessionState, SpectrumStyle, VisualizerMode, ui::UIMode},
     utils::{NoOpSpectrum, SpectrumSource},
 };
 
@@ -36,7 +36,7 @@ impl AppState {
     pub fn new(library: Library) -> Self {
         let playlist_count = library.playlists.len();
         let session = SessionState {
-            nav: crate::state::NavigationState::new(playlist_count),
+            nav: NavigationState::new(playlist_count),
             ..Default::default()
         };
 
@@ -136,8 +136,13 @@ impl AppState {
     }
 
     // --- Track Info Getters ---
-    pub fn get_playing_track(&self) -> Option<&Track> {
-        self.session.playback.current.as_ref()
+    pub fn get_playing_track_id(&self) -> Option<TrackId> {
+        self.session.playback.current
+    }
+
+    pub fn get_playing_track(&self) -> Option<&TrackMeta> {
+        let id = self.get_playing_track_id()?;
+        self.library.get_track(id)
     }
 
     /// Returns the name of the current source (e.g. "Playlist: Jazz", "User Queue").
@@ -158,54 +163,63 @@ impl AppState {
             Some(&self.session.playback.source_name)
         }
     }
+
+    pub fn queue(&self) -> &VecDeque<TrackId> {
+        &self.session.playback_queue.items
+    }
+
+    pub fn get_queue_track(&self, idx: usize) -> Option<&TrackMeta> {
+        let id = *self.session.playback_queue.items.get(idx)?;
+        self.library.get_track(id)
+    }
+
+    pub fn track_meta(&self, id: TrackId) -> Option<TrackMeta> {
+        self.library.get_track(id).cloned()
+    }
+
+    pub fn current_track_meta(&self) -> Option<TrackMeta> {
+        self.session
+            .playback
+            .current
+            .and_then(|id| self.track_meta(id))
+    }
 }
 
 /// ─── Navigation & View Access ───────────────────────────────────────────────
 impl AppState {
     pub fn is_library_focused(&self) -> bool {
-        matches!(self.session.nav.active_panel, LeftPanelMode::Library)
+        self.session.nav.active_panel == LeftPanelMode::Library
     }
 
     pub fn is_queue_focused(&self) -> bool {
-        matches!(self.session.nav.active_panel, LeftPanelMode::Queue)
+        self.session.nav.active_panel == LeftPanelMode::Queue
     }
 
     pub fn is_playlist_view(&self) -> bool {
-        self.session.nav.library.depth == LibraryViewDepth::Playlists
+        self.is_library_focused() && self.session.nav.library.depth == LibraryViewDepth::Playlists
     }
 
     pub fn is_track_list_view(&self) -> bool {
-        self.session.nav.library.depth == LibraryViewDepth::Tracks
+        self.is_library_focused() && self.session.nav.library.depth == LibraryViewDepth::Tracks
     }
 
     pub fn is_track_info_view(&self) -> bool {
-        self.session.nav.library.depth == LibraryViewDepth::TrackInfo
+        self.is_library_focused() && self.session.nav.library.depth == LibraryViewDepth::TrackInfo
     }
 
-    pub fn get_selected_playlist(&self) -> Option<&Playlist> {
-        self.library
-            .get_selected_playlist(&self.session.nav.library)
+    pub fn get_selected_playlist(&self, nav: &LibraryNavState) -> Option<&PlaylistMeta> {
+        self.playlists.get(nav.selected_playlist_idx)
+    }
+    pub fn get_selected_track(&self) -> Option<TrackId> {
+        let pl = self
+            .library
+            .get_selected_playlist(&self.session.nav.library)?;
+        let p_idx = self.selected_playlist_index();
+        let t_idx = self.selected_track_index_for_playlist(p_idx);
+        pl.tracks.get(t_idx).map(|t| t.id)
     }
 
-    pub fn get_selected_track(&self) -> Option<&Track> {
-        match self.session.nav.active_panel {
-            LeftPanelMode::Library => self.library.get_selected_track(&self.session.nav.library),
-            LeftPanelMode::Queue => self
-                .session
-                .playback_queue
-                .get_selected_track(&self.session.nav.queue),
-        }
-    }
-
-    pub fn queue(&self) -> &VecDeque<Track> {
-        &self.session.playback_queue.items
-    }
-
-    pub fn get_queue_item(&self, idx: usize) -> Option<&Track> {
-        self.session.playback_queue.items.get(idx)
-    }
-
-    pub fn context_queue(&self) -> &Vec<Track> {
+    pub fn context_queue(&self) -> &Vec<TrackId> {
         &self.session.playback.context_queue
     }
 
@@ -277,34 +291,46 @@ impl AppState {
 /// ─── Prediction Logic ───────────────────────────────────────────────────────
 impl AppState {
     pub fn predict_next_song(&self) -> String {
-        if let Some(next) = self.session.playback_queue.items.front() {
-            return next.title.clone();
+        if let Some(id) = self.session.playback_queue.items.front() {
+            return self
+                .library
+                .get_track(*id)
+                .map(|t| t.title.clone())
+                .unwrap_or_else(|| "Unknown".into());
         }
 
-        if self.session.playback.shuffle {
-            return "Random (Shuffle)".to_string();
+        let ctx = &self.session.playback.context_queue;
+        let idx = self.session.playback.context_idx;
+
+        if ctx.is_empty() {
+            return "None".into();
         }
 
-        let ctx_len = self.session.playback.context_queue.len();
-        if ctx_len > 0 {
-            if self.session.repeat_mode == RepeatMode::Track && self.is_playing() {
-                return self
-                    .get_playing_track()
-                    .map(|t| t.title.clone())
-                    .unwrap_or_else(|| "Repeating Track".into());
-            }
-
-            let next_idx = self.session.playback.context_idx + 1;
-            if next_idx < ctx_len {
-                return self.session.playback.context_queue[next_idx].title.clone();
-            }
-
-            if self.session.repeat_mode == RepeatMode::Playlist {
-                return self.session.playback.context_queue[0].title.clone();
-            }
+        if self.session.repeat_mode == RepeatMode::Track {
+            return self
+                .get_playing_track()
+                .map(|t| t.title.clone())
+                .unwrap_or_else(|| "Repeating".into());
         }
 
-        "None".to_string()
+        let next = idx + 1;
+        if next < ctx.len() {
+            return self
+                .library
+                .get_track(ctx[next])
+                .map(|t| t.title.clone())
+                .unwrap_or_else(|| "Unknown".into());
+        }
+
+        if self.session.repeat_mode == RepeatMode::Playlist {
+            return self
+                .library
+                .get_track(ctx[0])
+                .map(|t| t.title.clone())
+                .unwrap_or_else(|| "Unknown".into());
+        }
+
+        "None".into()
     }
 
     pub fn reconcile_nav(&mut self) {
@@ -345,7 +371,7 @@ impl AppState {
         }
     }
 
-    pub fn load_track_info_art(&mut self, track: &Track) {
+    pub fn load_track_info_art(&mut self, track: &TrackMeta) {
         self.track_info_art = None;
 
         if track.has_cover

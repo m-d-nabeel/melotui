@@ -2,55 +2,52 @@ use rand::Rng;
 use std::time::{Duration, Instant};
 
 use crate::{
-    AppMsg, AppState, Library,
-    library::Track,
+    AppMsg, AppState,
+    domain::TrackId,
     message::playback::PlaybackMsg,
-    state::{Notification, NotificationKind, PlaybackStatus, RepeatMode, VisualizerMode},
-    utils::{SizeMode, bytes_to_ascii},
+    playback::state::{PlaybackStatus, RepeatMode},
+    state::{Notification, NotificationKind, VisualizerMode},
 };
 
 pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
-    let mut track_to_start: Option<Track> = None;
-    let mut new_context: Option<(Vec<Track>, String, usize)> = None;
-    let mut is_priority = false;
+    let mut selected_id: Option<TrackId> = None;
+    let mut from_queue = false;
 
+    // ---- QUEUE ----
     if state.is_queue_focused() {
-        if let Some(track) = state.get_selected_track() {
-            track_to_start = Some(track.clone());
-            is_priority = true;
+        selected_id = state
+            .session
+            .playback_queue
+            .selected_track_id(&state.session.nav.queue);
 
-            let idx = state.selected_queue_index();
-            if idx < state.session.playback_queue.items.len() {
-                state.session.playback_queue.items.remove(idx);
-            }
+        if let Some(_) = selected_id {
+            from_queue = true;
+            let idx = state.session.nav.queue.selected_idx;
+            state.session.playback_queue.items.remove(idx);
             state.reconcile_nav();
         }
-    } else if state.is_library_focused()
-        && let Some(track) = state.get_selected_track()
-    {
-        track_to_start = Some(track.clone());
-        let p_idx = state.selected_playlist_index();
+    }
+    // ---- LIBRARY ----
+    else if state.is_library_focused() {
+        selected_id = state
+            .library
+            .get_selected_track(&state.session.nav.library)
+            .map(|t| t.id);
 
-        let (list, name) = if let Some(p) = state.library.playlists.get(p_idx) {
-            (p.tracks.clone(), p.name.clone())
-        } else {
-            (vec![], "Unknown".to_string())
-        };
-
-        let idx = list.iter().position(|t| t.id == track.id).unwrap_or(0);
-        new_context = Some((list, name, idx));
+        if let Some(id) = selected_id {
+            let playlist_idx = state.selected_playlist_index();
+            if let Some(pl) = state.library.playlists.get(playlist_idx) {
+                state.session.playback.context_queue = pl.tracks.iter().map(|t| t.id).collect();
+                state.session.playback.source_name = pl.name.clone();
+                state.session.playback.context_idx =
+                    pl.tracks.iter().position(|t| t.id == id).unwrap_or(0);
+            }
+        }
     }
 
-    if let Some(track) = track_to_start {
-        if let Some((queue, name, idx)) = new_context {
-            state.session.playback.context_queue = queue;
-            state.session.playback.source_name = name;
-            state.session.playback.context_idx = idx;
-        }
-
-        start_playback(state, track, is_priority)
-    } else {
-        vec![]
+    match selected_id {
+        Some(id) => start_playback(state, id, from_queue),
+        None => vec![],
     }
 }
 
@@ -69,13 +66,15 @@ pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
             }
         }
         PlaybackStatus::Stopped => {
-            if let Some(track) = &state.session.playback.current {
-                let path = track.file_path.clone();
-                state.session.playback.status = PlaybackStatus::Playing;
-                vec![AppMsg::Playback(PlaybackMsg::DispatchPlay { path })]
-            } else {
-                vec![]
+            if let Some(id) = state.session.playback.current {
+                if let Some(meta) = state.track_meta(id) {
+                    state.session.playback.status = PlaybackStatus::Playing;
+                    return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
+                        path: meta.file_path.clone(),
+                    })];
+                }
             }
+            vec![]
         }
     }
 }
@@ -96,12 +95,12 @@ pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<App
     {
         return vec![];
     }
+
     state.session.last_seek_time = Some(Instant::now());
 
-    let current = state.progress_ms() as i64;
-    let duration = state.total_duration_ms() as i64;
-
-    let new_ms = (current + (offset_seconds * 1000)).clamp(0, duration);
+    let cur = state.progress_ms() as i64;
+    let dur = state.total_duration_ms() as i64;
+    let new_ms = (cur + offset_seconds * 1000).clamp(0, dur);
 
     state.session.playback.progress_ms = new_ms as u64;
 
@@ -118,32 +117,30 @@ pub fn handle_audio_progress(state: &mut AppState, position_ms: u64) -> Vec<AppM
 }
 
 pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
-    tracing::info!("Audio Finished...");
     state.session.playback.status = PlaybackStatus::Stopped;
     state.session.playback.progress_ms = 0;
 
-    // REPEAT TRACK (Override)
-    if *state.repeat_mode() == RepeatMode::Track
-        && let Some(current) = &state.session.playback.current
-    {
-        let path = current.file_path.clone();
-        state.session.playback.status = PlaybackStatus::Playing;
-        return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay { path })];
+    // Repeat Track
+    if state.session.repeat_mode == RepeatMode::Track {
+        if let Some(id) = state.session.playback.current {
+            return start_playback(state, id, false);
+        }
     }
 
-    // PLAY ONCE (Stop)
-    if *state.repeat_mode() == RepeatMode::PlayOnce {
+    // Play Once
+    if state.session.repeat_mode == RepeatMode::PlayOnce {
         return vec![];
     }
 
-    // Always consume the User Queue first.
-    if let Some(track) = state.session.playback_queue.items.pop_front() {
+    // Queue first
+    if let Some(id) = state.session.playback_queue.items.pop_front() {
         state.reconcile_nav();
-        return start_playback(state, track, true);
+        return start_playback(state, id, true);
     }
 
-    if let Some(track) = get_next_context_track(state) {
-        return start_playback(state, track, false);
+    // Context
+    if let Some(id) = next_context_id(state) {
+        return start_playback(state, id, false);
     }
 
     vec![]
@@ -166,17 +163,14 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
         VisualizerMode::Spectrum => VisualizerMode::AlbumArt,
         VisualizerMode::AlbumArt => VisualizerMode::Spectrum,
     };
-    let is_spectrum = state.should_draw_spectrum();
+
+    let active = state.should_draw_spectrum();
     vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-        spectrum_style: if is_spectrum {
-            Some(state.spectrum_style().clone())
-        } else {
-            None
-        },
+        spectrum_style: active.then(|| state.spectrum_style().clone()),
     })]
 }
 
-// Dispatch no-ops
+// ---- Dispatch no-ops ----
 pub fn handle_dispatch_play(_: &mut AppState, _: std::path::PathBuf) -> Vec<AppMsg> {
     vec![]
 }
@@ -202,64 +196,48 @@ pub fn handle_audio_resumed(_: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
-// --- Helpers ---
-fn start_playback(state: &mut AppState, track: Track, from_queue: bool) -> Vec<AppMsg> {
-    let path = track.file_path.clone();
-    let title = track.title.clone();
-    let has_cover = track.has_cover;
+// ---- Helpers ----
+fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<AppMsg> {
+    let meta = match state.track_meta(id) {
+        Some(m) => m,
+        None => return vec![],
+    };
 
-    state.session.playback.current = Some(track);
+    state.session.playback.current = Some(id);
     state.session.playback.playing_from_queue = from_queue;
-
     state.session.playback.status = PlaybackStatus::Playing;
     state.session.playback.progress_ms = 0;
-    state.session.playback.duration_ms = None;
+    state.session.playback.duration_ms = Some(meta.duration_ms);
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Playing {}", title),
+        format!("Playing {}", meta.title),
     ));
 
-    // Art Loading
-    state.current_album_art = None;
-    if has_cover
-        && let Some((data, _)) = Library::get_album_art(&path)
-        && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Height(30))
-    {
-        state.current_album_art = Some(ascii);
-    }
-
-    vec![AppMsg::Playback(PlaybackMsg::DispatchPlay { path })]
+    vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
+        path: meta.file_path.clone(),
+    })]
 }
 
-fn get_next_context_track(state: &mut AppState) -> Option<Track> {
-    let len = state.session.playback.context_queue.len();
-    if len == 0 {
+fn next_context_id(state: &mut AppState) -> Option<TrackId> {
+    let ctx = &state.session.playback.context_queue;
+    if ctx.is_empty() {
         return None;
     }
 
-    let next_idx = if state.shuffle_active() {
-        if len > 1 {
-            rand::rng().random_range(0..len)
-        } else {
-            0
-        }
+    let next = if state.shuffle_active() {
+        rand::rng().random_range(0..ctx.len())
     } else {
-        // Sequential: Pick up exactly where we left off + 1
-        let next = state.session.playback.context_idx + 1;
-        if next < len {
-            next
+        let n = state.session.playback.context_idx + 1;
+        if n < ctx.len() {
+            n
+        } else if state.session.repeat_mode == RepeatMode::Playlist {
+            0
         } else {
-            // Loop Context
-            if *state.repeat_mode() == RepeatMode::Playlist {
-                0
-            } else {
-                return None;
-            }
+            return None;
         }
     };
 
-    state.session.playback.context_idx = next_idx;
-    state.session.playback.context_queue.get(next_idx).cloned()
+    state.session.playback.context_idx = next;
+    ctx.get(next).copied()
 }
-// --- Helpers ---

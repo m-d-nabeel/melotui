@@ -1,6 +1,6 @@
 use crate::{
     AppMsg, AppState,
-    state::{LeftPanelMode, LibraryViewDepth},
+    navigation::state::{LeftPanelMode, LibraryViewDepth},
 };
 
 pub fn handle_toggle_library_queue(state: &mut AppState) -> Vec<AppMsg> {
