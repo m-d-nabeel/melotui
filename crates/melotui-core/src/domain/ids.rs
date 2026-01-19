@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+// ───── STRICT DATABASE KEYS ─────
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TrackId(pub u64);
 

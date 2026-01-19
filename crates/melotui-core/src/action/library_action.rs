@@ -11,6 +11,7 @@ pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
         NotificationKind::Info,
         "Scanning Library...",
     ));
+    // In a real app, you'd emit a Command::ScanLibrary here
     vec![]
 }
 
@@ -18,11 +19,11 @@ pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
 pub fn handle_add_to_queue(state: &mut AppState, track_id: TrackId) -> Vec<AppMsg> {
     state.session.playback_queue.items.push_back(track_id);
 
-    tracing::warn!("Check the to_string usage here.");
     let title = state
-        .track_meta(track_id)
-        .map(|t| t.title.to_string())
-        .unwrap_or("Track".to_string());
+        .library
+        .get_track(track_id)
+        .map(|t| t.title.clone())
+        .unwrap_or_else(|| "Track".to_string());
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
@@ -36,11 +37,11 @@ pub fn handle_add_to_queue(state: &mut AppState, track_id: TrackId) -> Vec<AppMs
 pub fn handle_play_next(state: &mut AppState, track_id: TrackId) -> Vec<AppMsg> {
     state.session.playback_queue.items.push_front(track_id);
 
-    tracing::warn!("Check the to_string usage here.");
     let title = state
-        .track_meta(track_id)
-        .map(|t| t.title.to_string())
-        .unwrap_or("Track".to_string());
+        .library
+        .get_track(track_id)
+        .map(|t| t.title.clone())
+        .unwrap_or_else(|| "Track".to_string());
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
@@ -88,19 +89,33 @@ pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
         return vec![];
     }
 
-    let idx = state.selected_queue_index();
-    let removed = if idx < state.session.playback_queue.items.len() {
-        state.session.playback_queue.items.remove(idx)
-    } else {
-        None
-    };
+    let selected_id = state.session.nav.queue.selected_track_id;
 
-    if removed.is_some() {
-        state.reconcile_nav();
-        state.session.notification.current = Some(Notification::new(
-            NotificationKind::Info,
-            "Removed from Queue",
-        ));
+    if let Some(target_id) = selected_id {
+        let queue = &mut state.session.playback_queue.items;
+
+        // 1. Find the index of the selected ID
+        if let Some(idx) = queue.iter().position(|&id| id == target_id) {
+            // 2. Remove it
+            queue.remove(idx);
+
+            // 3. Update Selection (Snap to next, or previous if at end)
+            if !queue.is_empty() {
+                let new_idx = if idx >= queue.len() {
+                    queue.len() - 1
+                } else {
+                    idx
+                };
+                state.session.nav.queue.selected_track_id = queue.get(new_idx).copied();
+            } else {
+                state.session.nav.queue.selected_track_id = None;
+            }
+
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Info,
+                "Removed from Queue",
+            ));
+        }
     }
 
     vec![]
@@ -113,7 +128,7 @@ pub fn handle_clear_queue(state: &mut AppState) -> Vec<AppMsg> {
     }
 
     state.session.playback_queue.items.clear();
-    state.reconcile_nav();
+    state.session.nav.queue.selected_track_id = None;
 
     state.session.notification.current =
         Some(Notification::new(NotificationKind::Info, "Queue Cleared"));
@@ -124,8 +139,6 @@ pub fn handle_clear_queue(state: &mut AppState) -> Vec<AppMsg> {
 /// Request application quit
 pub fn handle_request_quit(state: &mut AppState) -> Vec<AppMsg> {
     tracing::info!("Application quit requested");
-
     state.session.notification.current = Some(Notification::new(NotificationKind::Info, "Quit"));
-
     vec![]
 }

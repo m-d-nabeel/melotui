@@ -1,26 +1,7 @@
+use crate::{domain::ids::TrackId, navigation::ids::SidebarNodeId};
+use std::collections::HashSet;
+
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub enum LibraryViewDepth {
-    #[default]
-    Playlists, // Start at the playlist list
-    Tracks,
-    TrackInfo,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct LibraryNavState {
-    pub depth: LibraryViewDepth,
-    pub selected_playlist_idx: usize,
-    /// Stores the selected track index for *every* playlist.
-    pub selected_tracks_curs: Vec<usize>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct QueueNavState {
-    pub selected_idx: usize,
-    pub show_info: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
 pub enum LeftPanelMode {
     #[default]
     Library,
@@ -28,25 +9,30 @@ pub enum LeftPanelMode {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct LibraryNavState {
+    pub selected_id: Option<SidebarNodeId>, // Folder, Playlist, or Track
+    pub expanded_ids: HashSet<SidebarNodeId>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct QueueNavState {
+    pub selected_track_id: Option<TrackId>,
+    pub show_info: bool,
+}
+
+#[derive(Debug, Clone)]
 pub struct NavigationState {
     pub active_panel: LeftPanelMode,
     pub library: LibraryNavState,
     pub queue: QueueNavState,
 }
 
-impl NavigationState {
-    pub fn new(playlist_count: usize) -> Self {
-        NavigationState {
+impl Default for NavigationState {
+    fn default() -> Self {
+        Self {
             active_panel: LeftPanelMode::Library,
-            library: LibraryNavState {
-                depth: LibraryViewDepth::Playlists,
-                selected_playlist_idx: 0,
-                selected_tracks_curs: vec![0; playlist_count],
-            },
-            queue: QueueNavState {
-                selected_idx: 0,
-                show_info: false,
-            },
+            library: LibraryNavState::default(),
+            queue: QueueNavState::default(),
         }
     }
 }

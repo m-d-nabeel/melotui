@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::{domain::TrackId, navigation::state::QueueNavState};
+use crate::domain::TrackId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PlaybackStatus {
@@ -49,11 +49,7 @@ pub struct PlaybackQueueState {
 }
 
 impl PlaybackQueueState {
-    pub fn selected_track_id(&self, nav: &QueueNavState) -> Option<TrackId> {
-        self.items.get(nav.selected_idx).copied()
-    }
-
     pub fn contains(&self, id: TrackId) -> bool {
-        self.items.iter().any(|t| *t == id)
+        self.items.contains(&id)
     }
 }

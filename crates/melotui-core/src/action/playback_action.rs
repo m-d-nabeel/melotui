@@ -5,49 +5,98 @@ use crate::{
     AppMsg, AppState,
     domain::TrackId,
     message::playback::PlaybackMsg,
+    navigation::ids::{CategoryId, SidebarNodeId},
     playback::state::{PlaybackStatus, RepeatMode},
     state::{Notification, NotificationKind, VisualizerMode},
 };
 
 pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
-    let mut selected_id: Option<TrackId> = None;
+    let mut target_track_id: Option<TrackId> = None;
     let mut from_queue = false;
+    let mut new_context: Option<(Vec<TrackId>, usize)> = None;
+    let mut source_name = String::new();
 
-    // ---- QUEUE ----
+    // ─── 1. HANDLE QUEUE SELECTION ───────────────────────────────────────────
     if state.is_queue_focused() {
-        selected_id = state
-            .session
-            .playback_queue
-            .selected_track_id(&state.session.nav.queue);
+        if let Some(id) = state.session.nav.queue.selected_track_id {
+            // Remove from queue logic (mirrors library_action)
+            let queue_items = &mut state.session.playback_queue.items;
+            if let Some(idx) = queue_items.iter().position(|&x| x == id) {
+                queue_items.remove(idx);
 
-        if let Some(_) = selected_id {
+                // Update selection to next item if possible
+                if !queue_items.is_empty() {
+                    let new_sel = if idx < queue_items.len() {
+                        idx
+                    } else {
+                        queue_items.len() - 1
+                    };
+                    state.session.nav.queue.selected_track_id = queue_items.get(new_sel).copied();
+                } else {
+                    state.session.nav.queue.selected_track_id = None;
+                }
+            }
+
+            target_track_id = Some(id);
             from_queue = true;
-            let idx = state.session.nav.queue.selected_idx;
-            state.session.playback_queue.items.remove(idx);
-            state.reconcile_nav();
         }
     }
-    // ---- LIBRARY ----
-    else if state.is_library_focused() {
-        selected_id = state
-            .library
-            .get_selected_track(&state.session.nav.library)
-            .map(|t| t.id);
+    // ─── 2. HANDLE LIBRARY / SIDEBAR SELECTION ───────────────────────────────
+    else {
+        // We clone the ID to avoid borrowing issues while mutating state later
+        let selected_node = state.session.nav.library.selected_id.clone();
 
-        if let Some(id) = selected_id {
-            let playlist_idx = state.selected_playlist_index();
-            if let Some(pl) = state.library.playlists.get(playlist_idx) {
-                state.session.playback.context_queue = pl.tracks.iter().map(|t| t.id).collect();
-                state.session.playback.source_name = pl.name.clone();
-                state.session.playback.context_idx =
-                    pl.tracks.iter().position(|t| t.id == id).unwrap_or(0);
+        if let Some(node) = selected_node {
+            match node {
+                // A. User selected a specific Track leaf
+                SidebarNodeId::Track(id) => {
+                    target_track_id = Some(id);
+                    // TODO: In the future, we could infer the parent context
+                    // (e.g. if inside a playlist) to populate the context queue.
+                    // For now, playing a track directly plays just that track.
+                    source_name = "Single Track".to_string();
+                }
+
+                // B. User selected a Playlist Node -> Play whole playlist
+                SidebarNodeId::Playlist(pid) => {
+                    if let Some(playlist) = state.library.get_playlist(pid)
+                        && !playlist.tracks.is_empty()
+                    {
+                        target_track_id = Some(playlist.tracks[0]);
+                        new_context = Some((playlist.tracks.clone(), 0));
+                        source_name = playlist.name.clone();
+                    }
+                }
+
+                // C. User selected "All Songs" -> Play all
+                SidebarNodeId::Category(CategoryId::AllSongs) => {
+                    // Collect all IDs (sorted by internal map order, or specific sort later)
+                    let all_ids: Vec<TrackId> = state.library.tracks.keys().copied().collect();
+                    if !all_ids.is_empty() {
+                        target_track_id = Some(all_ids[0]);
+                        new_context = Some((all_ids, 0));
+                        source_name = "All Songs".to_string();
+                    }
+                }
+
+                // D. Folders / Artists (Stub)
+                _ => {}
             }
         }
     }
 
-    match selected_id {
-        Some(id) => start_playback(state, id, from_queue),
-        None => vec![],
+    // ─── 3. DISPATCH ─────────────────────────────────────────────────────────
+    if let Some(id) = target_track_id {
+        // Apply new context if we started a playlist/category
+        if let Some((ctx_queue, ctx_idx)) = new_context {
+            state.session.playback.context_queue = ctx_queue;
+            state.session.playback.context_idx = ctx_idx;
+            state.session.playback.source_name = source_name;
+        }
+
+        start_playback(state, id, from_queue)
+    } else {
+        vec![]
     }
 }
 
@@ -67,7 +116,8 @@ pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
         }
         PlaybackStatus::Stopped => {
             if let Some(id) = state.session.playback.current {
-                if let Some(meta) = state.track_meta(id) {
+                // Fix: Use library.get_track instead of helper
+                if let Some(meta) = state.library.get_track(id) {
                     state.session.playback.status = PlaybackStatus::Playing;
                     return vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
                         path: meta.file_path.clone(),
@@ -90,6 +140,7 @@ pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<App
         return vec![];
     }
 
+    // Debounce seek
     if let Some(last) = state.session.last_seek_time
         && last.elapsed() < Duration::from_millis(200)
     {
@@ -120,25 +171,25 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
     state.session.playback.status = PlaybackStatus::Stopped;
     state.session.playback.progress_ms = 0;
 
-    // Repeat Track
-    if state.session.repeat_mode == RepeatMode::Track {
-        if let Some(id) = state.session.playback.current {
-            return start_playback(state, id, false);
-        }
+    // 1. Repeat Track Logic
+    if state.session.repeat_mode == RepeatMode::Track
+        && let Some(id) = state.session.playback.current
+    {
+        return start_playback(state, id, false);
     }
 
-    // Play Once
+    // 2. Play Once Logic
     if state.session.repeat_mode == RepeatMode::PlayOnce {
         return vec![];
     }
 
-    // Queue first
+    // 3. User Queue Priority
     if let Some(id) = state.session.playback_queue.items.pop_front() {
-        state.reconcile_nav();
+        // No nav reconciliation needed in new architecture
         return start_playback(state, id, true);
     }
 
-    // Context
+    // 4. Context Queue (Playlist) Fallback
     if let Some(id) = next_context_id(state) {
         return start_playback(state, id, false);
     }
@@ -165,12 +216,15 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
     };
 
     let active = state.should_draw_spectrum();
+    // Clone style to avoid borrow issues if necessary, usually Copy is fine or Clone
+    let style = state.session.spectrum_style.clone();
+
     vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-        spectrum_style: active.then(|| state.spectrum_style().clone()),
+        spectrum_style: active.then_some(style),
     })]
 }
 
-// ---- Dispatch no-ops ----
+// ---- Dispatch no-ops (Event Loop bridging) ----
 pub fn handle_dispatch_play(_: &mut AppState, _: std::path::PathBuf) -> Vec<AppMsg> {
     vec![]
 }
@@ -196,9 +250,11 @@ pub fn handle_audio_resumed(_: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
-// ---- Helpers ----
+// ---- Helpers ----------------------------------------------------------------
+
 fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<AppMsg> {
-    let meta = match state.track_meta(id) {
+    // FIX: Access library directly, no helper wrappers
+    let meta = match state.library.get_track(id) {
         Some(m) => m,
         None => return vec![],
     };
