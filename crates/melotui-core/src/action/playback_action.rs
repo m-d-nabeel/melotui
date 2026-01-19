@@ -49,7 +49,7 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
         if let Some(node) = selected_node {
             match node {
                 // A. User selected a specific Track leaf
-                SidebarNodeId::Track(id) => {
+                SidebarNodeId::Track { id, .. } => {
                     target_track_id = Some(id);
                     // TODO: In the future, we could infer the parent context
                     // (e.g. if inside a playlist) to populate the context queue.

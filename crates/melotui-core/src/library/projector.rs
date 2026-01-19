@@ -5,23 +5,15 @@ use crate::navigation::state::LibraryNavState;
 #[derive(Debug, Clone, PartialEq)]
 pub struct SidebarRow {
     pub id: SidebarNodeId,
-    /// Visual text to display (e.g. "  ▼ Playlists")
     pub label: String,
-    /// Indentation level (0, 1, 2...)
     pub level: u8,
-    /// Can this node be expanded? (Shows ▶ / ▼)
     pub is_expandable: bool,
-    /// Is it currently expanded?
     pub is_expanded: bool,
 }
 
-/// The "Projection Engine".
-/// Converts the tree structure into a flat list of rows for rendering.
 pub fn flatten_tree(snapshot: &LibrarySnapshot, nav: &LibraryNavState) -> Vec<SidebarRow> {
     let mut rows = Vec::new();
 
-    // 1. Define Root Categories
-    // These are the top-level items that always exist.
     let categories = [
         (CategoryId::Folders, "Folders"),
         (CategoryId::AllSongs, "All Songs"),
@@ -42,9 +34,12 @@ pub fn flatten_tree(snapshot: &LibrarySnapshot, nav: &LibraryNavState) -> Vec<Si
             is_expanded: expanded,
         });
 
-        // 2. Expand Categories if open
-        if expanded && cat_id == CategoryId::Playlists {
-            flatten_playlists(snapshot, nav, &mut rows)
+        if expanded {
+            match cat_id {
+                CategoryId::Playlists => flatten_playlists(snapshot, nav, &mut rows),
+                CategoryId::AllSongs => flatten_all_songs(snapshot, &node_id, &mut rows),
+                _ => {}
+            }
         }
     }
 
@@ -56,7 +51,6 @@ fn flatten_playlists(
     nav: &LibraryNavState,
     rows: &mut Vec<SidebarRow>,
 ) {
-    // Iterate over playlists in the defined order
     for pid in &snapshot.playlist_order {
         if let Some(playlist) = snapshot.playlists.get(pid) {
             let p_node = SidebarNodeId::Playlist(*pid);
@@ -71,21 +65,42 @@ fn flatten_playlists(
                 is_expanded: expanded,
             });
 
-            // 3. Expand Playlist Content (Tracks)
             if expanded {
-                // Look up track metadata for every ID in the playlist
                 for &tid in &playlist.tracks {
                     if let Some(track) = snapshot.tracks.get(&tid) {
                         rows.push(SidebarRow {
-                            id: SidebarNodeId::Track(tid),
+                            // FIX: Inject Parent
+                            id: SidebarNodeId::Track {
+                                id: tid,
+                                parent: Box::new(p_node.clone()),
+                            },
                             label: track.title.clone(),
                             level: 2,
-                            is_expandable: false, // Tracks are leaves
+                            is_expandable: false,
                             is_expanded: false,
                         });
                     }
                 }
             }
         }
+    }
+}
+
+fn flatten_all_songs(
+    snapshot: &LibrarySnapshot,
+    parent_node: &SidebarNodeId,
+    rows: &mut Vec<SidebarRow>,
+) {
+    for (id, track) in &snapshot.tracks {
+        rows.push(SidebarRow {
+            id: SidebarNodeId::Track {
+                id: *id,
+                parent: Box::new(parent_node.clone()),
+            },
+            label: track.title.clone(),
+            level: 1,
+            is_expandable: false,
+            is_expanded: false,
+        });
     }
 }

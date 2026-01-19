@@ -86,10 +86,10 @@ fn render_row(
         .unwrap_or(false);
 
     let playing_id = state.get_playing_track_id();
-    let is_playing_track = playing_id
-        .map(|pid| row.id == SidebarNodeId::Track(pid))
-        .unwrap_or(false);
-
+    let is_playing_track = match (&row.id, playing_id) {
+        (SidebarNodeId::Track { id, .. }, Some(pid)) => *id == pid,
+        _ => false,
+    };
     // --- Icons & Styles ---
     let (icon, icon_style) = get_icon_and_style(row, is_playing_track, panel_active);
 
@@ -175,7 +175,7 @@ fn get_icon_and_style(row: &SidebarRow, is_playing: bool, active: bool) -> (Stri
             }
         }
         SidebarNodeId::Playlist(_) => "",
-        SidebarNodeId::Track(_) => "", // Music note for tracks
+        SidebarNodeId::Track { .. } => "", // Music note for tracks
         SidebarNodeId::Artist(_) => "󰠃",
     };
 

@@ -227,7 +227,7 @@ impl AppState {
     /// but based on strict sidebar-only navigation, checking the node type is sufficient.
     pub fn get_selected_track_id_in_sidebar(&self) -> Option<TrackId> {
         match &self.session.nav.library.selected_id {
-            Some(SidebarNodeId::Track(id)) => Some(*id),
+            Some(SidebarNodeId::Track { id, .. }) => Some(*id),
             _ => None,
         }
     }

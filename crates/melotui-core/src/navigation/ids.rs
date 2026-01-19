@@ -28,7 +28,10 @@ pub enum SidebarNodeId {
 
     // Data Nodes
     Playlist(PlaylistId),
-    Track(TrackId),
+    Track {
+        id: TrackId,
+        parent: Box<SidebarNodeId>,
+    },
 
     // Future expansion
     Artist(String),
