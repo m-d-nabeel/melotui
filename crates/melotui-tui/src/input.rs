@@ -73,7 +73,6 @@ impl InputHandler {
             // H Key (Back / Collapse)
             KeyAction::CollapseView => {
                 if state.is_library_focused() {
-                    // Logic: "SwitchToPlaylists" is now mapped to "Collapse/Go Up" in nav_action.rs
                     Some(AppMsg::Navigation(NavigationMsg::SwitchToPlaylists))
                 } else if state.is_queue_focused() && state.is_queue_info_view() {
                     Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
@@ -85,7 +84,6 @@ impl InputHandler {
             // L Key / Enter (Expand / Select)
             KeyAction::ExpandView => {
                 if state.is_library_focused() {
-                    // Logic: "SwitchToTracks" is mapped to "Expand Node" in nav_action.rs
                     Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
                 } else if state.is_queue_focused() && !state.is_queue_info_view() {
                     Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))

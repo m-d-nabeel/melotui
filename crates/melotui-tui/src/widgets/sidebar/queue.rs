@@ -1,5 +1,5 @@
 use crate::{format_duration, widgets::sidebar::generate_marquee_delayed};
-use melotui_core::{AppState, domain::TrackId};
+use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -113,9 +113,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             .style(Style::default().fg(Color::DarkGray));
         frame.render_widget(empty_para, chunks[1]);
     } else {
-        let selected_id = state.get_queue_selection();
+        let selected_id = state.get_queue_selection_id();
         let selected_idx = selected_id
-            .and_then(|id| queue.iter().position(|&x| x == id))
+            .and_then(|id| queue.iter().position(|e| e.id == id))
             .unwrap_or(0);
 
         draw_queue_table(frame, chunks[1], state, queue, selected_idx, is_active);
@@ -126,7 +126,7 @@ fn draw_queue_table(
     frame: &mut Frame,
     area: Rect,
     state: &AppState,
-    tracks: &std::collections::VecDeque<TrackId>,
+    tracks: &std::collections::VecDeque<melotui_core::playback::state::QueueEntry>,
     selected_idx: usize,
     is_active: bool,
 ) {
@@ -136,14 +136,14 @@ fn draw_queue_table(
     let rows: Vec<Row> = tracks
         .iter()
         .enumerate()
-        .map(|(i, track_id)| {
-            let track = state.library.get_track(*track_id);
+        .map(|(i, entry)| {
+            let track = state.library.get_track(entry.track_id);
             let title = track.map(|t| t.title.as_str()).unwrap_or("Unknown");
             let duration = track.map(|t| t.duration_ms).unwrap_or(0);
 
             let is_selected = selected_idx == i;
             let is_current =
-                is_playing_queue && playing_id.map(|p| p == *track_id).unwrap_or(false);
+                is_playing_queue && playing_id.map(|p| p == entry.track_id).unwrap_or(false);
 
             let mut row_style = Style::default();
             if is_selected {

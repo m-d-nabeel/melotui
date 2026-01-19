@@ -8,7 +8,7 @@ use crate::{
         ids::{CategoryId, SidebarNodeId},
         state::{LeftPanelMode, LibraryNavState},
     },
-    playback::state::{PlaybackStatus, RepeatMode},
+    playback::state::{PlaybackStatus, QueueEntry, QueueId, RepeatMode},
     state::{Notification, NotificationKind, SessionState, SpectrumStyle, UIMode, VisualizerMode},
     utils::{NoOpSpectrum, SizeMode, SpectrumSource},
 };
@@ -158,11 +158,6 @@ impl AppState {
         }
     }
 
-    // --- Queue Access ---
-    pub fn queue(&self) -> &VecDeque<TrackId> {
-        &self.session.playback_queue.items
-    }
-
     pub fn context_queue(&self) -> &Vec<TrackId> {
         &self.session.playback.context_queue
     }
@@ -179,11 +174,6 @@ impl AppState {
     /// Returns the ID of the currently selected node in the sidebar.
     pub fn get_library_selection(&self) -> Option<&SidebarNodeId> {
         self.session.nav.library.selected_id.as_ref()
-    }
-
-    /// Returns the ID of the currently selected track in the User Queue.
-    pub fn get_queue_selection(&self) -> Option<TrackId> {
-        self.session.nav.queue.selected_track_id
     }
 
     pub fn is_library_focused(&self) -> bool {
@@ -248,6 +238,33 @@ impl AppState {
     }
 }
 
+// ─── QUEUE ACCESSORS ─────────────────────────────────────────────────────────
+impl AppState {
+    pub fn queue(&self) -> &VecDeque<QueueEntry> {
+        &self.session.playback_queue.items
+    }
+
+    /// Returns the Unique ID of the selected row
+    pub fn get_queue_selection_id(&self) -> Option<QueueId> {
+        self.session.nav.queue.selected_queue_id
+    }
+
+    /// Resolves the Queue Selection to a TrackId (for info/art display)
+    pub fn get_selected_track_id_in_queue(&self) -> Option<TrackId> {
+        let sel_id = self.session.nav.queue.selected_queue_id?;
+        self.session
+            .playback_queue
+            .items
+            .iter()
+            .find(|e| e.id == sel_id)
+            .map(|e| e.track_id)
+    }
+
+    pub fn get_active_qid(&self) -> Option<QueueId> {
+        self.session.playback.active_queue_id
+    }
+}
+
 // ─── UI & VISUAL STATE ───────────────────────────────────────────────────────
 impl AppState {
     pub fn ui_mode(&self) -> &UIMode {
@@ -297,18 +314,25 @@ impl AppState {
 impl AppState {
     pub fn predict_next_song(&self) -> String {
         // 1. Priority: User Queue
-        if let Some(id) = self.session.playback_queue.items.front() {
+        if let Some(qid) = self.session.playback.active_queue_id {
+            if let Some(idx) = self.queue().iter().position(|e| e.id == qid)
+                && idx + 1 < self.queue().len()
+            {
+                return self
+                    .library
+                    .get_track(self.queue()[idx + 1].track_id)
+                    .map(|t| t.title.clone())
+                    .unwrap_or("Unknown".into());
+            }
+        } else if let Some(first) = self.queue().front() {
             return self
                 .library
-                .get_track(*id)
+                .get_track(first.track_id)
                 .map(|t| t.title.clone())
-                .unwrap_or_else(|| "Unknown".into());
+                .unwrap_or("Unknown".into());
         }
-
-        // 2. Priority: Context Queue
         let ctx = &self.session.playback.context_queue;
         let idx = self.session.playback.context_idx;
-
         if ctx.is_empty() {
             return "None".into();
         }
@@ -317,7 +341,7 @@ impl AppState {
             return self
                 .get_playing_track()
                 .map(|t| t.title.clone())
-                .unwrap_or_else(|| "Repeating".into());
+                .unwrap_or("Repeating".into());
         }
 
         let next = idx + 1;
@@ -326,7 +350,7 @@ impl AppState {
                 .library
                 .get_track(ctx[next])
                 .map(|t| t.title.clone())
-                .unwrap_or_else(|| "Unknown".into());
+                .unwrap_or("Unknown".into());
         }
 
         if self.session.repeat_mode == RepeatMode::Playlist {
@@ -334,7 +358,7 @@ impl AppState {
                 .library
                 .get_track(ctx[0])
                 .map(|t| t.title.clone())
-                .unwrap_or_else(|| "Unknown".into());
+                .unwrap_or("Unknown".into());
         }
 
         "None".into()

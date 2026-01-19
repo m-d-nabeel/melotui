@@ -1,4 +1,4 @@
-use crate::{domain::ids::TrackId, navigation::ids::SidebarNodeId};
+use crate::{navigation::ids::SidebarNodeId, playback::state::QueueId};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -16,7 +16,7 @@ pub struct LibraryNavState {
 
 #[derive(Debug, Clone, Default)]
 pub struct QueueNavState {
-    pub selected_track_id: Option<TrackId>,
+    pub selected_queue_id: Option<QueueId>,
     pub show_info: bool,
 }
 

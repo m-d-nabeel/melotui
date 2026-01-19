@@ -1,3 +1,4 @@
+use crate::format_duration;
 use melotui_core::AppState;
 use ratatui::{
     Frame,
@@ -12,12 +13,13 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let track_id = if state.is_library_focused() {
         state.get_selected_track_id_in_sidebar()
     } else {
-        state.get_queue_selection()
+        // FIXED: Use correct accessor for unique ID resolution
+        state.get_selected_track_id_in_queue()
     };
 
     let track_id = match track_id {
         Some(id) => id,
-        None => return, // Nothing selected
+        None => return,
     };
 
     let track = match state.library.get_track(track_id) {
@@ -35,25 +37,23 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // 3. Layout (Art Top, Info Bottom)
+    // 3. Layout
     let art_height = if state.track_info_art.is_some() {
         15
     } else {
         0
     };
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(art_height), // Art
-            Constraint::Min(10),            // Metadata
-        ])
+        .constraints([Constraint::Length(art_height), Constraint::Min(10)])
         .split(inner_area);
 
     // 4. ASCII Art
     if let Some(art) = &state.track_info_art {
-        let art_widget = Paragraph::new(art.clone()).alignment(Alignment::Center);
-        frame.render_widget(art_widget, chunks[0]);
+        frame.render_widget(
+            Paragraph::new(art.clone()).alignment(Alignment::Center),
+            chunks[0],
+        );
     }
 
     // 5. Metadata Lines
@@ -83,14 +83,12 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             ratatui::text::Span::styled(album, Style::default().fg(Color::Gray)),
         ]));
     }
-
     if let Some(year) = track.year {
         lines.push(Line::from(vec![
             ratatui::text::Span::styled("󰃭  ", Style::default().fg(Color::Cyan)),
             ratatui::text::Span::styled(year.to_string(), Style::default().fg(Color::Gray)),
         ]));
     }
-
     if let Some(genre) = &track.genre {
         lines.push(Line::from(vec![
             ratatui::text::Span::styled("󰽰  ", Style::default().fg(Color::Cyan)),
@@ -108,6 +106,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         ),
         Style::default().fg(Color::DarkGray),
     )]));
+
+    // File duration line
+    lines.push(Line::from(vec![
+        ratatui::text::Span::styled("Duration: ", Style::default().fg(Color::DarkGray)),
+        ratatui::text::Span::styled(
+            format_duration(track.duration_ms),
+            Style::default().fg(Color::Gray),
+        ),
+    ]));
 
     let paragraph = Paragraph::new(lines).wrap(Wrap { trim: true });
     frame.render_widget(paragraph, chunks[1]);
