@@ -11,13 +11,12 @@ use ratatui::{
 const ACTIVE_BORDER: Color = Color::Yellow;
 const INACTIVE_BORDER: Color = Color::Rgb(60, 60, 60);
 const SELECTED_BG: Color = Color::Rgb(50, 50, 50);
-const PLAYING_FG: Color = Color::Rgb(142, 192, 124); // Gruvbox Green
+const PLAYING_FG: Color = Color::Rgb(142, 192, 124);
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let queue = state.queue();
     let is_active = state.is_queue_focused();
 
-    // 1. Container & Border
     let border_style = if is_active {
         Style::default().fg(ACTIVE_BORDER)
     } else {
@@ -44,34 +43,19 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    if queue.is_empty() {
-        let p = Paragraph::new("Queue is empty")
-            .alignment(ratatui::layout::Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray));
-        frame.render_widget(p, inner_area);
-        return;
-    }
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(inner_area);
 
-    // 2. Resolve Selection
-    let selected_id = state.get_queue_selection();
-    let selected_idx = selected_id
-        .and_then(|id| queue.iter().position(|&x| x == id))
-        .unwrap_or(0);
+    // 3. Draw "Now Playing" Header
+    let playing_from_queue = state.is_playing_from_queue();
+    let current_track = state.get_playing_track();
 
-    // 3. Layout: "Now Playing" Split
-    if state.is_playing_from_queue() {
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3), // Header
-                Constraint::Min(0),    // List
-            ])
-            .split(inner_area);
-
-        // Draw Header
-        if let Some(current_track) = state.get_playing_track() {
+    if playing_from_queue && current_track.is_some() {
+        if let Some(track) = current_track {
             let title_marquee = generate_marquee_delayed(
-                &current_track.title,
+                &track.title,
                 (chunks[0].width as usize).saturating_sub(10),
                 state,
             );
@@ -90,14 +74,14 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 Line::from(vec![
                     Span::raw("    "),
                     Span::styled(
-                        current_track.artist.as_deref().unwrap_or("Unknown"),
+                        track.artist.as_deref().unwrap_or("Unknown"),
                         Style::default()
                             .fg(Color::White)
                             .add_modifier(Modifier::ITALIC),
                     ),
                     Span::styled(" • ", Style::default().fg(Color::DarkGray)),
                     Span::styled(
-                        format_duration(current_track.duration_ms),
+                        format_duration(track.duration_ms),
                         Style::default().fg(Color::DarkGray),
                     ),
                 ]),
@@ -105,11 +89,36 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
             frame.render_widget(Paragraph::new(header_lines), chunks[0]);
         }
+    } else {
+        let no_playing_lines = vec![Line::from(vec![
+            Span::styled(
+                " ▶ ",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "No song playing",
+                Style::default()
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ])];
+        frame.render_widget(Paragraph::new(no_playing_lines), chunks[0]);
+    }
+
+    if queue.is_empty() {
+        let empty_para = Paragraph::new("Empty")
+            .alignment(ratatui::layout::Alignment::Center)
+            .style(Style::default().fg(Color::DarkGray));
+        frame.render_widget(empty_para, chunks[1]);
+    } else {
+        let selected_id = state.get_queue_selection();
+        let selected_idx = selected_id
+            .and_then(|id| queue.iter().position(|&x| x == id))
+            .unwrap_or(0);
 
         draw_queue_table(frame, chunks[1], state, queue, selected_idx, is_active);
-    } else {
-        // Just the table
-        draw_queue_table(frame, inner_area, state, queue, selected_idx, is_active);
     }
 }
 
@@ -136,7 +145,6 @@ fn draw_queue_table(
             let is_current =
                 is_playing_queue && playing_id.map(|p| p == *track_id).unwrap_or(false);
 
-            // Styling
             let mut row_style = Style::default();
             if is_selected {
                 row_style = row_style.bg(SELECTED_BG);
@@ -150,9 +158,7 @@ fn draw_queue_table(
                 Color::Gray
             };
 
-            // Marquee Title
             let display_title = if is_selected && is_active {
-                // Approx width
                 let approx_width = area.width.saturating_sub(14) as usize;
                 generate_marquee_delayed(title, approx_width, state)
             } else {
