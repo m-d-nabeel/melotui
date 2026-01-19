@@ -3,7 +3,7 @@ use std::{collections::VecDeque, sync::Arc};
 use crate::{
     bytes_to_ascii,
     domain::{PlaylistMeta, TrackId, TrackMeta},
-    library::snapshot::LibrarySnapshot,
+    library::{projector::flatten_tree, snapshot::LibrarySnapshot},
     navigation::{
         ids::{CategoryId, SidebarNodeId},
         state::{LeftPanelMode, LibraryNavState},
@@ -38,10 +38,18 @@ pub struct AppState {
 // ─── LIFECYCLE ───────────────────────────────────────────────────────────────
 impl AppState {
     pub fn new(library: LibrarySnapshot) -> Self {
+        let mut session = SessionState::default();
+
+        let library_arc = Arc::new(library);
+        let rows = flatten_tree(&library_arc, &session.nav.library);
+        if let Some(row) = rows.first() {
+            session.nav.library.selected_id = Some(row.id.clone());
+        }
+
         Self {
             app_name: "Melotui".into(),
-            library: Arc::new(library),
-            session: SessionState::default(),
+            library: library_arc,
+            session,
 
             // Runtime Init
             time_elapsed: 0.0,
