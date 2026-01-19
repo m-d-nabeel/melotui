@@ -9,7 +9,7 @@ use crate::{
         state::{LeftPanelMode, LibraryNavState},
     },
     playback::state::{PlaybackStatus, RepeatMode},
-    state::{Notification, SessionState, SpectrumStyle, UIMode, VisualizerMode},
+    state::{Notification, NotificationKind, SessionState, SpectrumStyle, UIMode, VisualizerMode},
     utils::{NoOpSpectrum, SizeMode, SpectrumSource},
 };
 
@@ -258,8 +258,8 @@ impl AppState {
         self.session.notification.current.as_ref()
     }
 
-    pub fn set_notification(&mut self, notification: Notification) {
-        self.session.notification.current = Some(notification);
+    pub fn set_notification(&mut self, kind: NotificationKind, message: impl Into<String>) {
+        self.session.notification.current = Some(Notification::new(kind, message));
     }
 
     pub fn clear_current_notification(&mut self) {
