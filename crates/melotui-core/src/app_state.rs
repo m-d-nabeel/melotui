@@ -1,17 +1,16 @@
-use std::{collections::VecDeque, sync::Arc};
-
 use crate::{
     bytes_to_ascii,
     domain::{PlaylistMeta, TrackId, TrackMeta},
     library::{projector::flatten_tree, snapshot::LibrarySnapshot},
     navigation::{
-        ids::{CategoryId, SidebarNodeId},
+        ids::SidebarNodeId,
         state::{LeftPanelMode, LibraryNavState},
     },
     playback::state::{PlaybackStatus, QueueEntry, QueueId, RepeatMode},
     state::{Notification, NotificationKind, SessionState, SpectrumStyle, UIMode, VisualizerMode},
     utils::{NoOpSpectrum, SizeMode, SpectrumSource},
 };
+use std::{collections::VecDeque, sync::Arc};
 
 pub struct AppState {
     pub app_name: String,
@@ -197,9 +196,7 @@ impl AppState {
     pub fn is_viewing_collection(&self) -> bool {
         matches!(
             &self.session.nav.library.selected_id,
-            Some(SidebarNodeId::Playlist(_))
-                | Some(SidebarNodeId::Category(CategoryId::AllSongs))
-                | Some(SidebarNodeId::Folder(_))
+            Some(SidebarNodeId::Playlist(_)) | Some(SidebarNodeId::Folder(_))
         )
     }
 

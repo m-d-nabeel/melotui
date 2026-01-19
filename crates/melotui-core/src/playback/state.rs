@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::domain::TrackId;
+use crate::{domain::TrackId, navigation::ids::SidebarNodeId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PlaybackStatus {
@@ -42,6 +42,7 @@ pub struct QueueEntry {
 #[derive(Debug, Clone, Default)]
 pub struct PlaybackState {
     pub current: Option<TrackId>,
+    pub active_node: Option<SidebarNodeId>,
     pub playing_from_queue: bool,
     pub active_queue_id: Option<QueueId>,
     pub source_name: String,         // "Playlist: Jazz", "All Tracks"

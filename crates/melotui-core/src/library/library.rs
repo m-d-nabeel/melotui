@@ -8,23 +8,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta},
-    navigation::ids::{CategoryId, SidebarNodeId},
+    navigation::ids::SidebarNodeId,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Library {
     pub root: PathBuf,
-
-    // PRIMARY STORAGE (The Database)
     pub playlists: HashMap<PlaylistId, PlaylistMeta>,
     pub tracks: HashMap<TrackId, TrackMeta>,
-
-    // ORDERING (The Sequence)
     pub playlist_order: Vec<PlaylistId>,
 }
 
 impl Library {
-    /// Ingests data (likely from DB) and normalizes it.
     pub fn new(
         root: PathBuf,
         playlists_vec: Vec<PlaylistMeta>,
@@ -45,8 +40,6 @@ impl Library {
             tracks,
         }
     }
-
-    // ─── LOOKUPS ───
 
     pub fn get_track(&self, id: TrackId) -> Option<&TrackMeta> {
         self.tracks.get(&id)
@@ -75,14 +68,8 @@ impl Library {
             .collect()
     }
 
-    /// Resolves the specific list of tracks for a given Sidebar Node.
-    /// This is the "Data Source" for the Main Content view.
     pub fn resolve_node_tracks(&self, node: &SidebarNodeId) -> Vec<&TrackMeta> {
         match node {
-            SidebarNodeId::Category(CategoryId::AllSongs) => {
-                // Return all tracks (sorted by title/id usually)
-                self.tracks.values().collect()
-            }
             SidebarNodeId::Playlist(pid) => {
                 if let Some(p) = self.playlists.get(pid) {
                     self.get_tracks(&p.tracks)
@@ -90,7 +77,6 @@ impl Library {
                     vec![]
                 }
             }
-            // Add Folder/Artist logic here later
             _ => vec![],
         }
     }

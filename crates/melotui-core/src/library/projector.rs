@@ -16,7 +16,6 @@ pub fn flatten_tree(snapshot: &LibrarySnapshot, nav: &LibraryNavState) -> Vec<Si
 
     let categories = [
         (CategoryId::Folders, "Folders"),
-        (CategoryId::AllSongs, "All Songs"),
         (CategoryId::Artists, "Artists"),
         (CategoryId::Albums, "Albums"),
         (CategoryId::Playlists, "Playlists"),
@@ -34,12 +33,8 @@ pub fn flatten_tree(snapshot: &LibrarySnapshot, nav: &LibraryNavState) -> Vec<Si
             is_expanded: expanded,
         });
 
-        if expanded {
-            match cat_id {
-                CategoryId::Playlists => flatten_playlists(snapshot, nav, &mut rows),
-                CategoryId::AllSongs => flatten_all_songs(snapshot, &node_id, &mut rows),
-                _ => {}
-            }
+        if expanded && cat_id == CategoryId::Playlists {
+            flatten_playlists(snapshot, nav, &mut rows)
         }
     }
 
@@ -69,7 +64,6 @@ fn flatten_playlists(
                 for &tid in &playlist.tracks {
                     if let Some(track) = snapshot.tracks.get(&tid) {
                         rows.push(SidebarRow {
-                            // FIX: Inject Parent
                             id: SidebarNodeId::Track {
                                 id: tid,
                                 parent: Box::new(p_node.clone()),
@@ -83,24 +77,5 @@ fn flatten_playlists(
                 }
             }
         }
-    }
-}
-
-fn flatten_all_songs(
-    snapshot: &LibrarySnapshot,
-    parent_node: &SidebarNodeId,
-    rows: &mut Vec<SidebarRow>,
-) {
-    for (id, track) in &snapshot.tracks {
-        rows.push(SidebarRow {
-            id: SidebarNodeId::Track {
-                id: *id,
-                parent: Box::new(parent_node.clone()),
-            },
-            label: track.title.clone(),
-            level: 1,
-            is_expandable: false,
-            is_expanded: false,
-        });
     }
 }

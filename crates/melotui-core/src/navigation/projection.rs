@@ -21,7 +21,6 @@ pub fn compute_sidebar_rows(library: &LibrarySnapshot, nav: &LibraryNavState) ->
     // You can re-order these to change the UI
     let categories = [
         (CategoryId::Folders, "Folders"),
-        (CategoryId::AllSongs, "All Songs"),
         (CategoryId::Artists, "Artists"),
         (CategoryId::Albums, "Albums"),
         (CategoryId::Playlists, "Playlists"),

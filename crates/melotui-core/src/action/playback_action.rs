@@ -5,7 +5,7 @@ use crate::{
     AppMsg, AppState,
     domain::TrackId,
     message::playback::PlaybackMsg,
-    navigation::ids::{CategoryId, SidebarNodeId},
+    navigation::ids::SidebarNodeId,
     playback::state::{PlaybackStatus, RepeatMode},
     state::{Notification, NotificationKind, VisualizerMode},
 };
@@ -13,7 +13,7 @@ use crate::{
 pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
     let mut target_track_id: Option<TrackId> = None;
     let mut from_queue = false;
-    let mut new_context: Option<(Vec<TrackId>, usize)> = None;
+    let new_context: Option<(Vec<TrackId>, usize)> = None;
     let mut source_name = String::new();
 
     // ─── 1. HANDLE QUEUE SELECTION (Non-Destructive) ─────────────────────────
@@ -28,33 +28,25 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
             }
         }
     }
-    // ─── 2. HANDLE LIBRARY SELECTION ─────────────────────────────────────────
+    // ─── 2. HANDLE TREE SELECTION ───────────────────────────
     else {
         let selected_node = state.session.nav.library.selected_id.clone();
         if let Some(node) = selected_node {
             match node {
                 SidebarNodeId::Track { id, .. } => {
                     target_track_id = Some(id);
-                    source_name = "Single Track".to_string();
+                    source_name = "Library Selection".to_string();
+                    state.session.playback.active_node = Some(node.clone());
                 }
-                SidebarNodeId::Playlist(pid) => {
-                    if let Some(playlist) = state.library.get_playlist(pid)
-                        && !playlist.tracks.is_empty()
-                    {
-                        target_track_id = Some(playlist.tracks[0]);
-                        new_context = Some((playlist.tracks.clone(), 0));
-                        source_name = playlist.name.clone();
+
+                _ => {
+                    if state.session.nav.library.expanded_ids.contains(&node) {
+                        state.session.nav.library.expanded_ids.remove(&node);
+                    } else {
+                        state.session.nav.library.expanded_ids.insert(node);
                     }
+                    return vec![];
                 }
-                SidebarNodeId::Category(CategoryId::AllSongs) => {
-                    let all_ids: Vec<TrackId> = state.library.tracks.keys().copied().collect();
-                    if !all_ids.is_empty() {
-                        target_track_id = Some(all_ids[0]);
-                        new_context = Some((all_ids, 0));
-                        source_name = "All Songs".to_string();
-                    }
-                }
-                _ => {}
             }
         }
     }
@@ -82,30 +74,23 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
     state.session.playback.status = PlaybackStatus::Stopped;
     state.session.playback.progress_ms = 0;
 
-    // 1. Repeat Track Logic
+    // 1. Repeat Track
     if state.session.repeat_mode == RepeatMode::Track
         && let Some(id) = state.session.playback.current
     {
         return start_playback(state, id, state.is_playing_from_queue());
     }
 
-    // 2. Queue Logic (Pop-After-Play)
+    // 2. Queue Logic
     if let Some(finished_qid) = state.session.playback.active_queue_id {
         let queue_items = &mut state.session.playback_queue.items;
-
-        // Find index of finished item
         if let Some(idx) = queue_items.iter().position(|e| e.id == finished_qid) {
-            // Check for next item BEFORE removing
             let next_entry = if idx + 1 < queue_items.len() {
                 Some(queue_items[idx + 1].clone())
             } else {
                 None
             };
-
-            // POP: Remove the finished song
             queue_items.remove(idx);
-
-            // Play next if exists
             if let Some(entry) = next_entry {
                 state.session.playback.active_queue_id = Some(entry.id);
                 return start_playback(state, entry.track_id, true);
@@ -116,7 +101,7 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
             state.session.playback.active_queue_id = None;
         }
     }
-    // Fallback: Legacy/Empty Queue
+    // Fallback: Queue
     else if state.is_playing_from_queue()
         && !state.queue().is_empty()
         && let Some(entry) = state.session.playback_queue.items.pop_front()
@@ -195,13 +180,10 @@ pub fn handle_audio_progress(state: &mut AppState, position_ms: u64) -> Vec<AppM
 
 pub fn handle_audio_error(state: &mut AppState, error: String) -> Vec<AppMsg> {
     state.session.playback.status = PlaybackStatus::Stopped;
-    state.session.notification.current = Some(Notification {
-        kind: NotificationKind::Error,
-        message: format!("Audio Error: {}", error),
-        progress: None,
-        created_at: Instant::now(),
-        dismiss_after: Some(Duration::from_secs(4)),
-    });
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Error,
+        format!("Audio Error: {}", error),
+    ));
     vec![]
 }
 

@@ -1,13 +1,10 @@
 use crate::domain::ids::{PlaylistId, TrackId};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ─── UI CONCEPTS ─────────────────────────────────────────────────────────────
-// These exist only to organize the Sidebar. They are not in the DB.
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CategoryId {
     Folders,
-    AllSongs,
     Artists,
     Albums,
     Playlists,
@@ -35,4 +32,47 @@ pub enum SidebarNodeId {
 
     // Future expansion
     Artist(String),
+}
+
+impl SidebarNodeId {
+    /// Resolves the logical parent of this node for tree traversal.
+    pub fn parent(&self, library_root: &Path) -> Option<Self> {
+        match self {
+            SidebarNodeId::Root => None,
+
+            // Categories are children of Root
+            SidebarNodeId::Category(_) => Some(SidebarNodeId::Root),
+
+            // Playlists -> Playlist Category
+            SidebarNodeId::Playlist(_) => Some(SidebarNodeId::Category(CategoryId::Playlists)),
+
+            // Tracks -> Explicit Parent (Playlist or Folder)
+            SidebarNodeId::Track { parent, .. } => Some(*parent.clone()),
+
+            // Folders -> Parent Folder or Folder Category
+            SidebarNodeId::Folder(path) => {
+                if path == library_root {
+                    Some(SidebarNodeId::Category(CategoryId::Folders))
+                } else {
+                    match path.parent() {
+                        Some(p) => {
+                            if p == library_root {
+                                // Direct child of root -> Folders Category
+                                Some(SidebarNodeId::Category(CategoryId::Folders))
+                            } else if p.starts_with(library_root) {
+                                // Subfolder -> Parent Folder
+                                Some(SidebarNodeId::Folder(p.to_path_buf()))
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    }
+                }
+            }
+
+            // Default fallbacks
+            _ => Some(SidebarNodeId::Root),
+        }
+    }
 }

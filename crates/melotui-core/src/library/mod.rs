@@ -1,3 +1,4 @@
+pub mod library;
 pub mod projector;
 pub mod snapshot;
 

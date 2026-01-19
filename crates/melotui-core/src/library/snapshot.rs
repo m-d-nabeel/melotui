@@ -4,20 +4,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta};
-use crate::navigation::ids::{CategoryId, SidebarNodeId};
+use crate::navigation::ids::SidebarNodeId;
 
-/// A Read-Only, immutable view of the entire music database.
-/// This is replaced atomically when a rescan happens.
-/// It is NEVER mutated field-by-field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibrarySnapshot {
     pub root: PathBuf,
-
-    // FAST LOOKUPS (O(1))
     pub playlists: HashMap<PlaylistId, PlaylistMeta>,
     pub tracks: HashMap<TrackId, TrackMeta>,
-
-    // ORDERING (ReadOnly sequences)
     pub playlist_order: Vec<PlaylistId>,
 }
 
@@ -43,8 +36,6 @@ impl LibrarySnapshot {
         }
     }
 
-    // ─── PURE QUERIES (No Mutation) ───
-
     pub fn get_track(&self, id: TrackId) -> Option<&TrackMeta> {
         self.tracks.get(&id)
     }
@@ -53,14 +44,8 @@ impl LibrarySnapshot {
         self.playlists.get(&id)
     }
 
-    /// The "Resolver"
-    /// Connects the UI Address (SidebarNodeId) to the actual Data (Tracks).
     pub fn resolve_tracks_for_node(&self, node: &SidebarNodeId) -> Vec<&TrackMeta> {
         match node {
-            SidebarNodeId::Category(CategoryId::AllSongs) => {
-                // Return all tracks (conceptually)
-                self.tracks.values().collect()
-            }
             SidebarNodeId::Playlist(pid) => {
                 if let Some(p) = self.playlists.get(pid) {
                     p.tracks
@@ -71,12 +56,10 @@ impl LibrarySnapshot {
                     vec![]
                 }
             }
-            // For folders, you would traverse the tree here
             _ => vec![],
         }
     }
 
-    // Helper for Asset Loading (Stateless)
     pub fn get_album_art(path: &Path) -> Option<(Vec<u8>, String)> {
         let tagged_file = Probe::open(path).ok()?.read().ok()?;
         let tag = tagged_file
