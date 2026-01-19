@@ -4,10 +4,12 @@ use crate::{
     bytes_to_ascii,
     domain::{PlaylistMeta, TrackId, TrackMeta},
     library::snapshot::LibrarySnapshot,
-    navigation::ids::{CategoryId, SidebarNodeId},
-    navigation::state::LeftPanelMode,
+    navigation::{
+        ids::{CategoryId, SidebarNodeId},
+        state::{LeftPanelMode, LibraryNavState},
+    },
     playback::state::{PlaybackStatus, RepeatMode},
-    state::{Notification, SessionState, UIMode, VisualizerMode},
+    state::{Notification, SessionState, SpectrumStyle, UIMode, VisualizerMode},
     utils::{NoOpSpectrum, SizeMode, SpectrumSource},
 };
 
@@ -160,12 +162,36 @@ impl AppState {
 
 // ─── NAVIGATION & VIEW QUERYING ──────────────────────────────────────────────
 impl AppState {
+    /// Returns the Read-Only Library Navigation State.
+    /// Required by the `projector::flatten_tree` function.
+    pub fn library_nav(&self) -> &LibraryNavState {
+        &self.session.nav.library
+    }
+
+    /// Returns the ID of the currently selected node in the sidebar.
+    pub fn get_library_selection(&self) -> Option<&SidebarNodeId> {
+        self.session.nav.library.selected_id.as_ref()
+    }
+
+    /// Returns the ID of the currently selected track in the User Queue.
+    pub fn get_queue_selection(&self) -> Option<TrackId> {
+        self.session.nav.queue.selected_track_id
+    }
+
     pub fn is_library_focused(&self) -> bool {
         self.session.nav.active_panel == LeftPanelMode::Library
     }
 
     pub fn is_queue_focused(&self) -> bool {
         self.session.nav.active_panel == LeftPanelMode::Queue
+    }
+
+    pub fn time_elapsed(&self) -> f32 {
+        self.time_elapsed
+    }
+
+    pub fn is_queue_info_view(&self) -> bool {
+        self.session.nav.queue.show_info
     }
 
     /// Returns true if we are viewing the *contents* of a playlist or folder.
@@ -199,6 +225,21 @@ impl AppState {
     }
 }
 
+/// ─── Visualizer Access ──────────────────────────────────────────────────────
+impl AppState {
+    pub fn should_draw_spectrum(&self) -> bool {
+        self.session.visualizer_mode == VisualizerMode::Spectrum
+    }
+
+    pub fn spectrum_style(&self) -> &SpectrumStyle {
+        &self.session.spectrum_style
+    }
+
+    pub fn get_spectrum_data(&self) -> (&Vec<f32>, &Vec<f32>) {
+        (&self.spectrum_smooth, &self.spectrum_peaks)
+    }
+}
+
 // ─── UI & VISUAL STATE ───────────────────────────────────────────────────────
 impl AppState {
     pub fn ui_mode(&self) -> &UIMode {
@@ -223,14 +264,6 @@ impl AppState {
 
     pub fn clear_current_notification(&mut self) {
         self.session.notification.current = None;
-    }
-
-    pub fn should_draw_spectrum(&self) -> bool {
-        self.session.visualizer_mode == VisualizerMode::Spectrum
-    }
-
-    pub fn get_spectrum_data(&self) -> (&Vec<f32>, &Vec<f32>) {
-        (&self.spectrum_smooth, &self.spectrum_peaks)
     }
 
     /// Loads ASCII art for a specific track into the `track_info_art` buffer.

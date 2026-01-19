@@ -4,7 +4,7 @@ use crate::{
     format_duration,
     widgets::playback_view::progress_bar_view::{ProgressBarConfig, ProgressBarTheme},
 };
-use melotui_core::{AppState, state::RepeatMode};
+use melotui_core::{AppState, playback::state::RepeatMode};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},

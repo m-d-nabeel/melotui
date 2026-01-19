@@ -20,28 +20,26 @@ impl InputHandler {
     fn get_active_contexts(state: &AppState) -> Vec<KeyContext> {
         let mut contexts = Vec::with_capacity(3);
 
-        // Help overlay takes priority
+        // 1. Priority Overlays
         if state.ui_show_help() {
             contexts.push(KeyContext::Help);
             return contexts;
         }
 
-        // Command mode
         if *state.ui_mode() == UIMode::Command {
             contexts.push(KeyContext::CommandMode);
             return contexts;
         }
 
-        // Active panel
+        // 2. Panel Contexts
         if state.is_library_focused() {
             contexts.push(KeyContext::Library);
         } else if state.is_queue_focused() {
             contexts.push(KeyContext::Queue);
         }
 
-        // Global
+        // 3. Global
         contexts.push(KeyContext::Global);
-
         contexts
     }
 
@@ -61,7 +59,7 @@ impl InputHandler {
             }
         }
 
-        // Fallback for typing in command mode
+        // Fallback: Typing in command mode
         let Some(act) = action else {
             if *state.ui_mode() == UIMode::Command
                 && let KeyCode::Char(c) = key.code
@@ -72,73 +70,56 @@ impl InputHandler {
         };
 
         match act {
+            // H Key (Back / Collapse)
             KeyAction::CollapseView => {
                 if state.is_library_focused() {
-                    if state.is_track_list_view() {
-                        Some(AppMsg::Navigation(NavigationMsg::SwitchToPlaylists))
-                    } else if state.is_track_info_view() {
-                        Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
-                    } else {
-                        None
-                    }
+                    // Logic: "SwitchToPlaylists" is now mapped to "Collapse/Go Up" in nav_action.rs
+                    Some(AppMsg::Navigation(NavigationMsg::SwitchToPlaylists))
                 } else if state.is_queue_focused() && state.is_queue_info_view() {
-                    tracing::info!("CollapseView: Switching queue to tracks list");
                     Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
                 } else {
                     None
                 }
             }
 
+            // L Key / Enter (Expand / Select)
             KeyAction::ExpandView => {
                 if state.is_library_focused() {
-                    if state.is_playlist_view() {
-                        Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
-                    } else if state.is_track_list_view() {
-                        Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))
-                    } else {
-                        None
-                    }
+                    // Logic: "SwitchToTracks" is mapped to "Expand Node" in nav_action.rs
+                    Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
                 } else if state.is_queue_focused() && !state.is_queue_info_view() {
-                    tracing::info!("ExpandView: Switching queue to track info");
                     Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))
                 } else {
                     None
                 }
             }
-            // Add to queue
+
+            // A Key (Add to Queue)
             KeyAction::AddToQueue => {
-                if state.is_library_focused() && !state.is_playlist_view() {
-                    let p_idx = state.selected_playlist_index();
-                    if let Some(playlist) = state.library.playlists.get(p_idx) {
-                        let t_idx = state.selected_track_index_for_playlist(p_idx);
-                        if let Some(track) = playlist.tracks.get(t_idx) {
-                            return Some(AppMsg::Library(LibraryMsg::AddToQueue(track.clone())));
-                        }
+                if state.is_library_focused() {
+                    if let Some(track_id) = state.get_selected_track_id_in_sidebar() {
+                        return Some(AppMsg::Library(LibraryMsg::AddToQueue(track_id)));
                     }
                 }
                 None
             }
 
-            // Play next
+            // Shift+A or similar (Play Next)
             KeyAction::PlayNext => {
-                if state.is_library_focused() && !state.is_playlist_view() {
-                    let p_idx = state.selected_playlist_index();
-                    if let Some(playlist) = state.library.playlists.get(p_idx) {
-                        let t_idx = state.selected_track_index_for_playlist(p_idx);
-                        if let Some(track) = playlist.tracks.get(t_idx) {
-                            return Some(AppMsg::Library(LibraryMsg::PlayNext(track.clone())));
-                        }
+                if state.is_library_focused() {
+                    if let Some(track_id) = state.get_selected_track_id_in_sidebar() {
+                        return Some(AppMsg::Library(LibraryMsg::PlayNext(track_id)));
                     }
                 }
                 None
             }
 
-            // Submit command
+            // Submit Command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
                 state.ui_command_buffer().clone(),
             ))),
 
-            // Direct mapping
+            // Direct mapping for other keys (Play, Pause, Volume, etc.)
             _ => act.to_msg(),
         }
     }
@@ -153,7 +134,6 @@ impl InputHandler {
             }
         };
 
-        // Collect bindings in order
         add_context(KeyContext::Global);
         add_context(KeyContext::Library);
         add_context(KeyContext::Queue);
