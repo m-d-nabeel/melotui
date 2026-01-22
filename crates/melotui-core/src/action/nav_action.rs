@@ -35,6 +35,7 @@ pub fn handle_switch_to_playlists(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_switch_to_tracks(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
+    state.session.nav.show_track_info = false;
     match state.session.nav.active_panel {
         LeftPanelMode::Library => {
             if let Some(selected) = &state.session.nav.library.selected_id {
@@ -46,33 +47,33 @@ pub fn handle_switch_to_tracks(state: &mut AppState) -> Vec<AppMsg> {
                     .insert(selected.clone());
             }
         }
-        LeftPanelMode::Queue => {
-            state.session.nav.queue.show_info = false;
-        }
+        LeftPanelMode::Queue => {}
     }
     vec![]
 }
 
-pub fn handle_switch_to_track_info(state: &mut AppState) -> Vec<AppMsg> {
+pub fn handle_toggle_track_info(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
-    match state.session.nav.active_panel {
-        LeftPanelMode::Library => {
-            if let Some(track_id) = state.get_selected_track_id_in_sidebar() {
-                if let Some(track) = state.library.get_track(track_id).cloned() {
+    if state.session.nav.show_track_info {
+        state.session.nav.show_track_info = false;
+    } else {
+        let has_track = match state.session.nav.active_panel {
+            LeftPanelMode::Library => state.get_selected_track_id_in_sidebar().is_some(),
+            LeftPanelMode::Queue => state.get_selected_track_id_in_queue().is_some(),
+        };
+        if has_track {
+            let track_id = match state.session.nav.active_panel {
+                LeftPanelMode::Library => state.get_selected_track_id_in_sidebar(),
+                LeftPanelMode::Queue => state.get_selected_track_id_in_queue(),
+            };
+            if let Some(tid) = track_id {
+                if let Some(track) = state.library.get_track(tid).cloned() {
                     state.load_track_info_art(&track);
                 }
             }
+            state.session.nav.show_track_info = true;
         }
-        LeftPanelMode::Queue => {
-            state.session.nav.queue.show_info = true;
-            // FIXED: Use queue-specific resolution
-            if let Some(track_id) = state.get_selected_track_id_in_queue() {
-                if let Some(track) = state.library.get_track(track_id).cloned() {
-                    state.load_track_info_art(&track);
-                }
-            }
-        }
-    };
+    }
     vec![]
 }
 

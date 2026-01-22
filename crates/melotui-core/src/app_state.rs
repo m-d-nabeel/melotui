@@ -187,8 +187,8 @@ impl AppState {
         self.time_elapsed
     }
 
-    pub fn is_queue_info_view(&self) -> bool {
-        self.session.nav.queue.show_info
+    pub fn is_showing_track_info(&self) -> bool {
+        self.session.nav.show_track_info
     }
 
     /// Returns true if we are viewing the *contents* of a playlist or folder.

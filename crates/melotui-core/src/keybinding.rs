@@ -94,8 +94,8 @@ impl KeyAction {
             KeyAction::ToggleTreeExpand => {
                 Some(AppMsg::Navigation(NavigationMsg::ToggleTreeExpand))
             }
-            KeyAction::ShowTrackInfo => Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo)),
-            KeyAction::HideTrackInfo => Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks)),
+            KeyAction::ShowTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
+            KeyAction::HideTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
 
             KeyAction::PlaySelected => Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected)),
             KeyAction::PlayPause => Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)),

@@ -2,7 +2,7 @@
 pub enum NavigationMsg {
     SwitchToPlaylists,
     SwitchToTracks,
-    SwitchToTrackInfo,
+    ToggleTrackInfo,
     ToggleLibraryQueue,
     MoveUp,
     MoveDown,
