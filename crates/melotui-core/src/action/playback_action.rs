@@ -4,10 +4,12 @@ use std::time::{Duration, Instant};
 use crate::{
     AppMsg, AppState,
     domain::TrackId,
+    library::snapshot::LibrarySnapshot,
     message::playback::PlaybackMsg,
     navigation::ids::SidebarNodeId,
     playback::state::{PlaybackStatus, RepeatMode},
     state::{Notification, NotificationKind, VisualizerMode},
+    utils::{SizeMode, bytes_to_ascii},
 };
 
 pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
@@ -229,17 +231,31 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
         Some(m) => m,
         None => return vec![],
     };
+
     state.session.playback.current = Some(id);
     state.session.playback.playing_from_queue = from_queue;
     state.session.playback.status = PlaybackStatus::Playing;
     state.session.playback.progress_ms = 0;
     state.session.playback.duration_ms = Some(meta.duration_ms);
+
+    let title = meta.title.clone();
+    let file_path = meta.file_path.clone();
+    let has_cover = meta.has_cover;
+
+    state.current_album_art = None;
+    if has_cover
+        && let Some((data, _)) = LibrarySnapshot::get_album_art(&file_path)
+        && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Width(110))
+    {
+        state.current_album_art = Some(ascii);
+    }
+
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Playing {}", meta.title),
+        format!("Playing {}", title),
     ));
     vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
-        path: meta.file_path.clone(),
+        path: file_path,
     })]
 }
 
