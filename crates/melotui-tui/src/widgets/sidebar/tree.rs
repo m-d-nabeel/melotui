@@ -10,16 +10,24 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, List, ListItem},
 };
+use std::collections::HashSet;
 
 use crate::widgets::sidebar::generate_marquee_delayed;
 
 // Theme Constants
-const ACTIVE_BORDER: Color = Color::Yellow;
+const ACTIVE_BORDER: Color = Color::Cyan;
 const INACTIVE_BORDER: Color = Color::Rgb(60, 60, 60);
-const SELECTED_BG: Color = Color::Rgb(50, 50, 50);
-const PLAYING_FG: Color = Color::Rgb(142, 192, 124); // Gruvbox Green
-const FOLDER_ICON_COLOR: Color = Color::Rgb(215, 153, 33);
-const PLAYLIST_ICON_COLOR: Color = Color::Rgb(177, 98, 134);
+const SELECTED_BG: Color = Color::Rgb(40, 44, 52);
+const SELECTED_FG: Color = Color::White;
+
+// Catppuccin Colors for Playing State
+const PLAYING_TRACK_COLOR: Color = Color::Rgb(166, 227, 161); // Catppuccin Green (#a6e3a1)
+const ANCESTOR_COLOR: Color = Color::Rgb(148, 226, 213); // Catppuccin Teal (#94e2d5)
+
+// Fixed Icon Colors
+const FOLDER_ICON_COLOR: Color = Color::Rgb(215, 153, 33); // Gold
+const PLAYLIST_ICON_COLOR: Color = Color::Rgb(177, 98, 134); // Purple
+const CATEGORY_COLOR: Color = Color::Rgb(97, 175, 239); // Soft Blue
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let rows = flatten_tree(&state.library, state.library_nav());
@@ -34,20 +42,22 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut list_state = ratatui::widgets::ListState::default();
     list_state.select(Some(selected_index));
 
-    // 2. Render Rows
+    // 2. Calculate Active Context
+    let active_ancestors = get_playing_ancestors(state);
+
+    // 3. Render Rows
     let items: Vec<ListItem> = rows
         .iter()
-        .map(|row| render_row(row, state, area.width, is_active))
+        .map(|row| render_row(row, state, area.width, is_active, &active_ancestors))
         .collect();
 
-    // 3. Container
+    // 4. Container
     let border_style = if is_active {
         Style::default().fg(ACTIVE_BORDER)
     } else {
         Style::default().fg(INACTIVE_BORDER)
     };
 
-    // removed icon from title as requested
     let title = if is_active {
         Line::from(vec![Span::styled(
             " Library ",
@@ -68,7 +78,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // 4. List Widget
+    // 5. List
     let list = List::new(items).highlight_style(Style::default().bg(SELECTED_BG));
 
     frame.render_stateful_widget(list, inner_area, &mut list_state);
@@ -79,89 +89,99 @@ fn render_row(
     state: &AppState,
     width: u16,
     panel_active: bool,
+    active_ancestors: &HashSet<SidebarNodeId>,
 ) -> ListItem<'static> {
     let is_selected = state
         .get_library_selection()
         .map(|id| id == &row.id)
         .unwrap_or(false);
 
-    let playing_id = state.get_playing_track_id();
-    let is_playing_track = match (&row.id, playing_id) {
-        (SidebarNodeId::Track { id, .. }, Some(pid)) => *id == pid,
-        _ => false,
-    };
-    // --- Icons & Styles ---
-    let (icon, icon_style) = get_icon_and_style(row, is_playing_track, panel_active);
+    let is_playing_track = state
+        .get_playing_node()
+        .map(|active| active == &row.id)
+        .unwrap_or(false);
 
-    // --- Indentation ---
+    let is_ancestor = active_ancestors.contains(&row.id);
+
+    // --- Color Logic ---
+    let row_color = if is_playing_track {
+        PLAYING_TRACK_COLOR
+    } else if is_ancestor {
+        ANCESTOR_COLOR
+    } else if is_selected {
+        SELECTED_FG
+    } else {
+        Color::Gray
+    };
+
+    // --- Icon Styles ---
+    // Icons keep their type colors (Folder=Gold, Playlist=Purple, etc.)
+    // except for the playing track which uses the playing color
+    let icon_style = if is_playing_track {
+        Style::default().fg(PLAYING_TRACK_COLOR)
+    } else if panel_active {
+        match row.id {
+            SidebarNodeId::Folder(_) => Style::default().fg(FOLDER_ICON_COLOR),
+            SidebarNodeId::Playlist(_) => Style::default().fg(PLAYLIST_ICON_COLOR),
+            SidebarNodeId::Category(_) => Style::default().fg(CATEGORY_COLOR),
+            _ => Style::default().fg(Color::Gray),
+        }
+    } else {
+        Style::default().fg(Color::DarkGray)
+    };
+
+    let icon = get_icon(&row.id, row.is_expanded, is_playing_track);
+
+    // --- Text Styles ---
+    let mut text_style = Style::default().fg(row_color);
+    if is_playing_track {
+        text_style = text_style.add_modifier(Modifier::BOLD);
+    } else if is_selected {
+        text_style = text_style.add_modifier(Modifier::BOLD);
+    }
+
+    // --- Content Formatting ---
     let indent_level = row.level as usize;
     let indent_str = "  ".repeat(indent_level);
 
-    // --- Content / Marquee ---
-    // Calculate available width: Total - (Indent + Icon + Padding + Borders)
     let icon_width = 2;
     let meta_width = (indent_str.len() + icon_width + 3) as u16;
     let available_text_width = width.saturating_sub(meta_width);
 
     let label_text = if is_selected && panel_active {
         generate_marquee_delayed(&row.label, available_text_width as usize, state)
+    } else if row.label.len() > available_text_width as usize {
+        format!(
+            "{}…",
+            &row.label[0..available_text_width.saturating_sub(1) as usize]
+        )
     } else {
-        // Truncate
-        if row.label.len() > available_text_width as usize {
-            format!(
-                "{}…",
-                &row.label[0..available_text_width.saturating_sub(1) as usize]
-            )
-        } else {
-            row.label.clone()
-        }
+        row.label.clone()
     };
 
-    // --- Line Construction ---
-    let mut spans = Vec::new();
-    spans.push(Span::raw(indent_str));
-    spans.push(Span::styled(icon, icon_style));
-    spans.push(Span::raw(" "));
-
-    let text_style = if is_playing_track {
-        Style::default().fg(PLAYING_FG).add_modifier(Modifier::BOLD)
-    } else if is_selected {
-        Style::default()
-            .fg(Color::White)
-            .add_modifier(Modifier::BOLD)
-    } else {
-        Style::default().fg(Color::Gray)
-    };
-
-    spans.push(Span::styled(label_text, text_style));
-
+    // --- Build Line ---
+    let mut spans = vec![
+        Span::raw(indent_str),
+        Span::styled(icon, icon_style),
+        Span::raw(" "),
+        Span::styled(label_text, text_style),
+    ];
     if is_playing_track {
-        spans.push(Span::styled(" 󰐊", Style::default().fg(PLAYING_FG)));
+        spans.push(Span::styled(" 󰐊", Style::default().fg(PLAYING_TRACK_COLOR)));
     }
 
     ListItem::new(Line::from(spans))
 }
 
-fn get_icon_and_style(row: &SidebarRow, is_playing: bool, active: bool) -> (String, Style) {
+fn get_icon(id: &SidebarNodeId, is_expanded: bool, is_playing: bool) -> String {
     if is_playing {
-        return ("  ".to_string(), Style::default().fg(PLAYING_FG));
+        return "  ".to_string();
     }
 
-    let color = if active {
-        match row.id {
-            SidebarNodeId::Folder(_) => FOLDER_ICON_COLOR,
-            SidebarNodeId::Playlist(_) => PLAYLIST_ICON_COLOR,
-            SidebarNodeId::Category(_) => Color::Blue,
-            _ => Color::Gray,
-        }
-    } else {
-        Color::DarkGray
-    };
-
-    let icon = match &row.id {
+    let s = match id {
         SidebarNodeId::Root => " 󰉋 ",
         SidebarNodeId::Category(cat) => {
-            if row.is_expanded {
+            if is_expanded {
                 match cat {
                     CategoryId::Folders => " 󰉋 ",
                     CategoryId::Artists => " 󰠃 ",
@@ -178,14 +198,14 @@ fn get_icon_and_style(row: &SidebarRow, is_playing: bool, active: bool) -> (Stri
             }
         }
         SidebarNodeId::Folder(_) => {
-            if row.is_expanded {
+            if is_expanded {
                 "  "
             } else {
                 "  "
             }
         }
         SidebarNodeId::Playlist(_) => {
-            if row.is_expanded {
+            if is_expanded {
                 "  "
             } else {
                 "  "
@@ -193,13 +213,24 @@ fn get_icon_and_style(row: &SidebarRow, is_playing: bool, active: bool) -> (Stri
         }
         SidebarNodeId::Track { .. } => "  ",
         SidebarNodeId::Artist(_) => {
-            if row.is_expanded {
+            if is_expanded {
                 " 󰠃 "
             } else {
                 " 󰠃 "
             }
         }
     };
+    s.to_string()
+}
 
-    (icon.to_string(), Style::default().fg(color))
+fn get_playing_ancestors(state: &AppState) -> HashSet<SidebarNodeId> {
+    let mut ancestors = HashSet::new();
+    if let Some(playing_node) = state.get_playing_node() {
+        let mut current = playing_node.clone();
+        while let Some(parent) = current.parent(&state.library.root) {
+            ancestors.insert(parent.clone());
+            current = parent;
+        }
+    }
+    ancestors
 }

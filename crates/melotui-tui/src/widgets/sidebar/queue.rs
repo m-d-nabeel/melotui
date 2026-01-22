@@ -8,10 +8,10 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState},
 };
 
-const ACTIVE_BORDER: Color = Color::Yellow;
+const ACTIVE_BORDER: Color = Color::Cyan;
 const INACTIVE_BORDER: Color = Color::Rgb(60, 60, 60);
-const SELECTED_BG: Color = Color::Rgb(50, 50, 50);
-const PLAYING_FG: Color = Color::Rgb(142, 192, 124);
+const SELECTED_BG: Color = Color::Rgb(40, 44, 52);
+const PLAYING_TRACK_COLOR: Color = Color::Rgb(166, 227, 161); // Catppuccin Green (#a6e3a1)
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let queue = state.queue();
@@ -64,11 +64,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 Line::from(vec![
                     Span::styled(
                         " ▶ ",
-                        Style::default().fg(PLAYING_FG).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(PLAYING_TRACK_COLOR)
+                            .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
                         title_marquee,
-                        Style::default().fg(PLAYING_FG).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(PLAYING_TRACK_COLOR)
+                            .add_modifier(Modifier::BOLD),
                     ),
                 ]),
                 Line::from(vec![
@@ -151,7 +155,7 @@ fn draw_queue_table(
             }
 
             let text_color = if is_current {
-                PLAYING_FG
+                PLAYING_TRACK_COLOR
             } else if is_selected {
                 Color::White
             } else {
@@ -167,7 +171,7 @@ fn draw_queue_table(
 
             let icon_symbol = if is_current { "▶" } else { "" };
             let icon_style = if is_current {
-                Style::default().fg(PLAYING_FG)
+                Style::default().fg(PLAYING_TRACK_COLOR)
             } else {
                 Style::default().fg(Color::DarkGray)
             };

@@ -142,6 +142,10 @@ impl AppState {
         self.session.playback.current
     }
 
+    pub fn get_playing_node(&self) -> Option<&SidebarNodeId> {
+        self.session.playback.active_node.as_ref()
+    }
+
     pub fn get_playing_track(&self) -> Option<&TrackMeta> {
         let id = self.get_playing_track_id()?;
         self.library.get_track(id)
