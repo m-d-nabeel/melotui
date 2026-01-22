@@ -37,8 +37,9 @@ pub enum KeyAction {
     ToggleVisualizer,
     MoveUp,
     MoveDown,
-    ExpandView,
-    CollapseView,
+    ToggleTreeExpand,
+    ShowTrackInfo,
+    HideTrackInfo,
 
     // Playback
     PlaySelected,
@@ -90,10 +91,11 @@ impl KeyAction {
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
             KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
             KeyAction::ToggleVisualizer => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
-
-            // Handled in InputHandler
-            KeyAction::ExpandView => None,
-            KeyAction::CollapseView => None,
+            KeyAction::ToggleTreeExpand => {
+                Some(AppMsg::Navigation(NavigationMsg::ToggleTreeExpand))
+            }
+            KeyAction::ShowTrackInfo => Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo)),
+            KeyAction::HideTrackInfo => Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks)),
 
             KeyAction::PlaySelected => Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected)),
             KeyAction::PlayPause => Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)),
@@ -194,12 +196,9 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Char('h'), KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Left, KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Char('['), KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Char('l'), KeyAction::ExpandView, "Expand"),
-                KeyBinding::new(KeyCode::Right, KeyAction::ExpandView, "Expand"),
-                KeyBinding::new(KeyCode::Char(']'), KeyAction::ExpandView, "Expand"),
+                KeyBinding::new(KeyCode::Enter, KeyAction::ToggleTreeExpand, "Expand"),
+                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
+                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
                 KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue, "Add Queue"),
                 KeyBinding::new(KeyCode::Char('A'), KeyAction::PlayNext, "Play Next")
                     .with_mod(KeyModifiers::SHIFT),
@@ -214,12 +213,9 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Char('h'), KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Left, KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Char('['), KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Char('l'), KeyAction::ExpandView, "Expand"),
-                KeyBinding::new(KeyCode::Right, KeyAction::ExpandView, "Expand"),
-                KeyBinding::new(KeyCode::Char(']'), KeyAction::ExpandView, "Expand"),
+                KeyBinding::new(KeyCode::Enter, KeyAction::ToggleTreeExpand, "Expand"),
+                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
+                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::RemoveFromQueue, "Remove"),
                 KeyBinding::new(KeyCode::Delete, KeyAction::RemoveFromQueue, "Remove"),
                 KeyBinding::new(KeyCode::Char('D'), KeyAction::ClearQueue, "Clear All")

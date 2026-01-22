@@ -28,6 +28,7 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
         NavigationMsg::MoveUp => action::nav_action::handle_move_up(state),
         NavigationMsg::MoveDown => action::nav_action::handle_move_down(state),
         NavigationMsg::ToggleArt => action::playback_action::handle_toggle_art(state),
+        NavigationMsg::ToggleTreeExpand => action::nav_action::handle_toggle_tree_expand(state),
     }
 }
 

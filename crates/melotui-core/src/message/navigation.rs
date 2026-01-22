@@ -7,4 +7,5 @@ pub enum NavigationMsg {
     MoveUp,
     MoveDown,
     ToggleArt,
+    ToggleTreeExpand,
 }

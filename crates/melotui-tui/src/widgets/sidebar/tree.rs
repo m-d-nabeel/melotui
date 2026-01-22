@@ -159,23 +159,46 @@ fn get_icon_and_style(row: &SidebarRow, is_playing: bool, active: bool) -> (Stri
     };
 
     let icon = match &row.id {
-        SidebarNodeId::Root => " 󰉋 ",
-        SidebarNodeId::Category(cat) => match cat {
-            CategoryId::Folders => " 󰉋 ",
-            CategoryId::Artists => " 󰠃 ",
-            CategoryId::Albums => " 󰀥 ",
-            CategoryId::Playlists => " 󰲳 ",
-        },
-        SidebarNodeId::Folder(_) => {
+        SidebarNodeId::Root => " 󰉋 ",
+        SidebarNodeId::Category(cat) => {
             if row.is_expanded {
-                "  "
+                match cat {
+                    CategoryId::Folders => " 󰉋 ",
+                    CategoryId::Artists => " 󰠃 ",
+                    CategoryId::Albums => " 󰀥 ",
+                    CategoryId::Playlists => " 󰲳 ",
+                }
             } else {
-                "  "
+                match cat {
+                    CategoryId::Folders => " 󰉋 ",
+                    CategoryId::Artists => " 󰠃 ",
+                    CategoryId::Albums => " 󰀥 ",
+                    CategoryId::Playlists => " 󰲳 ",
+                }
             }
         }
-        SidebarNodeId::Playlist(_) => "  ",
-        SidebarNodeId::Track { .. } => "  ", // Music note for tracks
-        SidebarNodeId::Artist(_) => " 󰠃 ",
+        SidebarNodeId::Folder(_) => {
+            if row.is_expanded {
+                "  "
+            } else {
+                "  "
+            }
+        }
+        SidebarNodeId::Playlist(_) => {
+            if row.is_expanded {
+                "  "
+            } else {
+                "  "
+            }
+        }
+        SidebarNodeId::Track { .. } => "  ",
+        SidebarNodeId::Artist(_) => {
+            if row.is_expanded {
+                " 󰠃 "
+            } else {
+                " 󰠃 "
+            }
+        }
     };
 
     (icon.to_string(), Style::default().fg(color))

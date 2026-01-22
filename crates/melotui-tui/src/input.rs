@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use melotui_core::{
     AppMsg, AppState,
     keybinding::{KeyAction, KeyBinding, KeyContext, KeyRegistry},
-    message::{library::LibraryMsg, navigation::NavigationMsg, ui::UIMsg},
+    message::{library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg, ui::UIMsg},
     state::UIMode,
 };
 
@@ -70,23 +70,18 @@ impl InputHandler {
         };
 
         match act {
-            // H Key (Back / Collapse)
-            KeyAction::CollapseView => {
+            // Enter: Play track if selected, otherwise toggle tree expand
+            KeyAction::ToggleTreeExpand => {
                 if state.is_library_focused() {
-                    Some(AppMsg::Navigation(NavigationMsg::SwitchToPlaylists))
-                } else if state.is_queue_focused() && state.is_queue_info_view() {
-                    Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
-                } else {
-                    None
-                }
-            }
-
-            // L Key / Enter (Expand / Select)
-            KeyAction::ExpandView => {
-                if state.is_library_focused() {
-                    Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
-                } else if state.is_queue_focused() && !state.is_queue_info_view() {
-                    Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))
+                    if state.get_selected_track_id_in_sidebar().is_some() {
+                        Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected))
+                    } else {
+                        Some(AppMsg::Navigation(NavigationMsg::ToggleTreeExpand))
+                    }
+                } else if state.is_queue_focused()
+                    && state.get_selected_track_id_in_queue().is_some()
+                {
+                    Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected))
                 } else {
                     None
                 }
@@ -94,20 +89,20 @@ impl InputHandler {
 
             // A Key (Add to Queue)
             KeyAction::AddToQueue => {
-                if state.is_library_focused() {
-                    if let Some(track_id) = state.get_selected_track_id_in_sidebar() {
-                        return Some(AppMsg::Library(LibraryMsg::AddToQueue(track_id)));
-                    }
+                if state.is_library_focused()
+                    && let Some(track_id) = state.get_selected_track_id_in_sidebar()
+                {
+                    return Some(AppMsg::Library(LibraryMsg::AddToQueue(track_id)));
                 }
                 None
             }
 
             // Shift+A or similar (Play Next)
             KeyAction::PlayNext => {
-                if state.is_library_focused() {
-                    if let Some(track_id) = state.get_selected_track_id_in_sidebar() {
-                        return Some(AppMsg::Library(LibraryMsg::PlayNext(track_id)));
-                    }
+                if state.is_library_focused()
+                    && let Some(track_id) = state.get_selected_track_id_in_sidebar()
+                {
+                    return Some(AppMsg::Library(LibraryMsg::PlayNext(track_id)));
                 }
                 None
             }

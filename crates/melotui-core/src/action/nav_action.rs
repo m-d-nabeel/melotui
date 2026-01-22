@@ -76,6 +76,33 @@ pub fn handle_switch_to_track_info(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+pub fn handle_toggle_tree_expand(state: &mut AppState) -> Vec<AppMsg> {
+    state.last_nav_time = state.time_elapsed;
+    if let Some(selected) = &state.session.nav.library.selected_id {
+        let is_expandable = match selected {
+            SidebarNodeId::Category(_) | SidebarNodeId::Folder(_) | SidebarNodeId::Playlist(_) => {
+                true
+            }
+            _ => false,
+        };
+
+        if is_expandable {
+            let is_expanded = state.session.nav.library.expanded_ids.contains(selected);
+            if is_expanded {
+                state.session.nav.library.expanded_ids.remove(selected);
+            } else {
+                state
+                    .session
+                    .nav
+                    .library
+                    .expanded_ids
+                    .insert(selected.clone());
+            }
+        }
+    }
+    vec![]
+}
+
 pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
     match state.session.nav.active_panel {
