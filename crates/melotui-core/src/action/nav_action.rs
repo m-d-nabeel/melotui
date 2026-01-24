@@ -66,10 +66,10 @@ pub fn handle_toggle_track_info(state: &mut AppState) -> Vec<AppMsg> {
                 LeftPanelMode::Library => state.get_selected_track_id_in_sidebar(),
                 LeftPanelMode::Queue => state.get_selected_track_id_in_queue(),
             };
-            if let Some(tid) = track_id {
-                if let Some(track) = state.library.get_track(tid).cloned() {
-                    state.load_track_info_art(&track);
-                }
+            if let Some(tid) = track_id
+                && let Some(track) = state.library.get_track(tid).cloned()
+            {
+                state.load_track_info_art(&track);
             }
             state.session.nav.show_track_info = true;
         }
@@ -80,12 +80,10 @@ pub fn handle_toggle_track_info(state: &mut AppState) -> Vec<AppMsg> {
 pub fn handle_toggle_tree_expand(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
     if let Some(selected) = &state.session.nav.library.selected_id {
-        let is_expandable = match selected {
-            SidebarNodeId::Category(_) | SidebarNodeId::Folder(_) | SidebarNodeId::Playlist(_) => {
-                true
-            }
-            _ => false,
-        };
+        let is_expandable = matches!(
+            selected,
+            SidebarNodeId::Category(_) | SidebarNodeId::Folder(_) | SidebarNodeId::Playlist(_)
+        );
 
         if is_expandable {
             let is_expanded = state.session.nav.library.expanded_ids.contains(selected);
@@ -131,7 +129,7 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                 return vec![];
             }
 
-            // Find current index using QueueId
+            // Find current queue index
             let current_idx = state
                 .session
                 .nav

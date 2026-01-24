@@ -12,11 +12,11 @@ use crate::message::{
 
 #[derive(Debug, Clone)]
 pub enum AppMsg {
-    // ───── Lifecycle ─────
+    // Lifecycle
     RequestQuit,
     Noop,
 
-    // ───── Domain-specific messages ─────
+    // Domain messages
     Navigation(NavigationMsg),
     Playback(PlaybackMsg),
     Audio(AudioMsg),

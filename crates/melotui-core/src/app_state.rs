@@ -15,13 +15,13 @@ use std::{collections::VecDeque, sync::Arc};
 pub struct AppState {
     pub app_name: String,
 
-    // ─── SHARED CORE DATA (Immutable/Arc) ───
+    // Shared data (immutable)
     pub library: Arc<LibrarySnapshot>,
 
-    // ─── USER SESSION STATE (Mutable) ───
+    // User session state (mutable)
     pub(crate) session: SessionState,
 
-    // ─── RUNTIME BUFFERS (Ephemeral) ───
+    // Runtime buffers
     pub time_elapsed: f32,
     pub last_nav_time: f32,
     pub spectrum_raw: Vec<f32>,
@@ -29,12 +29,12 @@ pub struct AppState {
     pub spectrum_peaks: Vec<f32>,
     pub spectrum_source: Box<dyn SpectrumSource>,
 
-    // ─── CACHED RESOURCES ───
+    // Cached resources
     pub current_album_art: Option<ratatui::text::Text<'static>>,
     pub track_info_art: Option<ratatui::text::Text<'static>>,
 }
 
-// ─── LIFECYCLE ───────────────────────────────────────────────────────────────
+// Lifecycle
 impl AppState {
     pub fn new(library: LibrarySnapshot) -> Self {
         let mut session = SessionState::default();
@@ -50,7 +50,7 @@ impl AppState {
             library: library_arc,
             session,
 
-            // Runtime Init
+            // Runtime initialization
             time_elapsed: 0.0,
             last_nav_time: 0.0,
             spectrum_raw: vec![0.0; 512],
@@ -63,7 +63,7 @@ impl AppState {
     }
 }
 
-// ─── AUDIO SYSTEM ACCESS ─────────────────────────────────────────────────────
+// Audio system access
 impl AppState {
     pub fn volume(&self) -> f32 {
         self.session.audio.volume
@@ -85,7 +85,7 @@ impl AppState {
     }
 }
 
-// ─── PLAYBACK STATE ACCESS ───────────────────────────────────────────────────
+// Playback state access
 impl AppState {
     pub fn is_playing(&self) -> bool {
         matches!(self.session.playback.status, PlaybackStatus::Playing)
@@ -115,7 +115,7 @@ impl AppState {
         self.session.playback.playing_from_queue
     }
 
-    // --- Progress Logic ---
+    // Progress logic
     pub fn progress_ratio(&self) -> f64 {
         let current = self.session.playback.progress_ms as f64;
         let total = self.total_duration_ms() as f64;
@@ -137,7 +137,7 @@ impl AppState {
             .unwrap_or(0)
     }
 
-    // --- Track Lookups ---
+    // Track lookups
     pub fn get_playing_track_id(&self) -> Option<TrackId> {
         self.session.playback.current
     }
@@ -166,15 +166,14 @@ impl AppState {
     }
 }
 
-// ─── NAVIGATION & VIEW QUERYING ──────────────────────────────────────────────
+// Navigation & view querying
 impl AppState {
-    /// Returns the Read-Only Library Navigation State.
-    /// Required by the `projector::flatten_tree` function.
+    /// Returns the read-only library navigation state.
     pub fn library_nav(&self) -> &LibraryNavState {
         &self.session.nav.library
     }
 
-    /// Returns the ID of the currently selected node in the sidebar.
+    /// Returns the ID of the currently selected sidebar node.
     pub fn get_library_selection(&self) -> Option<&SidebarNodeId> {
         self.session.nav.library.selected_id.as_ref()
     }
@@ -195,8 +194,7 @@ impl AppState {
         self.session.nav.show_track_info
     }
 
-    /// Returns true if we are viewing the *contents* of a playlist or folder.
-    /// (Replaces old 'is_track_list_view')
+    /// Returns true if viewing playlist or folder contents.
     pub fn is_viewing_collection(&self) -> bool {
         matches!(
             &self.session.nav.library.selected_id,
@@ -204,8 +202,7 @@ impl AppState {
         )
     }
 
-    /// Returns the Playlist Metadata if one is currently selected/highlighted.
-    /// (ID-Based Replacement for get_selected_playlist)
+    /// Returns the playlist metadata if one is currently selected.
     pub fn get_active_playlist(&self) -> Option<&PlaylistMeta> {
         match &self.session.nav.library.selected_id {
             Some(SidebarNodeId::Playlist(id)) => self.library.get_playlist(*id),
@@ -213,9 +210,7 @@ impl AppState {
         }
     }
 
-    /// Resolves the currently selected track *in the sidebar* (if any).
-    /// If a Playlist is selected, this might need to look at `selection_memory` if we implemented that,
-    /// but based on strict sidebar-only navigation, checking the node type is sufficient.
+    /// Resolves the currently selected track in the sidebar (if any).
     pub fn get_selected_track_id_in_sidebar(&self) -> Option<TrackId> {
         match &self.session.nav.library.selected_id {
             Some(SidebarNodeId::Track { id, .. }) => Some(*id),
@@ -224,7 +219,7 @@ impl AppState {
     }
 }
 
-/// ─── Visualizer Access ──────────────────────────────────────────────────────
+// Visualizer access
 impl AppState {
     pub fn should_draw_spectrum(&self) -> bool {
         self.session.visualizer_mode == VisualizerMode::Spectrum
@@ -239,18 +234,18 @@ impl AppState {
     }
 }
 
-// ─── QUEUE ACCESSORS ─────────────────────────────────────────────────────────
+// Queue accessors
 impl AppState {
     pub fn queue(&self) -> &VecDeque<QueueEntry> {
         &self.session.playback_queue.items
     }
 
-    /// Returns the Unique ID of the selected row
+    /// Returns the unique ID of the selected queue row.
     pub fn get_queue_selection_id(&self) -> Option<QueueId> {
         self.session.nav.queue.selected_queue_id
     }
 
-    /// Resolves the Queue Selection to a TrackId (for info/art display)
+    /// Resolves the queue selection to a TrackId (for info/art display).
     pub fn get_selected_track_id_in_queue(&self) -> Option<TrackId> {
         let sel_id = self.session.nav.queue.selected_queue_id?;
         self.session
@@ -266,7 +261,7 @@ impl AppState {
     }
 }
 
-// ─── UI & VISUAL STATE ───────────────────────────────────────────────────────
+// UI & visual state
 impl AppState {
     pub fn ui_mode(&self) -> &UIMode {
         &self.session.ui.mode
@@ -292,7 +287,7 @@ impl AppState {
         self.session.notification.current = None;
     }
 
-    /// Loads ASCII art for a specific track into the `track_info_art` buffer.
+    /// Loads ASCII art for a track into the track_info_art buffer.
     pub fn load_track_info_art(&mut self, track: &TrackMeta) {
         self.track_info_art = None;
 
@@ -311,29 +306,32 @@ impl AppState {
     }
 }
 
-// ─── PREDICTION LOGIC ────────────────────────────────────────────────────────
+// Next song prediction
 impl AppState {
     pub fn predict_next_song(&self) -> String {
-        // 1. Priority: User Queue
+        // Priority: User queue
         if let Some(qid) = self.session.playback.active_queue_id {
-            if let Some(idx) = self.queue().iter().position(|e| e.id == qid)
-                && idx + 1 < self.queue().len()
-            {
-                return self
-                    .library
-                    .get_track(self.queue()[idx + 1].track_id)
-                    .map(|t| t.title.clone())
-                    .unwrap_or("Unknown".into());
+            // Scenario A: Playing song is still in queue list.
+            if let Some(idx) = self.queue().iter().position(|e| e.id == qid) {
+                if idx + 1 < self.queue().len() {
+                    return self.resolve_track_title(self.queue()[idx + 1].track_id);
+                }
+                // If last song, fall through to context logic.
             }
-        } else if let Some(first) = self.queue().front() {
-            return self
-                .library
-                .get_track(first.track_id)
-                .map(|t| t.title.clone())
-                .unwrap_or("Unknown".into());
+            // Scenario B: Playing song was popped from queue (auto-play).
+            else if let Some(first) = self.queue().front() {
+                return self.resolve_track_title(first.track_id);
+            }
         }
+        // Scenario C: Playing from context but user added songs to queue.
+        else if let Some(first) = self.queue().front() {
+            return self.resolve_track_title(first.track_id);
+        }
+
+        // Context (playlist/folder)
         let ctx = &self.session.playback.context_queue;
         let idx = self.session.playback.context_idx;
+
         if ctx.is_empty() {
             return "None".into();
         }
@@ -347,21 +345,21 @@ impl AppState {
 
         let next = idx + 1;
         if next < ctx.len() {
-            return self
-                .library
-                .get_track(ctx[next])
-                .map(|t| t.title.clone())
-                .unwrap_or("Unknown".into());
+            return self.resolve_track_title(ctx[next]);
         }
 
         if self.session.repeat_mode == RepeatMode::Playlist {
-            return self
-                .library
-                .get_track(ctx[0])
-                .map(|t| t.title.clone())
-                .unwrap_or("Unknown".into());
+            return self.resolve_track_title(ctx[0]);
         }
 
         "None".into()
+    }
+
+    /// Helper to resolve track title from ID.
+    fn resolve_track_title(&self, id: TrackId) -> String {
+        self.library
+            .get_track(id)
+            .map(|t| t.title.clone())
+            .unwrap_or("Unknown".into())
     }
 }

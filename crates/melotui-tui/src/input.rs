@@ -20,7 +20,7 @@ impl InputHandler {
     fn get_active_contexts(state: &AppState) -> Vec<KeyContext> {
         let mut contexts = Vec::with_capacity(3);
 
-        // 1. Priority Overlays
+        // Priority overlays
         if state.ui_show_help() {
             contexts.push(KeyContext::Help);
             return contexts;
@@ -31,14 +31,14 @@ impl InputHandler {
             return contexts;
         }
 
-        // 2. Panel Contexts
+        // Panel contexts
         if state.is_library_focused() {
             contexts.push(KeyContext::Library);
         } else if state.is_queue_focused() {
             contexts.push(KeyContext::Queue);
         }
 
-        // 3. Global
+        // Global
         contexts.push(KeyContext::Global);
         contexts
     }
@@ -59,7 +59,7 @@ impl InputHandler {
             }
         }
 
-        // Fallback: Typing in command mode
+        // Fallback for command mode typing
         let Some(act) = action else {
             if *state.ui_mode() == UIMode::Command
                 && let KeyCode::Char(c) = key.code
@@ -70,7 +70,7 @@ impl InputHandler {
         };
 
         match act {
-            // Enter: Play track if selected, otherwise toggle tree expand
+            // Enter: play selected track or toggle tree expand
             KeyAction::ToggleTreeExpand => {
                 if state.is_library_focused() {
                     if state.get_selected_track_id_in_sidebar().is_some() {
@@ -87,7 +87,7 @@ impl InputHandler {
                 }
             }
 
-            // A Key (Add to Queue)
+            // Add to queue
             KeyAction::AddToQueue => {
                 if state.is_library_focused()
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
@@ -97,7 +97,7 @@ impl InputHandler {
                 None
             }
 
-            // Shift+A or similar (Play Next)
+            // Play next
             KeyAction::PlayNext => {
                 if state.is_library_focused()
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
@@ -107,12 +107,12 @@ impl InputHandler {
                 None
             }
 
-            // Submit Command
+            // Submit command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
                 state.ui_command_buffer().clone(),
             ))),
 
-            // Direct mapping for other keys (Play, Pause, Volume, etc.)
+            // Direct mapping for other keys
             _ => act.to_msg(),
         }
     }

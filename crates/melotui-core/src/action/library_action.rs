@@ -73,7 +73,7 @@ pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
         return vec![];
     }
 
-    // Use QueueId for removal
+    // Remove using QueueId
     let selected_qid = state.session.nav.queue.selected_queue_id;
 
     if let Some(target_id) = selected_qid {

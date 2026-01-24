@@ -24,14 +24,12 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::LightBlue))
-        .padding(Padding::horizontal(2)); // Horizontal margin inside the box
+        .padding(Padding::horizontal(2)); // Horizontal margin inside
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // 2. Grid Layout: 3 Columns
-    // Using Constraint::Fill(1) ensures they share remaining space EQUALLY.
-    // We use Length(2) for gaps between columns.
+    // Grid layout: 3 columns (equal spacing)
     let layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -48,7 +46,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let col2 = layout[2];
     let col3 = layout[4];
 
-    // --- Helper to split column into 2 rows with a Vertical Gap ---
+    // Helper: split column into 2 rows with vertical gap
     let split_rows = |rect| {
         Layout::default()
             .direction(Direction::Vertical)
@@ -64,8 +62,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let c2 = split_rows(col2);
     let c3 = split_rows(col3);
 
-    // --- RENDER WIDGETS ---
-    // Note: cX[0] is top, cX[2] is bottom (skipping the gap at [1])
+    // Render widgets
 
     // Column 1: Master
     render_sleek_slider(
@@ -143,8 +140,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
     let ratio = ((config.val - config.min) / (config.max - config.min)).clamp(0.0, 1.0);
 
-    // 1. Center Content Vertically in the cell
-    // We reserve exactly 2 lines (Label + Slider)
+    // Center content in cell (2 lines: label + slider)
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -158,7 +154,7 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
     let label_area = layout[1];
     let slider_area = layout[2];
 
-    // 2. Row 1: Label (Left) --- Value (Right)
+    // Row 1: label (left) --- value (right)
     let header = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Fill(1), Constraint::Fill(1)])
@@ -186,24 +182,24 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
         header[1],
     );
 
-    // 3. Row 2: Sleek Slider "─────●──────"
+    // Row 2: sleek slider
     let width = slider_area.width as usize;
     if width < 1 {
         return;
     }
 
-    // Logic:
-    // 1. Calculate thumb position (0 to width-1)
-    // 2. Active part (left of thumb) is colored
-    // 3. Inactive part (right of thumb) is dark gray
-    // 4. Thumb is colored circle
+    // Slider logic
+    // Calculate thumb position
+    // Active part (thumb left) colored
+    // Inactive part (thumb right) dark gray
+    // Thumb: colored circle
 
-    let track_width = width.saturating_sub(1); // reserve 1 char for thumb
+    let track_width = width.saturating_sub(1); // Reserve 1 char for thumb
     let thumb_pos = (ratio * track_width as f32).round() as usize;
     let remaining = track_width.saturating_sub(thumb_pos);
 
-    // Use thin line "─" for specific sleek look, or "━" for bolder look
-    // Your reference image uses a thin line.
+    // Use thin line "─" for sleek look
+    // Reference uses thin line
     let active_line = "─".repeat(thumb_pos);
     let inactive_line = "─".repeat(remaining);
 

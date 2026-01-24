@@ -27,19 +27,19 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(block, area);
 
     if let Some(art) = &state.current_album_art {
-        // Render the pre-calculated ASCII art
+        // Render ASCII art
         let p = Paragraph::new(art.clone()).alignment(Alignment::Center);
         frame.render_widget(p, inner_area);
     } else {
         let art_clean = BRANDING_ART.trim_matches('\n');
         let content = format!("{}\n\n{}", art_clean, DESCRIPTION);
 
-        // 2. Calculate Vertical Center
-        // Count lines: Art lines + 1 empty line + 1 description line
+        // Calculate vertical center
+        // Count lines for centering
         let content_height = (art_clean.lines().count() + 2) as u16;
         let y_offset = inner_area.height.saturating_sub(content_height) / 2;
 
-        // 3. Create a Centered Rect
+        // Create centered rect
         let centered_rect = Rect {
             x: inner_area.x,
             y: inner_area.y + y_offset,
@@ -53,7 +53,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 .add_modifier(Modifier::BOLD),
         );
 
-        // 4. Render into the calculated centered area
+        // Render centered content
         frame.render_widget(p, centered_rect);
     }
 }

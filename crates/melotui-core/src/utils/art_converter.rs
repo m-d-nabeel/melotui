@@ -6,20 +6,18 @@ use ratatui::{
 };
 use std::io::Cursor;
 
-/// Defines how the image should be resized.
+/// Image resizing options.
 #[derive(Debug, Clone, Copy)]
 pub enum SizeMode {
-    /// Target number of terminal rows (height). Width is auto-calculated.
+    /// Target height in rows
     Height(u32),
-    /// Target number of terminal columns (width). Height is auto-calculated.
+    /// Target width in columns
     Width(u32),
-    /// Resize to fill the given dimensions, then crop the excess from the center.
-    /// (Target Width in chars, Target Height in rows)
+    /// Resize to fill dimensions, then crop from center
     Cover { width: u32, height: u32 },
 }
 
-/// Converts raw image bytes into a rectangular Ratatui Text widget.
-/// Uses Lanczos3 resampling for high quality and supports alpha transparency.
+/// Converts image bytes to ASCII art for terminal display.
 pub fn bytes_to_ascii(data: &[u8], size_mode: SizeMode) -> Result<Text<'static>> {
     let img = image::load(Cursor::new(data), image::ImageFormat::Jpeg)
         .or_else(|_| image::load(Cursor::new(data), image::ImageFormat::Png))
@@ -28,7 +26,7 @@ pub fn bytes_to_ascii(data: &[u8], size_mode: SizeMode) -> Result<Text<'static>>
     let (orig_w, orig_h) = img.dimensions();
     let aspect_ratio = orig_w as f64 / orig_h as f64;
 
-    // Terminal cells are approx 1:2 (width:height)
+    // Terminal cells ~1:2 (width:height)
     let (target_w, target_h, do_crop) = match size_mode {
         SizeMode::Height(h) => {
             let internal_h = h * 2;
@@ -82,15 +80,15 @@ pub fn bytes_to_ascii(data: &[u8], size_mode: SizeMode) -> Result<Text<'static>>
             let top_color = get_color(x, y);
             let bottom_color = get_color(x, y + 1);
 
-            // High-Res Half-Block Rendering Logic
+            // Half-block rendering
             let span = match (top_color, bottom_color) {
-                // Both pixels have color: Top is BG, Bottom is FG
+                // Both colored: top BG, bottom FG
                 (Some(top), Some(bottom)) => Span::styled("▄", Style::default().bg(top).fg(bottom)),
-                // Only Top has color: Use Upper Half Block
+                // Top colored: use upper half block
                 (Some(top), None) => Span::styled("▀", Style::default().fg(top)),
-                // Only Bottom has color: Use Lower Half Block
+                // Bottom colored: use lower half block
                 (None, Some(bottom)) => Span::styled("▄", Style::default().fg(bottom)),
-                // Both transparent: Empty space
+                // Both transparent: empty space
                 (None, None) => Span::raw(" "),
             };
             spans.push(span);

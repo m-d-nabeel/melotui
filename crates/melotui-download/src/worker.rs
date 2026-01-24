@@ -24,10 +24,10 @@ enum InternalEvent {
 pub fn run(worker: impl IpcWorker<DownloadCommand>) {
     tracing::info!("Download worker started");
 
-    // Bridge between the download thread and this IPC loop
+    // Bridge between download thread and IPC loop
     let (internal_tx, internal_rx) = mpsc::channel::<InternalEvent>();
 
-    // Cancellation flag shared with the download thread
+    // Cancellation flag shared with download thread
     let mut cancel_flag: Option<Arc<AtomicBool>> = None;
 
     loop {
@@ -137,8 +137,8 @@ fn download_task(
         }
     };
 
-    // We need to read stdout/stderr without blocking the cancellation check.
-    // The easiest way is two small threads that pump lines to the main thread?
+    // Read stdout/stderr without blocking cancellation check
+    // Read stdout/stderr with two small threads
     // OR just use the reference implementation logic which spawns threads for IO.
 
     let stderr = child.stderr.take().unwrap();
@@ -154,7 +154,7 @@ fn download_task(
             if cancel_err.load(Ordering::SeqCst) {
                 return;
             }
-            // yt-dlp sends progress to stdout or stderr depending on version/flags
+            // yt-dlp sends progress to stdout or stderr
             if let Some(pct) = parse_progress(&line) {
                 let _ = tx_err.send(InternalEvent::Progress(pct));
             }
@@ -172,14 +172,14 @@ fn download_task(
                 return;
             }
             tracing::debug!("yt-dlp: {}", line);
-            // Also check stdout for progress just in case
+            // Also check stdout for progress
             if let Some(pct) = parse_progress(&line) {
                 let _ = tx_out.send(InternalEvent::Progress(pct));
             }
         }
     });
 
-    // Monitor Loop
+    // Monitor process
     loop {
         if cancel.load(Ordering::SeqCst) {
             tracing::info!("Killing yt-dlp process...");

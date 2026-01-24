@@ -14,17 +14,17 @@ use std::collections::HashSet;
 
 use crate::widgets::sidebar::generate_marquee_delayed;
 
-// Theme Constants
+// Theme constants
 const ACTIVE_BORDER: Color = Color::Cyan;
 const INACTIVE_BORDER: Color = Color::Rgb(60, 60, 60);
 const SELECTED_BG: Color = Color::Rgb(40, 44, 52);
 const SELECTED_FG: Color = Color::White;
 
-// Catppuccin Colors for Playing State
+// Playing state colors
 const PLAYING_TRACK_COLOR: Color = Color::Rgb(166, 227, 161); // Catppuccin Green (#a6e3a1)
 const ANCESTOR_COLOR: Color = Color::Rgb(148, 226, 213); // Catppuccin Teal (#94e2d5)
 
-// Fixed Icon Colors
+// Icon colors
 const FOLDER_ICON_COLOR: Color = Color::Rgb(215, 153, 33); // Gold
 const PLAYLIST_ICON_COLOR: Color = Color::Rgb(177, 98, 134); // Purple
 const CATEGORY_COLOR: Color = Color::Rgb(97, 175, 239); // Soft Blue
@@ -33,7 +33,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let rows = flatten_tree(&state.library, state.library_nav());
     let is_active = state.is_library_focused();
 
-    // 1. Resolve Selection
+    // Resolve selection
     let selected_id = state.get_library_selection();
     let selected_index = selected_id
         .and_then(|id| rows.iter().position(|r| &r.id == id))
@@ -42,16 +42,16 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let mut list_state = ratatui::widgets::ListState::default();
     list_state.select(Some(selected_index));
 
-    // 2. Calculate Active Context
+    // Calculate active context
     let active_ancestors = get_playing_ancestors(state);
 
-    // 3. Render Rows
+    // Render rows
     let items: Vec<ListItem> = rows
         .iter()
         .map(|row| render_row(row, state, area.width, is_active, &active_ancestors))
         .collect();
 
-    // 4. Container
+    // Container
     let border_style = if is_active {
         Style::default().fg(ACTIVE_BORDER)
     } else {
@@ -78,7 +78,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // 5. List
+    // List
     let list = List::new(items).highlight_style(Style::default().bg(SELECTED_BG));
 
     frame.render_stateful_widget(list, inner_area, &mut list_state);
@@ -103,7 +103,7 @@ fn render_row(
 
     let is_ancestor = active_ancestors.contains(&row.id);
 
-    // --- Color Logic ---
+    // Color logic
     let row_color = if is_playing_track {
         PLAYING_TRACK_COLOR
     } else if is_ancestor {
@@ -114,9 +114,7 @@ fn render_row(
         Color::Gray
     };
 
-    // --- Icon Styles ---
-    // Icons keep their type colors (Folder=Gold, Playlist=Purple, etc.)
-    // except for the playing track which uses the playing color
+    // Icon styles
     let icon_style = if is_playing_track {
         Style::default().fg(PLAYING_TRACK_COLOR)
     } else if panel_active {
@@ -132,15 +130,13 @@ fn render_row(
 
     let icon = get_icon(&row.id, row.is_expanded, is_playing_track);
 
-    // --- Text Styles ---
+    // Text styles
     let mut text_style = Style::default().fg(row_color);
-    if is_playing_track {
-        text_style = text_style.add_modifier(Modifier::BOLD);
-    } else if is_selected {
+    if is_playing_track || is_selected {
         text_style = text_style.add_modifier(Modifier::BOLD);
     }
 
-    // --- Content Formatting ---
+    // Content formatting
     let indent_level = row.level as usize;
     let indent_str = "  ".repeat(indent_level);
 
@@ -159,7 +155,7 @@ fn render_row(
         row.label.clone()
     };
 
-    // --- Build Line ---
+    // Build line
     let mut spans = vec![
         Span::raw(indent_str),
         Span::styled(icon, icon_style),

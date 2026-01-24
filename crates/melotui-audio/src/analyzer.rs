@@ -74,7 +74,7 @@ where
         let log_max = MAX_FREQ.ln();
         let log_range = log_max - log_min;
 
-        // Convert sparse map to dense vectors for easier searching
+        // Convert sparse map to dense vectors
         let freqs: Vec<f32> = data.keys().map(|&k| k as f32).collect();
         let vals: Vec<f32> = data.values().copied().collect();
 
@@ -83,21 +83,19 @@ where
         }
 
         (0..bin_count).for_each(|i| {
-            // Target frequency for this bin
+            // Target frequency for bin
             let norm_pos = i as f32 / (bin_count as f32 - 1.0);
             let target_freq = (log_min + norm_pos * log_range).exp();
 
-            // Define a window around the target freq.
-            // At low freqs, the window is small. At high freqs, it's large.
-            // We ensure the window is at least the size of one FFT bin step (~10Hz)
+            // Define frequency window (small for low freq, large for high freq, min ~10Hz)
             let window_width = (target_freq * 0.05).max(11.0);
             let start_f = target_freq - window_width / 2.0;
             let end_f = target_freq + window_width / 2.0;
 
-            // Find max value within this window
+            // Find max value in window
             let mut max_val = 0.0;
 
-            // Efficiently find start index
+            // Find start index efficiently
             let start_idx = match freqs.binary_search_by(|f| f.partial_cmp(&start_f).unwrap()) {
                 Ok(idx) => idx,
                 Err(idx) => idx,

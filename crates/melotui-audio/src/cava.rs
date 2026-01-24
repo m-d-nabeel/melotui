@@ -37,10 +37,10 @@ impl Cava {
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
 
-        // Spawn a reader thread specifically for CAVA stdout
+        // Spawn CAVA stdout reader thread
         thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
-            // CAVA binary format: 1 byte per bar (8-bit)
+            // CAVA format: 1 byte per bar (8-bit)
             let mut buffer = vec![0u8; num_bars];
 
             while running_clone.load(Ordering::Relaxed) {
@@ -63,7 +63,7 @@ impl Cava {
     }
 
     pub fn next_spectrum(&self) -> Option<Vec<f32>> {
-        // drain channel to get the very latest frame
+        // Drain channel for latest frame
         let mut last_frame = None;
         loop {
             match self.receiver.try_recv() {
@@ -88,7 +88,7 @@ fn create_cava_config(bars: usize) -> anyhow::Result<std::path::PathBuf> {
     let temp_dir = std::env::temp_dir();
     let config_path = temp_dir.join("melotui_cava.conf");
 
-    // simple config: standard bars, raw binary output
+    // CAVA config: standard bars, raw binary
     let config = format!(
         r#"
 [general]

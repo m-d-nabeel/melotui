@@ -15,7 +15,7 @@ use crate::widgets::{
 pub fn draw(frame: &mut Frame, state: &AppState) {
     let area = frame.area();
 
-    // --- MAIN LAYOUT (background) ---
+    // Main layout
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(22), Constraint::Percentage(78)])
@@ -45,7 +45,7 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
             Block::default().style(Style::default().add_modifier(Modifier::DIM)),
             area,
         );
-        // ... draw command UI ...
+        // Draw command UI
         let overlay = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0), Constraint::Length(3)])

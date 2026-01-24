@@ -1,7 +1,7 @@
 use crate::domain::ids::{PlaylistId, TrackId};
 use std::path::{Path, PathBuf};
 
-// ─── UI CONCEPTS ─────────────────────────────────────────────────────────────
+// UI concepts
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CategoryId {
     Folders,
@@ -10,20 +10,18 @@ pub enum CategoryId {
     Playlists,
 }
 
-// ─── THE UNIVERSAL ADDRESS ───────────────────────────────────────────────────
-// The Sidebar is a tree of mixed types. This Enum allows us to
-// select *anything* using a single variable.
+// Universal node selector for the sidebar tree
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum SidebarNodeId {
     #[default]
     Root,
 
-    // Virtual Nodes
+    // Virtual nodes
     Category(CategoryId),
     Folder(PathBuf),
 
-    // Data Nodes
+    // Data nodes
     Playlist(PlaylistId),
     Track {
         id: TrackId,
@@ -35,21 +33,21 @@ pub enum SidebarNodeId {
 }
 
 impl SidebarNodeId {
-    /// Resolves the logical parent of this node for tree traversal.
+    /// Resolves the parent of this node for tree traversal.
     pub fn parent(&self, library_root: &Path) -> Option<Self> {
         match self {
             SidebarNodeId::Root => None,
 
-            // Categories are children of Root
+            // Categories are root children
             SidebarNodeId::Category(_) => Some(SidebarNodeId::Root),
 
-            // Playlists -> Playlist Category
+            // Playlists -> playlist category
             SidebarNodeId::Playlist(_) => Some(SidebarNodeId::Category(CategoryId::Playlists)),
 
-            // Tracks -> Explicit Parent (Playlist or Folder)
+            // Tracks -> explicit parent (playlist or folder)
             SidebarNodeId::Track { parent, .. } => Some(*parent.clone()),
 
-            // Folders -> Parent Folder or Folder Category
+            // Folders -> parent folder or folder category
             SidebarNodeId::Folder(path) => {
                 if path == library_root {
                     Some(SidebarNodeId::Category(CategoryId::Folders))
@@ -57,10 +55,10 @@ impl SidebarNodeId {
                     match path.parent() {
                         Some(p) => {
                             if p == library_root {
-                                // Direct child of root -> Folders Category
+                                // Direct child of root -> folders category
                                 Some(SidebarNodeId::Category(CategoryId::Folders))
                             } else if p.starts_with(library_root) {
-                                // Subfolder -> Parent Folder
+                                // Subfolder -> parent folder
                                 Some(SidebarNodeId::Folder(p.to_path_buf()))
                             } else {
                                 None
@@ -71,7 +69,7 @@ impl SidebarNodeId {
                 }
             }
 
-            // Default fallbacks
+            // Default fallback
             _ => Some(SidebarNodeId::Root),
         }
     }

@@ -48,7 +48,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(inner_area);
 
-    // 3. Draw "Now Playing" Header
+    // Draw "Now Playing" header
     let playing_from_queue = state.is_playing_from_queue();
     let current_track = state.get_playing_track();
 

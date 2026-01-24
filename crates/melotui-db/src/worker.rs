@@ -31,7 +31,7 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
                     worker.send(IpcEvent::LibraryRescanned);
                 }
             }
-            // ... (Other commands todo) ...
+            // TODO: Implement other commands
             Some(DatabaseCommand::Shutdown) => {
                 info!("Database worker shutting down");
                 break;
@@ -48,14 +48,14 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
 fn handle_scan_library(conn: &rusqlite::Connection, root: &Path) -> Result<()> {
     info!("Scanning library at: {:?}", root);
 
-    // CRITICAL FIX: Do NOT delete all tracks. This destroys stable IDs.
-    // Instead, we will upsert found tracks, and optionally delete missing ones later.
+    // Critical: Do NOT delete all tracks (destroys stable IDs)
+    // Upsert found tracks, optionally delete missing ones later
     // For now, we just scan and add/update.
 
     let mut count = 0;
     let scan_start = std::time::Instant::now();
 
-    // Use a transaction for speed
+    // Use transaction for speed
     conn.execute("BEGIN TRANSACTION", [])?;
 
     let res = scan_directory(conn, root, &mut count);
@@ -103,7 +103,7 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
         return None;
     }
 
-    // Lofty parsing (same as before)
+    // Lofty parsing
     let tagged_file = Probe::open(path).ok()?.read().ok()?;
     let properties = tagged_file.properties();
 

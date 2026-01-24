@@ -24,11 +24,11 @@ pub fn is_cava_available() -> bool {
 impl Default for SpectrumStyle {
     fn default() -> Self {
         if is_cava_available() {
-            tracing::info!("Cava installation detected. Using it for spectrum");
+            tracing::info!("Cava detected, using for spectrum");
             SpectrumStyle::Cava
         } else {
-            tracing::info!("Cava installation not detected. Switching to manual mode.");
-            tracing::info!("Install Cava for better spectrum visualization");
+            tracing::info!("Cava not found, using default visualizer");
+            tracing::info!("Install CAVA for better spectrum visualization");
             SpectrumStyle::Default
         }
     }

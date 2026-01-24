@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-// Contexts for key bindings
+// Key binding contexts
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum KeyContext {
     Help,
@@ -20,7 +20,7 @@ pub enum KeyContext {
     Global,
 }
 
-// Actions users can perform
+// User actions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyAction {
     // System
@@ -80,7 +80,7 @@ impl KeyAction {
         match self {
             KeyAction::Quit => Some(AppMsg::RequestQuit),
             KeyAction::ToggleHelp => Some(AppMsg::UI(UIMsg::ToggleHelp)),
-            // Toggles help off
+            // Toggle help off
             KeyAction::CloseHelp => Some(AppMsg::UI(UIMsg::ToggleHelp)),
 
             KeyAction::EnterCommandMode => Some(AppMsg::UI(UIMsg::EnterCommandMode)),
@@ -115,7 +115,7 @@ impl KeyAction {
             KeyAction::RescanLibrary => Some(AppMsg::Library(LibraryMsg::RequestRescanLibrary)),
             KeyAction::CancelDownload => Some(AppMsg::Download(DownloadMsg::RequestCancelDownload)),
 
-            // Audio FX
+            // Audio effects
             KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05))),
             KeyAction::VolDown => Some(AppMsg::Audio(AudioMsg::AdjustVolume(-0.05))),
             KeyAction::SpeedUp => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(0.1))),
@@ -129,12 +129,12 @@ impl KeyAction {
             KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::AdjustEcho(0.05))),
             KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::AdjustEcho(-0.05))),
 
-            _ => None, // SubmitCommand, AddToQueue, PlayNext
+            _ => None, // Handled elsewhere
         }
     }
 }
 
-// Key binding structure
+// Key binding definition
 #[derive(Debug, Clone)]
 pub struct KeyBinding {
     pub key: KeyCode,
@@ -159,7 +159,7 @@ impl KeyBinding {
     }
 }
 
-// Registry of key bindings
+// Key binding registry
 pub struct KeyRegistry {
     pub bindings: HashMap<KeyContext, Vec<KeyBinding>>,
 }
@@ -168,7 +168,7 @@ impl Default for KeyRegistry {
     fn default() -> Self {
         let mut bindings = HashMap::new();
 
-        // Help overlay
+        // Help context
         bindings.insert(
             KeyContext::Help,
             vec![
@@ -178,7 +178,7 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Command mode
+        // Command context
         bindings.insert(
             KeyContext::CommandMode,
             vec![
@@ -188,7 +188,7 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Library panel
+        // Library context
         bindings.insert(
             KeyContext::Library,
             vec![
@@ -205,7 +205,7 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Queue panel
+        // Queue context
         bindings.insert(
             KeyContext::Queue,
             vec![
@@ -223,7 +223,7 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Global
+        // Global context
         bindings.insert(
             KeyContext::Global,
             vec![

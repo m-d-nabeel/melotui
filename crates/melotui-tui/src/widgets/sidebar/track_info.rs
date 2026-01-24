@@ -9,11 +9,11 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    // 1. Determine Selection Context
+    // Determine selection context
     let track_id = if state.is_library_focused() {
         state.get_selected_track_id_in_sidebar()
     } else {
-        // FIXED: Use correct accessor for unique ID resolution
+        // TODO: Consider if this accessor is still needed
         state.get_selected_track_id_in_queue()
     };
 
@@ -27,7 +27,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         None => return,
     };
 
-    // 2. Container
+    // Container
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -37,7 +37,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // 3. Layout
+    // Layout
     let art_height = if state.track_info_art.is_some() {
         15
     } else {
@@ -48,7 +48,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .constraints([Constraint::Length(art_height), Constraint::Min(10)])
         .split(inner_area);
 
-    // 4. ASCII Art
+    // ASCII art
     if let Some(art) = &state.track_info_art {
         frame.render_widget(
             Paragraph::new(art.clone()).alignment(Alignment::Center),
@@ -56,7 +56,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         );
     }
 
-    // 5. Metadata Lines
+    // Metadata lines
     let mut lines = vec![
         Line::from(""),
         Line::from(ratatui::text::Span::styled(
@@ -107,7 +107,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         Style::default().fg(Color::DarkGray),
     )]));
 
-    // File duration line
+    // Duration line
     lines.push(Line::from(vec![
         ratatui::text::Span::styled("Duration: ", Style::default().fg(Color::DarkGray)),
         ratatui::text::Span::styled(

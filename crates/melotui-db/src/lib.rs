@@ -25,7 +25,7 @@ pub fn load_library_from_db(
 ) -> anyhow::Result<LibrarySnapshot> {
     let conn = Connection::open(db_path)?;
 
-    // 1. Fetch all tracks from SQLite
+    // Fetch all tracks from SQLite
     let query_start = std::time::Instant::now();
     let mut stmt = conn.prepare(
         "SELECT 
@@ -36,7 +36,7 @@ pub fn load_library_from_db(
          ORDER BY file_path ASC",
     )?;
 
-    // Map DB rows to Core Domain types
+    // Map DB rows to domain types
     let track_iter = stmt.query_map([], |row| {
         let id_raw: i64 = row.get(0)?;
         let id = TrackId(id_raw as u64);
@@ -61,7 +61,7 @@ pub fn load_library_from_db(
         ))
     })?;
 
-    // 2. Build Track Map
+    // Build track map
     let mut tracks_map: HashMap<TrackId, TrackMeta> = HashMap::new();
     let mut all_track_ids = Vec::new();
 
@@ -78,13 +78,13 @@ pub fn load_library_from_db(
         query_elapsed
     );
 
-    // 3. Generate Folder-Based Playlists (Auto-Organization)
-    // In a real implementation, you would also fetch `SELECT * FROM playlists` here.
+    // Generate folder-based playlists
+    // In real implementation, also fetch playlists from DB
     let mut playlist_map: HashMap<PlaylistId, PlaylistMeta> = HashMap::new();
     let mut playlist_order: Vec<PlaylistId> = Vec::new();
     let mut folder_groups: HashMap<String, Vec<TrackId>> = HashMap::new();
 
-    // Group by parent folder
+    // Group by folder
     for (id, track) in &tracks_map {
         let parent = track.file_path.parent().unwrap_or(&track.file_path);
         let folder_name = if parent == music_root {
@@ -99,7 +99,7 @@ pub fn load_library_from_db(
         folder_groups.entry(folder_name).or_default().push(*id);
     }
 
-    // A. Create "All Tracks" (ID 0)
+    // Create "All Tracks" (ID 0)
     let all_tracks_id = PlaylistId(0);
     playlist_map.insert(
         all_tracks_id,
@@ -111,14 +111,13 @@ pub fn load_library_from_db(
     );
     playlist_order.push(all_tracks_id);
 
-    // B. Create Playlists from Folders (ID 1..N)
-    // We sort folder names to ensure deterministic ordering of IDs if possible,
-    // though transient IDs are risky. Ideally, these should be persisted.
+    // Create playlists from folders (ID 1..N)
+    // Sort folder names for deterministic IDs (transient IDs are risky)
     let mut sorted_folders: Vec<_> = folder_groups.into_iter().collect();
     sorted_folders.sort_by(|a, b| a.0.cmp(&b.0));
 
     for (i, (name, p_tracks)) in sorted_folders.into_iter().enumerate() {
-        // ID 0 is taken, so start at 1
+        // ID 0 taken, start at 1
         let pid = PlaylistId((i + 1) as u64);
 
         playlist_map.insert(
@@ -126,13 +125,13 @@ pub fn load_library_from_db(
             PlaylistMeta {
                 id: pid,
                 name,
-                tracks: p_tracks, // These are just IDs, very cheap to clone if needed
+                tracks: p_tracks, // Just IDs, cheap to clone
             },
         );
         playlist_order.push(pid);
     }
 
-    // 4. Return Snapshot
+    // Return snapshot
     Ok(LibrarySnapshot::new(
         music_root,
         // We pass the map values as a Vec because `LibrarySnapshot::new`
