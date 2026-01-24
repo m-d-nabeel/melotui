@@ -1,12 +1,12 @@
 #[derive(Debug, Clone)]
 pub enum IpcEvent {
-    // ───── Downloads ─────
+    // Downloads
     DownloadStarted { query: String },
     DownloadProgress { percent: u8 },
     DownloadFinished,
     DownloadFailed { error: String },
 
-    // ───── Playback ─────
+    // Playback
     PlaybackStarted { path: String },
     PlaybackPaused,
     PlaybackResumed,
@@ -14,9 +14,9 @@ pub enum IpcEvent {
     PlaybackProgress { position_ms: u64 },
     PlaybackFinished,
 
-    // ───── Errors ─────
+    // Errors
     Error { message: String },
 
-    // ───── Database ─────
+    // Database
     LibraryRescanned,
 }

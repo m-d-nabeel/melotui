@@ -2,9 +2,7 @@ use ringbuf::traits::Producer;
 use rodio::{Source, source::SeekError};
 use std::time::Duration;
 
-/// Wraps a Rodio source and copies samples to a ring buffer.
-/// We make this generic over P so it accepts whatever specific Producer type
-/// ringbuf creates (HeapProducer, StackProducer, etc.).
+/// Wraps Rodio source and copies samples to ring buffer.
 pub struct SpectrumSniffer<I, P>
 where
     I: Source<Item = f32>,

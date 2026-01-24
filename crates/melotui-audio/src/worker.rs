@@ -221,7 +221,7 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
 
         // 2. Loop Actions
         if is_playing {
-            // A. Progress Calculation with Speed Correction
+            // Progress calculation with speed correction
             let current_pos = if let Some(start) = last_resume_time {
                 let elapsed = start.elapsed().as_secs_f32();
                 accumulated_time + Duration::from_secs_f32(elapsed * current_speed)
@@ -248,7 +248,7 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                 while consumer.try_pop().is_some() {}
             }
 
-            // C. Spectrum
+            // Spectrum handling
             if visualizer_enabled {
                 let spectrum_opt = match &mut backend {
                     VisualizerBackend::Internal(analyzer) => analyzer.next_spectrum(),
@@ -281,7 +281,7 @@ fn reconcile_backend(
 
     match style {
         SpectrumStyle::Cava => {
-            // Switch TO Cava
+            // Switch to Cava
             if !matches!(backend, VisualizerBackend::External(_)) {
                 tracing::info!("Switching Visualizer to CAVA");
                 take_consumer_to_idle(backend, idle_consumer);
@@ -298,7 +298,7 @@ fn reconcile_backend(
             }
         }
         _ => {
-            // Switch TO Internal (Default, Bar, Particle)
+            // Switch to Internal visualizer
             if !matches!(backend, VisualizerBackend::Internal(_)) {
                 tracing::info!("Switching Visualizer to Internal (FFT)");
                 if let Some(c) = idle_consumer.take() {
@@ -319,7 +319,7 @@ fn take_consumer_to_idle(
     backend: &mut VisualizerBackend,
     idle_consumer: &mut Option<AudioConsumer>,
 ) {
-    // Replace backend with None to take ownership of the old one
+    // Replace backend to take ownership
     let old_backend = std::mem::replace(backend, VisualizerBackend::None);
     if let VisualizerBackend::Internal(analyzer) = old_backend {
         *idle_consumer = Some(analyzer.into_consumer());
@@ -335,7 +335,7 @@ fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit>
         >> (pass() | constant(60.0) | constant(0.8) | constant(3.5))
         >> lowshelf();
 
-    // Treble (High Shelf): Freq=3000Hz, Q=0.7
+    // Treble (high shelf): 3000Hz, Q=0.7
     let treble_node =
         (pass() | constant(3000.0) | constant(0.7) | var(&params.treble)) >> highshelf();
 
@@ -344,7 +344,7 @@ fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit>
 
     let mono_chain = bass_node >> treble_node >> echo_node;
 
-    // Stereo Reverb & Mixer Construction
+    // Stereo reverb & mixer
 
     let wet_vol = var(&params.reverb);
     let wet_stereo = wet_vol.clone() | wet_vol; // [WetL, WetR]
@@ -355,23 +355,23 @@ fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit>
     let stereo_pass = pass() | pass();
     let dry_path = stereo_pass.clone() * dry_stereo;
 
-    // Fixed reverb settings, user controls mix only
+    // Fixed reverb settings, user controls mix
     let reverb_unit = reverb_stereo(10.0, 3.0, 0.5);
     let wet_path = reverb_unit * wet_stereo;
 
     let mixer_core = dry_path + wet_path;
-    let feeder = stereo_pass.clone() ^ stereo_pass; // Split input to both paths
+    let feeder = stereo_pass.clone() ^ stereo_pass; // Split input
     let stereo_mixer = feeder >> mixer_core;
 
-    // Limiter
+    // Limiter stage
     let limiter_stereo = limiter(0.001, 0.1) | limiter(0.001, 0.1);
 
     if channels == 1 {
-        // Mono -> EQ -> Split -> Mixer -> Limit
+        // Mono chain: EQ -> Split -> Mixer -> Limit
         let chain = mono_chain >> split() >> stereo_mixer >> limiter_stereo;
         Box::new(chain)
     } else {
-        // Stereo -> Dual Mono EQ -> Mixer -> Limit
+        // Stereo chain: Dual mono EQ -> Mixer -> Limit
         let stereo_eq = mono_chain.clone() | mono_chain;
         let chain = stereo_eq >> stereo_mixer >> limiter_stereo;
         Box::new(chain)

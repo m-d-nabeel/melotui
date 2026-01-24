@@ -1,6 +1,8 @@
 use crate::{
     AppMsg, AppState,
-    state::{Notification, NotificationKind, RepeatMode},
+    domain::TrackId,
+    playback::state::RepeatMode,
+    state::{Notification, NotificationKind},
 };
 
 pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
@@ -8,75 +10,104 @@ pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
         NotificationKind::Info,
         "Scanning Library...",
     ));
-
     vec![]
 }
 
-pub fn handle_add_to_queue(state: &mut AppState, track: crate::library::Track) -> Vec<AppMsg> {
-    state.session.playback_queue.items.push_back(track);
-    state.session.notification.current =
-        Some(Notification::new(NotificationKind::Info, "Added to Queue"));
-    vec![]
-}
+pub fn handle_add_to_queue(state: &mut AppState, track_id: TrackId) -> Vec<AppMsg> {
+    state.session.playback_queue.add_track(track_id);
 
-pub fn handle_play_next(state: &mut AppState, track: crate::library::Track) -> Vec<AppMsg> {
-    state.session.playback_queue.items.push_front(track.clone());
+    let title = state
+        .library
+        .get_track(track_id)
+        .map(|t| t.title.clone())
+        .unwrap_or("Track".into());
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Set to play next: {}", track.title),
+        format!("Added to Queue: {}", title),
+    ));
+    vec![]
+}
+
+pub fn handle_play_next(state: &mut AppState, track_id: TrackId) -> Vec<AppMsg> {
+    state.session.playback_queue.add_track_next(track_id);
+
+    let title = state
+        .library
+        .get_track(track_id)
+        .map(|t| t.title.clone())
+        .unwrap_or("Track".into());
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Will play next: {}", title),
     ));
     vec![]
 }
 
 pub fn handle_toggle_repeat_mode(state: &mut AppState) -> Vec<AppMsg> {
     state.session.repeat_mode = state.session.repeat_mode.next();
-
     let mode_str = match state.session.repeat_mode {
-        RepeatMode::Off => "Linear (Default)",
+        RepeatMode::Off => "Linear",
         RepeatMode::PlayOnce => "Play Once",
         RepeatMode::Track => "Repeat Track",
-        RepeatMode::Playlist => "Repeat List",
+        RepeatMode::Playlist => "Repeat Playlist",
     };
-
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Mode: {}", mode_str),
+        format!("Repeat Mode: {}", mode_str),
     ));
-
     vec![]
 }
 
 pub fn handle_toggle_shuffle(state: &mut AppState) -> Vec<AppMsg> {
-    let new_shuffle = !state.shuffle_active();
-    state.session.playback.shuffle = new_shuffle;
-    let status = if new_shuffle { "On" } else { "Off" };
+    let enabled = !state.session.playback.shuffle;
+    state.session.playback.shuffle = enabled;
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Shuffle: {}", status),
+        format!("Shuffle: {}", if enabled { "On" } else { "Off" }),
     ));
     vec![]
 }
 
 pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
-    if state.is_queue_focused() {
-        let idx = state.selected_queue_index();
-        if idx < state.session.playback_queue.items.len() {
-            state.session.playback_queue.items.remove(idx);
-            if idx >= state.session.playback_queue.items.len() && idx > 0 {
-                state.session.nav.queue.selected_idx = idx - 1;
+    if !state.is_queue_focused() {
+        return vec![];
+    }
+
+    // Remove using QueueId
+    let selected_qid = state.session.nav.queue.selected_queue_id;
+
+    if let Some(target_id) = selected_qid {
+        let queue = &mut state.session.playback_queue.items;
+
+        if let Some(idx) = queue.iter().position(|e| e.id == target_id) {
+            queue.remove(idx);
+
+            if !queue.is_empty() {
+                let new_idx = if idx >= queue.len() {
+                    queue.len() - 1
+                } else {
+                    idx
+                };
+                state.session.nav.queue.selected_queue_id = Some(queue[new_idx].id);
+            } else {
+                state.session.nav.queue.selected_queue_id = None;
             }
+
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Info,
+                "Removed from Queue",
+            ));
         }
-        state.session.notification.current = Some(Notification::new(
-            NotificationKind::Info,
-            "Removed from Queue",
-        ));
     }
     vec![]
 }
 
 pub fn handle_clear_queue(state: &mut AppState) -> Vec<AppMsg> {
+    if state.queue().is_empty() {
+        return vec![];
+    }
     state.session.playback_queue.items.clear();
-    state.reconcile_nav();
+    state.session.nav.queue.selected_queue_id = None;
     state.session.notification.current =
         Some(Notification::new(NotificationKind::Info, "Queue Cleared"));
     vec![]

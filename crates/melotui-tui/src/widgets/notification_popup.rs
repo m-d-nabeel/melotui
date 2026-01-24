@@ -37,18 +37,18 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         NotificationKind::Progress => {
             let pct = notification.progress.unwrap_or(0);
 
-            // 1. Render the outer block first
+            // Render outer block
             frame.render_widget(block, popup_area);
 
             // 2. Define the area *inside* the borders
-            // We use a margin of 1 because Borders::ALL takes up 1 cell
+            // Use margin 1 (Borders::ALL takes 1 cell)
             let inner_area = popup_area.inner(Margin {
                 vertical: 1,
                 horizontal: 1,
             });
 
-            // 3. Create a layout to vertically center the gauge
-            // This forces the gauge to be exactly 1 cell high
+            // Create layout to center gauge vertically
+            // Force gauge to 1 cell high
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
@@ -64,13 +64,13 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 .ratio(pct as f64 / 100.0)
                 .label(format!("{}%", pct))
                 .use_unicode(true);
-            // Note: No .block() here, as we rendered it above
+            // Note: No .block() - rendered above
 
             frame.render_widget(gauge, chunks[1]);
         }
 
         _ => {
-            // For text, we can let the Paragraph handle the block normally
+            // For text, let Paragraph handle block
             let p = Paragraph::new(notification.message.clone())
                 .block(block)
                 .style(Style::default().fg(Color::White))

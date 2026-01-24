@@ -23,11 +23,12 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
     match msg {
         NavigationMsg::SwitchToPlaylists => action::nav_action::handle_switch_to_playlists(state),
         NavigationMsg::SwitchToTracks => action::nav_action::handle_switch_to_tracks(state),
-        NavigationMsg::SwitchToTrackInfo => action::nav_action::handle_switch_to_track_info(state),
+        NavigationMsg::ToggleTrackInfo => action::nav_action::handle_toggle_track_info(state),
         NavigationMsg::ToggleLibraryQueue => action::nav_action::handle_toggle_library_queue(state),
         NavigationMsg::MoveUp => action::nav_action::handle_move_up(state),
         NavigationMsg::MoveDown => action::nav_action::handle_move_down(state),
         NavigationMsg::ToggleArt => action::playback_action::handle_toggle_art(state),
+        NavigationMsg::ToggleTreeExpand => action::nav_action::handle_toggle_tree_expand(state),
     }
 }
 

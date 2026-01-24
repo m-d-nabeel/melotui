@@ -7,9 +7,9 @@ use ratatui::{
 #[derive(Clone, Copy)]
 #[allow(unused)]
 pub enum ProgressBarTheme {
-    Capsule, // ██ on ░░░
-    Retro,   // ████ on ▒▒▒
-    Thin,    // ━━━━ on ────
+    Capsule, // rounded capsule style
+    Retro,   // blocky retro style
+    Thin,    // thin line style
 }
 
 pub struct ProgressBarConfig {

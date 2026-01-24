@@ -1,4 +1,4 @@
-use melotui_core::state::{PlaybackStatus, RepeatMode};
+use melotui_core::playback::state::{PlaybackStatus, RepeatMode};
 use ratatui::style::{Color, Style};
 use ratatui::text::Span;
 

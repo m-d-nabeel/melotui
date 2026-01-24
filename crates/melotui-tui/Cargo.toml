@@ -8,3 +8,7 @@ anyhow = "1"
 ratatui = "0.30"
 tracing = "0.1"
 melotui-core = { path = "../melotui-core" }
+ratatui-image = { version = "10.0.4", default-features = false, features = [
+  "crossterm",
+] }
+image = "0.25"

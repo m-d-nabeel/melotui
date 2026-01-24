@@ -24,7 +24,7 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &AppState) {
     ])
     .split(popup_layout_v[1])[1];
 
-    // --- STYLES ---
+    // Styles
     let border_style = Style::default().fg(Color::Cyan);
     let title_style = Style::default()
         .fg(Color::Cyan)

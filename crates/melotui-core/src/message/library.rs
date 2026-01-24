@@ -1,9 +1,9 @@
-use crate::library::Track;
+use crate::domain::TrackId;
 
 #[derive(Debug, Clone)]
 pub enum LibraryMsg {
-    AddToQueue(Track),
-    PlayNext(Track),
+    AddToQueue(TrackId),
+    PlayNext(TrackId),
     ToggleRepeatMode,
     ToggleShuffle,
     RemoveFromQueue,

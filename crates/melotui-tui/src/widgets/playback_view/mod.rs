@@ -4,7 +4,7 @@ use crate::{
     format_duration,
     widgets::playback_view::progress_bar_view::{ProgressBarConfig, ProgressBarTheme},
 };
-use melotui_core::{AppState, state::RepeatMode};
+use melotui_core::{AppState, playback::state::RepeatMode};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
@@ -14,7 +14,7 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    // 1. Container Block
+    // Container block
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -25,7 +25,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // 2. Layout (Responsive with Min and Fill for automatic spacing)
+    // Layout with responsive spacing
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -39,7 +39,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let v_chunks = layout.split(inner_area);
 
-    // --- PREPARE DATA ---
+    // Prepare data
     let current_track = state.get_playing_track();
     let next_song_name = state.predict_next_song();
     let (status_icon, status_color) = utils::get_status_icon(state.playback_status());
@@ -49,14 +49,14 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         ("♪", Color::Blue)
     };
 
-    // --- ROW 1: Title & Controls ---
+    // Row 1: title & controls
     if v_chunks[0].height > 0 {
         let row1_layout = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Fill(1), Constraint::Min(10)]) // Left: Title, Right: Icons
             .split(v_chunks[0]);
 
-        // Left: [Status] Title - Artist
+        // Left: status, title, artist
         let title_line = if let Some(track) = current_track {
             let artist = track.artist.as_deref().unwrap_or("Unknown");
             Line::from(vec![
@@ -82,7 +82,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         };
         frame.render_widget(Paragraph::new(title_line), row1_layout[0]);
 
-        // Right: [Source] [Shuffle] [Repeat]
+        // Right: source, shuffle, repeat
         let controls_line = Line::from(vec![
             Span::styled(source_icon, Style::default().fg(source_color).bold()),
             Span::raw(" "),
@@ -96,7 +96,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         );
     }
 
-    // --- ROW 3: Progress Bar ---
+    // Row 3: progress bar
     if v_chunks[2].height > 0 {
         let progress_area = v_chunks[2];
         let h_chunks = Layout::default()
@@ -112,13 +112,13 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         let duration_ms = state.total_duration_ms();
         let ratio = state.progress_ratio();
 
-        // Render Time Left
+        // Render time left
         frame.render_widget(
             Paragraph::new(format_duration(current_ms)).style(Style::default().fg(Color::DarkGray)),
             h_chunks[0],
         );
 
-        // Render Bar
+        // Render bar
         let pb_cfg = ProgressBarConfig {
             theme: ProgressBarTheme::Capsule,
             color: status_color,
@@ -127,7 +127,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         };
         frame.render_widget(progress_bar_view::render_progress_bar(pb_cfg), h_chunks[1]);
 
-        // Render Time Right
+        // Render time right
         let total_str = if duration_ms > 0 {
             format_duration(duration_ms)
         } else {
@@ -141,7 +141,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         );
     }
 
-    // --- ROW 5: Next Song Info (dull colors) ---
+    // Row 5: next song info
     if v_chunks[4].height > 0 {
         let next_area = v_chunks[4];
         let (label, name) = match state.repeat_mode() {

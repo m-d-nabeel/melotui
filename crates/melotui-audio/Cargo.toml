@@ -6,7 +6,10 @@ edition = "2024"
 [dependencies]
 melotui-core = { path = "../melotui-core" }
 melotui-ipc = { path = "../melotui-ipc" }
-rodio = { version = "0.21", default-features = false, features = ["symphonia-all", "playback"] }
+rodio = { version = "0.21", default-features = false, features = [
+  "symphonia-all",
+  "playback",
+] }
 tracing = "0.1"
 spectrum-analyzer = "1.7"
 ringbuf = "0.4"

@@ -36,7 +36,7 @@ pub fn handle_adjust_echo(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(new_echo))]
 }
 
-// Dispatch handlers that do nothing in reducer
+// Dispatch handlers (no-op in reducer)
 pub fn handle_dispatch_set_volume(_state: &mut AppState, _volume: f32) -> Vec<AppMsg> {
     vec![]
 }

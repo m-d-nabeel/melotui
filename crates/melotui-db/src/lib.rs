@@ -1,6 +1,12 @@
-use melotui_core::{Library, Playlist, library::Track};
+use melotui_core::{
+    domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta},
+    library::LibrarySnapshot,
+};
 use rusqlite::Connection;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 pub mod worker;
 pub use crate::worker::run;
@@ -12,12 +18,14 @@ pub fn init_db(path: &Path) -> anyhow::Result<Connection> {
     Ok(conn)
 }
 
-/// NEW: Replaces the file system scan with a DB Query
 #[tracing::instrument]
-pub fn load_library_from_db(db_path: &Path, music_root: PathBuf) -> anyhow::Result<Library> {
+pub fn load_library_from_db(
+    db_path: &Path,
+    music_root: PathBuf,
+) -> anyhow::Result<LibrarySnapshot> {
     let conn = Connection::open(db_path)?;
 
-    // 1. Fetch all tracks from SQLite
+    // Fetch all tracks from SQLite
     let query_start = std::time::Instant::now();
     let mut stmt = conn.prepare(
         "SELECT 
@@ -28,44 +36,57 @@ pub fn load_library_from_db(db_path: &Path, music_root: PathBuf) -> anyhow::Resu
          ORDER BY file_path ASC",
     )?;
 
+    // Map DB rows to domain types
     let track_iter = stmt.query_map([], |row| {
-        Ok(Track {
-            id: row.get::<_, i64>(0)? as usize, // Cast DB i64 to Core usize
-            file_path: PathBuf::from(row.get::<_, String>(1)?),
-            title: row.get(2)?,
-            artist: row.get(3)?,
-            album: row.get(4)?,
-            genre: row.get(5)?,
-            year: row.get(6)?,
-            track_number: row.get(7)?,
-            bitrate: row.get(8)?,
-            sample_rate: row.get(9)?,
-            format: row.get(10)?,
-            duration_ms: row.get::<_, i64>(11)? as u64,
-            has_cover: row.get(12)?,
-        })
+        let id_raw: i64 = row.get(0)?;
+        let id = TrackId(id_raw as u64);
+
+        Ok((
+            id,
+            TrackMeta {
+                id,
+                file_path: PathBuf::from(row.get::<_, String>(1)?),
+                title: row.get(2)?,
+                artist: row.get(3)?,
+                album: row.get(4)?,
+                genre: row.get(5)?,
+                year: row.get(6)?,
+                track_number: row.get(7)?,
+                bitrate: row.get(8)?,
+                sample_rate: row.get(9)?,
+                format: row.get(10)?,
+                duration_ms: row.get::<_, i64>(11)? as u64,
+                has_cover: row.get(12)?,
+            },
+        ))
     })?;
 
-    // 2. Collect into a Vector
-    let mut all_tracks = Vec::new();
-    for track in track_iter {
-        all_tracks.push(track?);
+    // Build track map
+    let mut tracks_map: HashMap<TrackId, TrackMeta> = HashMap::new();
+    let mut all_track_ids = Vec::new();
+
+    for t in track_iter {
+        let (id, track) = t?;
+        tracks_map.insert(id, track);
+        all_track_ids.push(id);
     }
+
     let query_elapsed = query_start.elapsed();
     tracing::info!(
         "Loaded {} tracks from database in {:?}",
-        all_tracks.len(),
+        tracks_map.len(),
         query_elapsed
     );
 
-    // 3. Construct the Library
-    // Group tracks by their parent directory under music_root
-    use std::collections::HashMap;
-    let mut folder_tracks: HashMap<String, Vec<Track>> = HashMap::new();
+    // Generate folder-based playlists
+    // In real implementation, also fetch playlists from DB
+    let mut playlist_map: HashMap<PlaylistId, PlaylistMeta> = HashMap::new();
+    let mut playlist_order: Vec<PlaylistId> = Vec::new();
+    let mut folder_groups: HashMap<String, Vec<TrackId>> = HashMap::new();
 
-    for track in all_tracks {
-        let path = PathBuf::from(&track.file_path);
-        let parent = path.parent().unwrap_or(path.as_path());
+    // Group by folder
+    for (id, track) in &tracks_map {
+        let parent = track.file_path.parent().unwrap_or(&track.file_path);
         let folder_name = if parent == music_root {
             "Root".to_string()
         } else {
@@ -75,27 +96,48 @@ pub fn load_library_from_db(db_path: &Path, music_root: PathBuf) -> anyhow::Resu
                 .to_string_lossy()
                 .to_string()
         };
-        folder_tracks.entry(folder_name).or_default().push(track);
+        folder_groups.entry(folder_name).or_default().push(*id);
     }
 
-    let mut playlists: Vec<Playlist> = folder_tracks
-        .into_iter()
-        .map(|(name, tracks)| Playlist { name, tracks })
-        .collect();
-
-    // Sort playlists by name
-    playlists.sort_by(|a, b| a.name.cmp(&b.name));
-
-    // If no playlists, create empty "All Tracks"
-    if playlists.is_empty() {
-        playlists.push(Playlist {
+    // Create "All Tracks" (ID 0)
+    let all_tracks_id = PlaylistId(0);
+    playlist_map.insert(
+        all_tracks_id,
+        PlaylistMeta {
+            id: all_tracks_id,
             name: "All Tracks".to_string(),
-            tracks: Vec::new(),
-        });
+            tracks: all_track_ids,
+        },
+    );
+    playlist_order.push(all_tracks_id);
+
+    // Create playlists from folders (ID 1..N)
+    // Sort folder names for deterministic IDs (transient IDs are risky)
+    let mut sorted_folders: Vec<_> = folder_groups.into_iter().collect();
+    sorted_folders.sort_by(|a, b| a.0.cmp(&b.0));
+
+    for (i, (name, p_tracks)) in sorted_folders.into_iter().enumerate() {
+        // ID 0 taken, start at 1
+        let pid = PlaylistId((i + 1) as u64);
+
+        playlist_map.insert(
+            pid,
+            PlaylistMeta {
+                id: pid,
+                name,
+                tracks: p_tracks, // Just IDs, cheap to clone
+            },
+        );
+        playlist_order.push(pid);
     }
 
-    Ok(Library {
-        root: music_root,
-        playlists,
-    })
+    // Return snapshot
+    Ok(LibrarySnapshot::new(
+        music_root,
+        // We pass the map values as a Vec because `LibrarySnapshot::new`
+        // currently takes a Vec and rebuilds the map (based on your previous code).
+        // It's efficient enough for startup.
+        playlist_map.into_values().collect(),
+        tracks_map,
+    ))
 }

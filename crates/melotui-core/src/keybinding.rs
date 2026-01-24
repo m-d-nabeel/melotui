@@ -10,17 +10,18 @@ use crate::{
     },
 };
 
-// Contexts for key bindings
+// Key binding contexts
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum KeyContext {
     Help,
     CommandMode,
     Library,
     Queue,
+    TrackInfo,
     Global,
 }
 
-// Actions users can perform
+// User actions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyAction {
     // System
@@ -37,8 +38,9 @@ pub enum KeyAction {
     ToggleVisualizer,
     MoveUp,
     MoveDown,
-    ExpandView,
-    CollapseView,
+    ToggleTreeExpand,
+    ShowTrackInfo,
+    HideTrackInfo,
 
     // Playback
     PlaySelected,
@@ -79,7 +81,7 @@ impl KeyAction {
         match self {
             KeyAction::Quit => Some(AppMsg::RequestQuit),
             KeyAction::ToggleHelp => Some(AppMsg::UI(UIMsg::ToggleHelp)),
-            // Toggles help off
+            // Toggle help off
             KeyAction::CloseHelp => Some(AppMsg::UI(UIMsg::ToggleHelp)),
 
             KeyAction::EnterCommandMode => Some(AppMsg::UI(UIMsg::EnterCommandMode)),
@@ -90,10 +92,11 @@ impl KeyAction {
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
             KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
             KeyAction::ToggleVisualizer => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
-
-            // Handled in InputHandler
-            KeyAction::ExpandView => None,
-            KeyAction::CollapseView => None,
+            KeyAction::ToggleTreeExpand => {
+                Some(AppMsg::Navigation(NavigationMsg::ToggleTreeExpand))
+            }
+            KeyAction::ShowTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
+            KeyAction::HideTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
 
             KeyAction::PlaySelected => Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected)),
             KeyAction::PlayPause => Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)),
@@ -113,7 +116,7 @@ impl KeyAction {
             KeyAction::RescanLibrary => Some(AppMsg::Library(LibraryMsg::RequestRescanLibrary)),
             KeyAction::CancelDownload => Some(AppMsg::Download(DownloadMsg::RequestCancelDownload)),
 
-            // Audio FX
+            // Audio effects
             KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05))),
             KeyAction::VolDown => Some(AppMsg::Audio(AudioMsg::AdjustVolume(-0.05))),
             KeyAction::SpeedUp => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(0.1))),
@@ -127,12 +130,12 @@ impl KeyAction {
             KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::AdjustEcho(0.05))),
             KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::AdjustEcho(-0.05))),
 
-            _ => None, // SubmitCommand, AddToQueue, PlayNext
+            _ => None, // Handled elsewhere
         }
     }
 }
 
-// Key binding structure
+// Key binding definition
 #[derive(Debug, Clone)]
 pub struct KeyBinding {
     pub key: KeyCode,
@@ -157,7 +160,7 @@ impl KeyBinding {
     }
 }
 
-// Registry of key bindings
+// Key binding registry
 pub struct KeyRegistry {
     pub bindings: HashMap<KeyContext, Vec<KeyBinding>>,
 }
@@ -166,7 +169,7 @@ impl Default for KeyRegistry {
     fn default() -> Self {
         let mut bindings = HashMap::new();
 
-        // Help overlay
+        // Help context
         bindings.insert(
             KeyContext::Help,
             vec![
@@ -176,7 +179,23 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Command mode
+        bindings.insert(
+            KeyContext::TrackInfo,
+            vec![
+                KeyBinding::new(
+                    KeyCode::Char('['),
+                    KeyAction::HideTrackInfo,
+                    "Show/Hide track info",
+                ),
+                KeyBinding::new(
+                    KeyCode::Char(']'),
+                    KeyAction::ShowTrackInfo,
+                    "Show/Hide track info",
+                ),
+            ],
+        );
+
+        // Command context
         bindings.insert(
             KeyContext::CommandMode,
             vec![
@@ -186,7 +205,7 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Library panel
+        // Library context
         bindings.insert(
             KeyContext::Library,
             vec![
@@ -194,19 +213,16 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Char('h'), KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Left, KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Char('['), KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Char('l'), KeyAction::ExpandView, "Expand"),
-                KeyBinding::new(KeyCode::Right, KeyAction::ExpandView, "Expand"),
-                KeyBinding::new(KeyCode::Char(']'), KeyAction::ExpandView, "Expand"),
+                KeyBinding::new(KeyCode::Enter, KeyAction::ToggleTreeExpand, "Expand"),
+                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
+                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
                 KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue, "Add Queue"),
                 KeyBinding::new(KeyCode::Char('A'), KeyAction::PlayNext, "Play Next")
                     .with_mod(KeyModifiers::SHIFT),
             ],
         );
 
-        // Queue panel
+        // Queue context
         bindings.insert(
             KeyContext::Queue,
             vec![
@@ -214,12 +230,9 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Char('h'), KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Left, KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Char('['), KeyAction::CollapseView, "Back"),
-                KeyBinding::new(KeyCode::Char('l'), KeyAction::ExpandView, "Expand"),
-                KeyBinding::new(KeyCode::Right, KeyAction::ExpandView, "Expand"),
-                KeyBinding::new(KeyCode::Char(']'), KeyAction::ExpandView, "Expand"),
+                KeyBinding::new(KeyCode::Enter, KeyAction::ToggleTreeExpand, "Expand"),
+                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
+                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::RemoveFromQueue, "Remove"),
                 KeyBinding::new(KeyCode::Delete, KeyAction::RemoveFromQueue, "Remove"),
                 KeyBinding::new(KeyCode::Char('D'), KeyAction::ClearQueue, "Clear All")
@@ -227,7 +240,7 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Global
+        // Global context
         bindings.insert(
             KeyContext::Global,
             vec![

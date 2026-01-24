@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 use melotui_core::{
     AppMsg, AppState,
     keybinding::{KeyAction, KeyBinding, KeyContext, KeyRegistry},
-    message::{library::LibraryMsg, navigation::NavigationMsg, ui::UIMsg},
+    message::{library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg, ui::UIMsg},
     state::UIMode,
 };
 
@@ -20,19 +20,24 @@ impl InputHandler {
     fn get_active_contexts(state: &AppState) -> Vec<KeyContext> {
         let mut contexts = Vec::with_capacity(3);
 
-        // Help overlay takes priority
+        // Priority overlays
         if state.ui_show_help() {
             contexts.push(KeyContext::Help);
             return contexts;
         }
 
-        // Command mode
         if *state.ui_mode() == UIMode::Command {
             contexts.push(KeyContext::CommandMode);
             return contexts;
         }
 
-        // Active panel
+        if state.is_showing_track_info() {
+            contexts.push(KeyContext::TrackInfo);
+            contexts.push(KeyContext::Global);
+            return contexts;
+        }
+
+        // Panel contexts
         if state.is_library_focused() {
             contexts.push(KeyContext::Library);
         } else if state.is_queue_focused() {
@@ -41,7 +46,6 @@ impl InputHandler {
 
         // Global
         contexts.push(KeyContext::Global);
-
         contexts
     }
 
@@ -61,7 +65,7 @@ impl InputHandler {
             }
         }
 
-        // Fallback for typing in command mode
+        // Fallback for command mode typing
         let Some(act) = action else {
             if *state.ui_mode() == UIMode::Command
                 && let KeyCode::Char(c) = key.code
@@ -72,63 +76,39 @@ impl InputHandler {
         };
 
         match act {
-            KeyAction::CollapseView => {
+            // Enter: play selected track or toggle tree expand
+            KeyAction::ToggleTreeExpand => {
                 if state.is_library_focused() {
-                    if state.is_track_list_view() {
-                        Some(AppMsg::Navigation(NavigationMsg::SwitchToPlaylists))
-                    } else if state.is_track_info_view() {
-                        Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
+                    if state.get_selected_track_id_in_sidebar().is_some() {
+                        Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected))
                     } else {
-                        None
+                        Some(AppMsg::Navigation(NavigationMsg::ToggleTreeExpand))
                     }
-                } else if state.is_queue_focused() && state.is_queue_info_view() {
-                    tracing::info!("CollapseView: Switching queue to tracks list");
-                    Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
+                } else if state.is_queue_focused()
+                    && state.get_selected_track_id_in_queue().is_some()
+                {
+                    Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected))
                 } else {
                     None
                 }
             }
 
-            KeyAction::ExpandView => {
-                if state.is_library_focused() {
-                    if state.is_playlist_view() {
-                        Some(AppMsg::Navigation(NavigationMsg::SwitchToTracks))
-                    } else if state.is_track_list_view() {
-                        Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))
-                    } else {
-                        None
-                    }
-                } else if state.is_queue_focused() && !state.is_queue_info_view() {
-                    tracing::info!("ExpandView: Switching queue to track info");
-                    Some(AppMsg::Navigation(NavigationMsg::SwitchToTrackInfo))
-                } else {
-                    None
-                }
-            }
             // Add to queue
             KeyAction::AddToQueue => {
-                if state.is_library_focused() && !state.is_playlist_view() {
-                    let p_idx = state.selected_playlist_index();
-                    if let Some(playlist) = state.library.playlists.get(p_idx) {
-                        let t_idx = state.selected_track_index_for_playlist(p_idx);
-                        if let Some(track) = playlist.tracks.get(t_idx) {
-                            return Some(AppMsg::Library(LibraryMsg::AddToQueue(track.clone())));
-                        }
-                    }
+                if state.is_library_focused()
+                    && let Some(track_id) = state.get_selected_track_id_in_sidebar()
+                {
+                    return Some(AppMsg::Library(LibraryMsg::AddToQueue(track_id)));
                 }
                 None
             }
 
             // Play next
             KeyAction::PlayNext => {
-                if state.is_library_focused() && !state.is_playlist_view() {
-                    let p_idx = state.selected_playlist_index();
-                    if let Some(playlist) = state.library.playlists.get(p_idx) {
-                        let t_idx = state.selected_track_index_for_playlist(p_idx);
-                        if let Some(track) = playlist.tracks.get(t_idx) {
-                            return Some(AppMsg::Library(LibraryMsg::PlayNext(track.clone())));
-                        }
-                    }
+                if state.is_library_focused()
+                    && let Some(track_id) = state.get_selected_track_id_in_sidebar()
+                {
+                    return Some(AppMsg::Library(LibraryMsg::PlayNext(track_id)));
                 }
                 None
             }
@@ -138,7 +118,7 @@ impl InputHandler {
                 state.ui_command_buffer().clone(),
             ))),
 
-            // Direct mapping
+            // Direct mapping for other keys
             _ => act.to_msg(),
         }
     }
@@ -153,7 +133,6 @@ impl InputHandler {
             }
         };
 
-        // Collect bindings in order
         add_context(KeyContext::Global);
         add_context(KeyContext::Library);
         add_context(KeyContext::Queue);
