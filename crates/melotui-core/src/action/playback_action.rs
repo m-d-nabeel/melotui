@@ -9,7 +9,6 @@ use crate::{
     navigation::ids::SidebarNodeId,
     playback::state::{PlaybackStatus, RepeatMode},
     state::{Notification, NotificationKind, VisualizerMode},
-    utils::{SizeMode, bytes_to_ascii},
 };
 
 pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
@@ -290,20 +289,22 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
 
     let title = meta.title.clone();
     let file_path = meta.file_path.clone();
-    let has_cover = meta.has_cover;
 
-    state.current_album_art = None;
-    if has_cover
-        && let Some((data, _)) = LibrarySnapshot::get_album_art(&file_path)
-        && let Ok(ascii) = bytes_to_ascii(&data, SizeMode::Width(110))
+    state.current_album_art_data = None;
+    state.current_album_art_id = None;
+
+    if meta.has_cover
+        && let Some((data, _)) = LibrarySnapshot::get_album_art(&meta.file_path)
     {
-        state.current_album_art = Some(ascii);
+        state.current_album_art_data = Some(data);
+        state.current_album_art_id = Some(id);
     }
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
         format!("Playing {}", title),
     ));
+
     vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
         path: file_path,
     })]

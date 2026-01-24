@@ -1,3 +1,4 @@
+mod image_cache;
 mod input;
 mod tui;
 mod view;

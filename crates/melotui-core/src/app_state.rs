@@ -1,5 +1,4 @@
 use crate::{
-    bytes_to_ascii,
     domain::{PlaylistMeta, TrackId, TrackMeta},
     library::{projector::flatten_tree, snapshot::LibrarySnapshot},
     navigation::{
@@ -8,7 +7,7 @@ use crate::{
     },
     playback::state::{PlaybackStatus, QueueEntry, QueueId, RepeatMode},
     state::{Notification, NotificationKind, SessionState, SpectrumStyle, UIMode, VisualizerMode},
-    utils::{NoOpSpectrum, SizeMode, SpectrumSource},
+    utils::{NoOpSpectrum, SpectrumSource},
 };
 use std::{collections::VecDeque, sync::Arc};
 
@@ -30,8 +29,13 @@ pub struct AppState {
     pub spectrum_source: Box<dyn SpectrumSource>,
 
     // Cached resources
-    pub current_album_art: Option<ratatui::text::Text<'static>>,
-    pub track_info_art: Option<ratatui::text::Text<'static>>,
+    // Playback art
+    pub current_album_art_data: Option<Vec<u8>>,
+    pub current_album_art_id: Option<TrackId>,
+
+    // Track info art
+    pub track_info_art_data: Option<Vec<u8>>,
+    pub track_info_art_id: Option<TrackId>,
 }
 
 // Lifecycle
@@ -57,8 +61,10 @@ impl AppState {
             spectrum_smooth: vec![0.0; 512],
             spectrum_peaks: vec![0.0; 512],
             spectrum_source: Box::new(NoOpSpectrum),
-            current_album_art: None,
-            track_info_art: None,
+            current_album_art_data: None,
+            current_album_art_id: None,
+            track_info_art_data: None,
+            track_info_art_id: None,
         }
     }
 }
@@ -287,21 +293,16 @@ impl AppState {
         self.session.notification.current = None;
     }
 
-    /// Loads ASCII art for a track into the track_info_art buffer.
+    /// Load bytes of image.
     pub fn load_track_info_art(&mut self, track: &TrackMeta) {
-        self.track_info_art = None;
+        self.track_info_art_data = None;
+        self.track_info_art_id = None;
 
         if track.has_cover
             && let Some((data, _)) = LibrarySnapshot::get_album_art(&track.file_path)
-            && let Ok(ascii) = bytes_to_ascii(
-                &data,
-                SizeMode::Cover {
-                    width: 32,
-                    height: 15,
-                },
-            )
         {
-            self.track_info_art = Some(ascii);
+            self.track_info_art_data = Some(data);
+            self.track_info_art_id = Some(track.id);
         }
     }
 }

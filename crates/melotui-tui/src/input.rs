@@ -31,6 +31,12 @@ impl InputHandler {
             return contexts;
         }
 
+        if state.is_showing_track_info() {
+            contexts.push(KeyContext::TrackInfo);
+            contexts.push(KeyContext::Global);
+            return contexts;
+        }
+
         // Panel contexts
         if state.is_library_focused() {
             contexts.push(KeyContext::Library);

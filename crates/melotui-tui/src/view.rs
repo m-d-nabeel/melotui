@@ -1,18 +1,21 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, Clear},
 };
 
 use melotui_core::{AppState, UIMode};
 
-use crate::widgets::{
-    command_view, help_view, notification_popup, playback_view, sidebar, sound_control_view,
-    visualizer_view,
+use crate::{
+    image_cache::ImageCache,
+    widgets::{
+        command_view, help_view, notification_popup, playback_view, sidebar, sound_control_view,
+        visualizer_view,
+    },
 };
 
-pub fn draw(frame: &mut Frame, state: &AppState) {
+pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
     let area = frame.area();
 
     // Main layout
@@ -31,8 +34,8 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(right_vertical[1]);
 
-    sidebar::draw(frame, horizontal[0], state);
-    visualizer_view::draw(frame, right_vertical[0], state);
+    sidebar::draw(frame, horizontal[0], state, &mut image_cache.track_info);
+    visualizer_view::draw(frame, right_vertical[0], state, &mut image_cache.album_art);
     sound_control_view::draw(frame, control_chunks[0], state);
     playback_view::draw(frame, control_chunks[1], state);
 
@@ -40,12 +43,10 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
 
     // --- COMMAND OVERLAY ---
     if *state.ui_mode() == UIMode::Command {
-        // Dim background
         frame.render_widget(
             Block::default().style(Style::default().add_modifier(Modifier::DIM)),
             area,
         );
-        // Draw command UI
         let overlay = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0), Constraint::Length(3)])
@@ -55,12 +56,10 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
     }
 
     if state.ui_show_help() {
-        let dim_block = Block::default().style(
-            Style::default()
-                .bg(Color::Reset)
-                .add_modifier(Modifier::DIM),
+        frame.render_widget(
+            Block::default().style(Style::default().add_modifier(Modifier::DIM)),
+            area,
         );
-        frame.render_widget(dim_block, area);
         help_view::draw(frame, area, state);
     }
 }

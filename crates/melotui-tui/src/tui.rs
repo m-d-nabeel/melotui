@@ -6,6 +6,7 @@ use ratatui::{Terminal, crossterm::terminal::EnterAlternateScreen};
 use std::io::{Stdout, stdout};
 use std::time::Duration;
 
+use crate::image_cache::ImageCache;
 use crate::{input::InputHandler, view};
 use melotui_core::AppMsg;
 use melotui_core::AppState;
@@ -17,6 +18,7 @@ pub enum UIEvent {
 
 pub struct Tui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
+    pub image_cache: ImageCache,
 }
 
 impl Tui {
@@ -28,12 +30,16 @@ impl Tui {
 
         tracing::info!("TUI initialized");
 
-        Ok(Self { terminal })
+        Ok(Self {
+            terminal,
+            image_cache: ImageCache::new(),
+        })
     }
 
     pub fn draw(&mut self, state: &AppState) -> anyhow::Result<()> {
         self.terminal.draw(|frame| {
-            view::draw(frame, state);
+            self.image_cache.update(state);
+            view::draw(frame, state, &mut self.image_cache);
         })?;
         Ok(())
     }

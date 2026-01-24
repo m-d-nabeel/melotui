@@ -17,6 +17,7 @@ pub enum KeyContext {
     CommandMode,
     Library,
     Queue,
+    TrackInfo,
     Global,
 }
 
@@ -175,6 +176,22 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Esc, KeyAction::CloseHelp, "Close"),
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::CloseHelp, "Close"),
                 KeyBinding::new(KeyCode::Char('?'), KeyAction::CloseHelp, "Close"),
+            ],
+        );
+
+        bindings.insert(
+            KeyContext::TrackInfo,
+            vec![
+                KeyBinding::new(
+                    KeyCode::Char('['),
+                    KeyAction::HideTrackInfo,
+                    "Show/Hide track info",
+                ),
+                KeyBinding::new(
+                    KeyCode::Char(']'),
+                    KeyAction::ShowTrackInfo,
+                    "Show/Hide track info",
+                ),
             ],
         );
 

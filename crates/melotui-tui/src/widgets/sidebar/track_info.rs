@@ -1,14 +1,16 @@
-use crate::format_duration;
 use melotui_core::AppState;
 use ratatui::{
     Frame,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::Line,
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
+use ratatui_image::StatefulImage;
 
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
+use crate::{format_duration, image_cache::ImageState};
+
+pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, art_state: &mut ImageState) {
     // Determine selection context
     let track_id = if state.is_library_focused() {
         state.get_selected_track_id_in_sidebar()
@@ -38,22 +40,16 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(block, area);
 
     // Layout
-    let art_height = if state.track_info_art.is_some() {
-        15
-    } else {
-        0
-    };
+    let art_height = if art_state.protocol.is_some() { 15 } else { 0 };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(art_height), Constraint::Min(10)])
         .split(inner_area);
 
-    // ASCII art
-    if let Some(art) = &state.track_info_art {
-        frame.render_widget(
-            Paragraph::new(art.clone()).alignment(Alignment::Center),
-            chunks[0],
-        );
+    if let Some(protocol) = &mut art_state.protocol {
+        let image = StatefulImage::default();
+        frame.render_stateful_widget(image, chunks[0], protocol);
     }
 
     // Metadata lines
