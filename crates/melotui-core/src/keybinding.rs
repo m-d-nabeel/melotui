@@ -209,6 +209,7 @@ impl Default for KeyRegistry {
         bindings.insert(
             KeyContext::Library,
             vec![
+                KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel, "Switch Panel"),
                 KeyBinding::new(KeyCode::Char('j'), KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
@@ -226,6 +227,7 @@ impl Default for KeyRegistry {
         bindings.insert(
             KeyContext::Queue,
             vec![
+                KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel, "Switch Panel"),
                 KeyBinding::new(KeyCode::Char('j'), KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
@@ -251,7 +253,6 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Enter, KeyAction::PlaySelected, "Play"),
                 KeyBinding::new(KeyCode::Char('x'), KeyAction::Stop, "Stop"),
                 KeyBinding::new(KeyCode::F(5), KeyAction::RescanLibrary, "Rescan"),
-                KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel, "Switch Panel"),
                 KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer, "Visualizer")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward, "Seek -5s"),
