@@ -20,4 +20,5 @@ pub struct TrackMeta {
     pub sample_rate: Option<u32>,
     pub format: String,
     pub has_cover: bool,
+    pub file_size_bytes: i64,
 }

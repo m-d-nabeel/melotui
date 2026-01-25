@@ -5,11 +5,11 @@ pub mod tree;
 use melotui_core::AppState;
 use ratatui::{Frame, layout::Rect};
 
-use crate::image_cache::ImageState;
+use crate::image_cache::ImageCache;
 
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, art_state: &mut ImageState) {
+pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache) {
     if state.is_showing_track_info() {
-        track_info::draw(frame, area, state, art_state);
+        track_info::draw(frame, area, state, cache);
     } else if state.is_queue_focused() {
         queue::draw(frame, area, state);
     } else {

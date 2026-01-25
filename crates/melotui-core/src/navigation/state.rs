@@ -12,6 +12,7 @@ pub enum LeftPanelMode {
 pub struct LibraryNavState {
     pub selected_id: Option<SidebarNodeId>,
     pub expanded_ids: HashSet<SidebarNodeId>,
+    pub scroll_offset: usize,
 }
 
 #[derive(Debug, Clone, Default)]

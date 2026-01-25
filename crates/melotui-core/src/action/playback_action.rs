@@ -55,27 +55,38 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
 
                     should_update_context = true;
 
-                    match *parent {
-                        SidebarNodeId::Playlist(pid) => {
-                            if let Some(playlist) = state.library.get_playlist(pid) {
-                                new_source_name = format!("Playlist: {}", playlist.name);
-                                new_context_queue = playlist.tracks.clone();
+                    // Unified resolution for all parent types
+                    new_context_queue = state.library.resolve_track_ids_for_node(&*parent);
+
+                    if new_context_queue.is_empty() {
+                        // Fallback for types that don't support context resolution (e.g. unknown categories)
+                        new_context_queue = vec![id];
+                        new_source_name = "Library Selection".to_string();
+                    } else {
+                        match *parent {
+                            SidebarNodeId::Playlist(pid) => {
+                                if let Some(playlist) = state.library.get_playlist(pid) {
+                                    new_source_name = format!("Playlist: {}", playlist.name);
+                                }
                             }
-                        }
-                        SidebarNodeId::Folder(ref path) => {
-                            new_source_name = "Folder View".to_string();
-                            let mut siblings: Vec<_> = state
-                                .library
-                                .tracks
-                                .values()
-                                .filter(|t| t.file_path.parent() == Some(path))
-                                .collect();
-                            siblings.sort_by_key(|t| t.file_path.clone());
-                            new_context_queue = siblings.iter().map(|t| t.id).collect();
-                        }
-                        _ => {
-                            new_source_name = "Library Selection".to_string();
-                            new_context_queue = vec![id];
+                            SidebarNodeId::Folder(_) => {
+                                new_source_name = "Folder View".to_string();
+                            }
+                            SidebarNodeId::Artist(ref name) => {
+                                new_source_name = format!("Artist: {}", name);
+                            }
+                            SidebarNodeId::Album(ref name) => {
+                                new_source_name = format!("Album: {}", name);
+                            }
+                            SidebarNodeId::Genre(ref name) => {
+                                new_source_name = format!("Genre: {}", name);
+                            }
+                            SidebarNodeId::Year(ref year) => {
+                                new_source_name = format!("Year: {}", year);
+                            }
+                            _ => {
+                                new_source_name = "Library Selection".to_string();
+                            }
                         }
                     }
 

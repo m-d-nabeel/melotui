@@ -37,12 +37,16 @@ pub enum DownloadCommand {
 
 #[derive(Debug, Clone)]
 pub enum DatabaseCommand {
+    LoadLibrary { root: PathBuf },
     ScanLibrary { root: PathBuf },
+    PruneLibrary,
     GetAllTracks,
     SearchTracks { query: String },
     GetPlaylists,
     CreatePlaylist { name: String },
     AddTrackToPlaylist { playlist_id: i64, track_id: i64 },
+    IncrementPlayCount { track_id: i64 },
+    ToggleFavorite { track_id: i64 },
     Query { sql: String },
     Shutdown,
 }

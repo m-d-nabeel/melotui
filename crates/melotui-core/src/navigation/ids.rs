@@ -7,6 +7,8 @@ pub enum CategoryId {
     Folders,
     Artists,
     Albums,
+    Genres,
+    Years,
     Playlists,
 }
 
@@ -28,8 +30,11 @@ pub enum SidebarNodeId {
         parent: Box<SidebarNodeId>,
     },
 
-    // Future expansion
+    // Metadata groupings
     Artist(String),
+    Album(String),
+    Genre(String),
+    Year(u32),
 }
 
 impl SidebarNodeId {
@@ -69,8 +74,11 @@ impl SidebarNodeId {
                 }
             }
 
-            // Default fallback
-            _ => Some(SidebarNodeId::Root),
+            // Metadata Groupings -> Respective Categories
+            SidebarNodeId::Artist(_) => Some(SidebarNodeId::Category(CategoryId::Artists)),
+            SidebarNodeId::Album(_) => Some(SidebarNodeId::Category(CategoryId::Albums)),
+            SidebarNodeId::Genre(_) => Some(SidebarNodeId::Category(CategoryId::Genres)),
+            SidebarNodeId::Year(_) => Some(SidebarNodeId::Category(CategoryId::Years)),
         }
     }
 }

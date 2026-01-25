@@ -34,8 +34,8 @@ pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(right_vertical[1]);
 
-    sidebar::draw(frame, horizontal[0], state, &mut image_cache.track_info);
-    visualizer_view::draw(frame, right_vertical[0], state, &mut image_cache.album_art);
+    sidebar::draw(frame, horizontal[0], state, image_cache);
+    visualizer_view::draw(frame, right_vertical[0], state, image_cache);
     sound_control_view::draw(frame, control_chunks[0], state);
     playback_view::draw(frame, control_chunks[1], state);
 
