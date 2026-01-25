@@ -7,7 +7,7 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 
-use crate::image_cache::ImageState;
+use crate::image_cache::ImageCache;
 
 const BRANDING_ART: &str = r#"
 ░▒▓██████████████▓▒░░▒▓████████▓▒░▒▓█▓▒░      ░▒▓██████▓▒░▒▓████████▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
@@ -20,8 +20,10 @@ const BRANDING_ART: &str = r#"
 "#;
 const DESCRIPTION: &str = "The Terminal Music Player";
 
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, art_state: &mut ImageState) {
+pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache) {
     let _ = state;
+    let art_state = &mut cache.album_art;
+
     let block = Block::default()
         .title(" Album Art ")
         .borders(Borders::ALL)
@@ -30,57 +32,13 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, art_state: &mut Ima
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    if let Some(protocol) = &mut art_state.protocol {
-        let cell_ratio: f64 = 0.5;
+    // Use shared logic for Center Cover Crop
+    if art_state.source.is_some() {
+        art_state.update_protocol(&cache.picker, inner_area);
 
-        let area_cells_w = inner_area.width as f64;
-        let area_cells_h = inner_area.height as f64;
-
-        let img_px_w = art_state.width as f64;
-        let img_px_h = art_state.height as f64;
-
-        if img_px_w > 0.0 && img_px_h > 0.0 {
-            let avail_px_w = area_cells_w * cell_ratio;
-            let avail_px_h = area_cells_h;
-
-            let scale = (avail_px_w / img_px_w).min(avail_px_h / img_px_h);
-
-            let target_px_w = img_px_w * scale;
-            let target_px_h = img_px_h * scale;
-
-            let target_cells_w = (target_px_w / cell_ratio)
-                .round()
-                .max(1.0)
-                .min(area_cells_w) as u16;
-
-            let target_cells_h = target_px_h.round().max(1.0).min(area_cells_h) as u16;
-
-            use ratatui::layout::{Constraint, Flex, Layout};
-
-            let v = Layout::vertical([
-                Constraint::Fill(1),
-                Constraint::Length(target_cells_h),
-                Constraint::Fill(1),
-            ])
-            .flex(Flex::Center)
-            .split(inner_area)[1];
-
-            let mut centered = Layout::horizontal([
-                Constraint::Fill(1),
-                Constraint::Length(target_cells_w),
-                Constraint::Fill(1),
-            ])
-            .flex(Flex::Center)
-            .split(v)[1];
-
-            // A little nudge to right
-            let bias_cells: i16 = 1;
-            let max_x = inner_area.x + inner_area.width - centered.width;
-            centered.x = (centered.x + bias_cells as u16).min(max_x);
-
-            frame.render_stateful_widget(StatefulImage::default(), centered, protocol);
-        } else {
-            frame.render_stateful_widget(StatefulImage::default(), inner_area, protocol);
+        if let Some(protocol) = &mut art_state.protocol {
+            let image = StatefulImage::default().resize(ratatui_image::Resize::Fit(None));
+            frame.render_stateful_widget(image, inner_area, protocol);
         }
     } else {
         let art_clean = BRANDING_ART.trim_matches('\n');

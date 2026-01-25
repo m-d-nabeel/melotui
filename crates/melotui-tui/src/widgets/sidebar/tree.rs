@@ -94,11 +94,16 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let list = List::new(items).highlight_style(Style::default().bg(SELECTED_BG));
     frame.render_stateful_widget(list, inner_area, &mut list_state);
 
-    // Scrollbar
+    // Modern Minimalist Scrollbar
     let scrollbar = Scrollbar::default()
         .orientation(ScrollbarOrientation::VerticalRight)
+        .symbols(ratatui::symbols::scrollbar::VERTICAL)
         .begin_symbol(None)
-        .end_symbol(None);
+        .end_symbol(None)
+        .track_symbol(None) // Invisible track for modern look
+        .thumb_style(Style::default().fg(Color::DarkGray))
+        .track_style(Style::default().fg(Color::Black)); // Blend with bg
+
     let mut scrollbar_state = ScrollbarState::new(total_rows).position(offset);
 
     frame.render_stateful_widget(

@@ -179,7 +179,14 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
     let properties = tagged_file.properties();
 
     let duration_ms = properties.duration().as_millis() as u64;
+
     let bitrate = properties.audio_bitrate();
+
+    // Debug logging for troubleshooting
+    if bitrate.is_none() {
+        tracing::warn!("Bitrate extraction failed for {:?}", path);
+    }
+
     let sample_rate = properties.sample_rate();
     let format = ext.to_uppercase();
 
@@ -262,6 +269,8 @@ fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Res
             album=excluded.album,
             file_modified_at=excluded.file_modified_at,
             has_cover=excluded.has_cover,
+            bitrate_kbps=excluded.bitrate_kbps,
+            sample_rate_hz=excluded.sample_rate_hz,
             updated_at=strftime('%s', 'now')",
         params![
             data.file_path,
@@ -288,7 +297,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
     let mut stmt = conn.prepare(
         "SELECT id, file_path, title, artist, album, genre, year,
                 track_number, bitrate_kbps, sample_rate_hz, format,
-                duration_ms, has_cover
+                duration_ms, has_cover, file_size_bytes
          FROM tracks ORDER BY file_path ASC",
     )?;
 
@@ -312,6 +321,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
                 format: row.get(10)?,
                 duration_ms: row.get::<_, i64>(11)? as u64,
                 has_cover: row.get(12)?,
+                file_size_bytes: row.get(13)?,
             },
         ))
     })?;
