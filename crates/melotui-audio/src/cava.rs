@@ -1,17 +1,21 @@
+use ringbuf::{
+    HeapRb,
+    traits::{Observer, Producer, Split},
+};
 use std::{
     io::{BufReader, Read},
     process::{Child, Command, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, TryRecvError},
     },
     thread,
 };
 
+pub type CavaConsumer = <HeapRb<f32> as Split>::Cons;
+
 pub struct Cava {
     process: Child,
-    receiver: Receiver<Vec<f32>>,
     running: Arc<AtomicBool>,
 }
 
@@ -20,7 +24,7 @@ impl Cava {
         melotui_core::state::visualizer::is_cava_available()
     }
 
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new() -> anyhow::Result<(Self, CavaConsumer)> {
         let num_bars = 200;
         let config_path = create_cava_config(num_bars)?;
 
@@ -33,7 +37,11 @@ impl Cava {
             .spawn()?;
 
         let stdout = process.stdout.take().ok_or(anyhow::anyhow!("No stdout"))?;
-        let (tx, rx) = mpsc::channel();
+
+        // Capacity for ~5 frames (5 * 200 = 1000)
+        let ring = HeapRb::<f32>::new(1024);
+        let (mut producer, consumer) = ring.split();
+
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
 
@@ -42,12 +50,26 @@ impl Cava {
             let mut reader = BufReader::new(stdout);
             // CAVA format: 1 byte per bar (8-bit)
             let mut buffer = vec![0u8; num_bars];
+            // Temp float buffer to avoid repeated allocations mapping bytes->floats
+            let mut float_buffer = vec![0.0f32; num_bars];
 
             while running_clone.load(Ordering::Relaxed) {
                 if reader.read_exact(&mut buffer).is_ok() {
-                    let floats: Vec<f32> = buffer.iter().map(|&b| b as f32 / 255.0).collect();
-                    if tx.send(floats).is_err() {
-                        break;
+                    // Check if ring has space for a full frame
+                    if producer.vacant_len() >= num_bars {
+                        // Convert map 0-255 to 0.0-1.0
+                        for (i, &b) in buffer.iter().enumerate() {
+                            float_buffer[i] = b as f32 / 255.0;
+                        }
+
+                        // Push all at once (or slice)
+                        let _ = producer.push_slice(&float_buffer);
+                    } else {
+                        // Drop frame (backpressure)
+                        // We already read it from stdout, so it's discarded.
+                        // This ensures we don't block the reader, but we also don't fill the buffer with old data.
+                        // Ideally we might want to discard *older* data in the ring, but for SPSC,
+                        // keeping the consumer draining fast is the key.
                     }
                 } else {
                     break;
@@ -55,24 +77,7 @@ impl Cava {
             }
         });
 
-        Ok(Self {
-            process,
-            receiver: rx,
-            running,
-        })
-    }
-
-    pub fn next_spectrum(&self) -> Option<Vec<f32>> {
-        // Drain channel for latest frame
-        let mut last_frame = None;
-        loop {
-            match self.receiver.try_recv() {
-                Ok(frame) => last_frame = Some(frame),
-                Err(TryRecvError::Empty) => break,
-                Err(TryRecvError::Disconnected) => return None,
-            }
-        }
-        last_frame
+        Ok((Self { process, running }, consumer))
     }
 }
 
