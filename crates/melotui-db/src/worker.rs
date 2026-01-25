@@ -2,23 +2,46 @@ use anyhow::Result;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::Accessor;
+use melotui_core::{
+    domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta},
+    library::LibrarySnapshot,
+};
 use melotui_ipc::event::IpcEvent;
 use melotui_ipc::{channel::IpcWorker, command::DatabaseCommand};
 use rusqlite::params;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::info;
 
-use crate::init_db;
+use crate::migrations::run_migrations;
 
 const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "m4a", "wav", "ogg", "opus"];
 
 pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
-    let conn = init_db(&db_path).expect("Failed to open DB");
+    let conn = rusqlite::Connection::open(&db_path).expect("Failed to open DB");
+    run_migrations(&conn).expect("Failed to run migrations");
     info!("Database worker initialized");
 
     loop {
         match worker.try_recv() {
+            Some(DatabaseCommand::LoadLibrary { root }) => {
+                info!("Loading library from database for root: {:?}", root);
+                match load_library_snapshot(&conn, root) {
+                    Ok(snapshot) => {
+                        info!("Library loaded: {} tracks", snapshot.tracks.len());
+                        worker.send(IpcEvent::LibraryLoaded {
+                            snapshot: Box::new(snapshot),
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to load library: {:?}", e);
+                        worker.send(IpcEvent::Error {
+                            message: e.to_string(),
+                        });
+                    }
+                }
+            }
             Some(DatabaseCommand::ScanLibrary { root }) => {
                 tracing::info!("Starting Library Scan at {:?}...", root);
                 if let Err(e) = handle_scan_library(&conn, &root) {
@@ -27,11 +50,30 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
                         message: e.to_string(),
                     });
                 } else {
+                    // Auto-prune after scan
+                    let pruned = prune_library(&conn).unwrap_or(0);
+                    if pruned > 0 {
+                        tracing::info!("Pruned {} dead tracks", pruned);
+                    }
                     tracing::info!("Library Scan Complete.");
                     worker.send(IpcEvent::LibraryRescanned);
                 }
             }
-            // TODO: Implement other commands
+            Some(DatabaseCommand::PruneLibrary) => {
+                info!("Manual prune requested");
+                match prune_library(&conn) {
+                    Ok(count) => {
+                        info!("Pruned {} dead tracks", count);
+                        worker.send(IpcEvent::LibraryRescanned);
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to prune: {:?}", e);
+                        worker.send(IpcEvent::Error {
+                            message: e.to_string(),
+                        });
+                    }
+                }
+            }
             Some(DatabaseCommand::Shutdown) => {
                 info!("Database worker shutting down");
                 break;
@@ -75,6 +117,35 @@ fn handle_scan_library(conn: &rusqlite::Connection, root: &Path) -> Result<()> {
     );
 
     Ok(())
+}
+
+/// Remove tracks from DB where the file no longer exists on disk.
+fn prune_library(conn: &rusqlite::Connection) -> Result<usize> {
+    let mut stmt = conn.prepare("SELECT id, file_path FROM tracks")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+    })?;
+
+    let mut dead_ids: Vec<i64> = Vec::new();
+    for row in rows {
+        let (id, path) = row?;
+        if !Path::new(&path).exists() {
+            dead_ids.push(id);
+        }
+    }
+
+    if dead_ids.is_empty() {
+        return Ok(0);
+    }
+
+    // Delete in batches using transaction
+    conn.execute("BEGIN TRANSACTION", [])?;
+    for id in &dead_ids {
+        conn.execute("DELETE FROM tracks WHERE id = ?", params![id])?;
+    }
+    conn.execute("COMMIT", [])?;
+
+    Ok(dead_ids.len())
 }
 
 fn scan_directory(conn: &rusqlite::Connection, dir: &Path, count: &mut usize) -> Result<()> {
@@ -182,15 +253,16 @@ fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Res
     conn.execute(
         "INSERT INTO tracks (
             file_path, title, artist, album, genre, year, track_number,
-            duration_ms, bitrate, sample_rate, format, has_cover,
-            file_size, modified_at
+            duration_ms, bitrate_kbps, sample_rate_hz, format, has_cover,
+            file_size_bytes, file_modified_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(file_path) DO UPDATE SET
             title=excluded.title,
             artist=excluded.artist,
             album=excluded.album,
-            modified_at=excluded.modified_at,
-            has_cover=excluded.has_cover",
+            file_modified_at=excluded.file_modified_at,
+            has_cover=excluded.has_cover,
+            updated_at=strftime('%s', 'now')",
         params![
             data.file_path,
             data.title,
@@ -209,4 +281,78 @@ fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Res
         ],
     )?;
     Ok(())
+}
+
+/// Load all tracks from DB and build a LibrarySnapshot.
+fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<LibrarySnapshot> {
+    let mut stmt = conn.prepare(
+        "SELECT id, file_path, title, artist, album, genre, year,
+                track_number, bitrate_kbps, sample_rate_hz, format,
+                duration_ms, has_cover
+         FROM tracks ORDER BY file_path ASC",
+    )?;
+
+    let track_iter = stmt.query_map([], |row| {
+        let id_raw: i64 = row.get(0)?;
+        let id = TrackId(id_raw as u64);
+
+        Ok((
+            id,
+            TrackMeta {
+                id,
+                file_path: PathBuf::from(row.get::<_, String>(1)?),
+                title: row.get(2)?,
+                artist: row.get(3)?,
+                album: row.get(4)?,
+                genre: row.get(5)?,
+                year: row.get(6)?,
+                track_number: row.get(7)?,
+                bitrate: row.get(8)?,
+                sample_rate: row.get(9)?,
+                format: row.get(10)?,
+                duration_ms: row.get::<_, i64>(11)? as u64,
+                has_cover: row.get(12)?,
+            },
+        ))
+    })?;
+
+    let mut tracks_map: HashMap<TrackId, TrackMeta> = HashMap::new();
+    let mut all_track_ids = Vec::new();
+
+    for t in track_iter {
+        let (id, track) = t?;
+        tracks_map.insert(id, track);
+        all_track_ids.push(id);
+    }
+
+    // Load playlists from DB
+    let mut playlists_vec = Vec::new();
+    let mut playlist_stmt = conn.prepare("SELECT id, name FROM playlists ORDER BY name")?;
+    let playlist_iter = playlist_stmt.query_map([], |row| {
+        let id: i64 = row.get(0)?;
+        let name: String = row.get(1)?;
+        Ok((PlaylistId(id as u64), name))
+    })?;
+
+    for p in playlist_iter {
+        let (pid, name) = p?;
+        // Load tracks for this playlist
+        let mut items_stmt = conn.prepare(
+            "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position",
+        )?;
+        let track_ids: Vec<TrackId> = items_stmt
+            .query_map(params![pid.0 as i64], |row| {
+                Ok(TrackId(row.get::<_, i64>(0)? as u64))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        playlists_vec.push(PlaylistMeta {
+            id: pid,
+            name,
+            tracks: track_ids,
+        });
+    }
+
+    Ok(LibrarySnapshot::new(root, playlists_vec, tracks_map))
 }

@@ -1,6 +1,6 @@
 use crate::{
     domain::{PlaylistMeta, TrackId, TrackMeta},
-    library::{projector::flatten_tree, snapshot::LibrarySnapshot},
+    library::snapshot::LibrarySnapshot,
     navigation::{
         ids::SidebarNodeId,
         state::{LeftPanelMode, LibraryNavState},
@@ -44,9 +44,12 @@ impl AppState {
         let mut session = SessionState::default();
 
         let library_arc = Arc::new(library);
-        let rows = flatten_tree(&library_arc, &session.nav.library);
-        if let Some(row) = rows.first() {
-            session.nav.library.selected_id = Some(row.id.clone());
+
+        // Select first item by default
+        if let Some(first_node) =
+            crate::library::projector::get_node_at_index(&library_arc, &session.nav.library, 0)
+        {
+            session.nav.library.selected_id = Some(first_node);
         }
 
         Self {

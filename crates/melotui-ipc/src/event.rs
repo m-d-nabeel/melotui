@@ -1,3 +1,5 @@
+use melotui_core::library::LibrarySnapshot;
+
 #[derive(Debug, Clone)]
 pub enum IpcEvent {
     // Downloads
@@ -18,5 +20,6 @@ pub enum IpcEvent {
     Error { message: String },
 
     // Database
+    LibraryLoaded { snapshot: Box<LibrarySnapshot> },
     LibraryRescanned,
 }

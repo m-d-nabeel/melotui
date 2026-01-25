@@ -1,6 +1,6 @@
 use melotui_core::{
     AppState,
-    library::projector::{SidebarRow, flatten_tree},
+    library::projector::{SidebarRow, get_row_count, get_visible_rows},
     navigation::ids::{CategoryId, SidebarNodeId},
 };
 use ratatui::{
@@ -8,7 +8,9 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem},
+    widgets::{
+        Block, BorderType, Borders, List, ListItem, Scrollbar, ScrollbarOrientation, ScrollbarState,
+    },
 };
 use std::collections::HashSet;
 
@@ -30,28 +32,11 @@ const PLAYLIST_ICON_COLOR: Color = Color::Rgb(177, 98, 134); // Purple
 const CATEGORY_COLOR: Color = Color::Rgb(97, 175, 239); // Soft Blue
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let rows = flatten_tree(&state.library, state.library_nav());
+    let nav = state.library_nav();
+    let total_rows = get_row_count(&state.library, nav);
     let is_active = state.is_library_focused();
 
-    // Resolve selection
-    let selected_id = state.get_library_selection();
-    let selected_index = selected_id
-        .and_then(|id| rows.iter().position(|r| &r.id == id))
-        .unwrap_or(0);
-
-    let mut list_state = ratatui::widgets::ListState::default();
-    list_state.select(Some(selected_index));
-
-    // Calculate active context
-    let active_ancestors = get_playing_ancestors(state);
-
-    // Render rows
-    let items: Vec<ListItem> = rows
-        .iter()
-        .map(|row| render_row(row, state, area.width, is_active, &active_ancestors))
-        .collect();
-
-    // Container
+    // Container Block
     let border_style = if is_active {
         Style::default().fg(ACTIVE_BORDER)
     } else {
@@ -78,10 +63,52 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // List
-    let list = List::new(items).highlight_style(Style::default().bg(SELECTED_BG));
+    // Virtualization Logic
+    let visible_height = inner_area.height as usize;
+    if visible_height == 0 {
+        return;
+    }
 
+    // We rely on scroll_offset managed by the reducer (nav_action.rs)
+    // The reducer ensures selected_id is kept roughly in view.
+    let offset = nav.scroll_offset;
+    let rows = get_visible_rows(&state.library, nav, offset, visible_height);
+
+    let active_ancestors = get_playing_ancestors(state);
+
+    let items: Vec<ListItem> = rows
+        .iter()
+        .map(|row| render_row(row, state, inner_area.width, is_active, &active_ancestors))
+        .collect();
+
+    let mut list_state = ratatui::widgets::ListState::default();
+
+    // Find index in rendered slice
+    let selected_index = if let Some(sel_id) = state.get_library_selection() {
+        rows.iter().position(|row| &row.id == sel_id)
+    } else {
+        None
+    };
+    list_state.select(selected_index);
+
+    let list = List::new(items).highlight_style(Style::default().bg(SELECTED_BG));
     frame.render_stateful_widget(list, inner_area, &mut list_state);
+
+    // Scrollbar
+    let scrollbar = Scrollbar::default()
+        .orientation(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(None)
+        .end_symbol(None);
+    let mut scrollbar_state = ScrollbarState::new(total_rows).position(offset);
+
+    frame.render_stateful_widget(
+        scrollbar,
+        area.inner(ratatui::layout::Margin {
+            horizontal: 0,
+            vertical: 1,
+        }), // Adjust for borders
+        &mut scrollbar_state,
+    );
 }
 
 fn render_row(
@@ -122,13 +149,22 @@ fn render_row(
             SidebarNodeId::Folder(_) => Style::default().fg(FOLDER_ICON_COLOR),
             SidebarNodeId::Playlist(_) => Style::default().fg(PLAYLIST_ICON_COLOR),
             SidebarNodeId::Category(_) => Style::default().fg(CATEGORY_COLOR),
+            SidebarNodeId::Artist(_)
+            | SidebarNodeId::Album(_)
+            | SidebarNodeId::Genre(_)
+            | SidebarNodeId::Year(_) => Style::default().fg(CATEGORY_COLOR),
             _ => Style::default().fg(Color::Gray),
         }
     } else {
         Style::default().fg(Color::DarkGray)
     };
 
-    let icon = get_icon(&row.id, row.is_expanded, is_playing_track);
+    let icon = get_icon(
+        &row.id,
+        row.is_expanded,
+        row.is_expandable,
+        is_playing_track,
+    );
 
     // Text styles
     let mut text_style = Style::default().fg(row_color);
@@ -169,7 +205,12 @@ fn render_row(
     ListItem::new(Line::from(spans))
 }
 
-fn get_icon(id: &SidebarNodeId, is_expanded: bool, is_playing: bool) -> String {
+fn get_icon(
+    id: &SidebarNodeId,
+    is_expanded: bool,
+    is_expandable: bool,
+    is_playing: bool,
+) -> String {
     if is_playing {
         return "  ".to_string();
     }
@@ -183,6 +224,8 @@ fn get_icon(id: &SidebarNodeId, is_expanded: bool, is_playing: bool) -> String {
                     CategoryId::Artists => " 󰠃 ",
                     CategoryId::Albums => " 󰀥 ",
                     CategoryId::Playlists => " 󰲳 ",
+                    CategoryId::Genres => " 󰊗 ",
+                    CategoryId::Years => " 󰔠 ",
                 }
             } else {
                 match cat {
@@ -190,29 +233,69 @@ fn get_icon(id: &SidebarNodeId, is_expanded: bool, is_playing: bool) -> String {
                     CategoryId::Artists => " 󰠃 ",
                     CategoryId::Albums => " 󰀥 ",
                     CategoryId::Playlists => " 󰲳 ",
+                    CategoryId::Genres => " 󰊗 ",
+                    CategoryId::Years => " 󰔠 ",
                 }
             }
         }
         SidebarNodeId::Folder(_) => {
-            if is_expanded {
-                "  "
+            // Folder Icon + Status
+            if is_expandable {
+                if is_expanded { "  " } else { "  " }
             } else {
-                "  "
+                "   " // No arrow
             }
         }
         SidebarNodeId::Playlist(_) => {
-            if is_expanded {
-                "  "
+            if is_expandable {
+                if is_expanded { "  " } else { "  " }
             } else {
-                "  "
+                "   "
             }
         }
         SidebarNodeId::Track { .. } => "  ",
         SidebarNodeId::Artist(_) => {
-            if is_expanded {
-                " 󰠃 "
+            if is_expandable {
+                if is_expanded {
+                    " 󰠃 "
+                } else {
+                    " 󰠃 "
+                }
             } else {
-                " 󰠃 "
+                "  󰠃 "
+            }
+        }
+        SidebarNodeId::Album(_) => {
+            if is_expandable {
+                if is_expanded {
+                    " 󰀥 "
+                } else {
+                    " 󰀥 "
+                }
+            } else {
+                "  󰀥 "
+            }
+        }
+        SidebarNodeId::Genre(_) => {
+            if is_expandable {
+                if is_expanded {
+                    " 󰊗 "
+                } else {
+                    " 󰊗 "
+                }
+            } else {
+                "  󰊗 "
+            }
+        }
+        SidebarNodeId::Year(_) => {
+            if is_expandable {
+                if is_expanded {
+                    " 󰔠 "
+                } else {
+                    " 󰔠 "
+                }
+            } else {
+                "  󰔠 "
             }
         }
     };

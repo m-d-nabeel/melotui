@@ -1,6 +1,5 @@
 use crate::{
     AppMsg, AppState,
-    library::projector::flatten_tree,
     navigation::{
         ids::{CategoryId, SidebarNodeId},
         state::LeftPanelMode,
@@ -82,7 +81,13 @@ pub fn handle_toggle_tree_expand(state: &mut AppState) -> Vec<AppMsg> {
     if let Some(selected) = &state.session.nav.library.selected_id {
         let is_expandable = matches!(
             selected,
-            SidebarNodeId::Category(_) | SidebarNodeId::Folder(_) | SidebarNodeId::Playlist(_)
+            SidebarNodeId::Category(_)
+                | SidebarNodeId::Folder(_)
+                | SidebarNodeId::Playlist(_)
+                | SidebarNodeId::Artist(_)
+                | SidebarNodeId::Album(_)
+                | SidebarNodeId::Genre(_)
+                | SidebarNodeId::Year(_)
         );
 
         if is_expandable {
@@ -106,21 +111,51 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
     match state.session.nav.active_panel {
         LeftPanelMode::Library => {
-            let rows = flatten_tree(&state.library, &state.session.nav.library);
-            let current_idx = state
-                .session
-                .nav
-                .library
-                .selected_id
-                .as_ref()
-                .and_then(|id| rows.iter().position(|r| &r.id == id));
+            let current_sel = state.session.nav.library.selected_id.clone();
+            let nav = &state.session.nav.library;
 
-            if let Some(idx) = current_idx {
-                if idx > 0 {
-                    state.session.nav.library.selected_id = Some(rows[idx - 1].id.clone());
+            // If no selection, select last item? Or first?
+            // Expensive to find last. Let's select first.
+            if current_sel.is_none() {
+                if let Some(first) =
+                    crate::library::projector::get_node_at_index(&state.library, nav, 0)
+                {
+                    state.session.nav.library.selected_id = Some(first);
+                    state.session.nav.library.scroll_offset = 0;
                 }
-            } else if !rows.is_empty() {
-                state.session.nav.library.selected_id = Some(rows.last().unwrap().id.clone());
+                return vec![];
+            }
+
+            if let Some(target) = current_sel {
+                if let Some(idx) =
+                    crate::library::projector::get_index_of(&state.library, nav, &target)
+                {
+                    if idx > 0 {
+                        let new_idx = idx - 1;
+                        if let Some(new_node) = crate::library::projector::get_node_at_index(
+                            &state.library,
+                            nav,
+                            new_idx,
+                        ) {
+                            state.session.nav.library.selected_id = Some(new_node);
+
+                            // Scroll Up Logic (Scrolloff = 8)
+                            let scrolloff = 8;
+                            if new_idx < state.session.nav.library.scroll_offset + scrolloff {
+                                state.session.nav.library.scroll_offset =
+                                    new_idx.saturating_sub(scrolloff);
+                            }
+                        }
+                    }
+                } else {
+                    // Selection invalid/collapsed? Reset to 0
+                    if let Some(first) =
+                        crate::library::projector::get_node_at_index(&state.library, nav, 0)
+                    {
+                        state.session.nav.library.selected_id = Some(first);
+                        state.session.nav.library.scroll_offset = 0;
+                    }
+                }
             }
         }
         LeftPanelMode::Queue => {
@@ -153,24 +188,51 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
     match state.session.nav.active_panel {
         LeftPanelMode::Library => {
-            let rows = flatten_tree(&state.library, &state.session.nav.library);
-            let current_idx = state
-                .session
-                .nav
-                .library
-                .selected_id
-                .as_ref()
-                .and_then(|id| rows.iter().position(|r| &r.id == id));
+            let current_sel = state.session.nav.library.selected_id.clone();
+            let nav = &state.session.nav.library;
+            let total_rows = crate::library::projector::get_row_count(&state.library, nav);
 
-            match current_idx {
-                Some(idx) => {
-                    if idx + 1 < rows.len() {
-                        state.session.nav.library.selected_id = Some(rows[idx + 1].id.clone());
-                    }
+            if current_sel.is_none() {
+                if let Some(first) =
+                    crate::library::projector::get_node_at_index(&state.library, nav, 0)
+                {
+                    state.session.nav.library.selected_id = Some(first);
+                    state.session.nav.library.scroll_offset = 0;
                 }
-                None => {
-                    if !rows.is_empty() {
-                        state.session.nav.library.selected_id = Some(rows[0].id.clone());
+                return vec![];
+            }
+
+            if let Some(target) = current_sel {
+                if let Some(idx) =
+                    crate::library::projector::get_index_of(&state.library, nav, &target)
+                {
+                    if idx + 1 < total_rows {
+                        let new_idx = idx + 1;
+                        if let Some(new_node) = crate::library::projector::get_node_at_index(
+                            &state.library,
+                            nav,
+                            new_idx,
+                        ) {
+                            state.session.nav.library.selected_id = Some(new_node);
+
+                            // Scroll Down Logic (Scrolloff = 8, Viewport Estimate = 25)
+                            let height = 25;
+                            let scrolloff = 8;
+                            if new_idx
+                                >= state.session.nav.library.scroll_offset + height - scrolloff
+                            {
+                                state.session.nav.library.scroll_offset =
+                                    new_idx + scrolloff + 1 - height;
+                            }
+                        }
+                    }
+                } else {
+                    // Selection invalid? Select first
+                    if let Some(first) =
+                        crate::library::projector::get_node_at_index(&state.library, nav, 0)
+                    {
+                        state.session.nav.library.selected_id = Some(first);
+                        state.session.nav.library.scroll_offset = 0;
                     }
                 }
             }
