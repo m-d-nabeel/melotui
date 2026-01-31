@@ -56,7 +56,7 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
                     should_update_context = true;
 
                     // Unified resolution for all parent types
-                    new_context_queue = state.library.resolve_track_ids_for_node(&*parent);
+                    new_context_queue = state.library.resolve_track_ids_for_node(&parent);
 
                     if new_context_queue.is_empty() {
                         // Fallback for types that don't support context resolution (e.g. unknown categories)

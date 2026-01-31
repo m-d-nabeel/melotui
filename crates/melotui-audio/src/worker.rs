@@ -1,52 +1,19 @@
-use melotui_core::state::SpectrumStyle;
 use melotui_ipc::{
     channel::IpcWorker, command::AudioCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
 };
-use ringbuf::{
-    HeapRb,
-    traits::{Consumer, Observer, Split},
-};
+use ringbuf::{HeapRb, traits::Split};
 use rodio::{Decoder, Source};
-use std::{
-    fs::File,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{fs::File, thread, time::Duration};
+
+use fundsp::hacker32::AudioUnit;
 
 use crate::{
-    analyzer::SpectrumAnalyzer,
-    cava::{Cava, CavaConsumer},
-    dsp_adapter::FundspSource,
-    sniffer::SpectrumSniffer,
+    clock::TimeKeeper,
+    effects::{AudioParams, create_audio_graph},
+    source::FundspSource,
+    tap::SpectrumSniffer,
+    visualizer::VisualizerManager,
 };
-use fundsp::hacker32::*;
-
-// Helper alias to get the concrete Consumer type from a HeapRb<f32>
-type AudioConsumer = <HeapRb<f32> as Split>::Cons;
-
-enum VisualizerBackend {
-    Internal(SpectrumAnalyzer<AudioConsumer>),
-    External(CavaConsumer),
-    None,
-}
-
-struct AudioParams {
-    bass: Shared,
-    treble: Shared,
-    reverb: Shared,
-    echo: Shared,
-}
-
-impl AudioParams {
-    fn new() -> Self {
-        Self {
-            bass: shared(1.0),
-            treble: shared(1.0),
-            reverb: shared(0.0),
-            echo: shared(0.0),
-        }
-    }
-}
 
 pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProducer) {
     tracing::info!("Audio worker started");
@@ -55,36 +22,9 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
         rodio::OutputStreamBuilder::open_default_stream().expect("open default audio stream");
     let sink = rodio::Sink::connect_new(stream_handle.mixer());
 
-    // 1. Determine Backend Strategy
-    let use_cava = Cava::is_available();
-    if use_cava {
-        tracing::info!("CAVA detected. Using external visualizer backend.");
-    } else {
-        tracing::info!("CAVA not found. Using internal FFT backend.");
-    }
-
-    let mut backend = VisualizerBackend::None;
-    let mut idle_consumer: Option<AudioConsumer> = None;
-    let mut visualizer_enabled = false;
-    let mut current_style = if use_cava {
-        SpectrumStyle::Cava
-    } else {
-        SpectrumStyle::Default
-    };
-    let mut is_playing = false;
-
-    // --- TIME KEEPING STATE ---
-    let mut last_resume_time: Option<Instant> = None;
-    let mut accumulated_time = Duration::ZERO;
-    let mut current_speed: f32 = 1.0;
-
-    // Lazy-load state for Cava
-    let mut cava_process: Option<Cava> = None;
-    let mut cava_idle_consumer: Option<CavaConsumer> = None;
-    // Scratch buffer for reading from Cava ringbuffer to avoid allocations
-    let mut cava_scratch = vec![0.0f32; 200];
-
-    // Persistent DSP Parameters
+    // --- MANAGERS ---
+    let mut time_keeper = TimeKeeper::new();
+    let mut vis_manager = VisualizerManager::new();
     let dsp_params = AudioParams::new();
 
     loop {
@@ -96,53 +36,33 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                         sink.stop();
                     }
 
-                    // Save Cava/Internal consumers before resetting
-                    take_consumer_to_idle(
-                        &mut backend,
-                        &mut idle_consumer,
-                        &mut cava_idle_consumer,
-                    );
-                    backend = VisualizerBackend::None;
-                    // Note: idle_consumer (internal) will be replaced by new stream's consumer anyway
-                    idle_consumer = None;
+                    // Managers handle the reset logic
+                    time_keeper.stop();
+                    vis_manager.detach_source();
 
                     if let Ok(file) = File::open(&path)
                         && let Ok(decoder) = Decoder::try_from(file)
                     {
-                        // Reset Time State
-                        is_playing = true;
-                        accumulated_time = Duration::ZERO;
-                        last_resume_time = Some(Instant::now());
-                        // Note: We keep current_speed as user might have set it globally
+                        time_keeper.start();
 
-                        // --- DSP GRAPH CONSTRUCTION ---
+                        // DSP Setup
                         let channels = decoder.channels();
                         let unit: Box<dyn AudioUnit> = create_audio_graph(channels, &dsp_params);
                         let dsp_source = FundspSource::new(decoder, unit);
 
-                        // --- VISUALIZER TAP ---
+                        // Visualizer Setup
                         let ring = HeapRb::<f32>::new(8192);
                         let (producer, consumer) = ring.split();
+                        vis_manager.attach_source(consumer);
 
-                        idle_consumer = Some(consumer);
-
-                        reconcile_backend(
-                            &mut backend,
-                            &mut idle_consumer,
-                            visualizer_enabled,
-                            &current_style,
-                            &mut cava_process,
-                            &mut cava_idle_consumer,
-                        );
-
+                        // Playback
                         let source_with_sniffer = SpectrumSniffer {
                             input: dsp_source,
                             producer,
                         };
-
                         sink.append(source_with_sniffer);
                         sink.play();
-                        sink.set_speed(current_speed);
+                        sink.set_speed(time_keeper.current_speed);
 
                         worker.send(IpcEvent::PlaybackStarted {
                             path: path.to_string_lossy().to_string(),
@@ -154,111 +74,54 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                     }
                 }
                 AudioCommand::Pause => {
-                    if is_playing {
-                        sink.pause();
-                        is_playing = false;
-
-                        // Commit the elapsed time * speed
-                        if let Some(start) = last_resume_time {
-                            let elapsed = start.elapsed().as_secs_f32();
-                            // SPEED CORRECTION:
-                            accumulated_time += Duration::from_secs_f32(elapsed * current_speed);
-                        }
-                        last_resume_time = None;
-                        worker.send(IpcEvent::PlaybackPaused);
-                    }
+                    sink.pause();
+                    time_keeper.pause();
+                    worker.send(IpcEvent::PlaybackPaused);
                 }
                 AudioCommand::Resume => {
-                    if !is_playing && !sink.empty() {
+                    if !time_keeper.is_playing && !sink.empty() {
                         sink.play();
-                        is_playing = true;
-                        last_resume_time = Some(Instant::now());
+                        time_keeper.start();
                         worker.send(IpcEvent::PlaybackResumed);
                     }
                 }
                 AudioCommand::Stop => {
                     sink.stop();
-                    is_playing = false;
-                    accumulated_time = Duration::ZERO;
-                    last_resume_time = None;
-                    take_consumer_to_idle(
-                        &mut backend,
-                        &mut idle_consumer,
-                        &mut cava_idle_consumer,
-                    );
-                    backend = VisualizerBackend::None;
+                    time_keeper.stop();
+                    vis_manager.detach_source();
                 }
                 AudioCommand::Seek { position_ms } => {
                     let seek_dur = Duration::from_millis(position_ms);
                     if let Err(e) = sink.try_seek(seek_dur) {
                         tracing::error!("Seek Error: {:?}", e);
                     } else {
-                        accumulated_time = seek_dur;
-                        if is_playing {
-                            last_resume_time = Some(Instant::now());
-                        }
+                        time_keeper.seek(seek_dur);
                     }
                 }
                 AudioCommand::SetVisualizer { spectrum_style } => match spectrum_style {
-                    Some(s) => {
-                        current_style = s;
-                        visualizer_enabled = true;
-                    }
-                    None => {
-                        visualizer_enabled = false;
-                    }
+                    Some(s) => vis_manager.set_style(s),
+                    None => vis_manager.set_enabled(false),
                 },
-
-                // --- AUDIO CONTROLS ---
                 AudioCommand::SetVolume(v) => sink.set_volume(v),
                 AudioCommand::SetSpeed(v) => {
-                    // 1. Commit the time spent at the OLD speed
-                    if is_playing && let Some(start) = last_resume_time {
-                        let elapsed = start.elapsed().as_secs_f32();
-                        accumulated_time += Duration::from_secs_f32(elapsed * current_speed);
-                        last_resume_time = Some(Instant::now()); // Restart timer for new speed
-                    }
-
-                    // 2. Update state
-                    current_speed = v;
+                    time_keeper.set_speed(v);
                     sink.set_speed(v);
                 }
                 AudioCommand::SetBass(v) => dsp_params.bass.set_value(v),
                 AudioCommand::SetTreble(v) => dsp_params.treble.set_value(v),
                 AudioCommand::SetReverb(v) => dsp_params.reverb.set_value(v),
                 AudioCommand::SetEcho(v) => dsp_params.echo.set_value(v),
-
                 AudioCommand::Shutdown => break,
             }
         }
 
-        // Apply dynamic switching if visualizer state changed via command
-        if is_playing {
-            reconcile_backend(
-                &mut backend,
-                &mut idle_consumer,
-                visualizer_enabled,
-                &current_style,
-                &mut cava_process,
-                &mut cava_idle_consumer,
-            );
-        }
-
         // 2. Loop Actions
-        if is_playing {
-            // Progress calculation with speed correction
-            let current_pos = if let Some(start) = last_resume_time {
-                let elapsed = start.elapsed().as_secs_f32();
-                accumulated_time + Duration::from_secs_f32(elapsed * current_speed)
-            } else {
-                accumulated_time
-            };
+        if time_keeper.is_playing {
+            let current_pos = time_keeper.get_position();
 
             if sink.empty() {
-                is_playing = false;
-                accumulated_time = Duration::ZERO;
-                last_resume_time = None;
-                backend = VisualizerBackend::None;
+                time_keeper.stop();
+                vis_manager.detach_source();
                 worker.send(IpcEvent::PlaybackFinished);
             } else {
                 worker.send(IpcEvent::PlaybackProgress {
@@ -266,178 +129,12 @@ pub fn run(worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProd
                 });
             }
 
-            // If we are using CAVA or no visualizer, the internal audio tap is still running.
-            // We must drain it to prevent old data from piling up, ensuring that if we switch
-            // back to Internal, we have fresh data.
-            if let Some(consumer) = &mut idle_consumer {
-                while consumer.try_pop().is_some() {}
-            }
-
-            // Spectrum handling
-            if visualizer_enabled {
-                let spectrum_opt = match &mut backend {
-                    VisualizerBackend::Internal(analyzer) => analyzer.next_spectrum(),
-                    VisualizerBackend::External(consumer) => {
-                        // DRAIN STRATEGY: Read all available frames, keep only the last one.
-                        let mut valid_frame = false;
-                        // While we have at least one full frame (200 floats)
-                        while consumer.occupied_len() >= 200 {
-                            let _ = consumer.pop_slice(&mut cava_scratch);
-                            valid_frame = true;
-                        }
-
-                        if valid_frame {
-                            Some(cava_scratch.clone())
-                        } else {
-                            None
-                        }
-                    }
-                    VisualizerBackend::None => None,
-                };
-
-                if let Some(magnitude) = spectrum_opt {
-                    spectrum_producer.push(&magnitude);
-                }
+            // Visualizer Tick
+            if let Some(spectrum) = vis_manager.tick() {
+                spectrum_producer.push(&spectrum);
             }
         }
 
         thread::sleep(Duration::from_millis(10));
-    }
-}
-
-/// Dynamically swaps the backend based on style preference while preserving consumers.
-fn reconcile_backend(
-    backend: &mut VisualizerBackend,
-    idle_consumer: &mut Option<AudioConsumer>,
-    enabled: bool,
-    style: &SpectrumStyle,
-    cava_process: &mut Option<Cava>,
-    cava_idle_consumer: &mut Option<CavaConsumer>,
-) {
-    if !enabled {
-        take_consumer_to_idle(backend, idle_consumer, cava_idle_consumer);
-        *backend = VisualizerBackend::None;
-        return;
-    }
-
-    match style {
-        SpectrumStyle::Cava => {
-            // Switch to Cava
-            if !matches!(backend, VisualizerBackend::External(_)) {
-                tracing::info!("Switching Visualizer to CAVA");
-                take_consumer_to_idle(backend, idle_consumer, cava_idle_consumer);
-
-                // Initialize Cava if needed (Lazy Load)
-                if cava_process.is_none() {
-                    match Cava::new() {
-                        Ok((c, consumer)) => {
-                            *cava_process = Some(c);
-                            *cava_idle_consumer = Some(consumer);
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to start CAVA: {}. Falling back to Internal.",
-                                e
-                            );
-                            // Fallback
-                            if let Some(c) = idle_consumer.take() {
-                                *backend = VisualizerBackend::Internal(SpectrumAnalyzer::new(c));
-                            }
-                            return;
-                        }
-                    }
-                }
-
-                // Move consumer to backend
-                if let Some(cons) = cava_idle_consumer.take() {
-                    *backend = VisualizerBackend::External(cons);
-                }
-            }
-        }
-        _ => {
-            // Switch to Internal visualizer
-            if !matches!(backend, VisualizerBackend::Internal(_)) {
-                tracing::info!("Switching Visualizer to Internal (FFT)");
-                take_consumer_to_idle(backend, idle_consumer, cava_idle_consumer);
-
-                if let Some(c) = idle_consumer.take() {
-                    *backend = VisualizerBackend::Internal(SpectrumAnalyzer::new(c));
-                } else {
-                    tracing::warn!("Cannot switch to Internal Visualizer: Audio stream missing");
-                    *backend = VisualizerBackend::None;
-                }
-            }
-        }
-    }
-}
-
-/// Helper to strip the consumer out of the active backend if it exists
-fn take_consumer_to_idle(
-    backend: &mut VisualizerBackend,
-    idle_internal: &mut Option<AudioConsumer>,
-    idle_cava: &mut Option<CavaConsumer>,
-) {
-    // Replace backend to take ownership
-    let old_backend = std::mem::replace(backend, VisualizerBackend::None);
-    match old_backend {
-        VisualizerBackend::Internal(analyzer) => {
-            *idle_internal = Some(analyzer.into_consumer());
-        }
-        VisualizerBackend::External(consumer) => {
-            *idle_cava = Some(consumer);
-        }
-        _ => {}
-    }
-}
-
-/// Helper to build the Fundsp Graph
-fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit> {
-    let headroom = constant(0.707);
-
-    let bass_node = ((pass() * headroom) | constant(80.0) | constant(0.707) | var(&params.bass))
-        >> lowshelf()
-        >> (pass() | constant(60.0) | constant(0.8) | constant(3.5))
-        >> lowshelf();
-
-    // Treble (high shelf): 3000Hz, Q=0.7
-    let treble_node =
-        (pass() | constant(3000.0) | constant(0.7) | var(&params.treble)) >> highshelf();
-
-    // Echo: Feedback Delay (Dry & (Wet >> Delay))
-    let echo_node = pass() & ((pass() * var(&params.echo)) >> delay(0.5));
-
-    let mono_chain = bass_node >> treble_node >> echo_node;
-
-    // Stereo reverb & mixer
-
-    let wet_vol = var(&params.reverb);
-    let wet_stereo = wet_vol.clone() | wet_vol; // [WetL, WetR]
-
-    let dry_gain = constant(1.0) - var(&params.reverb);
-    let dry_stereo = dry_gain.clone() | dry_gain; // [DryL, DryR]
-
-    let stereo_pass = pass() | pass();
-    let dry_path = stereo_pass.clone() * dry_stereo;
-
-    // Fixed reverb settings, user controls mix
-    let reverb_unit = reverb_stereo(10.0, 3.0, 0.5);
-    let wet_path = reverb_unit * wet_stereo;
-
-    let mixer_core = dry_path + wet_path;
-    let feeder = stereo_pass.clone() ^ stereo_pass; // Split input
-    let stereo_mixer = feeder >> mixer_core;
-
-    // Limiter stage
-    let limiter_stereo = limiter(0.001, 0.1) | limiter(0.001, 0.1);
-
-    if channels == 1 {
-        // Mono chain: EQ -> Split -> Mixer -> Limit
-        let chain = mono_chain >> split() >> stereo_mixer >> limiter_stereo;
-        Box::new(chain)
-    } else {
-        // Stereo chain: Dual mono EQ -> Mixer -> Limit
-        let stereo_eq = mono_chain.clone() | mono_chain;
-        let chain = stereo_eq >> stereo_mixer >> limiter_stereo;
-        Box::new(chain)
     }
 }

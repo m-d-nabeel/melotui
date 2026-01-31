@@ -99,6 +99,7 @@ fn create_cava_config(bars: usize) -> anyhow::Result<std::path::PathBuf> {
 [general]
 bars = {bars}
 framerate = 60
+sleep_timer = 1
 
 [output]
 method = raw
