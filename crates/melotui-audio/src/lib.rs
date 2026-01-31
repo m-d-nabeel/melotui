@@ -1,7 +1,10 @@
-mod analyzer;
 mod cava;
-mod dsp_adapter;
-mod sniffer;
+mod clock;
+mod effects;
+mod fft;
+mod source;
+mod tap;
+mod visualizer;
 pub mod worker;
 
 pub use worker::run;

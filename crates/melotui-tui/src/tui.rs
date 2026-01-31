@@ -53,8 +53,12 @@ impl Tui {
         Ok(())
     }
 
-    pub fn poll_event(&self, state: &AppState) -> anyhow::Result<Option<AppMsg>> {
-        if event::poll(Duration::from_millis(50))?
+    pub fn poll_event(
+        &self,
+        state: &AppState,
+        timeout: Duration,
+    ) -> anyhow::Result<Option<AppMsg>> {
+        if event::poll(timeout)?
             && let Event::Key(key) = event::read()?
         {
             return Ok(InputHandler::handle(key, state));

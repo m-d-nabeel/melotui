@@ -14,7 +14,7 @@ use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use crate::ipc_bridge::{IpcRuntime, appmsg_to_ipc, ipc_to_appmsg};
@@ -51,26 +51,41 @@ pub fn run() -> Result<()> {
     };
 
     let mut last_tick = Instant::now();
+    let mut should_render = true;
 
     while runtime.running {
+        let timeout = if state.should_draw_spectrum() {
+            Duration::from_millis(16)
+        } else {
+            Duration::from_millis(100)
+        };
+
+        if let Some(msg) = tui.poll_event(&state, timeout)? {
+            runtime.effect_queue.push_back(msg);
+            should_render = true;
+        }
+
+        if runtime.ipc_alive && handle_ipc_events(&mut runtime, &mut state) {
+            should_render = true;
+        }
+
         let now = Instant::now();
         let dt = now.duration_since(last_tick).as_secs_f32();
         last_tick = now;
 
         state.time_elapsed += dt;
-        tick_state(&mut state, dt);
-
-        tui.draw(&state)?;
-
-        if let Some(msg) = tui.poll_event(&state)? {
-            runtime.effect_queue.push_back(msg);
+        if tick_state(&mut state, dt) {
+            should_render = true;
         }
 
-        if runtime.ipc_alive {
-            handle_ipc_events(&mut runtime, &mut state);
+        if process_effects(&mut runtime, &mut state) {
+            should_render = true;
         }
 
-        process_effects(&mut runtime, &mut state);
+        if should_render {
+            tui.draw(&state)?;
+            should_render = false;
+        }
     }
 
     tui.shutdown()
@@ -99,18 +114,29 @@ fn resolve_paths() -> Result<(PathBuf, PathBuf)> {
     Ok((db_path, music_root))
 }
 
-fn tick_state(state: &mut AppState, dt: f32) {
-    update_visualizer_physics(state, dt);
+fn tick_state(state: &mut AppState, dt: f32) -> bool {
+    let mut changed = false;
+
+    if state.should_draw_spectrum() {
+        update_visualizer_physics(state, dt);
+        changed = true;
+    }
+
     if let Some(n) = state.current_notification()
         && let Some(timeout) = n.dismiss_after
         && n.created_at.elapsed() >= timeout
     {
         state.clear_current_notification();
+        changed = true;
     }
+
+    changed
 }
 
-fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) {
+fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
+    let mut changed = false;
     while let Ok(evt) = ctx.ipc.event_rx.try_recv() {
+        changed = true;
         match evt {
             IpcEvent::LibraryLoaded { snapshot } => {
                 tracing::info!("Library loaded with {} tracks", snapshot.tracks.len());
@@ -128,10 +154,13 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) {
             _ => ctx.effect_queue.push_back(ipc_to_appmsg(evt)),
         }
     }
+    changed
 }
 
-fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) {
+fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
+    let mut changed = false;
     while let Some(msg) = ctx.effect_queue.pop_front() {
+        changed = true;
         // Lifecycle
         if matches!(msg, AppMsg::RequestQuit) {
             if ctx.ipc_alive {
@@ -153,4 +182,5 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) {
         let next_effects = melotui_core::reducer::reduce(state, msg);
         ctx.effect_queue.extend(next_effects);
     }
+    changed
 }

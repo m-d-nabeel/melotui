@@ -4,8 +4,8 @@ use rodio::Source;
 use rodio::source::SeekError;
 use std::time::Duration;
 
-/// Wrapper to make FunDSP graphs compatible with Rodio.
-/// Processes audio in blocks of 64 samples (MAX_BUFFER_SIZE) for efficiency.
+/// Wrapper to adapt FunDSP graphs for Rodio.
+/// Processes audio in 64-sample blocks for efficiency.
 pub struct FundspSource<S> {
     source: S,
     unit: Box<dyn AudioUnit>,
