@@ -104,7 +104,7 @@ impl InputHandler {
             }
 
             // Play next
-            KeyAction::PlayNext => {
+            KeyAction::QueuePlayNext => {
                 if state.is_library_focused()
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
                 {

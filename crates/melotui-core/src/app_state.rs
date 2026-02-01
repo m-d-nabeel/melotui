@@ -9,6 +9,7 @@ use crate::{
     state::{Notification, NotificationKind, SessionState, SpectrumStyle, UIMode, VisualizerMode},
     utils::{NoOpSpectrum, SpectrumSource},
 };
+use rand::Rng;
 use std::{collections::VecDeque, sync::Arc};
 
 pub struct AppState {
@@ -172,6 +173,43 @@ impl AppState {
 
     pub fn context_queue(&self) -> &Vec<TrackId> {
         &self.session.playback.context_queue
+    }
+
+    pub fn get_next_context_id(&self) -> Option<TrackId> {
+        let ctx = &self.session.playback.context_queue;
+        if ctx.is_empty() {
+            return None;
+        }
+
+        let next = if self.shuffle_active() {
+            rand::rng().random_range(0..ctx.len())
+        } else {
+            let n = self.session.playback.context_idx + 1;
+            if n < ctx.len() {
+                n
+            } else if self.session.repeat_mode == RepeatMode::Playlist {
+                0
+            } else {
+                return None;
+            }
+        };
+        Some(ctx[next])
+    }
+
+    pub fn get_prev_context_id(&self) -> Option<TrackId> {
+        let ctx = &self.session.playback.context_queue;
+        if ctx.is_empty() {
+            return None;
+        }
+
+        let prev = if self.session.playback.context_idx > 0 {
+            self.session.playback.context_idx - 1
+        } else if self.session.repeat_mode == RepeatMode::Playlist {
+            ctx.len() - 1
+        } else {
+            return None;
+        };
+        Some(ctx[prev])
     }
 }
 
