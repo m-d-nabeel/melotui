@@ -7,6 +7,8 @@ pub enum PlaybackMsg {
     RequestPlaySelected,
     RequestTogglePlayback,
     RequestStop,
+    RequestPlayNext,
+    RequestPlayPrev,
     RequestSeek {
         offset_seconds: i64,
     },

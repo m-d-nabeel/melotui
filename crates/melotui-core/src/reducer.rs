@@ -68,6 +68,8 @@ fn handle_playback_message(state: &mut AppState, msg: PlaybackMsg) -> Vec<AppMsg
         PlaybackMsg::AudioError { error } => {
             action::playback_action::handle_audio_error(state, error)
         }
+        PlaybackMsg::RequestPlayNext => action::playback_action::handle_request_next(state),
+        PlaybackMsg::RequestPlayPrev => action::playback_action::handle_request_prev(state),
     }
 }
 

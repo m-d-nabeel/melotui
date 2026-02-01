@@ -44,6 +44,8 @@ pub enum KeyAction {
 
     // Playback
     PlaySelected,
+    PlayNextTrack,
+    PlayPrevTrack,
     PlayPause,
     Stop,
     SeekForward,
@@ -53,7 +55,7 @@ pub enum KeyAction {
 
     // Library/Queue
     AddToQueue,
-    PlayNext,
+    QueuePlayNext,
     RemoveFromQueue,
     ClearQueue,
     RescanLibrary,
@@ -99,6 +101,8 @@ impl KeyAction {
             KeyAction::HideTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
 
             KeyAction::PlaySelected => Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected)),
+            KeyAction::PlayNextTrack => Some(AppMsg::Playback(PlaybackMsg::RequestPlayNext)),
+            KeyAction::PlayPrevTrack => Some(AppMsg::Playback(PlaybackMsg::RequestPlayPrev)),
             KeyAction::PlayPause => Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)),
             KeyAction::Stop => Some(AppMsg::Playback(PlaybackMsg::RequestStop)),
             KeyAction::SeekForward => Some(AppMsg::Playback(PlaybackMsg::RequestSeek {
@@ -218,7 +222,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
                 KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
                 KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue, "Add Queue"),
-                KeyBinding::new(KeyCode::Char('A'), KeyAction::PlayNext, "Play Next")
+                KeyBinding::new(KeyCode::Char('A'), KeyAction::QueuePlayNext, "Play Next")
                     .with_mod(KeyModifiers::SHIFT),
             ],
         );
@@ -251,6 +255,10 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode, "Command"),
                 KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause, "Play/Pause"),
                 KeyBinding::new(KeyCode::Enter, KeyAction::PlaySelected, "Play"),
+                KeyBinding::new(KeyCode::Left, KeyAction::PlayPrevTrack, "Prev Track")
+                    .with_mod(KeyModifiers::CONTROL),
+                KeyBinding::new(KeyCode::Right, KeyAction::PlayNextTrack, "Next Track")
+                    .with_mod(KeyModifiers::CONTROL),
                 KeyBinding::new(KeyCode::Char('x'), KeyAction::Stop, "Stop"),
                 KeyBinding::new(KeyCode::F(5), KeyAction::RescanLibrary, "Rescan"),
                 KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer, "Visualizer")

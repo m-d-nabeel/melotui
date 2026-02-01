@@ -1,4 +1,3 @@
-use rand::Rng;
 use std::time::{Duration, Instant};
 
 use crate::{
@@ -122,6 +121,44 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
     }
 }
 
+pub fn handle_request_next(state: &mut AppState) -> Vec<AppMsg> {
+    if let Some(new_id) = state.get_next_context_id() {
+        state.session.playback.context_idx = state
+            .session
+            .playback
+            .context_queue
+            .iter()
+            .position(|&x| x == new_id)
+            .unwrap_or(0);
+        update_active_node(state, new_id);
+        return start_playback(state, new_id, false);
+    }
+    vec![]
+}
+
+pub fn handle_request_prev(state: &mut AppState) -> Vec<AppMsg> {
+    if state.session.playback.progress_ms > 3000 {
+        return handle_request_seek(state, -(state.total_duration_ms() as i64));
+    }
+
+    if let Some(new_id) = state.get_prev_context_id() {
+        state.session.playback.context_idx = state
+            .session
+            .playback
+            .context_queue
+            .iter()
+            .position(|&x| x == new_id)
+            .unwrap_or(0);
+        update_active_node(state, new_id);
+        return start_playback(state, new_id, false);
+    }
+
+    state.session.playback.progress_ms = 0;
+    vec![AppMsg::Playback(PlaybackMsg::DispatchSeek {
+        position_ms: 0,
+    })]
+}
+
 pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
     state.session.playback.status = PlaybackStatus::Stopped;
     state.session.playback.progress_ms = 0;
@@ -154,22 +191,17 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
     }
 
     // Context fallback (continue playlist/album)
-    if let Some(new_id) = next_context_id(state) {
-        // Update active node for next track
-        let parent_box = if let Some(SidebarNodeId::Track { parent, .. }) =
-            &state.session.playback.active_node
-        {
-            Some(parent.clone())
-        } else {
-            None
-        };
+    if let Some(new_id) = state.get_next_context_id() {
+        state.session.playback.context_idx = state
+            .session
+            .playback
+            .context_queue
+            .iter()
+            .position(|&x| x == new_id)
+            .unwrap_or(0);
 
-        if let Some(p) = parent_box {
-            state.session.playback.active_node = Some(SidebarNodeId::Track {
-                id: new_id,
-                parent: p,
-            });
-        }
+        // Update active node for next track
+        update_active_node(state, new_id);
 
         return start_playback(state, new_id, false);
     }
@@ -321,23 +353,18 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
     })]
 }
 
-fn next_context_id(state: &mut AppState) -> Option<TrackId> {
-    let ctx = &state.session.playback.context_queue;
-    if ctx.is_empty() {
-        return None;
-    }
-    let next = if state.shuffle_active() {
-        rand::rng().random_range(0..ctx.len())
-    } else {
-        let n = state.session.playback.context_idx + 1;
-        if n < ctx.len() {
-            n
-        } else if state.session.repeat_mode == RepeatMode::Playlist {
-            0
+fn update_active_node(state: &mut AppState, new_id: TrackId) {
+    let parent_box =
+        if let Some(SidebarNodeId::Track { parent, .. }) = &state.session.playback.active_node {
+            Some(parent.clone())
         } else {
-            return None;
-        }
-    };
-    state.session.playback.context_idx = next;
-    ctx.get(next).copied()
+            None
+        };
+
+    if let Some(p) = parent_box {
+        state.session.playback.active_node = Some(SidebarNodeId::Track {
+            id: new_id,
+            parent: p,
+        });
+    }
 }
