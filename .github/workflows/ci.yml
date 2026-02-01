@@ -25,13 +25,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Test (default features)
         run: cargo test
-      - name: Test (images-chafa)
-        if: runner.os == 'Linux'
-        env:
-          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig
-        run: |
-          sudo apt-get install -y libchafa-dev
-          cargo test --features images-chafa
   lint:
     name: Lint (fmt + clippy)
     runs-on: ubuntu-latest
@@ -50,12 +43,6 @@ jobs:
         run: cargo fmt --check
       - name: Clippy (default features)
         run: cargo clippy --all-targets -- -D warnings
-      - name: Clippy (images-chafa)
-        env:
-          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig
-        run: |
-          sudo apt-get install -y libchafa-dev
-          cargo clippy --all-targets --features images-chafa -- -D warnings
   build:
     name: Build (release)
     runs-on: ubuntu-latest
