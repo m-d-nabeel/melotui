@@ -66,5 +66,6 @@ pub enum IpcCommand {
     Audio(AudioCommand),
     Download(DownloadCommand),
     Database(DatabaseCommand),
+    Cover(CoverCommand),
     Shutdown,
 }
