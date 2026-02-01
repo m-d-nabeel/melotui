@@ -7,7 +7,7 @@ members = [
   "crates/melotui-ipc",
   "crates/melotui-bin",
   "crates/melotui-download",
-  "crates/melotui-db",
+  "crates/melotui-db", "crates/melotui-cover",
 ]
 
 [profile.production]
