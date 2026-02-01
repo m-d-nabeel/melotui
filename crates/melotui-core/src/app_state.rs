@@ -30,13 +30,9 @@ pub struct AppState {
     pub spectrum_source: Box<dyn SpectrumSource>,
 
     // Cached resources
-    // Playback art
-    pub current_album_art_data: Option<Vec<u8>>,
-    pub current_album_art_id: Option<TrackId>,
-
-    // Track info art
-    pub track_info_art_data: Option<Vec<u8>>,
-    pub track_info_art_id: Option<TrackId>,
+    pub current_cover: Option<Arc<image::DynamicImage>>,
+    pub track_info_cover: Option<Arc<image::DynamicImage>>,
+    pub track_info_cover_id: Option<TrackId>,
 }
 
 // Lifecycle
@@ -65,10 +61,9 @@ impl AppState {
             spectrum_smooth: vec![0.0; 512],
             spectrum_peaks: vec![0.0; 512],
             spectrum_source: Box::new(NoOpSpectrum),
-            current_album_art_data: None,
-            current_album_art_id: None,
-            track_info_art_data: None,
-            track_info_art_id: None,
+            current_cover: None,
+            track_info_cover: None,
+            track_info_cover_id: None,
         }
     }
 }
@@ -334,17 +329,10 @@ impl AppState {
         self.session.notification.current = None;
     }
 
-    /// Load bytes of image.
-    pub fn load_track_info_art(&mut self, track: &TrackMeta) {
-        self.track_info_art_data = None;
-        self.track_info_art_id = None;
-
-        if track.has_cover
-            && let Some((data, _)) = LibrarySnapshot::get_album_art(&track.file_path)
-        {
-            self.track_info_art_data = Some(data);
-            self.track_info_art_id = Some(track.id);
-        }
+    /// Clear track info cover
+    pub fn clear_track_info_cover(&mut self) {
+        self.track_info_cover = None;
+        self.track_info_cover_id = None;
     }
 }
 

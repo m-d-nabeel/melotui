@@ -1,9 +1,12 @@
 use std::{path::PathBuf, sync::mpsc, thread};
 
-use melotui_core::{AppMsg, AppState, message::library::LibraryMsg};
+use melotui_core::{
+    AppMsg, AppState,
+    message::{cover::CoverMsg, download::DownloadMsg, library::LibraryMsg, playback::PlaybackMsg},
+};
 use melotui_ipc::{
     channel::inprocess,
-    command::{AudioCommand, DatabaseCommand, DownloadCommand, IpcCommand},
+    command::{AudioCommand, CoverCommand, DatabaseCommand, DownloadCommand, IpcCommand},
     event::IpcEvent,
     spectrum_bridge::SpectrumProducer,
 };
@@ -16,6 +19,7 @@ pub struct IpcRuntime {
     download_tx: mpsc::Sender<DownloadCommand>,
     audio_tx: mpsc::Sender<AudioCommand>,
     db_tx: mpsc::Sender<DatabaseCommand>,
+    cover_tx: mpsc::Sender<CoverCommand>,
 }
 
 impl IpcRuntime {
@@ -36,11 +40,18 @@ impl IpcRuntime {
             tracing::info!("IPC Runtime initialized with Audio worker");
         });
 
-        // Spawn Audio Worker
+        // Spawn Database Worker
         let (db_tx, db_worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx.clone());
         thread::spawn(move || {
             melotui_db::run(db_worker, db_path);
             tracing::info!("IPC Runtime initialized with Database worker");
+        });
+
+        // Spawn Cover Worker
+        let (cover_tx, cover_worker) = inprocess::join_worker::<CoverCommand>(bus_tx.clone());
+        thread::spawn(move || {
+            melotui_cover::run(cover_worker);
+            tracing::info!("IPC Runtime initialized with Cover worker");
         });
 
         Self {
@@ -48,6 +59,7 @@ impl IpcRuntime {
             download_tx: dl_tx,
             audio_tx,
             db_tx,
+            cover_tx,
         }
     }
 
@@ -63,11 +75,15 @@ impl IpcRuntime {
                 tracing::info!("Dispatching database command: {:?}", c);
                 let _ = self.db_tx.send(c);
             }
+            IpcCommand::Cover(c) => {
+                let _ = self.cover_tx.send(c);
+            }
             IpcCommand::Shutdown => {
                 tracing::info!("IPC Runtime shutting down all workers...");
                 let _ = self.download_tx.send(DownloadCommand::Shutdown);
                 let _ = self.audio_tx.send(AudioCommand::Shutdown);
                 let _ = self.db_tx.send(DatabaseCommand::Shutdown);
+                let _ = self.cover_tx.send(CoverCommand::Shutdown);
             }
         }
     }
@@ -77,6 +93,15 @@ pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
     use melotui_core::message::{audio::AudioMsg, download::DownloadMsg, playback::PlaybackMsg};
 
     match msg {
+        // --- Cover ---
+        AppMsg::Cover(CoverMsg::RequestLoad { id, path, context }) => {
+            Some(IpcCommand::Cover(CoverCommand::Load {
+                id: *id,
+                path: path.clone(),
+                context: *context,
+            }))
+        }
+
         // --- Download ---
         AppMsg::Download(download_msg) => match download_msg {
             DownloadMsg::DispatchDownload {
@@ -136,9 +161,10 @@ pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
 }
 
 pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
-    use melotui_core::message::{download::DownloadMsg, playback::PlaybackMsg};
-
     match evt {
+        IpcEvent::CoverLoaded { id, cover, context } => {
+            AppMsg::Cover(CoverMsg::Loaded { id, cover, context })
+        }
         IpcEvent::DownloadProgress { percent } => {
             AppMsg::Download(DownloadMsg::DownloadProgress { percent })
         }

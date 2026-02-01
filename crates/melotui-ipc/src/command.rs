@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use melotui_core::state::SpectrumStyle;
+use melotui_core::{domain::TrackId, message::cover::CoverContext, state::SpectrumStyle};
 
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
@@ -52,9 +52,20 @@ pub enum DatabaseCommand {
 }
 
 #[derive(Debug, Clone)]
+pub enum CoverCommand {
+    Load {
+        id: TrackId,
+        path: PathBuf,
+        context: CoverContext,
+    },
+    Shutdown,
+}
+
+#[derive(Debug, Clone)]
 pub enum IpcCommand {
     Audio(AudioCommand),
     Download(DownloadCommand),
     Database(DatabaseCommand),
+    Cover(CoverCommand),
     Shutdown,
 }

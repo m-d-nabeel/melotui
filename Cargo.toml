@@ -8,6 +8,7 @@ members = [
   "crates/melotui-bin",
   "crates/melotui-download",
   "crates/melotui-db",
+  "crates/melotui-cover",
 ]
 
 [profile.production]

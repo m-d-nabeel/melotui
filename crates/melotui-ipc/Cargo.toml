@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 tracing = "0.1"
 melotui-core = { path = "../melotui-core" }
+image = "0.25"

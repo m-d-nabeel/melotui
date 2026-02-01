@@ -1,5 +1,6 @@
 use crate::{
-    AppMsg, AppState, action,
+    AppMsg, AppState,
+    action::{self, cover_action::handle_cover_message},
     message::{
         audio::AudioMsg, download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
         playback::PlaybackMsg, ui::UIMsg,
@@ -16,6 +17,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         AppMsg::UI(ui_msg) => handle_ui_message(state, ui_msg),
         AppMsg::Library(library_msg) => handle_library_message(state, library_msg),
         AppMsg::Download(download_msg) => handle_download_message(state, download_msg),
+        AppMsg::Cover(cover_msg) => handle_cover_message(state, cover_msg),
     }
 }
 
