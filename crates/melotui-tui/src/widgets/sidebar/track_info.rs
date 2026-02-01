@@ -65,8 +65,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(art_height as u16), // Art
-            Constraint::Min(8),                    // Info Area
+            Constraint::Length(art_height), // Art
+            Constraint::Min(8),             // Info Area
         ])
         .split(inner_area);
 
