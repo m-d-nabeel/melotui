@@ -3,7 +3,6 @@ use std::time::{Duration, Instant};
 use crate::{
     AppMsg, AppState,
     domain::TrackId,
-    library::snapshot::LibrarySnapshot,
     message::playback::PlaybackMsg,
     navigation::ids::SidebarNodeId,
     playback::state::{PlaybackStatus, RepeatMode},
@@ -333,24 +332,29 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
     let title = meta.title.clone();
     let file_path = meta.file_path.clone();
 
-    state.current_album_art_data = None;
-    state.current_album_art_id = None;
-
-    if meta.has_cover
-        && let Some((data, _)) = LibrarySnapshot::get_album_art(&meta.file_path)
-    {
-        state.current_album_art_data = Some(data);
-        state.current_album_art_id = Some(id);
-    }
+    state.current_cover = None;
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
         format!("Playing {}", title),
     ));
 
-    vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
-        path: file_path,
-    })]
+    let mut effects = vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
+        path: file_path.clone(),
+    })];
+
+    // Request async cover load
+    if meta.has_cover {
+        effects.push(AppMsg::Cover(
+            crate::message::cover::CoverMsg::RequestLoad {
+                id,
+                path: file_path,
+                context: crate::message::cover::CoverContext::Playback,
+            },
+        ));
+    }
+
+    effects
 }
 
 fn update_active_node(state: &mut AppState, new_id: TrackId) {

@@ -1498,6 +1498,7 @@ dependencies = [
 name = "melotui-ipc"
 version = "0.1.0"
 dependencies = [
+ "image",
  "melotui-core",
  "tracing",
 ]

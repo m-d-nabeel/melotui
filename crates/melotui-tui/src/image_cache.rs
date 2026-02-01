@@ -1,12 +1,11 @@
 use image::DynamicImage;
-use melotui_core::{AppState, UIMode, domain::TrackId};
+use melotui_core::{AppState, UIMode};
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
 use std::sync::Arc;
 
 pub struct ImageState {
     pub protocol: Option<StatefulProtocol>,
     pub source: Option<Arc<DynamicImage>>,
-    pub last_id: Option<TrackId>,
     pub width: u32,
     pub height: u32,
 }
@@ -16,7 +15,6 @@ impl ImageState {
         Self {
             protocol: None,
             source: None,
-            last_id: None,
             width: 0,
             height: 0,
         }
@@ -118,16 +116,14 @@ impl ImageCache {
         Self::update_state(
             picker,
             &mut self.album_art,
-            state.current_album_art_id,
-            &state.current_album_art_data,
+            &state.current_cover,
             popup_just_closed,
         );
 
         Self::update_state(
             picker,
             &mut self.track_info,
-            state.track_info_art_id,
-            &state.track_info_art_data,
+            &state.track_info_cover,
             popup_just_closed,
         );
     }
@@ -135,35 +131,33 @@ impl ImageCache {
     fn update_state(
         picker: &Picker,
         local: &mut ImageState,
-        core_id: Option<TrackId>,
-        core_data: &Option<Vec<u8>>,
+        core_cover: &Option<Arc<DynamicImage>>,
         force_redraw: bool,
     ) {
-        let needs_update = local.last_id != core_id || force_redraw || local.protocol.is_none();
+        // Simple pointer check for equality is fast since we use Arc
+        let same_source = match (&local.source, core_cover) {
+            (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
 
-        if !needs_update {
+        if same_source && !force_redraw && local.protocol.is_some() {
             return;
         }
 
-        local.last_id = core_id;
-
-        if force_redraw || local.last_id != core_id {
+        if !same_source {
+            local.source = core_cover.clone();
             local.width = 0;
             local.height = 0;
             local.protocol = None;
         }
 
-        if let Some(data) = core_data {
-            if let Ok(img) = image::load_from_memory(data) {
-                local.width = img.width();
-                local.height = img.height();
-                // Store resizing protocol by default, but also keep source for manual cropping
-                local.protocol = Some(picker.new_resize_protocol(img.clone()));
-                local.source = Some(Arc::new(img));
-            }
+        if let Some(img) = core_cover {
+            local.width = img.width();
+            local.height = img.height();
+            local.protocol = Some(picker.new_resize_protocol(img.as_ref().clone()));
         } else {
             local.protocol = None;
-            local.source = None;
         }
     }
 }

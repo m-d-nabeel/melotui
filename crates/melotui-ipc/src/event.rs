@@ -3,23 +3,44 @@ use melotui_core::library::LibrarySnapshot;
 #[derive(Debug, Clone)]
 pub enum IpcEvent {
     // Downloads
-    DownloadStarted { query: String },
-    DownloadProgress { percent: u8 },
+    DownloadStarted {
+        query: String,
+    },
+    DownloadProgress {
+        percent: u8,
+    },
     DownloadFinished,
-    DownloadFailed { error: String },
+    DownloadFailed {
+        error: String,
+    },
 
     // Playback
-    PlaybackStarted { path: String },
+    PlaybackStarted {
+        path: String,
+    },
     PlaybackPaused,
     PlaybackResumed,
     PlaybackStopped,
-    PlaybackProgress { position_ms: u64 },
+    PlaybackProgress {
+        position_ms: u64,
+    },
     PlaybackFinished,
 
     // Errors
-    Error { message: String },
+    Error {
+        message: String,
+    },
 
     // Database
-    LibraryLoaded { snapshot: Box<LibrarySnapshot> },
+    LibraryLoaded {
+        snapshot: Box<LibrarySnapshot>,
+    },
     LibraryRescanned,
+
+    // Cover
+    CoverLoaded {
+        id: melotui_core::domain::TrackId,
+        cover: Option<std::sync::Arc<image::DynamicImage>>,
+        context: melotui_core::message::cover::CoverContext,
+    },
 }

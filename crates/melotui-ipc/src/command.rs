@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use melotui_core::state::SpectrumStyle;
+use melotui_core::{domain::TrackId, message::cover::CoverContext, state::SpectrumStyle};
 
 #[derive(Debug, Clone)]
 pub enum AudioCommand {
@@ -48,6 +48,16 @@ pub enum DatabaseCommand {
     IncrementPlayCount { track_id: i64 },
     ToggleFavorite { track_id: i64 },
     Query { sql: String },
+    Shutdown,
+}
+
+#[derive(Debug, Clone)]
+pub enum CoverCommand {
+    Load {
+        id: TrackId,
+        path: PathBuf,
+        context: CoverContext,
+    },
     Shutdown,
 }
 

@@ -1,5 +1,7 @@
 use crate::{
     AppMsg, AppState,
+    library::projector,
+    message::cover::CoverMsg,
     navigation::{
         ids::{CategoryId, SidebarNodeId},
         state::LeftPanelMode,
@@ -65,12 +67,20 @@ pub fn handle_toggle_track_info(state: &mut AppState) -> Vec<AppMsg> {
                 LeftPanelMode::Library => state.get_selected_track_id_in_sidebar(),
                 LeftPanelMode::Queue => state.get_selected_track_id_in_queue(),
             };
+            state.session.nav.show_track_info = true;
             if let Some(tid) = track_id
                 && let Some(track) = state.library.get_track(tid).cloned()
+                && state.track_info_cover_id != Some(tid)
             {
-                state.load_track_info_art(&track);
+                state.clear_track_info_cover();
+                if track.has_cover {
+                    return vec![AppMsg::Cover(CoverMsg::RequestLoad {
+                        id: tid,
+                        path: track.file_path,
+                        context: crate::message::cover::CoverContext::Info,
+                    })];
+                }
             }
-            state.session.nav.show_track_info = true;
         }
     }
     vec![]
@@ -109,27 +119,28 @@ pub fn handle_toggle_tree_expand(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
+    let mut effects = vec![];
+
     match state.session.nav.active_panel {
         LeftPanelMode::Library => {
-            let current_sel = state.session.nav.library.selected_id.clone();
+            let current_sel = state.get_library_selection();
             let nav = &state.session.nav.library;
 
-            // If no selection, select last item? Or first?
-            // Expensive to find last. Let's select first.
+            // If no selection, select first
             if current_sel.is_none() {
-                if let Some(first) =
-                    crate::library::projector::get_node_at_index(&state.library, nav, 0)
-                {
+                if let Some(first) = projector::get_node_at_index(&state.library, nav, 0) {
                     state.session.nav.library.selected_id = Some(first);
                     state.session.nav.library.scroll_offset = 0;
                 }
-                return vec![];
+                // Check if new selection needs cover load
+                if let Some(tid) = state.get_selected_track_id_in_sidebar() {
+                    request_info_cover_load(state, tid, &mut effects);
+                }
+                return effects;
             }
 
             if let Some(target) = current_sel {
-                if let Some(idx) =
-                    crate::library::projector::get_index_of(&state.library, nav, &target)
-                {
+                if let Some(idx) = projector::get_index_of(&state.library, nav, target) {
                     if idx > 0 {
                         let new_idx = idx - 1;
                         if let Some(new_node) = crate::library::projector::get_node_at_index(
@@ -148,14 +159,15 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                         }
                     }
                 } else {
-                    // Selection invalid/collapsed? Reset to 0
-                    if let Some(first) =
-                        crate::library::projector::get_node_at_index(&state.library, nav, 0)
-                    {
+                    // Selection invalid/collapsed -> Reset to 0
+                    if let Some(first) = projector::get_node_at_index(&state.library, nav, 0) {
                         state.session.nav.library.selected_id = Some(first);
                         state.session.nav.library.scroll_offset = 0;
                     }
                 }
+            }
+            if let Some(tid) = state.get_selected_track_id_in_sidebar() {
+                request_info_cover_load(state, tid, &mut effects);
             }
         }
         LeftPanelMode::Queue => {
@@ -164,12 +176,8 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                 return vec![];
             }
 
-            // Find current queue index
             let current_idx = state
-                .session
-                .nav
-                .queue
-                .selected_queue_id
+                .get_queue_selection_id()
                 .and_then(|qid| queue.iter().position(|e| e.id == qid));
 
             if let Some(idx) = current_idx {
@@ -179,33 +187,37 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
             } else {
                 state.session.nav.queue.selected_queue_id = Some(queue[0].id);
             }
+            if let Some(tid) = state.get_selected_track_id_in_queue() {
+                request_info_cover_load(state, tid, &mut effects);
+            }
         }
     }
-    vec![]
+    effects
 }
 
 pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
+    let mut effects = vec![];
+
     match state.session.nav.active_panel {
         LeftPanelMode::Library => {
-            let current_sel = state.session.nav.library.selected_id.clone();
+            let current_sel = state.get_library_selection();
             let nav = &state.session.nav.library;
-            let total_rows = crate::library::projector::get_row_count(&state.library, nav);
+            let total_rows = projector::get_row_count(&state.library, nav);
 
             if current_sel.is_none() {
-                if let Some(first) =
-                    crate::library::projector::get_node_at_index(&state.library, nav, 0)
-                {
+                if let Some(first) = projector::get_node_at_index(&state.library, nav, 0) {
                     state.session.nav.library.selected_id = Some(first);
                     state.session.nav.library.scroll_offset = 0;
                 }
-                return vec![];
+                if let Some(tid) = state.get_selected_track_id_in_sidebar() {
+                    request_info_cover_load(state, tid, &mut effects);
+                }
+                return effects;
             }
 
             if let Some(target) = current_sel {
-                if let Some(idx) =
-                    crate::library::projector::get_index_of(&state.library, nav, &target)
-                {
+                if let Some(idx) = projector::get_index_of(&state.library, nav, target) {
                     if idx + 1 < total_rows {
                         let new_idx = idx + 1;
                         if let Some(new_node) = crate::library::projector::get_node_at_index(
@@ -227,14 +239,15 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                         }
                     }
                 } else {
-                    // Selection invalid? Select first
-                    if let Some(first) =
-                        crate::library::projector::get_node_at_index(&state.library, nav, 0)
-                    {
+                    // Selection invalid -> Select first
+                    if let Some(first) = projector::get_node_at_index(&state.library, nav, 0) {
                         state.session.nav.library.selected_id = Some(first);
                         state.session.nav.library.scroll_offset = 0;
                     }
                 }
+            }
+            if let Some(tid) = state.get_selected_track_id_in_sidebar() {
+                request_info_cover_load(state, tid, &mut effects);
             }
         }
         LeftPanelMode::Queue => {
@@ -244,10 +257,7 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
             }
 
             let current_idx = state
-                .session
-                .nav
-                .queue
-                .selected_queue_id
+                .get_queue_selection_id()
                 .and_then(|qid| queue.iter().position(|e| e.id == qid));
 
             match current_idx {
@@ -260,7 +270,31 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                     state.session.nav.queue.selected_queue_id = Some(queue[0].id);
                 }
             }
+            if let Some(tid) = state.get_selected_track_id_in_queue() {
+                request_info_cover_load(state, tid, &mut effects);
+            }
         }
     }
-    vec![]
+    effects
+}
+
+fn request_info_cover_load(
+    state: &mut AppState,
+    tid: crate::domain::TrackId,
+    effects: &mut Vec<AppMsg>,
+) {
+    if let Some(track) = state.library.get_track(tid) {
+        if track.has_cover {
+            effects.push(AppMsg::Cover(
+                crate::message::cover::CoverMsg::RequestLoad {
+                    id: tid,
+                    path: track.file_path.clone(),
+                    context: crate::message::cover::CoverContext::Info,
+                },
+            ));
+        } else {
+            // Clear immediately to avoid showing stale artwork.
+            state.clear_track_info_cover();
+        }
+    }
 }
