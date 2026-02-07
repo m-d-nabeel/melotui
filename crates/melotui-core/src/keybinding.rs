@@ -165,6 +165,7 @@ impl KeyBinding {
 }
 
 // Key binding registry
+#[derive(Debug)]
 pub struct KeyRegistry {
     pub bindings: HashMap<KeyContext, Vec<KeyBinding>>,
 }

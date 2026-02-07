@@ -329,23 +329,21 @@ where
             return true;
         }
 
-        if expanded {
-            if let Some(tids) = map.get(key) {
-                for tid in tids {
-                    if let Some(track) = snapshot.tracks.get(tid) {
-                        let t_id = SidebarNodeId::Track {
-                            id: *tid,
-                            parent: Box::new(id.clone()),
-                        };
-                        if visitor(SidebarRow {
-                            id: t_id,
-                            label: track.title.clone(),
-                            level: level + 1,
-                            is_expandable: false,
-                            is_expanded: false,
-                        }) {
-                            return true;
-                        }
+        if expanded && let Some(tids) = map.get(key) {
+            for tid in tids {
+                if let Some(track) = snapshot.tracks.get(tid) {
+                    let t_id = SidebarNodeId::Track {
+                        id: *tid,
+                        parent: Box::new(id.clone()),
+                    };
+                    if visitor(SidebarRow {
+                        id: t_id,
+                        label: track.title.clone(),
+                        level: level + 1,
+                        is_expandable: false,
+                        is_expanded: false,
+                    }) {
+                        return true;
                     }
                 }
             }

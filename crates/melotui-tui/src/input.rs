@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 
 use melotui_core::{
     AppMsg, AppState,
-    keybinding::{KeyAction, KeyBinding, KeyContext, KeyRegistry},
+    keybinding::{KeyAction, KeyContext, KeyRegistry},
     message::{library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg, ui::UIMsg},
     state::UIMode,
 };
@@ -13,7 +13,7 @@ static REGISTRY: OnceLock<KeyRegistry> = OnceLock::new();
 pub struct InputHandler;
 
 impl InputHandler {
-    fn get_registry() -> &'static KeyRegistry {
+    pub fn get_registry() -> &'static KeyRegistry {
         REGISTRY.get_or_init(KeyRegistry::default)
     }
 
@@ -121,22 +121,5 @@ impl InputHandler {
             // Direct mapping for other keys
             _ => act.to_msg(),
         }
-    }
-
-    pub fn get_help_docs() -> Vec<KeyBinding> {
-        let registry = Self::get_registry();
-        let mut all_docs = Vec::new();
-
-        let mut add_context = |ctx: KeyContext| {
-            if let Some(bindings) = registry.bindings.get(&ctx) {
-                all_docs.extend(bindings.clone());
-            }
-        };
-
-        add_context(KeyContext::Global);
-        add_context(KeyContext::Library);
-        add_context(KeyContext::Queue);
-
-        all_docs
     }
 }
