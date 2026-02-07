@@ -9,8 +9,13 @@ use crate::{
     },
 };
 
-pub fn handle_toggle_help(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.ui.show_help = !state.session.ui.show_help;
+pub fn handle_open_help(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.show_help = true;
+    vec![]
+}
+
+pub fn handle_close_help(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.show_help = false;
     vec![]
 }
 

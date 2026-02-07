@@ -58,10 +58,12 @@ impl Tui {
         state: &AppState,
         timeout: Duration,
     ) -> anyhow::Result<Option<AppMsg>> {
-        if event::poll(timeout)?
-            && let Event::Key(key) = event::read()?
-        {
-            return Ok(InputHandler::handle(key, state));
+        if event::poll(timeout)? {
+            match event::read()? {
+                Event::Key(key) => return Ok(InputHandler::handle(key, state)),
+                Event::Resize(_, _) => return Ok(Some(AppMsg::Noop)),
+                _ => {}
+            }
         }
         Ok(None)
     }

@@ -32,7 +32,7 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
                     "  Keyboard Shortcuts ",
                     Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("(press ? or Esc to close)", Style::default().fg(SUBTEXT)),
+                Span::styled("(press q or Esc to close)", Style::default().fg(SUBTEXT)),
             ])
             .alignment(Alignment::Center),
         )
@@ -98,7 +98,7 @@ fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&
 
     if let Some(bindings) = bindings {
         for binding in bindings {
-            let key_str = format_key(binding.key);
+            let key_str = format_key(binding);
             grouped.entry(binding.desc).or_default().push(key_str);
         }
     }
@@ -127,10 +127,30 @@ fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&
     frame.render_widget(paragraph, inner);
 }
 
-fn format_key(key: ratatui::crossterm::event::KeyCode) -> String {
-    use ratatui::crossterm::event::KeyCode;
+fn format_key(binding: &melotui_core::keybinding::KeyBinding) -> String {
+    use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
-    match key {
+    let mut result = String::new();
+
+    // Add modifier prefixes
+    if binding.modifiers.contains(KeyModifiers::CONTROL) {
+        result.push_str("Ctrl+");
+    }
+    if binding.modifiers.contains(KeyModifiers::ALT) {
+        result.push_str("Alt+");
+    }
+    if binding.modifiers.contains(KeyModifiers::SHIFT) {
+        // For characters, show uppercase; for special keys, show Shift+ prefix
+        match binding.key {
+            KeyCode::Char(c) if c.is_ascii_lowercase() => {
+                // Will show uppercase below, no prefix needed
+            }
+            _ => result.push_str("Shift+"),
+        }
+    }
+
+    // Add the key itself
+    let key_str = match binding.key {
         KeyCode::Char(' ') => "Space".to_string(),
         KeyCode::Char(c) => format!("{}", c.to_uppercase()),
         KeyCode::Up => "↑".to_string(),
@@ -144,8 +164,11 @@ fn format_key(key: ratatui::crossterm::event::KeyCode) -> String {
         KeyCode::Backspace => "⌫".to_string(),
         KeyCode::Delete => "Del".to_string(),
         KeyCode::F(n) => format!("F{}", n),
-        _ => format!("{:?}", key),
-    }
+        _ => format!("{:?}", binding.key),
+    };
+
+    result.push_str(&key_str);
+    result
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

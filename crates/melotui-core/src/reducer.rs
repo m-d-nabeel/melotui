@@ -111,7 +111,8 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::UpdateCommand(c) => action::ui_action::handle_update_command(state, c),
         UIMsg::BackspaceCommand => action::ui_action::handle_backspace_command(state),
         UIMsg::SubmitCommand(input) => action::ui_action::handle_submit_command(state, input),
-        UIMsg::ToggleHelp => action::ui_action::handle_toggle_help(state),
+        UIMsg::OpenHelp => action::ui_action::handle_open_help(state),
+        UIMsg::CloseHelp => action::ui_action::handle_close_help(state),
     }
 }
 

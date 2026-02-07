@@ -26,7 +26,7 @@ pub enum KeyContext {
 pub enum KeyAction {
     // System
     Quit,
-    ToggleHelp,
+    OpenHelp,
     CloseHelp,
     EnterCommandMode,
     ExitCommandMode,
@@ -82,9 +82,8 @@ impl KeyAction {
     pub fn to_msg(&self) -> Option<AppMsg> {
         match self {
             KeyAction::Quit => Some(AppMsg::RequestQuit),
-            KeyAction::ToggleHelp => Some(AppMsg::UI(UIMsg::ToggleHelp)),
-            // Toggle help off
-            KeyAction::CloseHelp => Some(AppMsg::UI(UIMsg::ToggleHelp)),
+            KeyAction::OpenHelp => Some(AppMsg::UI(UIMsg::OpenHelp)),
+            KeyAction::CloseHelp => Some(AppMsg::UI(UIMsg::CloseHelp)),
 
             KeyAction::EnterCommandMode => Some(AppMsg::UI(UIMsg::EnterCommandMode)),
             KeyAction::ExitCommandMode => Some(AppMsg::UI(UIMsg::ExitCommandMode)),
@@ -180,7 +179,6 @@ impl Default for KeyRegistry {
             vec![
                 KeyBinding::new(KeyCode::Esc, KeyAction::CloseHelp, "Close"),
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::CloseHelp, "Close"),
-                KeyBinding::new(KeyCode::Char('?'), KeyAction::CloseHelp, "Close"),
             ],
         );
 
@@ -252,7 +250,7 @@ impl Default for KeyRegistry {
             KeyContext::Global,
             vec![
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit, "Quit"),
-                KeyBinding::new(KeyCode::Char('?'), KeyAction::ToggleHelp, "Help"),
+                KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp, "Help"),
                 KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode, "Command"),
                 KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause, "Play/Pause"),
                 KeyBinding::new(KeyCode::Enter, KeyAction::PlaySelected, "Play"),
