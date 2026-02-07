@@ -231,6 +231,7 @@ fn get_icon(
                     CategoryId::Playlists => " 󰲳 ",
                     CategoryId::Genres => " 󰊗 ",
                     CategoryId::Years => " 󰔠 ",
+                    CategoryId::Favorites => "  ",
                 }
             } else {
                 match cat {
@@ -240,6 +241,7 @@ fn get_icon(
                     CategoryId::Playlists => " 󰲳 ",
                     CategoryId::Genres => " 󰊗 ",
                     CategoryId::Years => " 󰔠 ",
+                    CategoryId::Favorites => "  ",
                 }
             }
         }

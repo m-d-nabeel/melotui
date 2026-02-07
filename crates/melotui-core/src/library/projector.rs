@@ -15,33 +15,10 @@ pub struct SidebarRow {
 /// Calculate total number of visible rows in the tree.
 pub fn get_row_count(snapshot: &LibrarySnapshot, nav: &LibraryNavState) -> usize {
     let mut count = 0;
-
-    // Categories are hardcoded
-    let categories = [
-        CategoryId::Folders,
-        CategoryId::Artists,
-        CategoryId::Albums,
-        CategoryId::Genres,
-        CategoryId::Years,
-        CategoryId::Playlists,
-    ];
-
-    for cat in categories {
-        count += 1; // The category itself
-        let cat_node = SidebarNodeId::Category(cat);
-        if nav.expanded_ids.contains(&cat_node) {
-            match cat {
-                CategoryId::Folders => {
-                    count += count_directory(&snapshot.folder_tree, &nav.expanded_ids)
-                }
-                CategoryId::Artists => count += count_artists(&snapshot.artists, &nav.expanded_ids),
-                CategoryId::Albums => count += count_albums(&snapshot.albums, &nav.expanded_ids),
-                CategoryId::Genres => count += count_genres(&snapshot.genres, &nav.expanded_ids),
-                CategoryId::Years => count += count_years(&snapshot.years, &nav.expanded_ids),
-                CategoryId::Playlists => count += count_playlists(snapshot, &nav.expanded_ids),
-            }
-        }
-    }
+    traverse_visible_nodes(snapshot, nav, |_| {
+        count += 1;
+        false
+    });
     count
 }
 
@@ -52,103 +29,16 @@ pub fn get_visible_rows(
     skip: usize,
     take: usize,
 ) -> Vec<SidebarRow> {
-    let mut rows = Vec::new();
+    let mut rows = Vec::with_capacity(take);
     let mut current_idx = 0;
 
-    let categories = [
-        (CategoryId::Folders, "Folders"),
-        (CategoryId::Artists, "Artists"),
-        (CategoryId::Albums, "Albums"),
-        (CategoryId::Genres, "Genres"),
-        (CategoryId::Years, "Years"),
-        (CategoryId::Playlists, "Playlists"),
-    ];
-
-    for (cat_id, label) in categories {
-        let node_id = SidebarNodeId::Category(cat_id);
-        let expanded = nav.expanded_ids.contains(&node_id);
-
-        if current_idx >= skip && rows.len() < take {
-            rows.push(SidebarRow {
-                id: node_id.clone(),
-                label: label.to_string(),
-                level: 0,
-                is_expandable: true,
-                is_expanded: expanded,
-            });
+    traverse_visible_nodes(snapshot, nav, |row| {
+        if current_idx >= skip {
+            rows.push(row);
         }
         current_idx += 1;
-        if rows.len() >= take {
-            return rows;
-        }
-
-        if expanded {
-            match cat_id {
-                CategoryId::Folders => visit_directory(
-                    &snapshot.folder_tree,
-                    &nav.expanded_ids,
-                    1,
-                    &mut current_idx,
-                    skip,
-                    take,
-                    &mut rows,
-                    snapshot,
-                ),
-                CategoryId::Artists => visit_artists(
-                    &snapshot.artists,
-                    &nav.expanded_ids,
-                    1,
-                    &mut current_idx,
-                    skip,
-                    take,
-                    &mut rows,
-                    snapshot,
-                ),
-                CategoryId::Albums => visit_albums(
-                    &snapshot.albums,
-                    &nav.expanded_ids,
-                    1,
-                    &mut current_idx,
-                    skip,
-                    take,
-                    &mut rows,
-                    snapshot,
-                ),
-                CategoryId::Genres => visit_genres(
-                    &snapshot.genres,
-                    &nav.expanded_ids,
-                    1,
-                    &mut current_idx,
-                    skip,
-                    take,
-                    &mut rows,
-                    snapshot,
-                ),
-                CategoryId::Years => visit_years(
-                    &snapshot.years,
-                    &nav.expanded_ids,
-                    1,
-                    &mut current_idx,
-                    skip,
-                    take,
-                    &mut rows,
-                    snapshot,
-                ),
-                CategoryId::Playlists => visit_playlists(
-                    snapshot,
-                    &nav.expanded_ids,
-                    1,
-                    &mut current_idx,
-                    skip,
-                    take,
-                    &mut rows,
-                ),
-            };
-        }
-        if rows.len() >= take {
-            return rows;
-        }
-    }
+        rows.len() >= take
+    });
 
     rows
 }
@@ -159,63 +49,19 @@ pub fn get_index_of(
     nav: &LibraryNavState,
     target: &SidebarNodeId,
 ) -> Option<usize> {
+    let mut found_idx = None;
     let mut current_idx = 0;
 
-    let categories = [
-        CategoryId::Folders,
-        CategoryId::Artists,
-        CategoryId::Albums,
-        CategoryId::Genres,
-        CategoryId::Years,
-        CategoryId::Playlists,
-    ];
-
-    for cat in categories {
-        let node_id = SidebarNodeId::Category(cat);
-        if &node_id == target {
-            return Some(current_idx);
+    traverse_visible_nodes(snapshot, nav, |row| {
+        if &row.id == target {
+            found_idx = Some(current_idx);
+            return true;
         }
         current_idx += 1;
+        false
+    });
 
-        if nav.expanded_ids.contains(&node_id) {
-            let found = match cat {
-                CategoryId::Folders => search_directory(
-                    &snapshot.folder_tree,
-                    &nav.expanded_ids,
-                    target,
-                    &mut current_idx,
-                ),
-                CategoryId::Artists => search_artists(
-                    &snapshot.artists,
-                    &nav.expanded_ids,
-                    target,
-                    &mut current_idx,
-                ),
-                CategoryId::Albums => search_albums(
-                    &snapshot.albums,
-                    &nav.expanded_ids,
-                    target,
-                    &mut current_idx,
-                ),
-                CategoryId::Genres => search_genres(
-                    &snapshot.genres,
-                    &nav.expanded_ids,
-                    target,
-                    &mut current_idx,
-                ),
-                CategoryId::Years => {
-                    search_years(&snapshot.years, &nav.expanded_ids, target, &mut current_idx)
-                }
-                CategoryId::Playlists => {
-                    search_playlists(snapshot, &nav.expanded_ids, target, &mut current_idx)
-                }
-            };
-            if found {
-                return Some(current_idx);
-            }
-        }
-    }
-    None
+    found_idx
 }
 
 /// Find the node ID at a specific linear index in the visible tree.
@@ -224,922 +70,286 @@ pub fn get_node_at_index(
     nav: &LibraryNavState,
     target_index: usize,
 ) -> Option<SidebarNodeId> {
+    let mut found_node = None;
     let mut current_idx = 0;
 
-    let categories = [
-        CategoryId::Folders,
-        CategoryId::Artists,
-        CategoryId::Albums,
-        CategoryId::Genres,
-        CategoryId::Years,
-        CategoryId::Playlists,
-    ];
-
-    for cat in categories {
-        let node_id = SidebarNodeId::Category(cat);
+    traverse_visible_nodes(snapshot, nav, |row| {
         if current_idx == target_index {
-            return Some(node_id);
+            found_node = Some(row.id.clone());
+            return true;
         }
         current_idx += 1;
+        false
+    });
 
-        if nav.expanded_ids.contains(&node_id) {
-            let found = match cat {
-                CategoryId::Folders => find_at_index_directory(
-                    &snapshot.folder_tree,
-                    &nav.expanded_ids,
-                    target_index,
-                    &mut current_idx,
-                ),
-                CategoryId::Artists => find_at_index_artists(
-                    &snapshot.artists,
-                    &nav.expanded_ids,
-                    target_index,
-                    &mut current_idx,
-                ),
-                CategoryId::Albums => find_at_index_albums(
-                    &snapshot.albums,
-                    &nav.expanded_ids,
-                    target_index,
-                    &mut current_idx,
-                ),
-                CategoryId::Genres => find_at_index_genres(
-                    &snapshot.genres,
-                    &nav.expanded_ids,
-                    target_index,
-                    &mut current_idx,
-                ),
-                CategoryId::Years => find_at_index_years(
-                    &snapshot.years,
-                    &nav.expanded_ids,
-                    target_index,
-                    &mut current_idx,
-                ),
-                CategoryId::Playlists => find_at_index_playlists(
-                    snapshot,
-                    &nav.expanded_ids,
-                    target_index,
-                    &mut current_idx,
-                ),
-            };
-            if let Some(node) = found {
-                return Some(node);
-            }
-        }
-    }
-    None
+    found_node
 }
 
-// --- Counting Helpers ---
+/// Traverse visible nodes, calling visitor for each. Returns true to stop early.
+fn traverse_visible_nodes<F>(snapshot: &LibrarySnapshot, nav: &LibraryNavState, mut visitor: F)
+where
+    F: FnMut(SidebarRow) -> bool,
+{
+    let categories = [
+        (CategoryId::Folders, "Folders"),
+        (CategoryId::Favorites, "Favorites"),
+        (CategoryId::Artists, "Artists"),
+        (CategoryId::Albums, "Albums"),
+        (CategoryId::Genres, "Genres"),
+        (CategoryId::Years, "Years"),
+        (CategoryId::Playlists, "Playlists"),
+    ];
 
-fn count_directory(node: &DirectoryNode, expanded: &HashSet<SidebarNodeId>) -> usize {
-    let mut count = 0;
-    // Subdirs
-    for subdir in &node.subdirs {
-        count += 1;
-        let id = SidebarNodeId::Folder(subdir.path.clone());
-        if expanded.contains(&id) {
-            count += count_directory(subdir, expanded);
-        }
-    }
-    // Tracks
-    count += node.tracks.len();
-    count
-}
+    for (cat, label) in categories {
+        let node_id = SidebarNodeId::Category(cat);
+        let expanded = nav.expanded_ids.contains(&node_id);
 
-fn count_artists(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-) -> usize {
-    let mut count = 0;
-    for (key, tracks) in map {
-        count += 1;
-        if expanded.contains(&SidebarNodeId::Artist(key.clone())) {
-            count += tracks.len();
-        }
-    }
-    count
-}
-fn count_albums(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-) -> usize {
-    let mut count = 0;
-    for (key, tracks) in map {
-        count += 1;
-        if expanded.contains(&SidebarNodeId::Album(key.clone())) {
-            count += tracks.len();
-        }
-    }
-    count
-}
-fn count_genres(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-) -> usize {
-    let mut count = 0;
-    for (key, tracks) in map {
-        count += 1;
-        if expanded.contains(&SidebarNodeId::Genre(key.clone())) {
-            count += tracks.len();
-        }
-    }
-    count
-}
-fn count_years(
-    map: &std::collections::HashMap<u32, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-) -> usize {
-    let mut count = 0;
-    for (key, tracks) in map {
-        count += 1;
-        if expanded.contains(&SidebarNodeId::Year(*key)) {
-            count += tracks.len();
-        }
-    }
-    count
-}
-
-fn count_playlists(snapshot: &LibrarySnapshot, expanded: &HashSet<SidebarNodeId>) -> usize {
-    let mut count = 0;
-    for pid in &snapshot.playlist_order {
-        count += 1;
-        let id = SidebarNodeId::Playlist(*pid);
-        if expanded.contains(&id)
-            && let Some(p) = snapshot.playlists.get(pid)
-        {
-            count += p.tracks.len();
-        }
-    }
-    count
-}
-
-// --- Visitor Helpers ---
-
-#[allow(clippy::too_many_arguments)]
-fn visit_directory(
-    node: &DirectoryNode,
-    expanded: &HashSet<SidebarNodeId>,
-    level: u8,
-    current_idx: &mut usize,
-    skip: usize,
-    take: usize,
-    rows: &mut Vec<SidebarRow>,
-    _snapshot: &LibrarySnapshot,
-) {
-    for subdir in &node.subdirs {
-        let id = SidebarNodeId::Folder(subdir.path.clone());
-        let is_exp = expanded.contains(&id);
-
-        if *current_idx >= skip && rows.len() < take {
-            rows.push(SidebarRow {
-                id: id.clone(),
-                label: subdir.name.clone(),
-                level,
-                is_expandable: !subdir.subdirs.is_empty() || !subdir.tracks.is_empty(),
-                is_expanded: is_exp,
-            });
-        }
-        *current_idx += 1;
-        if rows.len() >= take {
+        if visitor(SidebarRow {
+            id: node_id.clone(),
+            label: label.to_string(),
+            level: 0,
+            is_expandable: true,
+            is_expanded: expanded,
+        }) {
             return;
         }
 
-        if is_exp {
-            visit_directory(
-                subdir,
-                expanded,
-                level + 1,
-                current_idx,
-                skip,
-                take,
-                rows,
-                _snapshot,
-            );
-            if rows.len() >= take {
-                return;
-            }
-        }
-    }
+        if expanded {
+            let stop = match cat {
+                CategoryId::Folders => visit_directory(
+                    &snapshot.folder_tree,
+                    &nav.expanded_ids,
+                    1,
+                    snapshot,
+                    &mut visitor,
+                ),
+                CategoryId::Favorites => {
+                    visit_favorites(&snapshot.favorites, &node_id, 1, snapshot, &mut visitor)
+                }
+                CategoryId::Artists => visit_generic_map(
+                    &snapshot.artists,
+                    &nav.expanded_ids,
+                    1,
+                    SidebarNodeId::Artist,
+                    snapshot,
+                    &mut visitor,
+                ),
+                CategoryId::Albums => visit_generic_map(
+                    &snapshot.albums,
+                    &nav.expanded_ids,
+                    1,
+                    SidebarNodeId::Album,
+                    snapshot,
+                    &mut visitor,
+                ),
+                CategoryId::Genres => visit_generic_map(
+                    &snapshot.genres,
+                    &nav.expanded_ids,
+                    1,
+                    SidebarNodeId::Genre,
+                    snapshot,
+                    &mut visitor,
+                ),
+                CategoryId::Years => visit_generic_map(
+                    &snapshot.years,
+                    &nav.expanded_ids,
+                    1,
+                    SidebarNodeId::Year,
+                    snapshot,
+                    &mut visitor,
+                ),
+                CategoryId::Playlists => {
+                    visit_playlists(snapshot, &nav.expanded_ids, 1, &mut visitor)
+                }
+            };
 
-    // Visit Tracks in this directory
-    // We access tracks by ID from snapshot because DirectoryNode lacks title logic
-    for tid in &node.tracks {
-        if let Some(track) = _snapshot.tracks.get(tid) {
-            if *current_idx >= skip && rows.len() < take {
-                rows.push(SidebarRow {
-                    id: SidebarNodeId::Track {
-                        id: *tid,
-                        parent: Box::new(SidebarNodeId::Folder(node.path.clone())),
-                    },
-                    label: track.title.clone(),
-                    level: level + 1,
-                    is_expandable: false,
-                    is_expanded: false,
-                });
-            }
-            *current_idx += 1;
-            if rows.len() >= take {
+            if stop {
                 return;
             }
         }
     }
 }
 
-fn visit_playlists(
-    snapshot: &LibrarySnapshot,
-    expanded: &HashSet<SidebarNodeId>,
+fn visit_directory<F>(
+    node: &DirectoryNode,
+    expanded_ids: &HashSet<SidebarNodeId>,
     level: u8,
-    current_idx: &mut usize,
-    skip: usize,
-    take: usize,
-    rows: &mut Vec<SidebarRow>,
-) {
+    snapshot: &LibrarySnapshot,
+    visitor: &mut F,
+) -> bool
+where
+    F: FnMut(SidebarRow) -> bool,
+{
+    for subdir in &node.subdirs {
+        let id = SidebarNodeId::Folder(subdir.path.clone());
+        let expanded = expanded_ids.contains(&id);
+        let has_children = !subdir.subdirs.is_empty() || !subdir.tracks.is_empty();
+
+        if visitor(SidebarRow {
+            id: id.clone(),
+            label: subdir.name.clone(),
+            level,
+            is_expandable: has_children,
+            is_expanded: expanded,
+        }) {
+            return true;
+        }
+
+        if expanded && visit_directory(subdir, expanded_ids, level + 1, snapshot, visitor) {
+            return true;
+        }
+    }
+
+    for tid in &node.tracks {
+        if let Some(track) = snapshot.tracks.get(tid) {
+            let id = SidebarNodeId::Track {
+                id: *tid,
+                parent: Box::new(SidebarNodeId::Folder(node.path.clone())),
+            };
+            if visitor(SidebarRow {
+                id,
+                label: track.title.clone(),
+                level: level + 1,
+                is_expandable: false,
+                is_expanded: false,
+            }) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn visit_favorites<F>(
+    favorites: &[crate::domain::TrackId],
+    parent_id: &SidebarNodeId,
+    level: u8,
+    snapshot: &LibrarySnapshot,
+    visitor: &mut F,
+) -> bool
+where
+    F: FnMut(SidebarRow) -> bool,
+{
+    for tid in favorites {
+        if let Some(track) = snapshot.tracks.get(tid) {
+            let id = SidebarNodeId::Track {
+                id: *tid,
+                parent: Box::new(parent_id.clone()),
+            };
+            if visitor(SidebarRow {
+                id,
+                label: track.title.clone(),
+                level,
+                is_expandable: false,
+                is_expanded: false,
+            }) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn visit_playlists<F>(
+    snapshot: &LibrarySnapshot,
+    expanded_ids: &HashSet<SidebarNodeId>,
+    level: u8,
+    visitor: &mut F,
+) -> bool
+where
+    F: FnMut(SidebarRow) -> bool,
+{
     for pid in &snapshot.playlist_order {
         if let Some(playlist) = snapshot.playlists.get(pid) {
             let p_node = SidebarNodeId::Playlist(*pid);
-            let is_exp = expanded.contains(&p_node);
+            let expanded = expanded_ids.contains(&p_node);
 
-            if *current_idx >= skip && rows.len() < take {
-                rows.push(SidebarRow {
-                    id: p_node.clone(),
-                    label: playlist.name.clone(),
-                    level,
-                    is_expandable: !playlist.tracks.is_empty(),
-                    is_expanded: is_exp,
-                });
-            }
-            *current_idx += 1;
-            if rows.len() >= take {
-                return;
+            if visitor(SidebarRow {
+                id: p_node.clone(),
+                label: playlist.name.clone(),
+                level,
+                is_expandable: !playlist.tracks.is_empty(),
+                is_expanded: expanded,
+            }) {
+                return true;
             }
 
-            if is_exp {
+            if expanded {
                 for tid in &playlist.tracks {
                     if let Some(track) = snapshot.tracks.get(tid) {
-                        if *current_idx >= skip && rows.len() < take {
-                            rows.push(SidebarRow {
-                                id: SidebarNodeId::Track {
-                                    id: *tid,
-                                    parent: Box::new(p_node.clone()),
-                                },
-                                label: track.title.clone(),
-                                level: level + 1,
-                                is_expandable: false,
-                                is_expanded: false,
-                            });
-                        }
-                        *current_idx += 1;
-                        if rows.len() >= take {
-                            return;
+                        let id = SidebarNodeId::Track {
+                            id: *tid,
+                            parent: Box::new(p_node.clone()),
+                        };
+                        if visitor(SidebarRow {
+                            id,
+                            label: track.title.clone(),
+                            level: level + 1,
+                            is_expandable: false,
+                            is_expanded: false,
+                        }) {
+                            return true;
                         }
                     }
                 }
             }
         }
     }
+    false
 }
 
-#[allow(clippy::too_many_arguments)]
-fn visit_artists(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
+/// Generic visitor for HashMap-based categories (Artists, Albums, Genres, Years)
+fn visit_generic_map<K, F, IDGen>(
+    map: &std::collections::HashMap<K, Vec<crate::domain::TrackId>>,
+    expanded_ids: &HashSet<SidebarNodeId>,
     level: u8,
-    current_idx: &mut usize,
-    skip: usize,
-    take: usize,
-    rows: &mut Vec<SidebarRow>,
+    id_gen: IDGen,
     snapshot: &LibrarySnapshot,
-) {
-    let mut keys: Vec<&String> = map.keys().collect();
+    visitor: &mut F,
+) -> bool
+where
+    K: std::hash::Hash + Eq + Ord + ToString + Clone,
+    F: FnMut(SidebarRow) -> bool,
+    IDGen: Fn(K) -> SidebarNodeId,
+{
+    let mut keys: Vec<&K> = map.keys().collect();
     keys.sort();
 
     for key in keys {
-        let label = key.clone();
-        let node_id = SidebarNodeId::Artist(key.clone());
-        let is_exp = expanded.contains(&node_id);
+        let id = id_gen(key.clone());
+        let expanded = expanded_ids.contains(&id);
 
-        if *current_idx >= skip && rows.len() < take {
-            rows.push(SidebarRow {
-                id: node_id.clone(),
-                label,
-                level,
-                is_expandable: true,
-                is_expanded: is_exp,
-            });
-        }
-        *current_idx += 1;
-        if rows.len() >= take {
-            return;
+        if visitor(SidebarRow {
+            id: id.clone(),
+            label: key.to_string(),
+            level,
+            is_expandable: true,
+            is_expanded: expanded,
+        }) {
+            return true;
         }
 
-        if is_exp {
-            visit_track_list(
-                map.get(key),
-                &node_id,
-                level + 1,
-                current_idx,
-                skip,
-                take,
-                rows,
-                snapshot,
-            );
-            if rows.len() >= take {
-                return;
-            }
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn visit_albums(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    level: u8,
-    current_idx: &mut usize,
-    skip: usize,
-    take: usize,
-    rows: &mut Vec<SidebarRow>,
-    snapshot: &LibrarySnapshot,
-) {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let label = key.clone();
-        let node_id = SidebarNodeId::Album(key.clone());
-        let is_exp = expanded.contains(&node_id);
-
-        if *current_idx >= skip && rows.len() < take {
-            rows.push(SidebarRow {
-                id: node_id.clone(),
-                label,
-                level,
-                is_expandable: true,
-                is_expanded: is_exp,
-            });
-        }
-        *current_idx += 1;
-        if rows.len() >= take {
-            return;
-        }
-
-        if is_exp {
-            visit_track_list(
-                map.get(key),
-                &node_id,
-                level + 1,
-                current_idx,
-                skip,
-                take,
-                rows,
-                snapshot,
-            );
-            if rows.len() >= take {
-                return;
-            }
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn visit_genres(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    level: u8,
-    current_idx: &mut usize,
-    skip: usize,
-    take: usize,
-    rows: &mut Vec<SidebarRow>,
-    snapshot: &LibrarySnapshot,
-) {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let label = key.clone();
-        let node_id = SidebarNodeId::Genre(key.clone());
-        let is_exp = expanded.contains(&node_id);
-
-        if *current_idx >= skip && rows.len() < take {
-            rows.push(SidebarRow {
-                id: node_id.clone(),
-                label,
-                level,
-                is_expandable: true,
-                is_expanded: is_exp,
-            });
-        }
-        *current_idx += 1;
-        if rows.len() >= take {
-            return;
-        }
-
-        if is_exp {
-            visit_track_list(
-                map.get(key),
-                &node_id,
-                level + 1,
-                current_idx,
-                skip,
-                take,
-                rows,
-                snapshot,
-            );
-            if rows.len() >= take {
-                return;
-            }
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn visit_years(
-    map: &std::collections::HashMap<u32, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    level: u8,
-    current_idx: &mut usize,
-    skip: usize,
-    take: usize,
-    rows: &mut Vec<SidebarRow>,
-    snapshot: &LibrarySnapshot,
-) {
-    let mut keys: Vec<&u32> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let label = key.to_string();
-        let node_id = SidebarNodeId::Year(*key);
-        let is_exp = expanded.contains(&node_id);
-
-        if *current_idx >= skip && rows.len() < take {
-            rows.push(SidebarRow {
-                id: node_id.clone(),
-                label,
-                level,
-                is_expandable: true,
-                is_expanded: is_exp,
-            });
-        }
-        *current_idx += 1;
-        if rows.len() >= take {
-            return;
-        }
-
-        if is_exp {
-            visit_track_list(
-                map.get(key),
-                &node_id,
-                level + 1,
-                current_idx,
-                skip,
-                take,
-                rows,
-                snapshot,
-            );
-            if rows.len() >= take {
-                return;
-            }
-        }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn visit_track_list(
-    tracks: Option<&Vec<crate::domain::TrackId>>,
-    parent_id: &SidebarNodeId,
-    level: u8,
-    current_idx: &mut usize,
-    skip: usize,
-    take: usize,
-    rows: &mut Vec<SidebarRow>,
-    snapshot: &LibrarySnapshot,
-) {
-    if let Some(tids) = tracks {
-        for tid in tids {
-            if let Some(track) = snapshot.tracks.get(tid) {
-                if *current_idx >= skip && rows.len() < take {
-                    rows.push(SidebarRow {
-                        id: SidebarNodeId::Track {
+        if expanded {
+            if let Some(tids) = map.get(key) {
+                for tid in tids {
+                    if let Some(track) = snapshot.tracks.get(tid) {
+                        let t_id = SidebarNodeId::Track {
                             id: *tid,
-                            parent: Box::new(parent_id.clone()),
-                        },
-                        label: track.title.clone(),
-                        level,
-                        is_expandable: false,
-                        is_expanded: false,
-                    });
+                            parent: Box::new(id.clone()),
+                        };
+                        if visitor(SidebarRow {
+                            id: t_id,
+                            label: track.title.clone(),
+                            level: level + 1,
+                            is_expandable: false,
+                            is_expanded: false,
+                        }) {
+                            return true;
+                        }
+                    }
                 }
-                *current_idx += 1;
-                if rows.len() >= take {
-                    return;
-                }
-            }
-        }
-    }
-}
-
-// --- Search Helpers ---
-
-fn search_directory(
-    node: &DirectoryNode,
-    expanded: &HashSet<SidebarNodeId>,
-    target: &SidebarNodeId,
-    current_idx: &mut usize,
-) -> bool {
-    for subdir in &node.subdirs {
-        let id = SidebarNodeId::Folder(subdir.path.clone());
-        if &id == target {
-            return true;
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&id) && search_directory(subdir, expanded, target, current_idx) {
-            return true;
-        }
-    }
-
-    // Check tracks in this directory
-    for tid in &node.tracks {
-        let t_node = SidebarNodeId::Track {
-            id: *tid,
-            parent: Box::new(SidebarNodeId::Folder(node.path.clone())),
-        };
-        if &t_node == target {
-            return true;
-        }
-        *current_idx += 1;
-    }
-
-    false
-}
-
-fn search_playlists(
-    snapshot: &LibrarySnapshot,
-    expanded: &HashSet<SidebarNodeId>,
-    target: &SidebarNodeId,
-    current_idx: &mut usize,
-) -> bool {
-    for pid in &snapshot.playlist_order {
-        let p_node = SidebarNodeId::Playlist(*pid);
-        if &p_node == target {
-            return true;
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&p_node)
-            && let Some(playlist) = snapshot.playlists.get(pid)
-        {
-            for tid in &playlist.tracks {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(p_node.clone()),
-                };
-                if &t_node == target {
-                    return true;
-                }
-                *current_idx += 1;
             }
         }
     }
     false
-}
-
-fn search_artists(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    target: &SidebarNodeId,
-    current_idx: &mut usize,
-) -> bool {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let node_id = SidebarNodeId::Artist(key.clone());
-        if &node_id == target {
-            return true;
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&node_id)
-            && let Some(tids) = map.get(key)
-        {
-            for tid in tids {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(node_id.clone()),
-                };
-                if &t_node == target {
-                    return true;
-                }
-                *current_idx += 1;
-            }
-        }
-    }
-    false
-}
-
-fn search_albums(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    target: &SidebarNodeId,
-    current_idx: &mut usize,
-) -> bool {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let node_id = SidebarNodeId::Album(key.clone());
-        if &node_id == target {
-            return true;
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&node_id)
-            && let Some(tids) = map.get(key)
-        {
-            for tid in tids {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(node_id.clone()),
-                };
-                if &t_node == target {
-                    return true;
-                }
-                *current_idx += 1;
-            }
-        }
-    }
-    false
-}
-
-fn search_genres(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    target: &SidebarNodeId,
-    current_idx: &mut usize,
-) -> bool {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let node_id = SidebarNodeId::Genre(key.clone());
-        if &node_id == target {
-            return true;
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&node_id)
-            && let Some(tids) = map.get(key)
-        {
-            for tid in tids {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(node_id.clone()),
-                };
-                if &t_node == target {
-                    return true;
-                }
-                *current_idx += 1;
-            }
-        }
-    }
-    false
-}
-
-fn search_years(
-    map: &std::collections::HashMap<u32, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    target: &SidebarNodeId,
-    current_idx: &mut usize,
-) -> bool {
-    let mut keys: Vec<&u32> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let node_id = SidebarNodeId::Year(*key);
-        if &node_id == target {
-            return true;
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&node_id)
-            && let Some(tids) = map.get(key)
-        {
-            for tid in tids {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(node_id.clone()),
-                };
-                if &t_node == target {
-                    return true;
-                }
-                *current_idx += 1;
-            }
-        }
-    }
-    false
-}
-
-// --- Find By Index Helpers ---
-
-fn find_at_index_directory(
-    node: &DirectoryNode,
-    expanded: &HashSet<SidebarNodeId>,
-    target_index: usize,
-    current_idx: &mut usize,
-) -> Option<SidebarNodeId> {
-    for subdir in &node.subdirs {
-        let id = SidebarNodeId::Folder(subdir.path.clone());
-        if *current_idx == target_index {
-            return Some(id);
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&id)
-            && let Some(res) = find_at_index_directory(subdir, expanded, target_index, current_idx)
-        {
-            return Some(res);
-        }
-    }
-
-    // Check tracks in this directory
-    for tid in &node.tracks {
-        let t_node = SidebarNodeId::Track {
-            id: *tid,
-            parent: Box::new(SidebarNodeId::Folder(node.path.clone())),
-        };
-        if *current_idx == target_index {
-            return Some(t_node);
-        }
-        *current_idx += 1;
-    }
-
-    None
-}
-
-fn find_at_index_playlists(
-    snapshot: &LibrarySnapshot,
-    expanded: &HashSet<SidebarNodeId>,
-    target_index: usize,
-    current_idx: &mut usize,
-) -> Option<SidebarNodeId> {
-    for pid in &snapshot.playlist_order {
-        let p_node = SidebarNodeId::Playlist(*pid);
-        if *current_idx == target_index {
-            return Some(p_node);
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&p_node)
-            && let Some(playlist) = snapshot.playlists.get(pid)
-        {
-            for tid in &playlist.tracks {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(p_node.clone()),
-                };
-                if *current_idx == target_index {
-                    return Some(t_node);
-                }
-                *current_idx += 1;
-            }
-        }
-    }
-    None
-}
-
-fn find_at_index_artists(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    target_index: usize,
-    current_idx: &mut usize,
-) -> Option<SidebarNodeId> {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let node_id = SidebarNodeId::Artist(key.clone());
-        if *current_idx == target_index {
-            return Some(node_id);
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&node_id)
-            && let Some(tids) = map.get(key)
-        {
-            for tid in tids {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(node_id.clone()),
-                };
-                if *current_idx == target_index {
-                    return Some(t_node);
-                }
-                *current_idx += 1;
-            }
-        }
-    }
-    None
-}
-
-fn find_at_index_albums(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    target_index: usize,
-    current_idx: &mut usize,
-) -> Option<SidebarNodeId> {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let node_id = SidebarNodeId::Album(key.clone());
-        if *current_idx == target_index {
-            return Some(node_id);
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&node_id)
-            && let Some(tids) = map.get(key)
-        {
-            for tid in tids {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(node_id.clone()),
-                };
-                if *current_idx == target_index {
-                    return Some(t_node);
-                }
-                *current_idx += 1;
-            }
-        }
-    }
-    None
-}
-
-fn find_at_index_genres(
-    map: &std::collections::HashMap<String, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    target_index: usize,
-    current_idx: &mut usize,
-) -> Option<SidebarNodeId> {
-    let mut keys: Vec<&String> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let node_id = SidebarNodeId::Genre(key.clone());
-        if *current_idx == target_index {
-            return Some(node_id);
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&node_id)
-            && let Some(tids) = map.get(key)
-        {
-            for tid in tids {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(node_id.clone()),
-                };
-                if *current_idx == target_index {
-                    return Some(t_node);
-                }
-                *current_idx += 1;
-            }
-        }
-    }
-    None
-}
-
-fn find_at_index_years(
-    map: &std::collections::HashMap<u32, Vec<crate::domain::TrackId>>,
-    expanded: &HashSet<SidebarNodeId>,
-    target_index: usize,
-    current_idx: &mut usize,
-) -> Option<SidebarNodeId> {
-    let mut keys: Vec<&u32> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
-        let node_id = SidebarNodeId::Year(*key);
-        if *current_idx == target_index {
-            return Some(node_id);
-        }
-        *current_idx += 1;
-
-        if expanded.contains(&node_id)
-            && let Some(tids) = map.get(key)
-        {
-            for tid in tids {
-                let t_node = SidebarNodeId::Track {
-                    id: *tid,
-                    parent: Box::new(node_id.clone()),
-                };
-                if *current_idx == target_index {
-                    return Some(t_node);
-                }
-                *current_idx += 1;
-            }
-        }
-    }
-    None
 }

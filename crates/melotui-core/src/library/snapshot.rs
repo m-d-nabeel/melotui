@@ -27,6 +27,7 @@ pub struct LibrarySnapshot {
     pub albums: HashMap<String, Vec<TrackId>>,
     pub genres: HashMap<String, Vec<TrackId>>,
     pub years: HashMap<u32, Vec<TrackId>>,
+    pub favorites: Vec<TrackId>,
 }
 
 impl LibrarySnapshot {
@@ -91,6 +92,7 @@ impl LibrarySnapshot {
             albums,
             genres,
             years,
+            favorites: Vec::new(),
         }
     }
 
