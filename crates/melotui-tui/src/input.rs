@@ -20,7 +20,7 @@ impl InputHandler {
     fn get_active_contexts(state: &AppState) -> Vec<KeyContext> {
         let mut contexts = Vec::with_capacity(3);
 
-        // Priority overlays
+        // priority overlays
         if state.ui_show_help() {
             contexts.push(KeyContext::Help);
             return contexts;
@@ -37,14 +37,14 @@ impl InputHandler {
             return contexts;
         }
 
-        // Panel contexts
+        // panel contexts
         if state.is_library_focused() {
             contexts.push(KeyContext::Library);
         } else if state.is_queue_focused() {
             contexts.push(KeyContext::Queue);
         }
 
-        // Global
+        // global
         contexts.push(KeyContext::Global);
         contexts
     }
@@ -65,7 +65,7 @@ impl InputHandler {
             }
         }
 
-        // Fallback for command mode typing
+        // command mode typing fallback
         let Some(act) = action else {
             if *state.ui_mode() == UIMode::Command
                 && let KeyCode::Char(c) = key.code
@@ -76,7 +76,7 @@ impl InputHandler {
         };
 
         match act {
-            // Enter: play selected track or toggle tree expand
+            // play selected or toggle expand
             KeyAction::ToggleTreeExpand => {
                 if state.is_library_focused() {
                     if state.get_selected_track_id_in_sidebar().is_some() {
@@ -93,7 +93,7 @@ impl InputHandler {
                 }
             }
 
-            // Add to queue
+            // add to queue
             KeyAction::AddToQueue => {
                 if state.is_library_focused()
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
@@ -103,7 +103,7 @@ impl InputHandler {
                 None
             }
 
-            // Play next
+            // play next
             KeyAction::QueuePlayNext => {
                 if state.is_library_focused()
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
@@ -113,7 +113,7 @@ impl InputHandler {
                 None
             }
 
-            // Toggle favorite
+            // toggle favorite
             KeyAction::ToggleFavorite => {
                 if state.is_library_focused()
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
@@ -123,12 +123,12 @@ impl InputHandler {
                 None
             }
 
-            // Submit command
+            // submit command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
                 state.ui_command_buffer().clone(),
             ))),
 
-            // Direct mapping for other keys
+            // direct mapping
             _ => act.to_msg(),
         }
     }

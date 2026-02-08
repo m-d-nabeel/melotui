@@ -18,7 +18,7 @@ use crate::{
 pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
     let area = frame.area();
 
-    // Main layout
+    // main layout
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(22), Constraint::Percentage(78)])
@@ -41,7 +41,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
 
     notification_popup::draw(frame, frame.area(), state);
 
-    // --- COMMAND OVERLAY ---
+    // command overlay
     if *state.ui_mode() == UIMode::Command {
         frame.render_widget(
             Block::default().style(Style::default().add_modifier(Modifier::DIM)),

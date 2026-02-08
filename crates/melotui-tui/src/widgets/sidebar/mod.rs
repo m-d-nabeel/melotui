@@ -17,7 +17,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     }
 }
 
-// Marquee helper
+// marquee helper
 pub fn generate_marquee_delayed(text: &str, max_width: usize, state: &AppState) -> String {
     if text.len() <= max_width {
         return text.to_string();

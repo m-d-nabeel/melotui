@@ -23,7 +23,7 @@ impl InputProcessor {
 
         for msg in events {
             match msg {
-                // Coalesce Seeks
+                // coalesce seeks
                 AppMsg::Playback(PlaybackMsg::RequestSeek { offset_seconds }) => {
                     let mut merged = false;
                     if let Some(AppMsg::Playback(PlaybackMsg::RequestSeek {
@@ -40,7 +40,7 @@ impl InputProcessor {
                     }
                 }
 
-                // Coalesce Volume
+                // coalesce volume
                 AppMsg::Audio(AudioMsg::AdjustVolume(delta)) => {
                     let mut merged = false;
                     if let Some(AppMsg::Audio(AudioMsg::AdjustVolume(last_delta))) = out.last_mut()
@@ -53,16 +53,16 @@ impl InputProcessor {
                     }
                 }
 
-                // Deduplicate queue adds
+                // dedupe queue adds
                 AppMsg::Library(LibraryMsg::AddToQueue(track_id)) => {
                     let now = Instant::now();
                     let should_add = match self.last_add_track {
                         Some((last_id, last_time)) => {
-                            // If same track, enforce 500ms debounce
+                            // same track: 500ms debounce
                             if last_id == track_id {
                                 now.duration_since(last_time) > Duration::from_millis(500)
                             } else {
-                                // Different track: always allow
+                                // diff track: allow
                                 true
                             }
                         }
@@ -75,7 +75,7 @@ impl InputProcessor {
                     }
                 }
 
-                // Debounce play selection
+                // debounce play selection
                 AppMsg::Playback(PlaybackMsg::RequestPlaySelected) => {
                     let now = Instant::now();
                     let should_play = match self.last_play_request {
@@ -91,7 +91,7 @@ impl InputProcessor {
                     }
                 }
 
-                // Pass through others
+                // pass through others
                 _ => out.push(msg),
             }
         }

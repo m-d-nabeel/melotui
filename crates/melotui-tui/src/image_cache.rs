@@ -27,7 +27,7 @@ impl ImageState {
         self.height = 0;
     }
 
-    /// Resize and crop the source image to cover the target area, determining protocol on demand.
+    /// resize and crop image - update protocol
     pub fn update_protocol(&mut self, picker: &Picker, area: ratatui::layout::Rect) {
         if area.width == 0 || area.height == 0 {
             return;
@@ -37,7 +37,7 @@ impl ImageState {
         let target_w = area.width as u32 * font_w as u32;
         let target_h = area.height as u32 * font_h as u32;
 
-        // Skip if dimensions match and protocol exists
+        // skip if match
         if self.width == target_w && self.height == target_h && self.protocol.is_some() {
             return;
         }
@@ -46,7 +46,7 @@ impl ImageState {
             let src_w = source.width();
             let src_h = source.height();
 
-            // Cover Logic: Scale to fill
+            // cover logic: scale to fill
             let scale_w = target_w as f32 / src_w as f32;
             let scale_h = target_h as f32 / src_h as f32;
             let scale = scale_w.max(scale_h);
@@ -61,14 +61,14 @@ impl ImageState {
                 image::imageops::FilterType::Triangle,
             );
 
-            // Center Crop Logic
+            // center crop logic
             let off_x = (new_w.saturating_sub(target_w)) / 2;
             let off_y = (new_h.saturating_sub(target_h)) / 2;
 
             let cropped =
                 image::imageops::crop(&mut resized, off_x, off_y, target_w, target_h).to_image();
 
-            // Cache the new resize protocol
+            // cache protocol
             self.protocol =
                 Some(picker.new_resize_protocol(image::DynamicImage::ImageRgba8(cropped)));
 
@@ -134,7 +134,7 @@ impl ImageCache {
         core_cover: &Option<Arc<DynamicImage>>,
         force_redraw: bool,
     ) {
-        // Simple pointer check for equality is fast since we use Arc
+        // fast arc pointer check
         let same_source = match (&local.source, core_cover) {
             (Some(a), Some(b)) => Arc::ptr_eq(a, b),
             (None, None) => true,

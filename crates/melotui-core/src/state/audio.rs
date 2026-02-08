@@ -1,11 +1,11 @@
 #[derive(Debug, Clone)]
 pub struct AudioState {
-    pub volume: f32, // 0.0 - 1.5
-    pub speed: f32,  // 0.5 - 2.0
-    pub bass: f32,   // 0.1 - 5.0
-    pub treble: f32, // 0.0 - 5.0
-    pub reverb: f32, // 0.0 - 1.0
-    pub echo: f32,   // 0.0 - 0.9
+    pub volume: f32, // range 0.0 to 1.5
+    pub speed: f32,  // range 0.5 to 2.0
+    pub bass: f32,   // range 0.1 to 5.0
+    pub treble: f32, // range 0.0 to 5.0
+    pub reverb: f32, // range 0.0 to 1.0
+    pub echo: f32,   // range 0.0 to 0.9
 }
 
 impl Default for AudioState {

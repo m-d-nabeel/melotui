@@ -33,7 +33,7 @@ pub fn run(mut worker: impl IpcWorker<AudioCommand>, spectrum_producer: Spectrum
 
         engine.tick(&mut worker);
 
-        // 10ms sleep covers ~100Hz update rate, sufficient for UI/Spectrum
+        // 10ms sleep covers ~100Hz
         thread::sleep(Duration::from_millis(10));
     }
 }

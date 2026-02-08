@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
 };
 
-// Catppuccin-inspired colors
+// help colors
 const OVERLAY: Color = Color::Rgb(69, 71, 90);
 const TEXT: Color = Color::Rgb(205, 214, 244);
 const SUBTEXT: Color = Color::Rgb(166, 173, 200);
@@ -18,13 +18,13 @@ const HEADER_FG: Color = Color::Rgb(166, 227, 161); // Green
 const BORDER: Color = Color::Rgb(88, 91, 112);
 
 pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
-    // Use most of the screen for help
+    // help screen area
     let help_area = centered_rect(85, 90, area);
 
-    // Clear background
+    // clear bg
     frame.render_widget(Clear, help_area);
 
-    // Main block with custom border
+    // main block
     let block = Block::default()
         .title(
             Line::from(vec![
@@ -43,7 +43,7 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
     let inner = block.inner(help_area);
     frame.render_widget(block, help_area);
 
-    // Split into sections
+    // split into sections
     let sections = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -53,7 +53,7 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
         ])
         .split(inner);
 
-    // Get bindings by context using references (no cloning)
+    // get bindings
     let registry = InputHandler::get_registry();
 
     render_section(
@@ -92,7 +92,7 @@ fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Group bindings by description to combine multiple keys
+    // group bindings by description
     let mut grouped: std::collections::HashMap<&str, Vec<String>> =
         std::collections::HashMap::new();
 
@@ -103,15 +103,15 @@ fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&
         }
     }
 
-    // Build lines
+    // build lines
     let mut lines: Vec<Line> = vec![];
 
-    // Sort by description for consistent order
+    // sort entries
     let mut entries: Vec<_> = grouped.into_iter().collect();
     entries.sort_by(|a, b| a.0.cmp(b.0));
 
     for (desc, keys) in entries {
-        // Join multiple keys with " or "
+        // join multiple keys
         let key_display = keys.join("  ");
 
         let line = Line::from(vec![
@@ -132,7 +132,7 @@ fn format_key(binding: &melotui_core::keybinding::KeyBinding) -> String {
 
     let mut result = String::new();
 
-    // Add modifier prefixes
+    // add modifiers
     if binding.modifiers.contains(KeyModifiers::CONTROL) {
         result.push_str("Ctrl+");
     }
@@ -140,7 +140,7 @@ fn format_key(binding: &melotui_core::keybinding::KeyBinding) -> String {
         result.push_str("Alt+");
     }
     if binding.modifiers.contains(KeyModifiers::SHIFT) {
-        // For characters, show uppercase; for special keys, show Shift+ prefix
+        // shift handling
         match binding.key {
             KeyCode::Char(c) if c.is_ascii_lowercase() => {
                 // Will show uppercase below, no prefix needed
@@ -149,7 +149,7 @@ fn format_key(binding: &melotui_core::keybinding::KeyBinding) -> String {
         }
     }
 
-    // Add the key itself
+    // add the key
     let key_str = match binding.key {
         KeyCode::Char(' ') => "Space".to_string(),
         KeyCode::Char(c) => format!("{}", c.to_uppercase()),

@@ -147,7 +147,7 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
 
 fn handle_database_message(_state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
     match msg {
-        // DispatchToggleFavorite is handled by the IPC bridge
+        // favorite toggle handled in ipc
         DatabaseMsg::DispatchToggleFavorite(_) => vec![],
     }
 }

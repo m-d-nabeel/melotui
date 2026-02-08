@@ -14,11 +14,11 @@ const MAX_ART_HEIGHT_PERCENT: u16 = 40;
 const MIN_ART_HEIGHT: u16 = 15;
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache) {
-    // Access state via cache
+    // access state via cache
     let art_state = &mut cache.track_info;
     let picker = &cache.picker;
 
-    // Determine selection context
+    // selection context
     let track_id = if state.is_library_focused() {
         state.get_selected_track_id_in_sidebar()
     } else {
@@ -35,7 +35,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         None => return,
     };
 
-    // Main Block with subtle styling
+    // main block
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -51,9 +51,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // Layout: Art (Dominant), Info (Bottom)
+    // art and info layout
     let art_height = if art_state.source.is_some() {
-        // Use configured percentage of height for art
+        // art height from height %
         std::cmp::max(
             MIN_ART_HEIGHT,
             inner_area.height * MAX_ART_HEIGHT_PERCENT / 100,
@@ -70,7 +70,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         ])
         .split(inner_area);
 
-    // 1. Album Art with Manual Center Crop
+    // 1. album art center crop
     if art_state.source.is_some() {
         let area = chunks[0];
         art_state.update_protocol(picker, area);
@@ -81,7 +81,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         }
     }
 
-    // 2. Info Area Layout
+    // 2. info area layout
     let info_area = chunks[1];
     let info_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -99,7 +99,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         ])
         .split(info_area);
 
-    // Title: Bold, Cyan, Centered
+    // title
     let title_line = Line::from(ratatui::text::Span::styled(
         &track.title,
         Style::default()
@@ -111,7 +111,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         info_layout[1],
     );
 
-    // Artist: White, Centered
+    // artist
     let artist_str = track.artist.as_deref().unwrap_or("Unknown Artist");
     let artist_line = Line::from(ratatui::text::Span::styled(
         artist_str,
@@ -122,7 +122,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         info_layout[2],
     );
 
-    // Album: DarkGray, Centered
+    // album
     if let Some(album) = &track.album {
         let album_line = Line::from(ratatui::text::Span::styled(
             album,
@@ -136,7 +136,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         );
     }
 
-    // Audio Tech Specs Row (Badges)
+    // audio specs
     let bitrate = track.bitrate.unwrap_or(0);
     let sample = track.sample_rate.unwrap_or(0);
     let format = track.format.to_uppercase();
@@ -170,13 +170,13 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             Style::default().bg(Color::DarkGray).fg(Color::White),
         ));
     }
-    // Fixed: Always render the widget even if empty (or render placeholder space)
+    // always render widget
     frame.render_widget(
         Paragraph::new(Line::from(badge_parts)).alignment(ratatui::layout::Alignment::Center),
         info_layout[5],
     );
 
-    // Details Row: Year | Genre | Duration
+    // details row
     let mut details = Vec::new();
     if let Some(y) = track.year {
         details.push(format!("{}", y));
@@ -193,7 +193,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         info_layout[6],
     );
 
-    // Separator
+    // separator
     let sep = Line::from(ratatui::text::Span::styled(
         "─".repeat(info_area.width as usize),
         Style::default().fg(Color::DarkGray),
@@ -203,9 +203,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         info_layout[8],
     );
 
-    // File Details (The "Fill Space" Section)
+    // file details
     let file_info_area = info_layout[9];
-    // Calculate values
+    // calculate values
     let parent_folder = track
         .file_path
         .parent()

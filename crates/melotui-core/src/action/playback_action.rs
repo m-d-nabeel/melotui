@@ -14,22 +14,22 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
     let mut target_track_id: Option<TrackId> = None;
     let mut from_queue = false;
 
-    // New context variables
+    // context vars
     let mut new_context_queue: Vec<TrackId> = Vec::new();
     let mut new_context_idx: usize = 0;
     let mut new_source_name = String::new();
     let mut should_update_context = false;
 
-    // Handle queue selection (rotate logic)
+    // queue selection (rotate)
     if state.is_queue_focused() {
         if let Some(qid) = state.session.nav.queue.selected_queue_id {
             let queue_items = &mut state.session.playback_queue.items;
 
             if let Some(idx) = queue_items.iter().position(|e| e.id == qid) {
-                // Rotate selected item to front
+                // rotate to front
                 queue_items.rotate_left(idx);
 
-                // Play new front item
+                // play front
                 if let Some(entry) = queue_items.front() {
                     target_track_id = Some(entry.track_id);
                     state.session.playback.active_queue_id = Some(entry.id);
@@ -38,7 +38,7 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
             }
         }
     }
-    // Handle tree selection
+    // tree selection
     else {
         let selected_node = state.session.nav.library.selected_id.clone();
         if let Some(node) = selected_node {
@@ -52,11 +52,11 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
 
                     should_update_context = true;
 
-                    // Unified resolution for all parent types
+                    // resolve for all parents
                     new_context_queue = state.library.resolve_track_ids_for_node(&parent);
 
                     if new_context_queue.is_empty() {
-                        // Fallback for types that don't support context resolution (e.g. unknown categories)
+                        // fallback if no context support
                         new_context_queue = vec![id];
                         new_source_name = "Library Selection".to_string();
                     } else {
@@ -104,7 +104,7 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
         }
     }
 
-    // Dispatch playback
+    // dispatch playback
     if let Some(id) = target_track_id {
         if should_update_context && !from_queue {
             state.session.playback.context_queue = new_context_queue;
@@ -161,14 +161,14 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
     state.session.playback.status = PlaybackStatus::Stopped;
     state.session.playback.progress_ms = 0;
 
-    // Repeat track logic
+    // repeat track
     if state.session.repeat_mode == RepeatMode::Track
         && let Some(id) = state.session.playback.current
     {
         return start_playback(state, id, state.is_playing_from_queue());
     }
 
-    // Clean up finished queue item
+    // clean up finished queue item
     if let Some(finished_qid) = state.session.playback.active_queue_id {
         let queue_items = &mut state.session.playback_queue.items;
         if let Some(idx) = queue_items.iter().position(|e| e.id == finished_qid) {
@@ -177,18 +177,18 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
         state.session.playback.active_queue_id = None;
     }
 
-    // Priority check: queue vs context
+    // priority: queue vs context
 
-    // Check user queue first
+    // check queue first
     if !state.queue().is_empty()
         && let Some(entry) = state.session.playback_queue.items.pop_front()
     {
         state.session.playback.active_queue_id = Some(entry.id);
-        // TODO: Consider clearing active_node when playing from queue to avoid stale highlighting
+        // TODO: clear active_node when playing from queue?
         return start_playback(state, entry.track_id, true);
     }
 
-    // Context fallback (continue playlist/album)
+    // context fallback
     if let Some(new_id) = state.get_next_context_id() {
         state.session.playback.context_idx = state
             .session
@@ -198,7 +198,7 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
             .position(|&x| x == new_id)
             .unwrap_or(0);
 
-        // Update active node for next track
+        // update active node
         update_active_node(state, new_id);
 
         return start_playback(state, new_id, false);
@@ -253,7 +253,7 @@ pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<App
     let dur = state.total_duration_ms() as i64;
     let new_ms = (cur + offset_seconds * 1000).clamp(0, dur);
 
-    // Update seek time to ignore stale progress events
+    // ignore stale progress after seek
     state.session.last_seek_time = Some(Instant::now());
 
     state.session.playback.progress_ms = new_ms as u64;
@@ -264,7 +264,7 @@ pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<App
 
 pub fn handle_audio_progress(state: &mut AppState, position_ms: u64) -> Vec<AppMsg> {
     if state.is_playing() {
-        // Ignore stale progress updates after seek
+        // ignore stale progress after seek
         if let Some(last) = state.session.last_seek_time
             && last.elapsed() < Duration::from_millis(500)
         {
@@ -347,7 +347,7 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
         path: file_path.clone(),
     })];
 
-    // Request async cover load
+    // request async cover load
     if meta.has_cover {
         effects.push(AppMsg::Cover(CoverMsg::RequestLoad {
             id,

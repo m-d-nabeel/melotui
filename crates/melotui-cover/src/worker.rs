@@ -19,7 +19,7 @@ pub fn run(worker: WorkerEndpoint<CoverCommand>) {
 
         update_pending(&mut pending_playback, &mut pending_info, msg);
 
-        // Drain any other immediately available messages to skip ahead
+        // drain messages to skip ahead
         while let Some(msg) = worker.try_recv() {
             if matches!(msg, CoverCommand::Shutdown) {
                 return;
@@ -27,7 +27,7 @@ pub fn run(worker: WorkerEndpoint<CoverCommand>) {
             update_pending(&mut pending_playback, &mut pending_info, msg);
         }
 
-        // Prioritize Playback over Info for responsiveness
+        // prioritize playback over info
         if let Some(cmd) = pending_playback.take() {
             process_load(&worker, cmd);
         }
@@ -59,7 +59,7 @@ fn process_load(worker: &WorkerEndpoint<CoverCommand>, cmd: CoverCommand) {
     if let CoverCommand::Load { id, path, context } = cmd {
         let start = Instant::now();
 
-        let load_result = (|| -> Option<std::sync::Arc<image::DynamicImage>> {
+        let load_result = (|| -> Option<Arc<image::DynamicImage>> {
             let tagged_file = Probe::open(&path).ok()?.read().ok()?;
             let tag = tagged_file
                 .primary_tag()

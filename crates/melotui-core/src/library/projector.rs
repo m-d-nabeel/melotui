@@ -12,7 +12,7 @@ pub struct SidebarRow {
     pub is_expanded: bool,
 }
 
-/// Calculate total number of visible rows in the tree.
+/// visible row count
 pub fn get_row_count(snapshot: &LibrarySnapshot, nav: &LibraryNavState) -> usize {
     let mut count = 0;
     traverse_visible_nodes(snapshot, nav, |_| {
@@ -22,7 +22,7 @@ pub fn get_row_count(snapshot: &LibrarySnapshot, nav: &LibraryNavState) -> usize
     count
 }
 
-/// Get a slice of visible rows for the viewport.
+/// get visible rows
 pub fn get_visible_rows(
     snapshot: &LibrarySnapshot,
     nav: &LibraryNavState,
@@ -43,7 +43,7 @@ pub fn get_visible_rows(
     rows
 }
 
-/// Find the linear index of a specific node ID in the visible tree.
+/// find node index
 pub fn get_index_of(
     snapshot: &LibrarySnapshot,
     nav: &LibraryNavState,
@@ -64,7 +64,7 @@ pub fn get_index_of(
     found_idx
 }
 
-/// Find the node ID at a specific linear index in the visible tree.
+/// get node at index
 pub fn get_node_at_index(
     snapshot: &LibrarySnapshot,
     nav: &LibraryNavState,
@@ -85,7 +85,7 @@ pub fn get_node_at_index(
     found_node
 }
 
-/// Traverse visible nodes, calling visitor for each. Returns true to stop early.
+/// traverse visible nodes
 fn traverse_visible_nodes<F>(snapshot: &LibrarySnapshot, nav: &LibraryNavState, mut visitor: F)
 where
     F: FnMut(SidebarRow) -> bool,
@@ -298,7 +298,7 @@ where
     false
 }
 
-/// Generic visitor for HashMap-based categories (Artists, Albums, Genres, Years)
+/// generic map visitor
 fn visit_generic_map<K, F, IDGen>(
     map: &std::collections::HashMap<K, Vec<crate::domain::TrackId>>,
     expanded_ids: &HashSet<SidebarNodeId>,

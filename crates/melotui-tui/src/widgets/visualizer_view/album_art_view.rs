@@ -32,7 +32,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // Use shared logic for Center Cover Crop
+    // shared center cover crop logic
     if art_state.source.is_some() {
         art_state.update_protocol(&cache.picker, inner_area);
 

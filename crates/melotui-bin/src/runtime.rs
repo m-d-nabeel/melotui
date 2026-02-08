@@ -28,7 +28,7 @@ pub fn run() -> Result<()> {
 
     let (db_path, music_root) = resolve_paths()?;
 
-    // Start with an empty library - data loads async
+    // start empty library - data loads async
     let library = LibrarySnapshot::new(music_root.clone(), vec![], HashMap::new());
 
     let mut state = AppState::new(library);
@@ -38,7 +38,7 @@ pub fn run() -> Result<()> {
 
     let ipc = IpcRuntime::new(producer, db_path.clone());
 
-    // Request async library load
+    // request async library load
     ipc.dispatch(IpcCommand::Database(DatabaseCommand::LoadLibrary {
         root: music_root.clone(),
     }));
@@ -69,15 +69,15 @@ pub fn run() -> Result<()> {
             Duration::from_millis(100)
         };
 
-        // Event Coalescing Loop
-        // Drain up to 50 events from TUI (non-blocking after first)
+        // event coalescing loop
+        // drain up to 50 events - non-blocking after first
         let mut events = Vec::with_capacity(10);
 
-        // Blocking poll for first event
+        // blocking poll for first event
         if let Some(msg) = tui.poll_event(&state, timeout)? {
             events.push(msg);
 
-            // Non-blocking poll for subsequent events
+            // non-blocking poll for next events
             for _ in 0..50 {
                 if let Some(msg) = tui.poll_event(&state, Duration::ZERO)? {
                     events.push(msg);
@@ -172,7 +172,7 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                 state.set_notification(NotificationKind::Info, "Library loaded");
             }
             IpcEvent::LibraryRescanned => {
-                // Trigger a reload after scan completes
+                // reload after scan
                 ctx.ipc
                     .dispatch(IpcCommand::Database(DatabaseCommand::LoadLibrary {
                         root: ctx.music_root.clone(),
@@ -189,7 +189,7 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
     let mut changed = false;
     while let Some(msg) = ctx.effect_queue.pop_front() {
         changed = true;
-        // Lifecycle
+        // lifecycle
         if matches!(msg, AppMsg::RequestQuit) {
             if ctx.ipc_alive {
                 ctx.ipc.dispatch(IpcCommand::Shutdown);
@@ -199,14 +199,14 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
             break;
         }
 
-        // Side Effects
+        // side effects
         if ctx.ipc_alive
             && let Some(cmd) = appmsg_to_ipc(&msg, state)
         {
             ctx.ipc.dispatch(cmd);
         }
 
-        // State Mutation
+        // state mutation
         let next_effects = reducer::reduce(state, msg);
         ctx.effect_queue.extend(next_effects);
     }

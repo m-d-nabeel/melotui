@@ -50,7 +50,7 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
                         message: e.to_string(),
                     });
                 } else {
-                    // Auto-prune after scan
+                    // auto-prune after scan
                     let pruned = prune_library(&conn).unwrap_or(0);
                     if pruned > 0 {
                         tracing::info!("Pruned {} dead tracks", pruned);
@@ -106,14 +106,12 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
 fn handle_scan_library(conn: &rusqlite::Connection, root: &Path) -> Result<()> {
     info!("Scanning library at: {:?}", root);
 
-    // Critical: Do NOT delete all tracks (destroys stable IDs)
-    // Upsert found tracks, optionally delete missing ones later
-    // For now, we just scan and add/update.
+    // do not delete all tracks
 
     let mut count = 0;
     let scan_start = std::time::Instant::now();
 
-    // Use transaction for speed
+    // use transaction
     conn.execute("BEGIN TRANSACTION", [])?;
 
     let res = scan_directory(conn, root, &mut count);
@@ -135,7 +133,7 @@ fn handle_scan_library(conn: &rusqlite::Connection, root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Remove tracks from DB where the file no longer exists on disk.
+/// remove non-existent tracks
 fn prune_library(conn: &rusqlite::Connection) -> Result<usize> {
     let mut stmt = conn.prepare("SELECT id, file_path FROM tracks")?;
     let rows = stmt.query_map([], |row| {
@@ -154,7 +152,7 @@ fn prune_library(conn: &rusqlite::Connection) -> Result<usize> {
         return Ok(0);
     }
 
-    // Delete in batches using transaction
+    // delete in batches
     conn.execute("BEGIN TRANSACTION", [])?;
     for id in &dead_ids {
         conn.execute("DELETE FROM tracks WHERE id = ?", params![id])?;
@@ -190,7 +188,7 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
         return None;
     }
 
-    // Lofty parsing
+    // lofty parsing
     let tagged_file = Probe::open(path).ok()?.read().ok()?;
     let properties = tagged_file.properties();
 
@@ -198,7 +196,7 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
 
     let bitrate = properties.audio_bitrate();
 
-    // Debug logging for troubleshooting
+    // logging for troubleshoot
     if bitrate.is_none() {
         tracing::warn!("Bitrate extraction failed for {:?}", path);
     }
@@ -270,8 +268,7 @@ struct TrackData {
     modified_at: i64,
 }
 
-// CHANGED: Use ON CONFLICT to update instead of insert.
-// This keeps the primary key (ID) stable if the file path exists.
+// upsert to keep IDs stable
 fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Result<()> {
     conn.execute(
         "INSERT INTO tracks (
@@ -308,7 +305,7 @@ fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Res
     Ok(())
 }
 
-/// Load all tracks from DB and build a LibrarySnapshot.
+/// load snapshot
 fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<LibrarySnapshot> {
     let mut stmt = conn.prepare(
         "SELECT id, file_path, title, artist, album, genre, year, is_favorite,
@@ -352,7 +349,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
         all_track_ids.push(id);
     }
 
-    // Load playlists from DB
+    // load playlists
     let mut playlists_vec = Vec::new();
     let mut playlist_stmt = conn.prepare("SELECT id, name FROM playlists ORDER BY name")?;
     let playlist_iter = playlist_stmt.query_map([], |row| {
@@ -363,7 +360,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
 
     for p in playlist_iter {
         let (pid, name) = p?;
-        // Load tracks for this playlist
+        // load playlist tracks
         let mut items_stmt = conn.prepare(
             "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position",
         )?;
@@ -384,7 +381,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
     Ok(LibrarySnapshot::new(root, playlists_vec, tracks_map))
 }
 
-/// Toggle favorite status for a track.
+/// toggle favorite
 fn toggle_favorite(conn: &rusqlite::Connection, id: TrackId) -> Result<bool> {
     conn.execute(
         "UPDATE tracks SET is_favorite = 1 - is_favorite, updated_at = strftime('%s', 'now') WHERE id = ?",

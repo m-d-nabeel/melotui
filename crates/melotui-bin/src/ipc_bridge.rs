@@ -15,10 +15,10 @@ use melotui_ipc::{
 };
 
 pub struct IpcRuntime {
-    // Egress: Events coming FROM workers
+    // events from workers
     pub event_rx: mpsc::Receiver<IpcEvent>,
 
-    // Ingress: Typed routers
+    // typed routers
     download_tx: mpsc::Sender<DownloadCommand>,
     audio_tx: mpsc::Sender<AudioCommand>,
     db_tx: mpsc::Sender<DatabaseCommand>,
@@ -29,28 +29,28 @@ impl IpcRuntime {
     pub fn new(spectrum_producer: SpectrumProducer, db_path: PathBuf) -> Self {
         let (ui_rx, bus_tx) = inprocess::hub();
 
-        // Spawn Download Worker
+        // spawn download worker
         let (dl_tx, dl_worker) = inprocess::join_worker::<DownloadCommand>(bus_tx.clone());
         thread::spawn(move || {
             melotui_download::run(dl_worker);
             tracing::info!("IPC Runtime initialized with Download worker");
         });
 
-        // Spawn Audio Worker
+        // spawn audio worker
         let (audio_tx, audio_worker) = inprocess::join_worker::<AudioCommand>(bus_tx.clone());
         thread::spawn(move || {
             melotui_audio::run(audio_worker, spectrum_producer);
             tracing::info!("IPC Runtime initialized with Audio worker");
         });
 
-        // Spawn Database Worker
+        // spawn database worker
         let (db_tx, db_worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx.clone());
         thread::spawn(move || {
             melotui_db::run(db_worker, db_path);
             tracing::info!("IPC Runtime initialized with Database worker");
         });
 
-        // Spawn Cover Worker
+        // spawn cover worker
         let (cover_tx, cover_worker) = inprocess::join_worker::<CoverCommand>(bus_tx.clone());
         thread::spawn(move || {
             melotui_cover::run(cover_worker);
@@ -153,11 +153,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
         },
 
         // --- Database Controls ---
-        AppMsg::Library(LibraryMsg::RequestScanLibrary) => Some(IpcCommand::Database(
-            melotui_ipc::command::DatabaseCommand::ScanLibrary {
+        AppMsg::Library(LibraryMsg::RequestScanLibrary) => {
+            Some(IpcCommand::Database(DatabaseCommand::ScanLibrary {
                 root: state.library.root.clone(),
-            },
-        )),
+            }))
+        }
         AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(track_id)) => {
             Some(IpcCommand::Database(DatabaseCommand::ToggleFavorite {
                 track_id: track_id.0 as i64,
@@ -192,7 +192,7 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             is_favorite,
         } => {
             tracing::info!("Favorite toggled for track {:?}: {}", track_id, is_favorite);
-            // Note: Local state was already updated optimistically
+            // state updated optimistically
             AppMsg::Noop
         }
         _ => AppMsg::Noop,

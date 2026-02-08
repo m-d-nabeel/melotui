@@ -46,7 +46,7 @@ impl TimeKeeper {
     }
 
     pub fn set_speed(&mut self, speed: f32) {
-        // Commit time spent at the old speed before changing
+        // commit time at old speed
         if self.is_playing {
             self.commit_time();
             self.last_resume_time = Some(Instant::now());
