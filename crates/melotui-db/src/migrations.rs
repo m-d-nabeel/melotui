@@ -5,7 +5,6 @@ use rusqlite::Connection;
 use tracing::info;
 
 /// Current schema version. Increment when making schema changes.
-/// Current schema version. Increment when making schema changes.
 const CURRENT_VERSION: i32 = 1;
 
 /// Run migrations to bring the database up to the current version.

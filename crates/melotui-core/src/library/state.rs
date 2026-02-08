@@ -77,7 +77,14 @@ impl Library {
                     vec![]
                 }
             }
-            _ => vec![],
+            SidebarNodeId::Category(_) => vec![],
+            SidebarNodeId::Folder(_) => vec![],
+            SidebarNodeId::Track { .. } => vec![],
+            SidebarNodeId::Artist(_) => vec![],
+            SidebarNodeId::Album(_) => vec![],
+            SidebarNodeId::Genre(_) => vec![],
+            SidebarNodeId::Year(_) => vec![],
+            SidebarNodeId::Root => vec![],
         }
     }
 

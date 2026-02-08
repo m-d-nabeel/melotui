@@ -3,14 +3,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
+    AppMsg,
     message::{
         audio::AudioMsg, download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
         playback::PlaybackMsg, ui::UIMsg,
     },
-    AppMsg,
 };
 
-// Key binding contexts
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum KeyContext {
     Help,
@@ -21,7 +20,6 @@ pub enum KeyContext {
     Global,
 }
 
-// User actions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyAction {
     // System
@@ -119,13 +117,10 @@ impl KeyAction {
             KeyAction::ClearQueue => Some(AppMsg::Library(LibraryMsg::ClearQueue)),
             KeyAction::ScanLibrary => Some(AppMsg::Library(LibraryMsg::RequestScanLibrary)),
             KeyAction::CancelDownload => Some(AppMsg::Download(DownloadMsg::RequestCancelDownload)),
-            KeyAction::ToggleFavorite => {
-                // Get the currently selected track from the library
-                // This will be handled by the action to determine the track ID
-                None // Handled elsewhere with context
-            }
-
-            // Audio effects
+            KeyAction::ToggleFavorite => None, // Track ID resolved in input.rs
+            KeyAction::AddToQueue => None,     // Track ID resolved in input.rs
+            KeyAction::QueuePlayNext => None,  // Track ID resolved in input.rs
+            KeyAction::SubmitCommand => None,  // Uses command buffer from state
             KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05))),
             KeyAction::VolDown => Some(AppMsg::Audio(AudioMsg::AdjustVolume(-0.05))),
             KeyAction::SpeedUp => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(0.1))),
@@ -138,13 +133,10 @@ impl KeyAction {
             KeyAction::ReverbDown => Some(AppMsg::Audio(AudioMsg::AdjustReverb(-0.05))),
             KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::AdjustEcho(0.05))),
             KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::AdjustEcho(-0.05))),
-
-            _ => None, // Handled elsewhere
         }
     }
 }
 
-// Key binding definition
 #[derive(Debug, Clone)]
 pub struct KeyBinding {
     pub key: KeyCode,

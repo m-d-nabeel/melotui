@@ -74,7 +74,6 @@ pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
         return vec![];
     }
 
-    // Remove using QueueId
     let selected_qid = state.session.nav.queue.selected_queue_id;
 
     if let Some(target_id) = selected_qid {
@@ -121,7 +120,6 @@ pub fn handle_request_quit(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<AppMsg> {
-    // Get current favorite status and toggle it
     let current_status = state
         .library
         .get_track(id)
@@ -129,10 +127,8 @@ pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<
         .unwrap_or(false);
     let new_status = !current_status;
 
-    // Update local state optimistically using Arc::make_mut
     std::sync::Arc::make_mut(&mut state.library).toggle_favorite(id, new_status);
 
-    // Show notification
     let title = state
         .library
         .get_track(id)

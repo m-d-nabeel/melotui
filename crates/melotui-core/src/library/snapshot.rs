@@ -253,7 +253,12 @@ impl LibrarySnapshot {
                     vec![]
                 }
             }
-            _ => vec![],
+            SidebarNodeId::Category(crate::navigation::ids::CategoryId::Favorites) => {
+                self.resolve_track_list(&self.favorites)
+            }
+            SidebarNodeId::Category(_) => vec![],
+            SidebarNodeId::Track { .. } => vec![],
+            SidebarNodeId::Root => vec![],
         }
     }
 
@@ -272,7 +277,12 @@ impl LibrarySnapshot {
                 .find_directory_node(path)
                 .map(|d| d.tracks.clone())
                 .unwrap_or_default(),
-            _ => vec![],
+            SidebarNodeId::Category(crate::navigation::ids::CategoryId::Favorites) => {
+                self.favorites.clone()
+            }
+            SidebarNodeId::Category(_) => vec![],
+            SidebarNodeId::Track { .. } => vec![],
+            SidebarNodeId::Root => vec![],
         }
     }
 

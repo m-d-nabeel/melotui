@@ -248,7 +248,15 @@ impl AppState {
     pub fn get_active_playlist(&self) -> Option<&PlaylistMeta> {
         match &self.session.nav.library.selected_id {
             Some(SidebarNodeId::Playlist(id)) => self.library.get_playlist(*id),
-            _ => None,
+            Some(SidebarNodeId::Category(_)) => None,
+            Some(SidebarNodeId::Folder(_)) => None,
+            Some(SidebarNodeId::Track { .. }) => None,
+            Some(SidebarNodeId::Artist(_)) => None,
+            Some(SidebarNodeId::Album(_)) => None,
+            Some(SidebarNodeId::Genre(_)) => None,
+            Some(SidebarNodeId::Year(_)) => None,
+            Some(SidebarNodeId::Root) => None,
+            None => None,
         }
     }
 
@@ -256,7 +264,15 @@ impl AppState {
     pub fn get_selected_track_id_in_sidebar(&self) -> Option<TrackId> {
         match &self.session.nav.library.selected_id {
             Some(SidebarNodeId::Track { id, .. }) => Some(*id),
-            _ => None,
+            Some(SidebarNodeId::Category(_)) => None,
+            Some(SidebarNodeId::Folder(_)) => None,
+            Some(SidebarNodeId::Playlist(_)) => None,
+            Some(SidebarNodeId::Artist(_)) => None,
+            Some(SidebarNodeId::Album(_)) => None,
+            Some(SidebarNodeId::Genre(_)) => None,
+            Some(SidebarNodeId::Year(_)) => None,
+            Some(SidebarNodeId::Root) => None,
+            None => None,
         }
     }
 }
