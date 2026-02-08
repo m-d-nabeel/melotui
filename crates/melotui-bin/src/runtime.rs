@@ -29,6 +29,9 @@ pub fn run() -> Result<()> {
 
     let mut state = AppState::new(library);
     let mut tui = Tui::new()?;
+    if let Ok((w, h)) = tui.size() {
+        state.terminal_size = (w, h);
+    }
 
     let (producer, consumer) = spectrum_bridge::create_bridge();
     state.spectrum_source = Box::new(consumer);

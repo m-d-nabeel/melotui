@@ -150,8 +150,13 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                         ) {
                             state.session.nav.library.selected_id = Some(new_node);
 
-                            // Scroll Up Logic (Scrolloff = 8)
-                            let scrolloff = 8;
+                            // Figure out how much of the list we can see
+                            let (_, h) = state.terminal_size;
+                            let viewport_height = if h > 3 { (h - 3) as usize } else { 25 };
+
+                            // Shrink scrolloff on tiny screens
+                            let scrolloff = 8.min(viewport_height / 2);
+
                             if new_idx < state.session.nav.library.scroll_offset + scrolloff {
                                 state.session.nav.library.scroll_offset =
                                     new_idx.saturating_sub(scrolloff);
@@ -227,14 +232,30 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                         ) {
                             state.session.nav.library.selected_id = Some(new_node);
 
-                            // Scroll Down Logic (Scrolloff = 8, Viewport Estimate = 25)
-                            let height = 25;
-                            let scrolloff = 8;
-                            if new_idx
-                                >= state.session.nav.library.scroll_offset + height - scrolloff
-                            {
+                            // Figure out how much of the list we can see
+                            let (_, h) = state.terminal_size;
+                            let viewport_height = if h > 3 { (h - 3) as usize } else { 25 };
+                            let scrolloff = 8.min(viewport_height / 2);
+
+                            // Fix scroll offset if it somehow got ahead
+                            if state.session.nav.library.scroll_offset > new_idx {
                                 state.session.nav.library.scroll_offset =
-                                    new_idx + scrolloff + 1 - height;
+                                    new_idx.saturating_sub(scrolloff);
+                            }
+
+                            // Scroll down when we reach the bottom edge
+                            if new_idx
+                                >= state.session.nav.library.scroll_offset + viewport_height
+                                    - scrolloff
+                            {
+                                // Where we want the offset to be
+                                let target_offset = new_idx + scrolloff + 1;
+                                let raw_offset = target_offset.saturating_sub(viewport_height);
+
+                                // Don't scroll past the end
+                                let max_offset = total_rows.saturating_sub(viewport_height);
+                                state.session.nav.library.scroll_offset =
+                                    raw_offset.min(max_offset);
                             }
                         }
                     }

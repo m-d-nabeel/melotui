@@ -7,4 +7,5 @@ pub enum UIMsg {
     SubmitCommand(String),
     OpenHelp,
     CloseHelp,
+    Resize(u16, u16),
 }

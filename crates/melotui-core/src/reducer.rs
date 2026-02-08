@@ -114,6 +114,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::SubmitCommand(input) => action::ui_action::handle_submit_command(state, input),
         UIMsg::OpenHelp => action::ui_action::handle_open_help(state),
         UIMsg::CloseHelp => action::ui_action::handle_close_help(state),
+        UIMsg::Resize(w, h) => action::ui_action::handle_resize(state, w, h),
     }
 }
 

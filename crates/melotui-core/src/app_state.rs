@@ -33,6 +33,7 @@ pub struct AppState {
     pub current_cover: Option<Arc<image::DynamicImage>>,
     pub track_info_cover: Option<Arc<image::DynamicImage>>,
     pub track_info_cover_id: Option<TrackId>,
+    pub terminal_size: (u16, u16),
 }
 
 // Lifecycle
@@ -64,6 +65,7 @@ impl AppState {
             current_cover: None,
             track_info_cover: None,
             track_info_cover_id: None,
+            terminal_size: (0, 0),
         }
     }
 }

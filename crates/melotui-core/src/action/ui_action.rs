@@ -19,6 +19,11 @@ pub fn handle_close_help(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+pub fn handle_resize(state: &mut AppState, w: u16, h: u16) -> Vec<AppMsg> {
+    state.terminal_size = (w, h);
+    vec![]
+}
+
 pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     tracing::debug!("Enter Command Mode");
     state.session.ui.mode = UIMode::Command;
