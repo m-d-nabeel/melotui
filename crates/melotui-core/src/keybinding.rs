@@ -75,7 +75,7 @@ pub enum KeyAction {
     EchoDown,
 }
 
-const OFFSET_SECONDS: i64 = 10;
+const OFFSET_SECONDS: i64 = 5;
 
 impl KeyAction {
     pub fn to_msg(&self) -> Option<AppMsg> {

@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use crate::{
     AppMsg, AppState,
     domain::TrackId,
+    message::cover::{CoverContext, CoverMsg},
     message::playback::PlaybackMsg,
     navigation::ids::SidebarNodeId,
     playback::state::{PlaybackStatus, RepeatMode},
@@ -22,10 +23,8 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
     // Handle queue selection (rotate logic)
     if state.is_queue_focused() {
         if let Some(qid) = state.session.nav.queue.selected_queue_id {
-            // Access queue
             let queue_items = &mut state.session.playback_queue.items;
 
-            // Find selected item index
             if let Some(idx) = queue_items.iter().position(|e| e.id == qid) {
                 // Rotate selected item to front
                 queue_items.rotate_left(idx);
@@ -249,15 +248,14 @@ pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<App
     if !state.is_playing() && !state.is_paused() {
         return vec![];
     }
-    if let Some(last) = state.session.last_seek_time
-        && last.elapsed() < Duration::from_millis(200)
-    {
-        return vec![];
-    }
-    state.session.last_seek_time = Some(Instant::now());
+
     let cur = state.progress_ms() as i64;
     let dur = state.total_duration_ms() as i64;
     let new_ms = (cur + offset_seconds * 1000).clamp(0, dur);
+
+    // Update seek time to ignore stale progress events
+    state.session.last_seek_time = Some(Instant::now());
+
     state.session.playback.progress_ms = new_ms as u64;
     vec![AppMsg::Playback(PlaybackMsg::DispatchSeek {
         position_ms: new_ms as u64,
@@ -266,6 +264,12 @@ pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<App
 
 pub fn handle_audio_progress(state: &mut AppState, position_ms: u64) -> Vec<AppMsg> {
     if state.is_playing() {
+        // Ignore stale progress updates after seek
+        if let Some(last) = state.session.last_seek_time
+            && last.elapsed() < Duration::from_millis(500)
+        {
+            return vec![];
+        }
         state.session.playback.progress_ms = position_ms;
     }
     vec![]
@@ -345,13 +349,11 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
 
     // Request async cover load
     if meta.has_cover {
-        effects.push(AppMsg::Cover(
-            crate::message::cover::CoverMsg::RequestLoad {
-                id,
-                path: file_path,
-                context: crate::message::cover::CoverContext::Playback,
-            },
-        ));
+        effects.push(AppMsg::Cover(CoverMsg::RequestLoad {
+            id,
+            path: file_path,
+            context: CoverContext::Playback,
+        }));
     }
 
     effects

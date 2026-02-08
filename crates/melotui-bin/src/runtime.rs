@@ -18,7 +18,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::ipc_bridge::{IpcRuntime, appmsg_to_ipc, ipc_to_appmsg};
+use crate::{
+    input_processor::InputProcessor,
+    ipc_bridge::{IpcRuntime, appmsg_to_ipc, ipc_to_appmsg},
+};
 
 pub fn run() -> Result<()> {
     tracing::info!("Starting melotui application");
@@ -46,7 +49,7 @@ pub fn run() -> Result<()> {
         ipc_alive: true,
         running: true,
         effect_queue: VecDeque::new(),
-        _db_path: db_path,
+        input_processor: InputProcessor::new(),
         music_root,
     };
 
@@ -66,8 +69,27 @@ pub fn run() -> Result<()> {
             Duration::from_millis(100)
         };
 
+        // Event Coalescing Loop
+        // Drain up to 50 events from TUI (non-blocking after first)
+        let mut events = Vec::with_capacity(10);
+
+        // Blocking poll for first event
         if let Some(msg) = tui.poll_event(&state, timeout)? {
-            runtime.effect_queue.push_back(msg);
+            events.push(msg);
+
+            // Non-blocking poll for subsequent events
+            for _ in 0..50 {
+                if let Some(msg) = tui.poll_event(&state, Duration::ZERO)? {
+                    events.push(msg);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if !events.is_empty() {
+            let processed = runtime.input_processor.coalesce(events);
+            runtime.effect_queue.extend(processed);
             should_render = true;
         }
 
@@ -102,7 +124,7 @@ struct RuntimeContext {
     ipc_alive: bool,
     running: bool,
     effect_queue: VecDeque<AppMsg>,
-    _db_path: PathBuf,
+    input_processor: InputProcessor,
     music_root: PathBuf,
 }
 
