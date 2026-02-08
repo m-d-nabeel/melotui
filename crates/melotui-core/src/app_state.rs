@@ -1,5 +1,6 @@
 use crate::{
     domain::{PlaylistMeta, TrackId, TrackMeta},
+    library::projector,
     library::snapshot::LibrarySnapshot,
     navigation::{
         ids::SidebarNodeId,
@@ -16,7 +17,7 @@ pub struct AppState {
     pub app_name: String,
 
     // Shared data (immutable)
-    pub library: Arc<LibrarySnapshot>,
+    pub library: LibrarySnapshot,
 
     // User session state (mutable)
     pub(crate) session: SessionState,
@@ -40,18 +41,14 @@ impl AppState {
     pub fn new(library: LibrarySnapshot) -> Self {
         let mut session = SessionState::default();
 
-        let library_arc = Arc::new(library);
-
         // Select first item by default
-        if let Some(first_node) =
-            crate::library::projector::get_node_at_index(&library_arc, &session.nav.library, 0)
-        {
+        if let Some(first_node) = projector::get_node_at_index(&library, &session.nav.library, 0) {
             session.nav.library.selected_id = Some(first_node);
         }
 
         Self {
             app_name: "Melotui".into(),
-            library: library_arc,
+            library,
             session,
 
             // Runtime initialization
