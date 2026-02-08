@@ -33,7 +33,6 @@ pub struct AppState {
     pub current_cover: Option<Arc<image::DynamicImage>>,
     pub track_info_cover: Option<Arc<image::DynamicImage>>,
     pub track_info_cover_id: Option<TrackId>,
-    pub terminal_size: (u16, u16),
 }
 
 // Lifecycle
@@ -65,7 +64,6 @@ impl AppState {
             current_cover: None,
             track_info_cover: None,
             track_info_cover_id: None,
-            terminal_size: (0, 0),
         }
     }
 }
@@ -351,6 +349,14 @@ impl AppState {
     pub fn clear_track_info_cover(&mut self) {
         self.track_info_cover = None;
         self.track_info_cover_id = None;
+    }
+
+    pub fn scrolloff(&self) -> usize {
+        self.session.ui.scrolloff
+    }
+
+    pub fn terminal_size(&self) -> (u16, u16) {
+        self.session.ui.terminal_size
     }
 }
 

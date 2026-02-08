@@ -20,7 +20,7 @@ pub fn handle_close_help(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_resize(state: &mut AppState, w: u16, h: u16) -> Vec<AppMsg> {
-    state.terminal_size = (w, h);
+    state.session.ui.terminal_size = (w, h);
     vec![]
 }
 

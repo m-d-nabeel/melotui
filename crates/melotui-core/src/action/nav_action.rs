@@ -151,11 +151,15 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                             state.session.nav.library.selected_id = Some(new_node);
 
                             // Figure out how much of the list we can see
-                            let (_, h) = state.terminal_size;
-                            let viewport_height = if h > 3 { (h - 3) as usize } else { 25 };
+                            let (_, h) = state.terminal_size();
+                            if h <= 3 {
+                                return effects;
+                            }
+                            let viewport_height = (h - 3) as usize;
 
                             // Shrink scrolloff on tiny screens
-                            let scrolloff = 8.min(viewport_height / 2);
+                            let base_scrolloff = state.scrolloff();
+                            let scrolloff = base_scrolloff.min(viewport_height / 2);
 
                             if new_idx < state.session.nav.library.scroll_offset + scrolloff {
                                 state.session.nav.library.scroll_offset =
@@ -164,7 +168,7 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                         }
                     }
                 } else {
-                    // Selection invalid/collapsed -> Reset to 0
+                    // Selection broken, just reset to 0
                     if let Some(first) = projector::get_node_at_index(&state.library, nav, 0) {
                         state.session.nav.library.selected_id = Some(first);
                         state.session.nav.library.scroll_offset = 0;
@@ -233,9 +237,15 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                             state.session.nav.library.selected_id = Some(new_node);
 
                             // Figure out how much of the list we can see
-                            let (_, h) = state.terminal_size;
-                            let viewport_height = if h > 3 { (h - 3) as usize } else { 25 };
-                            let scrolloff = 8.min(viewport_height / 2);
+                            let (_, h) = state.terminal_size();
+                            if h <= 3 {
+                                return effects;
+                            }
+                            let viewport_height = (h - 3) as usize;
+
+                            // Shrink scrolloff on tiny screens
+                            let base_scrolloff = state.scrolloff();
+                            let scrolloff = base_scrolloff.min(viewport_height / 2);
 
                             // Fix scroll offset if it somehow got ahead
                             if state.session.nav.library.scroll_offset > new_idx {

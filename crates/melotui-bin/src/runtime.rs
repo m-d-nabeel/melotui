@@ -2,6 +2,7 @@ use anyhow::Result;
 use melotui_core::{
     AppMsg, AppState,
     library::LibrarySnapshot,
+    message::ui::UIMsg,
     state::{NotificationKind, visualizer::update_visualizer_physics},
 };
 use melotui_ipc::{
@@ -29,10 +30,6 @@ pub fn run() -> Result<()> {
 
     let mut state = AppState::new(library);
     let mut tui = Tui::new()?;
-    if let Ok((w, h)) = tui.size() {
-        state.terminal_size = (w, h);
-    }
-
     let (producer, consumer) = spectrum_bridge::create_bridge();
     state.spectrum_source = Box::new(consumer);
 
@@ -52,6 +49,12 @@ pub fn run() -> Result<()> {
         _db_path: db_path,
         music_root,
     };
+
+    if let Ok((w, h)) = tui.size() {
+        runtime
+            .effect_queue
+            .push_back(AppMsg::UI(UIMsg::Resize(w, h)));
+    }
 
     let mut last_tick = Instant::now();
     let mut should_render = true;
