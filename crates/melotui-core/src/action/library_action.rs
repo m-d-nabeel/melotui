@@ -1,11 +1,14 @@
 use crate::{
     AppMsg, AppState,
     domain::TrackId,
+    library::projector,
+    message::database::DatabaseMsg,
+    navigation::ids::{CategoryId, SidebarNodeId},
     playback::state::RepeatMode,
     state::{Notification, NotificationKind},
 };
 
-pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
+pub fn handle_request_scan_library(state: &mut AppState) -> Vec<AppMsg> {
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
         "Scanning Library...",
@@ -73,7 +76,6 @@ pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
         return vec![];
     }
 
-    // Remove using QueueId
     let selected_qid = state.session.nav.queue.selected_queue_id;
 
     if let Some(target_id) = selected_qid {
@@ -117,4 +119,78 @@ pub fn handle_request_quit(state: &mut AppState) -> Vec<AppMsg> {
     tracing::info!("Application quit requested");
     state.session.notification.current = Some(Notification::new(NotificationKind::Info, "Quit"));
     vec![]
+}
+
+pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<AppMsg> {
+    let current_status = state
+        .library
+        .get_track(id)
+        .map(|t| t.is_favorite)
+        .unwrap_or(false);
+    let new_status = !current_status;
+
+    // save index if removing selected fav to keep cursor stable
+    let mut restore_selection_idx = None;
+    if !new_status
+        && let Some(SidebarNodeId::Track {
+            id: selected_tid,
+            parent,
+        }) = state.get_library_selection()
+        && *selected_tid == id
+        && matches!(**parent, SidebarNodeId::Category(CategoryId::Favorites))
+    {
+        // removing active selection from view
+        if let Some(idx) = projector::get_index_of(
+            &state.library,
+            state.library_nav(),
+            &SidebarNodeId::Track {
+                id,
+                parent: parent.clone(),
+            },
+        ) {
+            restore_selection_idx = Some(idx);
+        }
+    }
+
+    state.library.toggle_favorite(id, new_status);
+
+    // restore selection idx
+    if let Some(old_idx) = restore_selection_idx {
+        let nav = &state.session.nav.library;
+        let new_count = projector::get_row_count(&state.library, nav);
+
+        if new_count > 0 {
+            // clamp
+            let target_idx = old_idx.min(new_count - 1);
+            if let Some(node) = projector::get_node_at_index(&state.library, nav, target_idx) {
+                state.session.nav.library.selected_id = Some(node);
+            }
+        } else {
+            // empty list -> select header
+            state.session.nav.library.selected_id =
+                Some(SidebarNodeId::Category(CategoryId::Favorites));
+        }
+    }
+
+    let title = state
+        .library
+        .get_track(id)
+        .map(|t| t.title.clone())
+        .unwrap_or_else(|| "Track".to_string());
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!(
+            "{} {}",
+            if new_status {
+                "Added to favorites:"
+            } else {
+                "Removed from favorites:"
+            },
+            title
+        ),
+    ));
+
+    // Dispatch to database worker
+    vec![AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(id))]
 }

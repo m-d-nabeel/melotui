@@ -9,8 +9,18 @@ use crate::{
     },
 };
 
-pub fn handle_toggle_help(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.ui.show_help = !state.session.ui.show_help;
+pub fn handle_open_help(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.show_help = true;
+    vec![]
+}
+
+pub fn handle_close_help(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.show_help = false;
+    vec![]
+}
+
+pub fn handle_resize(state: &mut AppState, w: u16, h: u16) -> Vec<AppMsg> {
+    state.session.ui.terminal_size = (w, h);
     vec![]
 }
 
@@ -57,7 +67,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::RequestQuit]
         }
         Command::Rescan => {
-            vec![AppMsg::Library(LibraryMsg::RequestRescanLibrary)]
+            vec![AppMsg::Library(LibraryMsg::RequestScanLibrary)]
         }
         Command::Download { query } => {
             state.session.notification.current = Some(Notification {

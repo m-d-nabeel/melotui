@@ -27,6 +27,7 @@ pub struct LibrarySnapshot {
     pub albums: HashMap<String, Vec<TrackId>>,
     pub genres: HashMap<String, Vec<TrackId>>,
     pub years: HashMap<u32, Vec<TrackId>>,
+    pub favorites: Vec<TrackId>,
 }
 
 impl LibrarySnapshot {
@@ -48,6 +49,7 @@ impl LibrarySnapshot {
         let mut albums: HashMap<String, Vec<TrackId>> = HashMap::new();
         let mut genres: HashMap<String, Vec<TrackId>> = HashMap::new();
         let mut years: HashMap<u32, Vec<TrackId>> = HashMap::new();
+        let mut favorites = vec![];
 
         for (id, meta) in &tracks {
             if let Some(a) = &meta.artist {
@@ -61,6 +63,9 @@ impl LibrarySnapshot {
             }
             if let Some(y) = meta.year {
                 years.entry(y).or_default().push(*id);
+            }
+            if meta.is_favorite {
+                favorites.push(*id);
             }
         }
 
@@ -77,6 +82,11 @@ impl LibrarySnapshot {
         for v in years.values_mut() {
             v.sort();
         }
+        favorites.sort_by(|a, b| {
+            let title_a = tracks.get(a).map(|t| t.title.as_str()).unwrap_or("");
+            let title_b = tracks.get(b).map(|t| t.title.as_str()).unwrap_or("");
+            title_a.cmp(title_b)
+        });
 
         // Build Folder Tree
         let folder_tree = Self::build_folder_tree(&root, &tracks);
@@ -91,6 +101,28 @@ impl LibrarySnapshot {
             albums,
             genres,
             years,
+            favorites,
+        }
+    }
+
+    pub fn toggle_favorite(&mut self, track_id: TrackId, is_favorite: bool) {
+        if let Some(track) = self.tracks.get_mut(&track_id) {
+            track.is_favorite = is_favorite;
+        }
+
+        if is_favorite {
+            if !self.favorites.contains(&track_id) {
+                self.favorites.push(track_id);
+
+                let tracks_ref = &self.tracks;
+                self.favorites.sort_by(|a, b| {
+                    let title_a = tracks_ref.get(a).map(|t| t.title.as_str()).unwrap_or("");
+                    let title_b = tracks_ref.get(b).map(|t| t.title.as_str()).unwrap_or("");
+                    title_a.cmp(title_b)
+                });
+            }
+        } else if let Some(idx) = self.favorites.iter().position(|&id| id == track_id) {
+            self.favorites.remove(idx);
         }
     }
 
@@ -221,7 +253,12 @@ impl LibrarySnapshot {
                     vec![]
                 }
             }
-            _ => vec![],
+            SidebarNodeId::Category(crate::navigation::ids::CategoryId::Favorites) => {
+                self.resolve_track_list(&self.favorites)
+            }
+            SidebarNodeId::Category(_) => vec![],
+            SidebarNodeId::Track { .. } => vec![],
+            SidebarNodeId::Root => vec![],
         }
     }
 
@@ -240,7 +277,12 @@ impl LibrarySnapshot {
                 .find_directory_node(path)
                 .map(|d| d.tracks.clone())
                 .unwrap_or_default(),
-            _ => vec![],
+            SidebarNodeId::Category(crate::navigation::ids::CategoryId::Favorites) => {
+                self.favorites.clone()
+            }
+            SidebarNodeId::Category(_) => vec![],
+            SidebarNodeId::Track { .. } => vec![],
+            SidebarNodeId::Root => vec![],
         }
     }
 

@@ -10,7 +10,6 @@ use crate::{
     },
 };
 
-// Key binding contexts
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum KeyContext {
     Help,
@@ -21,12 +20,11 @@ pub enum KeyContext {
     Global,
 }
 
-// User actions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyAction {
     // System
     Quit,
-    ToggleHelp,
+    OpenHelp,
     CloseHelp,
     EnterCommandMode,
     ExitCommandMode,
@@ -58,8 +56,9 @@ pub enum KeyAction {
     QueuePlayNext,
     RemoveFromQueue,
     ClearQueue,
-    RescanLibrary,
+    ScanLibrary,
     CancelDownload,
+    ToggleFavorite,
 
     // Audio
     VolUp,
@@ -82,9 +81,8 @@ impl KeyAction {
     pub fn to_msg(&self) -> Option<AppMsg> {
         match self {
             KeyAction::Quit => Some(AppMsg::RequestQuit),
-            KeyAction::ToggleHelp => Some(AppMsg::UI(UIMsg::ToggleHelp)),
-            // Toggle help off
-            KeyAction::CloseHelp => Some(AppMsg::UI(UIMsg::ToggleHelp)),
+            KeyAction::OpenHelp => Some(AppMsg::UI(UIMsg::OpenHelp)),
+            KeyAction::CloseHelp => Some(AppMsg::UI(UIMsg::CloseHelp)),
 
             KeyAction::EnterCommandMode => Some(AppMsg::UI(UIMsg::EnterCommandMode)),
             KeyAction::ExitCommandMode => Some(AppMsg::UI(UIMsg::ExitCommandMode)),
@@ -117,10 +115,12 @@ impl KeyAction {
 
             KeyAction::RemoveFromQueue => Some(AppMsg::Library(LibraryMsg::RemoveFromQueue)),
             KeyAction::ClearQueue => Some(AppMsg::Library(LibraryMsg::ClearQueue)),
-            KeyAction::RescanLibrary => Some(AppMsg::Library(LibraryMsg::RequestRescanLibrary)),
+            KeyAction::ScanLibrary => Some(AppMsg::Library(LibraryMsg::RequestScanLibrary)),
             KeyAction::CancelDownload => Some(AppMsg::Download(DownloadMsg::RequestCancelDownload)),
-
-            // Audio effects
+            KeyAction::ToggleFavorite => None, // Track ID resolved in input.rs
+            KeyAction::AddToQueue => None,     // Track ID resolved in input.rs
+            KeyAction::QueuePlayNext => None,  // Track ID resolved in input.rs
+            KeyAction::SubmitCommand => None,  // Uses command buffer from state
             KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05))),
             KeyAction::VolDown => Some(AppMsg::Audio(AudioMsg::AdjustVolume(-0.05))),
             KeyAction::SpeedUp => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(0.1))),
@@ -133,13 +133,10 @@ impl KeyAction {
             KeyAction::ReverbDown => Some(AppMsg::Audio(AudioMsg::AdjustReverb(-0.05))),
             KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::AdjustEcho(0.05))),
             KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::AdjustEcho(-0.05))),
-
-            _ => None, // Handled elsewhere
         }
     }
 }
 
-// Key binding definition
 #[derive(Debug, Clone)]
 pub struct KeyBinding {
     pub key: KeyCode,
@@ -165,6 +162,7 @@ impl KeyBinding {
 }
 
 // Key binding registry
+#[derive(Debug)]
 pub struct KeyRegistry {
     pub bindings: HashMap<KeyContext, Vec<KeyBinding>>,
 }
@@ -179,7 +177,6 @@ impl Default for KeyRegistry {
             vec![
                 KeyBinding::new(KeyCode::Esc, KeyAction::CloseHelp, "Close"),
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::CloseHelp, "Close"),
-                KeyBinding::new(KeyCode::Char('?'), KeyAction::CloseHelp, "Close"),
             ],
         );
 
@@ -224,6 +221,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue, "Add Queue"),
                 KeyBinding::new(KeyCode::Char('A'), KeyAction::QueuePlayNext, "Play Next")
                     .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('f'), KeyAction::ToggleFavorite, "Favorite"),
             ],
         );
 
@@ -251,7 +249,7 @@ impl Default for KeyRegistry {
             KeyContext::Global,
             vec![
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit, "Quit"),
-                KeyBinding::new(KeyCode::Char('?'), KeyAction::ToggleHelp, "Help"),
+                KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp, "Help"),
                 KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode, "Command"),
                 KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause, "Play/Pause"),
                 KeyBinding::new(KeyCode::Enter, KeyAction::PlaySelected, "Play"),
@@ -260,7 +258,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Right, KeyAction::PlayNextTrack, "Next Track")
                     .with_mod(KeyModifiers::CONTROL),
                 KeyBinding::new(KeyCode::Char('x'), KeyAction::Stop, "Stop"),
-                KeyBinding::new(KeyCode::F(5), KeyAction::RescanLibrary, "Rescan"),
+                KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary, "Scan"),
                 KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer, "Visualizer")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward, "Seek -5s"),

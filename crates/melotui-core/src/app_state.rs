@@ -1,5 +1,6 @@
 use crate::{
     domain::{PlaylistMeta, TrackId, TrackMeta},
+    library::projector,
     library::snapshot::LibrarySnapshot,
     navigation::{
         ids::SidebarNodeId,
@@ -16,7 +17,7 @@ pub struct AppState {
     pub app_name: String,
 
     // Shared data (immutable)
-    pub library: Arc<LibrarySnapshot>,
+    pub library: LibrarySnapshot,
 
     // User session state (mutable)
     pub(crate) session: SessionState,
@@ -40,18 +41,14 @@ impl AppState {
     pub fn new(library: LibrarySnapshot) -> Self {
         let mut session = SessionState::default();
 
-        let library_arc = Arc::new(library);
-
         // Select first item by default
-        if let Some(first_node) =
-            crate::library::projector::get_node_at_index(&library_arc, &session.nav.library, 0)
-        {
+        if let Some(first_node) = projector::get_node_at_index(&library, &session.nav.library, 0) {
             session.nav.library.selected_id = Some(first_node);
         }
 
         Self {
             app_name: "Melotui".into(),
-            library: library_arc,
+            library,
             session,
 
             // Runtime initialization
@@ -248,7 +245,15 @@ impl AppState {
     pub fn get_active_playlist(&self) -> Option<&PlaylistMeta> {
         match &self.session.nav.library.selected_id {
             Some(SidebarNodeId::Playlist(id)) => self.library.get_playlist(*id),
-            _ => None,
+            Some(SidebarNodeId::Category(_)) => None,
+            Some(SidebarNodeId::Folder(_)) => None,
+            Some(SidebarNodeId::Track { .. }) => None,
+            Some(SidebarNodeId::Artist(_)) => None,
+            Some(SidebarNodeId::Album(_)) => None,
+            Some(SidebarNodeId::Genre(_)) => None,
+            Some(SidebarNodeId::Year(_)) => None,
+            Some(SidebarNodeId::Root) => None,
+            None => None,
         }
     }
 
@@ -256,7 +261,15 @@ impl AppState {
     pub fn get_selected_track_id_in_sidebar(&self) -> Option<TrackId> {
         match &self.session.nav.library.selected_id {
             Some(SidebarNodeId::Track { id, .. }) => Some(*id),
-            _ => None,
+            Some(SidebarNodeId::Category(_)) => None,
+            Some(SidebarNodeId::Folder(_)) => None,
+            Some(SidebarNodeId::Playlist(_)) => None,
+            Some(SidebarNodeId::Artist(_)) => None,
+            Some(SidebarNodeId::Album(_)) => None,
+            Some(SidebarNodeId::Genre(_)) => None,
+            Some(SidebarNodeId::Year(_)) => None,
+            Some(SidebarNodeId::Root) => None,
+            None => None,
         }
     }
 }
@@ -333,6 +346,14 @@ impl AppState {
     pub fn clear_track_info_cover(&mut self) {
         self.track_info_cover = None;
         self.track_info_cover_id = None;
+    }
+
+    pub fn scrolloff(&self) -> usize {
+        self.session.ui.scrolloff
+    }
+
+    pub fn terminal_size(&self) -> (u16, u16) {
+        self.session.ui.terminal_size
     }
 }
 

@@ -5,5 +5,7 @@ pub enum UIMsg {
     UpdateCommand(char),
     BackspaceCommand,
     SubmitCommand(String),
-    ToggleHelp,
+    OpenHelp,
+    CloseHelp,
+    Resize(u16, u16),
 }

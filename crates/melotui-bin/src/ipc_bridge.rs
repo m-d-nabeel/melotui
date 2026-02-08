@@ -2,7 +2,10 @@ use std::{path::PathBuf, sync::mpsc, thread};
 
 use melotui_core::{
     AppMsg, AppState,
-    message::{cover::CoverMsg, download::DownloadMsg, library::LibraryMsg, playback::PlaybackMsg},
+    message::{
+        cover::CoverMsg, database::DatabaseMsg, download::DownloadMsg, library::LibraryMsg,
+        playback::PlaybackMsg,
+    },
 };
 use melotui_ipc::{
     channel::inprocess,
@@ -150,11 +153,16 @@ pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
         },
 
         // --- Database Controls ---
-        AppMsg::Library(LibraryMsg::RequestRescanLibrary) => Some(IpcCommand::Database(
+        AppMsg::Library(LibraryMsg::RequestScanLibrary) => Some(IpcCommand::Database(
             melotui_ipc::command::DatabaseCommand::ScanLibrary {
                 root: state.library.root.clone(),
             },
         )),
+        AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(track_id)) => {
+            Some(IpcCommand::Database(DatabaseCommand::ToggleFavorite {
+                track_id: track_id.0 as i64,
+            }))
+        }
 
         _ => None,
     }
@@ -179,6 +187,14 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::PlaybackFinished => AppMsg::Playback(PlaybackMsg::AudioFinished),
         IpcEvent::PlaybackPaused => AppMsg::Playback(PlaybackMsg::AudioPaused),
         IpcEvent::PlaybackResumed => AppMsg::Playback(PlaybackMsg::AudioResumed),
+        IpcEvent::FavoriteToggled {
+            track_id,
+            is_favorite,
+        } => {
+            tracing::info!("Favorite toggled for track {:?}: {}", track_id, is_favorite);
+            // Note: Local state was already updated optimistically
+            AppMsg::Noop
+        }
         _ => AppMsg::Noop,
     }
 }

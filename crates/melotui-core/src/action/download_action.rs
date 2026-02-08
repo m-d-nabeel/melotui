@@ -87,7 +87,7 @@ pub fn handle_download_finished(state: &mut AppState) -> Vec<AppMsg> {
     });
     state.session.download.status = DownloadStatus::Idle;
     vec![
-        AppMsg::Library(LibraryMsg::RequestRescanLibrary),
+        AppMsg::Library(LibraryMsg::RequestScanLibrary),
         AppMsg::Download(DownloadMsg::BeginNextDownload),
     ]
 }

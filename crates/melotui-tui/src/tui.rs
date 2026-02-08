@@ -1,3 +1,4 @@
+use melotui_core::message::ui::UIMsg;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::Event;
 use ratatui::crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
@@ -53,15 +54,22 @@ impl Tui {
         Ok(())
     }
 
+    pub fn size(&self) -> anyhow::Result<(u16, u16)> {
+        let size = self.terminal.size()?;
+        Ok((size.width, size.height))
+    }
+
     pub fn poll_event(
         &self,
         state: &AppState,
         timeout: Duration,
     ) -> anyhow::Result<Option<AppMsg>> {
-        if event::poll(timeout)?
-            && let Event::Key(key) = event::read()?
-        {
-            return Ok(InputHandler::handle(key, state));
+        if event::poll(timeout)? {
+            match event::read()? {
+                Event::Key(key) => return Ok(InputHandler::handle(key, state)),
+                Event::Resize(w, h) => return Ok(Some(AppMsg::UI(UIMsg::Resize(w, h)))),
+                _ => {}
+            }
         }
         Ok(None)
     }

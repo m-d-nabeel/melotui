@@ -13,6 +13,7 @@ pub struct TrackMeta {
     pub album: Option<String>,
     pub genre: Option<String>,
     pub year: Option<u32>,
+    pub is_favorite: bool,
     pub track_number: Option<u32>,
 
     pub duration_ms: u64,

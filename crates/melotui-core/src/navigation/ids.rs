@@ -10,6 +10,7 @@ pub enum CategoryId {
     Genres,
     Years,
     Playlists,
+    Favorites,
 }
 
 // Universal node selector for the sidebar tree

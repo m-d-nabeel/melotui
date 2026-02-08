@@ -2,6 +2,8 @@ use anyhow::Result;
 use melotui_core::{
     AppMsg, AppState,
     library::LibrarySnapshot,
+    message::ui::UIMsg,
+    reducer,
     state::{NotificationKind, visualizer::update_visualizer_physics},
 };
 use melotui_ipc::{
@@ -13,7 +15,6 @@ use melotui_tui::Tui;
 use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
-    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -29,7 +30,6 @@ pub fn run() -> Result<()> {
 
     let mut state = AppState::new(library);
     let mut tui = Tui::new()?;
-
     let (producer, consumer) = spectrum_bridge::create_bridge();
     state.spectrum_source = Box::new(consumer);
 
@@ -49,6 +49,12 @@ pub fn run() -> Result<()> {
         _db_path: db_path,
         music_root,
     };
+
+    if let Ok((w, h)) = tui.size() {
+        runtime
+            .effect_queue
+            .push_back(AppMsg::UI(UIMsg::Resize(w, h)));
+    }
 
     let mut last_tick = Instant::now();
     let mut should_render = true;
@@ -140,7 +146,7 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
         match evt {
             IpcEvent::LibraryLoaded { snapshot } => {
                 tracing::info!("Library loaded with {} tracks", snapshot.tracks.len());
-                state.library = Arc::new(*snapshot);
+                state.library = *snapshot;
                 state.set_notification(NotificationKind::Info, "Library loaded");
             }
             IpcEvent::LibraryRescanned => {
@@ -179,7 +185,7 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
         }
 
         // State Mutation
-        let next_effects = melotui_core::reducer::reduce(state, msg);
+        let next_effects = reducer::reduce(state, msg);
         ctx.effect_queue.extend(next_effects);
     }
     changed

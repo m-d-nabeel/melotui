@@ -36,6 +36,10 @@ pub enum IpcEvent {
         snapshot: Box<LibrarySnapshot>,
     },
     LibraryRescanned,
+    FavoriteToggled {
+        track_id: melotui_core::domain::TrackId,
+        is_favorite: bool,
+    },
 
     // Cover
     CoverLoaded {
