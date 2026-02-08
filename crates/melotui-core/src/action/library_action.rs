@@ -1,11 +1,12 @@
 use crate::{
     AppMsg, AppState,
     domain::TrackId,
+    message::database::DatabaseMsg,
     playback::state::RepeatMode,
     state::{Notification, NotificationKind},
 };
 
-pub fn handle_request_rescan_library(state: &mut AppState) -> Vec<AppMsg> {
+pub fn handle_request_scan_library(state: &mut AppState) -> Vec<AppMsg> {
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
         "Scanning Library...",
@@ -117,4 +118,40 @@ pub fn handle_request_quit(state: &mut AppState) -> Vec<AppMsg> {
     tracing::info!("Application quit requested");
     state.session.notification.current = Some(Notification::new(NotificationKind::Info, "Quit"));
     vec![]
+}
+
+pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<AppMsg> {
+    // Get current favorite status and toggle it
+    let current_status = state
+        .library
+        .get_track(id)
+        .map(|t| t.is_favorite)
+        .unwrap_or(false);
+    let new_status = !current_status;
+
+    // Update local state optimistically using Arc::make_mut
+    std::sync::Arc::make_mut(&mut state.library).toggle_favorite(id, new_status);
+
+    // Show notification
+    let title = state
+        .library
+        .get_track(id)
+        .map(|t| t.title.clone())
+        .unwrap_or_else(|| "Track".to_string());
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!(
+            "{} {}",
+            if new_status {
+                "Added to favorites:"
+            } else {
+                "Removed from favorites:"
+            },
+            title
+        ),
+    ));
+
+    // Dispatch to database worker
+    vec![AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(id))]
 }

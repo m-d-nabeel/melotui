@@ -113,6 +113,16 @@ impl InputHandler {
                 None
             }
 
+            // Toggle favorite
+            KeyAction::ToggleFavorite => {
+                if state.is_library_focused()
+                    && let Some(track_id) = state.get_selected_track_id_in_sidebar()
+                {
+                    return Some(AppMsg::Library(LibraryMsg::RequestToggleFavorite(track_id)));
+                }
+                None
+            }
+
             // Submit command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
                 state.ui_command_buffer().clone(),

@@ -2,8 +2,8 @@ use crate::{
     AppMsg, AppState,
     action::{self, cover_action::handle_cover_message},
     message::{
-        audio::AudioMsg, download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
-        playback::PlaybackMsg, ui::UIMsg,
+        audio::AudioMsg, database::DatabaseMsg, download::DownloadMsg, library::LibraryMsg,
+        navigation::NavigationMsg, playback::PlaybackMsg, ui::UIMsg,
     },
 };
 
@@ -18,6 +18,7 @@ pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
         AppMsg::Library(library_msg) => handle_library_message(state, library_msg),
         AppMsg::Download(download_msg) => handle_download_message(state, download_msg),
         AppMsg::Cover(cover_msg) => handle_cover_message(state, cover_msg),
+        AppMsg::Database(database_msg) => handle_database_message(state, database_msg),
     }
 }
 
@@ -124,8 +125,11 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
         LibraryMsg::ToggleShuffle => action::library_action::handle_toggle_shuffle(state),
         LibraryMsg::RemoveFromQueue => action::library_action::handle_remove_from_queue(state),
         LibraryMsg::ClearQueue => action::library_action::handle_clear_queue(state),
-        LibraryMsg::RequestRescanLibrary => {
-            action::library_action::handle_request_rescan_library(state)
+        LibraryMsg::RequestScanLibrary => {
+            action::library_action::handle_request_scan_library(state)
+        }
+        LibraryMsg::RequestToggleFavorite(id) => {
+            action::library_action::handle_request_toggle_favorite(state, id)
         }
     }
 }
@@ -152,5 +156,12 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         DownloadMsg::RequestCancelDownload => {
             action::download_action::handle_request_cancel_download(state)
         }
+    }
+}
+
+fn handle_database_message(_state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
+    match msg {
+        // DispatchToggleFavorite is handled by the IPC bridge
+        DatabaseMsg::DispatchToggleFavorite(_) => vec![],
     }
 }

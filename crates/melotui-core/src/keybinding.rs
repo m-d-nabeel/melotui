@@ -3,11 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::{
-    AppMsg,
     message::{
         audio::AudioMsg, download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
         playback::PlaybackMsg, ui::UIMsg,
     },
+    AppMsg,
 };
 
 // Key binding contexts
@@ -58,8 +58,9 @@ pub enum KeyAction {
     QueuePlayNext,
     RemoveFromQueue,
     ClearQueue,
-    RescanLibrary,
+    ScanLibrary,
     CancelDownload,
+    ToggleFavorite,
 
     // Audio
     VolUp,
@@ -116,8 +117,13 @@ impl KeyAction {
 
             KeyAction::RemoveFromQueue => Some(AppMsg::Library(LibraryMsg::RemoveFromQueue)),
             KeyAction::ClearQueue => Some(AppMsg::Library(LibraryMsg::ClearQueue)),
-            KeyAction::RescanLibrary => Some(AppMsg::Library(LibraryMsg::RequestRescanLibrary)),
+            KeyAction::ScanLibrary => Some(AppMsg::Library(LibraryMsg::RequestScanLibrary)),
             KeyAction::CancelDownload => Some(AppMsg::Download(DownloadMsg::RequestCancelDownload)),
+            KeyAction::ToggleFavorite => {
+                // Get the currently selected track from the library
+                // This will be handled by the action to determine the track ID
+                None // Handled elsewhere with context
+            }
 
             // Audio effects
             KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05))),
@@ -223,6 +229,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue, "Add Queue"),
                 KeyBinding::new(KeyCode::Char('A'), KeyAction::QueuePlayNext, "Play Next")
                     .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('f'), KeyAction::ToggleFavorite, "Favorite"),
             ],
         );
 
@@ -259,7 +266,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Right, KeyAction::PlayNextTrack, "Next Track")
                     .with_mod(KeyModifiers::CONTROL),
                 KeyBinding::new(KeyCode::Char('x'), KeyAction::Stop, "Stop"),
-                KeyBinding::new(KeyCode::F(5), KeyAction::RescanLibrary, "Rescan"),
+                KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary, "Scan"),
                 KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer, "Visualizer")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward, "Seek -5s"),

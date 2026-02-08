@@ -74,6 +74,22 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
                     }
                 }
             }
+            Some(DatabaseCommand::ToggleFavorite { track_id }) => {
+                match toggle_favorite(&conn, TrackId(track_id as u64)) {
+                    Ok(is_favorite) => {
+                        worker.send(IpcEvent::FavoriteToggled {
+                            track_id: TrackId(track_id as u64),
+                            is_favorite,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to toggle favorite: {:?}", e);
+                        worker.send(IpcEvent::Error {
+                            message: format!("Failed to toggle favorite: {}", e),
+                        });
+                    }
+                }
+            }
             Some(DatabaseCommand::Shutdown) => {
                 info!("Database worker shutting down");
                 break;
@@ -295,7 +311,7 @@ fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Res
 /// Load all tracks from DB and build a LibrarySnapshot.
 fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<LibrarySnapshot> {
     let mut stmt = conn.prepare(
-        "SELECT id, file_path, title, artist, album, genre, year,
+        "SELECT id, file_path, title, artist, album, genre, year, is_favorite,
                 track_number, bitrate_kbps, sample_rate_hz, format,
                 duration_ms, has_cover, file_size_bytes
          FROM tracks ORDER BY file_path ASC",
@@ -315,13 +331,14 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
                 album: row.get(4)?,
                 genre: row.get(5)?,
                 year: row.get(6)?,
-                track_number: row.get(7)?,
-                bitrate: row.get(8)?,
-                sample_rate: row.get(9)?,
-                format: row.get(10)?,
-                duration_ms: row.get::<_, i64>(11)? as u64,
-                has_cover: row.get(12)?,
-                file_size_bytes: row.get(13)?,
+                is_favorite: row.get::<_, i64>(7)? != 0,
+                track_number: row.get(8)?,
+                bitrate: row.get(9)?,
+                sample_rate: row.get(10)?,
+                format: row.get(11)?,
+                duration_ms: row.get::<_, i64>(12)? as u64,
+                has_cover: row.get(13)?,
+                file_size_bytes: row.get(14)?,
             },
         ))
     })?;
@@ -365,4 +382,18 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
     }
 
     Ok(LibrarySnapshot::new(root, playlists_vec, tracks_map))
+}
+
+/// Toggle favorite status for a track.
+fn toggle_favorite(conn: &rusqlite::Connection, id: TrackId) -> Result<bool> {
+    conn.execute(
+        "UPDATE tracks SET is_favorite = 1 - is_favorite, updated_at = strftime('%s', 'now') WHERE id = ?",
+        params![id.0 as i64],
+    )?;
+    let new_state: i32 = conn.query_row(
+        "SELECT is_favorite FROM tracks WHERE id = ?",
+        params![id.0 as i64],
+        |row| row.get(0),
+    )?;
+    Ok(new_state == 1)
 }

@@ -62,7 +62,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::RequestQuit]
         }
         Command::Rescan => {
-            vec![AppMsg::Library(LibraryMsg::RequestRescanLibrary)]
+            vec![AppMsg::Library(LibraryMsg::RequestScanLibrary)]
         }
         Command::Download { query } => {
             state.session.notification.current = Some(Notification {

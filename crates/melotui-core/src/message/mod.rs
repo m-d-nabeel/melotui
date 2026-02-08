@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod cover;
+pub mod database;
 pub mod download;
 pub mod library;
 pub mod navigation;
@@ -7,8 +8,8 @@ pub mod playback;
 pub mod ui;
 
 use crate::message::{
-    audio::AudioMsg, cover::CoverMsg, download::DownloadMsg, library::LibraryMsg,
-    navigation::NavigationMsg, playback::PlaybackMsg, ui::UIMsg,
+    audio::AudioMsg, cover::CoverMsg, database::DatabaseMsg, download::DownloadMsg,
+    library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg, ui::UIMsg,
 };
 
 #[derive(Debug, Clone)]
@@ -25,4 +26,7 @@ pub enum AppMsg {
     Library(LibraryMsg),
     Download(DownloadMsg),
     Cover(CoverMsg),
+
+    // Database messages
+    Database(DatabaseMsg),
 }
