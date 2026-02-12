@@ -107,8 +107,10 @@ pub fn handle_download_failed(state: &mut AppState, error: String) -> Vec<AppMsg
 pub fn handle_request_cancel_download(state: &mut AppState) -> Vec<AppMsg> {
     if let DownloadStatus::Running { .. } = &state.session.download.status {
         state.session.download.status = DownloadStatus::Cancelling;
+        vec![AppMsg::Download(DownloadMsg::RequestCancelDownload)]
+    } else {
+        vec![]
     }
-    vec![AppMsg::Download(DownloadMsg::RequestCancelDownload)]
 }
 
 pub fn handle_dispatch_download(
