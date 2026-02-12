@@ -194,3 +194,19 @@ pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<
     // Dispatch to database worker
     vec![AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(id))]
 }
+
+pub fn handle_filter(state: &mut AppState, query: String) -> Vec<AppMsg> {
+    state.session.nav.library.filter = if query.is_empty() {
+        None
+    } else {
+        Some(query.clone())
+    };
+
+    // for debug/feedback:
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Filter: {}", query),
+    ));
+
+    vec![]
+}

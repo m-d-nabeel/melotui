@@ -117,3 +117,39 @@ pub fn handle_dispatch_set_visualizer(
 ) -> Vec<AppMsg> {
     vec![]
 }
+
+pub fn handle_enter_filter_mode(state: &mut AppState) -> Vec<AppMsg> {
+    tracing::debug!("Enter Filter Mode");
+    state.session.ui.mode = UIMode::Filter;
+    state.session.ui.command_buffer.clear();
+    vec![]
+}
+
+pub fn handle_exit_filter_mode(state: &mut AppState) -> Vec<AppMsg> {
+    tracing::debug!("Exit Filter Mode");
+    state.session.ui.mode = UIMode::Normal;
+    state.session.ui.command_buffer.clear();
+    vec![]
+}
+
+pub fn handle_update_filter(state: &mut AppState, c: char) -> Vec<AppMsg> {
+    state.session.ui.command_buffer.push(c);
+    vec![]
+}
+
+pub fn handle_backspace_filter(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.command_buffer.pop();
+    vec![]
+}
+
+pub fn handle_submit_filter(state: &mut AppState, input: String) -> Vec<AppMsg> {
+    tracing::info!("SubmitFilter called with :{:?}", input);
+    state.session.ui.mode = UIMode::Normal;
+    state.session.ui.command_buffer.clear();
+
+    if input.trim().is_empty() {
+        vec![]
+    } else {
+        vec![AppMsg::Library(LibraryMsg::Filter(input))]
+    }
+}

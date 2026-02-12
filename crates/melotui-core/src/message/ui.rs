@@ -8,4 +8,9 @@ pub enum UIMsg {
     OpenHelp,
     CloseHelp,
     Resize(u16, u16),
+    EnterFilterMode,
+    ExitFilterMode,
+    UpdateFilter(char),
+    BackspaceFilter,
+    SubmitFilter(String),
 }

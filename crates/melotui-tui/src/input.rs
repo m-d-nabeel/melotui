@@ -31,6 +31,11 @@ impl InputHandler {
             return contexts;
         }
 
+        if *state.ui_mode() == UIMode::Filter {
+            contexts.push(KeyContext::FilterMode);
+            return contexts;
+        }
+
         if state.is_showing_track_info() {
             contexts.push(KeyContext::TrackInfo);
             contexts.push(KeyContext::Global);
@@ -65,12 +70,14 @@ impl InputHandler {
             }
         }
 
-        // command mode typing fallback
+        // command/filter mode typing fallback
         let Some(act) = action else {
-            if *state.ui_mode() == UIMode::Command
-                && let KeyCode::Char(c) = key.code
-            {
-                return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
+            if let KeyCode::Char(c) = key.code {
+                if *state.ui_mode() == UIMode::Command {
+                    return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
+                } else if *state.ui_mode() == UIMode::Filter {
+                    return Some(AppMsg::UI(UIMsg::UpdateFilter(c)));
+                }
             }
             return None;
         };
@@ -125,6 +132,10 @@ impl InputHandler {
 
             // submit command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
+                state.ui_command_buffer().clone(),
+            ))),
+
+            KeyAction::SubmitFilter => Some(AppMsg::UI(UIMsg::SubmitFilter(
                 state.ui_command_buffer().clone(),
             ))),
 

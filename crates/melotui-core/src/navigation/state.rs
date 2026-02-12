@@ -13,6 +13,7 @@ pub struct LibraryNavState {
     pub selected_id: Option<SidebarNodeId>,
     pub expanded_ids: HashSet<SidebarNodeId>,
     pub scroll_offset: usize,
+    pub filter: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -32,7 +33,10 @@ impl Default for NavigationState {
     fn default() -> Self {
         Self {
             active_panel: LeftPanelMode::Library,
-            library: LibraryNavState::default(),
+            library: LibraryNavState {
+                filter: None,
+                ..Default::default()
+            },
             queue: QueueNavState::default(),
             show_track_info: false,
         }

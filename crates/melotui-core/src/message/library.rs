@@ -9,5 +9,6 @@ pub enum LibraryMsg {
     RequestToggleFavorite(TrackId),
     RemoveFromQueue,
     ClearQueue,
+    Filter(String),
     RequestScanLibrary,
 }

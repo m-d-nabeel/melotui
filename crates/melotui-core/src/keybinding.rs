@@ -14,6 +14,7 @@ use crate::{
 pub enum KeyContext {
     Help,
     CommandMode,
+    FilterMode,
     Library,
     Queue,
     TrackInfo,
@@ -28,8 +29,12 @@ pub enum KeyAction {
     CloseHelp,
     EnterCommandMode,
     ExitCommandMode,
+    EnterFilterMode,
+    ExitFilterMode,
     SubmitCommand,
+    SubmitFilter,
     BackspaceCommand,
+    BackspaceFilter,
 
     // navigation
     TogglePanel,
@@ -86,7 +91,10 @@ impl KeyAction {
 
             KeyAction::EnterCommandMode => Some(AppMsg::UI(UIMsg::EnterCommandMode)),
             KeyAction::ExitCommandMode => Some(AppMsg::UI(UIMsg::ExitCommandMode)),
+            KeyAction::EnterFilterMode => Some(AppMsg::UI(UIMsg::EnterFilterMode)),
+            KeyAction::ExitFilterMode => Some(AppMsg::UI(UIMsg::ExitFilterMode)),
             KeyAction::BackspaceCommand => Some(AppMsg::UI(UIMsg::BackspaceCommand)),
+            KeyAction::BackspaceFilter => Some(AppMsg::UI(UIMsg::BackspaceFilter)),
 
             KeyAction::MoveUp => Some(AppMsg::Navigation(NavigationMsg::MoveUp)),
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
@@ -121,6 +129,7 @@ impl KeyAction {
             KeyAction::AddToQueue => None,     // id resolved in input.rs
             KeyAction::QueuePlayNext => None,  // id resolved in input.rs
             KeyAction::SubmitCommand => None,  // uses command buffer
+            KeyAction::SubmitFilter => None,
             KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05))),
             KeyAction::VolDown => Some(AppMsg::Audio(AudioMsg::AdjustVolume(-0.05))),
             KeyAction::SpeedUp => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(0.1))),
@@ -206,6 +215,16 @@ impl Default for KeyRegistry {
             ],
         );
 
+        // filter context
+        bindings.insert(
+            KeyContext::FilterMode,
+            vec![
+                KeyBinding::new(KeyCode::Esc, KeyAction::ExitFilterMode, "Exit"),
+                KeyBinding::new(KeyCode::Enter, KeyAction::SubmitFilter, "Apply"),
+                KeyBinding::new(KeyCode::Backspace, KeyAction::BackspaceFilter, "Delete"),
+            ],
+        );
+
         // library context
         bindings.insert(
             KeyContext::Library,
@@ -222,6 +241,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('A'), KeyAction::QueuePlayNext, "Play Next")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('f'), KeyAction::ToggleFavorite, "Favorite"),
+                KeyBinding::new(KeyCode::Char('/'), KeyAction::EnterFilterMode, "Filter"),
             ],
         );
 
@@ -241,6 +261,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Delete, KeyAction::RemoveFromQueue, "Remove"),
                 KeyBinding::new(KeyCode::Char('D'), KeyAction::ClearQueue, "Clear All")
                     .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('/'), KeyAction::EnterFilterMode, "Filter"),
             ],
         );
 

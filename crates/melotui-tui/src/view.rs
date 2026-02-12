@@ -41,8 +41,8 @@ pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
 
     notification_popup::draw(frame, frame.area(), state);
 
-    // command overlay
-    if *state.ui_mode() == UIMode::Command {
+    // command / filter overlay
+    if *state.ui_mode() == UIMode::Command || *state.ui_mode() == UIMode::Filter {
         frame.render_widget(
             Block::default().style(Style::default().add_modifier(Modifier::DIM)),
             area,
