@@ -2,11 +2,48 @@ use crate::state::SpectrumStyle;
 use std::fmt;
 use std::str::FromStr;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SearchField {
+    Artist,
+    Song,
+    Album,
+    Genre,
+    Year,
+}
+
+impl fmt::Display for SearchField {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SearchField::Artist => write!(f, "artist"),
+            SearchField::Song => write!(f, "song"),
+            SearchField::Album => write!(f, "album"),
+            SearchField::Genre => write!(f, "genre"),
+            SearchField::Year => write!(f, "year"),
+        }
+    }
+}
+
+impl FromStr for SearchField {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "artist" | "a" => Ok(SearchField::Artist),
+            "song" | "s" | "track" | "t" => Ok(SearchField::Song),
+            "album" | "al" => Ok(SearchField::Album),
+            "genre" | "g" => Ok(SearchField::Genre),
+            "year" | "y" => Ok(SearchField::Year),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Quit,
     Rescan,
     Download { query: String },
+    Search { field: SearchField, query: String },
     ChangeVisualizer { arg: SpectrumStyle },
     Unknown(String),
 }
@@ -17,6 +54,7 @@ impl fmt::Display for Command {
             Command::Quit => write!(f, "quit"),
             Command::Rescan => write!(f, "rescan"),
             Command::Download { query } => write!(f, "download {}", query),
+            Command::Search { field, query } => write!(f, "{} {}", field, query),
             Command::ChangeVisualizer { arg } => write!(f, "visualizer {:?}", arg),
             Command::Unknown(s) => write!(f, "unknown: {}", s),
         }
@@ -59,6 +97,17 @@ impl FromStr for Command {
                     Ok(Command::Unknown(
                         "Allowed: Cava, Default, Bar, Particle".into(),
                     ))
+                }
+            }
+
+            // search by field: "artist adele", "song hello", etc.
+            _ if SearchField::from_str(cmd).is_ok() => {
+                let field = SearchField::from_str(cmd).unwrap();
+                let query = parts.collect::<Vec<_>>().join(" ");
+                if query.is_empty() {
+                    Ok(Command::Unknown(format!("{} requires a query", field)))
+                } else {
+                    Ok(Command::Search { field, query })
                 }
             }
 

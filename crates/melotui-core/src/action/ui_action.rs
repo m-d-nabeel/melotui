@@ -98,6 +98,14 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 })]
             }
         }
+        Command::Search { field, query } => {
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Info,
+                format!("Search {}: {}", field, query),
+            ));
+            // TODO: dispatch search message once execution path is decided
+            vec![]
+        }
         Command::Unknown(reason) => {
             state.session.notification.current = Some(Notification {
                 kind: NotificationKind::Error,
