@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use crate::{
     AppMsg,
     message::{
-        audio::AudioMsg, download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
-        playback::PlaybackMsg, ui::UIMsg,
+        audio::AudioMsg, library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg,
+        ui::UIMsg,
     },
 };
 
@@ -14,7 +14,6 @@ use crate::{
 pub enum KeyContext {
     Help,
     CommandMode,
-    FilterMode,
     Library,
     Queue,
     TrackInfo,
@@ -29,12 +28,8 @@ pub enum KeyAction {
     CloseHelp,
     EnterCommandMode,
     ExitCommandMode,
-    EnterFilterMode,
-    ExitFilterMode,
     SubmitCommand,
-    SubmitFilter,
     BackspaceCommand,
-    BackspaceFilter,
 
     // navigation
     TogglePanel,
@@ -64,6 +59,8 @@ pub enum KeyAction {
     ScanLibrary,
     CancelDownload,
     ToggleFavorite,
+    SearchNext,
+    SearchPrev,
 
     // audio
     VolUp,
@@ -91,10 +88,7 @@ impl KeyAction {
 
             KeyAction::EnterCommandMode => Some(AppMsg::UI(UIMsg::EnterCommandMode)),
             KeyAction::ExitCommandMode => Some(AppMsg::UI(UIMsg::ExitCommandMode)),
-            KeyAction::EnterFilterMode => Some(AppMsg::UI(UIMsg::EnterFilterMode)),
-            KeyAction::ExitFilterMode => Some(AppMsg::UI(UIMsg::ExitFilterMode)),
             KeyAction::BackspaceCommand => Some(AppMsg::UI(UIMsg::BackspaceCommand)),
-            KeyAction::BackspaceFilter => Some(AppMsg::UI(UIMsg::BackspaceFilter)),
 
             KeyAction::MoveUp => Some(AppMsg::Navigation(NavigationMsg::MoveUp)),
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
@@ -124,12 +118,13 @@ impl KeyAction {
             KeyAction::RemoveFromQueue => Some(AppMsg::Library(LibraryMsg::RemoveFromQueue)),
             KeyAction::ClearQueue => Some(AppMsg::Library(LibraryMsg::ClearQueue)),
             KeyAction::ScanLibrary => Some(AppMsg::Library(LibraryMsg::RequestScanLibrary)),
-            KeyAction::CancelDownload => Some(AppMsg::Download(DownloadMsg::RequestCancelDownload)),
+            KeyAction::CancelDownload => None, // conditional in input.rs
             KeyAction::ToggleFavorite => None, // id resolved in input.rs
+            KeyAction::SearchNext => None,     // conditional in input.rs
+            KeyAction::SearchPrev => None,     // conditional in input.rs
             KeyAction::AddToQueue => None,     // id resolved in input.rs
             KeyAction::QueuePlayNext => None,  // id resolved in input.rs
             KeyAction::SubmitCommand => None,  // uses command buffer
-            KeyAction::SubmitFilter => None,
             KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05))),
             KeyAction::VolDown => Some(AppMsg::Audio(AudioMsg::AdjustVolume(-0.05))),
             KeyAction::SpeedUp => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(0.1))),
@@ -215,16 +210,6 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // filter context
-        bindings.insert(
-            KeyContext::FilterMode,
-            vec![
-                KeyBinding::new(KeyCode::Esc, KeyAction::ExitFilterMode, "Exit"),
-                KeyBinding::new(KeyCode::Enter, KeyAction::SubmitFilter, "Apply"),
-                KeyBinding::new(KeyCode::Backspace, KeyAction::BackspaceFilter, "Delete"),
-            ],
-        );
-
         // library context
         bindings.insert(
             KeyContext::Library,
@@ -241,7 +226,9 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('A'), KeyAction::QueuePlayNext, "Play Next")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('f'), KeyAction::ToggleFavorite, "Favorite"),
-                KeyBinding::new(KeyCode::Char('/'), KeyAction::EnterFilterMode, "Filter"),
+                KeyBinding::new(KeyCode::Char('n'), KeyAction::SearchNext, "Next Match"),
+                KeyBinding::new(KeyCode::Char('N'), KeyAction::SearchPrev, "Prev Match")
+                    .with_mod(KeyModifiers::SHIFT),
             ],
         );
 
@@ -261,7 +248,6 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Delete, KeyAction::RemoveFromQueue, "Remove"),
                 KeyBinding::new(KeyCode::Char('D'), KeyAction::ClearQueue, "Clear All")
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('/'), KeyAction::EnterFilterMode, "Filter"),
             ],
         );
 

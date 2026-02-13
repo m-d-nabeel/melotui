@@ -3,7 +3,6 @@ pub enum UIMode {
     #[default]
     Normal,
     Command,
-    Filter,
 }
 
 #[derive(Debug, Clone)]

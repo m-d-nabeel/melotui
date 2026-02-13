@@ -212,6 +212,17 @@ impl AppState {
         &self.session.nav.library
     }
 
+    pub fn search_matches(&self) -> &[SidebarNodeId] {
+        &self.session.nav.library.search.matches
+    }
+
+    pub fn is_download_active(&self) -> bool {
+        matches!(
+            self.session.download.status,
+            crate::state::DownloadStatus::Running { .. }
+        )
+    }
+
     /// selected sidebar node id
     pub fn get_library_selection(&self) -> Option<&SidebarNodeId> {
         self.session.nav.library.selected_id.as_ref()

@@ -4,7 +4,10 @@ use std::sync::OnceLock;
 use melotui_core::{
     AppMsg, AppState,
     keybinding::{KeyAction, KeyContext, KeyRegistry},
-    message::{library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg, ui::UIMsg},
+    message::{
+        download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
+        playback::PlaybackMsg, ui::UIMsg,
+    },
     state::UIMode,
 };
 
@@ -28,11 +31,6 @@ impl InputHandler {
 
         if *state.ui_mode() == UIMode::Command {
             contexts.push(KeyContext::CommandMode);
-            return contexts;
-        }
-
-        if *state.ui_mode() == UIMode::Filter {
-            contexts.push(KeyContext::FilterMode);
             return contexts;
         }
 
@@ -70,14 +68,12 @@ impl InputHandler {
             }
         }
 
-        // command/filter mode typing fallback
+        // command mode typing fallback
         let Some(act) = action else {
-            if let KeyCode::Char(c) = key.code {
-                if *state.ui_mode() == UIMode::Command {
-                    return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
-                } else if *state.ui_mode() == UIMode::Filter {
-                    return Some(AppMsg::UI(UIMsg::UpdateFilter(c)));
-                }
+            if *state.ui_mode() == UIMode::Command
+                && let KeyCode::Char(c) = key.code
+            {
+                return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
             }
             return None;
         };
@@ -130,12 +126,33 @@ impl InputHandler {
                 None
             }
 
+            // search cycling - only when search has results
+            KeyAction::SearchNext => {
+                if !state.search_matches().is_empty() {
+                    return Some(AppMsg::Library(LibraryMsg::SearchNext));
+                }
+                None
+            }
+            KeyAction::SearchPrev => {
+                if !state.search_matches().is_empty() {
+                    return Some(AppMsg::Library(LibraryMsg::SearchPrev));
+                }
+                None
+            }
+
+            // Esc: cancel download first, then clear search
+            KeyAction::CancelDownload => {
+                if state.is_download_active() {
+                    return Some(AppMsg::Download(DownloadMsg::RequestCancelDownload));
+                }
+                if !state.search_matches().is_empty() {
+                    return Some(AppMsg::Library(LibraryMsg::ClearSearch));
+                }
+                None
+            }
+
             // submit command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
-                state.ui_command_buffer().clone(),
-            ))),
-
-            KeyAction::SubmitFilter => Some(AppMsg::UI(UIMsg::SubmitFilter(
                 state.ui_command_buffer().clone(),
             ))),
 

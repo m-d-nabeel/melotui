@@ -1,3 +1,4 @@
+use crate::command::SearchField;
 use crate::domain::TrackId;
 
 #[derive(Debug, Clone)]
@@ -9,6 +10,9 @@ pub enum LibraryMsg {
     RequestToggleFavorite(TrackId),
     RemoveFromQueue,
     ClearQueue,
-    Filter(String),
+    Search { field: SearchField, query: String },
+    SearchNext,
+    SearchPrev,
+    ClearSearch,
     RequestScanLibrary,
 }

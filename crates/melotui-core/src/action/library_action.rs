@@ -1,9 +1,11 @@
 use crate::{
     AppMsg, AppState,
+    command::SearchField,
     domain::TrackId,
     library::projector,
     message::database::DatabaseMsg,
     navigation::ids::{CategoryId, SidebarNodeId},
+    navigation::state::SearchState,
     playback::state::RepeatMode,
     state::{Notification, NotificationKind},
 };
@@ -195,18 +197,150 @@ pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<
     vec![AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(id))]
 }
 
-pub fn handle_filter(state: &mut AppState, query: String) -> Vec<AppMsg> {
-    state.session.nav.library.filter = if query.is_empty() {
-        None
-    } else {
-        Some(query.clone())
-    };
+pub fn handle_search(state: &mut AppState, field: SearchField, query: String) -> Vec<AppMsg> {
+    let search = &state.session.nav.library.search;
+    let is_repeat = search.field.as_ref() == Some(&field) && search.query == query;
 
-    // for debug/feedback:
+    if is_repeat {
+        let next = (search.index + 1) % search.matches.len().max(1);
+        state.session.nav.library.search.index = next;
+    } else {
+        let matches = collect_matches(&state.library, &field, &query);
+        state.session.nav.library.search = SearchState {
+            field: Some(field.clone()),
+            query: query.clone(),
+            matches,
+            index: 0,
+        };
+    }
+
+    let search = &state.session.nav.library.search;
+    if search.matches.is_empty() {
+        state.session.notification.current = Some(Notification::new(
+            NotificationKind::Warning,
+            format!("No results for {} {}", field, query),
+        ));
+        return vec![];
+    }
+
+    navigate_to_current_match(state);
+    vec![]
+}
+
+pub fn handle_search_next(state: &mut AppState) -> Vec<AppMsg> {
+    let search = &state.session.nav.library.search;
+    if search.matches.is_empty() {
+        return vec![];
+    }
+    let next = (search.index + 1) % search.matches.len();
+    state.session.nav.library.search.index = next;
+    navigate_to_current_match(state);
+    vec![]
+}
+
+pub fn handle_search_prev(state: &mut AppState) -> Vec<AppMsg> {
+    let search = &state.session.nav.library.search;
+    if search.matches.is_empty() {
+        return vec![];
+    }
+    let len = search.matches.len();
+    let prev = (search.index + len - 1) % len;
+    state.session.nav.library.search.index = prev;
+    navigate_to_current_match(state);
+    vec![]
+}
+
+fn navigate_to_current_match(state: &mut AppState) {
+    let search = &state.session.nav.library.search;
+    let node = search.matches[search.index].clone();
+    let idx_display = search.index + 1;
+    let total = search.matches.len();
+    let label = search
+        .field
+        .as_ref()
+        .map(|f| format!("{}", f))
+        .unwrap_or_default();
+    let query = search.query.clone();
+
+    // expand all ancestors
+    let root = state.library.root.clone();
+    let mut cur = node.clone();
+    while let Some(parent) = cur.parent(&root) {
+        state
+            .session
+            .nav
+            .library
+            .expanded_ids
+            .insert(parent.clone());
+        cur = parent;
+    }
+    state.session.nav.library.selected_id = Some(node.clone());
+
+    // scroll to it
+    let nav = &state.session.nav.library;
+    if let Some(idx) = projector::get_index_of(&state.library, nav, &node) {
+        let (_, h) = state.terminal_size();
+        let viewport_height = if h > 3 { (h - 3) as usize } else { 1 };
+        state.session.nav.library.scroll_offset = idx.saturating_sub(viewport_height / 2);
+    }
+
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Filter: {}", query),
+        format!("[{}/{}] {} {}", idx_display, total, label, query),
     ));
+}
 
-    vec![]
+fn collect_matches(
+    snapshot: &crate::library::LibrarySnapshot,
+    field: &SearchField,
+    query: &str,
+) -> Vec<SidebarNodeId> {
+    let q = query.to_lowercase();
+    match field {
+        SearchField::Artist => snapshot
+            .artists
+            .keys()
+            .filter(|k| k.to_lowercase().contains(&q))
+            .map(|k| SidebarNodeId::Artist(k.clone()))
+            .collect(),
+
+        SearchField::Song => snapshot
+            .tracks
+            .iter()
+            .filter(|(_, meta)| meta.title.to_lowercase().contains(&q))
+            .map(|(id, meta)| {
+                let parent = meta
+                    .artist
+                    .as_ref()
+                    .map(|a| SidebarNodeId::Artist(a.clone()))
+                    .unwrap_or(SidebarNodeId::Root);
+                SidebarNodeId::Track {
+                    id: *id,
+                    parent: Box::new(parent),
+                }
+            })
+            .collect(),
+
+        SearchField::Album => snapshot
+            .albums
+            .keys()
+            .filter(|k| k.to_lowercase().contains(&q))
+            .map(|k| SidebarNodeId::Album(k.clone()))
+            .collect(),
+
+        SearchField::Genre => snapshot
+            .genres
+            .keys()
+            .filter(|k| k.to_lowercase().contains(&q))
+            .map(|k| SidebarNodeId::Genre(k.clone()))
+            .collect(),
+
+        SearchField::Year => q
+            .parse::<u32>()
+            .ok()
+            .filter(|y| snapshot.years.contains_key(y))
+            .map(SidebarNodeId::Year)
+            .into_iter()
+            .collect(),
+    }
 }

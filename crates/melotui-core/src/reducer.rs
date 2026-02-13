@@ -104,11 +104,6 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::OpenHelp => ui_action::handle_open_help(state),
         UIMsg::CloseHelp => ui_action::handle_close_help(state),
         UIMsg::Resize(w, h) => ui_action::handle_resize(state, w, h),
-        UIMsg::EnterFilterMode => ui_action::handle_enter_filter_mode(state),
-        UIMsg::ExitFilterMode => ui_action::handle_exit_filter_mode(state),
-        UIMsg::UpdateFilter(c) => ui_action::handle_update_filter(state, c),
-        UIMsg::BackspaceFilter => ui_action::handle_backspace_filter(state),
-        UIMsg::SubmitFilter(input) => ui_action::handle_submit_filter(state, input),
     }
 }
 
@@ -124,7 +119,13 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
         LibraryMsg::RequestToggleFavorite(id) => {
             library_action::handle_request_toggle_favorite(state, id)
         }
-        LibraryMsg::Filter(query) => library_action::handle_filter(state, query),
+        LibraryMsg::Search { field, query } => library_action::handle_search(state, field, query),
+        LibraryMsg::SearchNext => library_action::handle_search_next(state),
+        LibraryMsg::SearchPrev => library_action::handle_search_prev(state),
+        LibraryMsg::ClearSearch => {
+            state.session.nav.library.search = Default::default();
+            vec![]
+        }
     }
 }
 

@@ -45,6 +45,7 @@ pub enum Command {
     Download { query: String },
     Search { field: SearchField, query: String },
     ChangeVisualizer { arg: SpectrumStyle },
+    ClearSearch,
     Unknown(String),
 }
 
@@ -56,6 +57,7 @@ impl fmt::Display for Command {
             Command::Download { query } => write!(f, "download {}", query),
             Command::Search { field, query } => write!(f, "{} {}", field, query),
             Command::ChangeVisualizer { arg } => write!(f, "visualizer {:?}", arg),
+            Command::ClearSearch => write!(f, "noh"),
             Command::Unknown(s) => write!(f, "unknown: {}", s),
         }
     }
@@ -77,6 +79,7 @@ impl FromStr for Command {
         match cmd {
             "q" | "quit" | "exit" => Ok(Command::Quit),
             "r" | "rescan" | "scan" => Ok(Command::Rescan),
+            "noh" | "nohlsearch" | "clear" => Ok(Command::ClearSearch),
 
             "download" | "dl" => {
                 let query = parts.collect::<Vec<_>>().join(" ");
