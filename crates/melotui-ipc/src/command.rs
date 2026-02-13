@@ -12,6 +12,7 @@ pub enum AudioCommand {
     Stop,
     Seek {
         position_ms: u64,
+        epoch: u64,
     },
     SetVisualizer {
         spectrum_style: Option<SpectrumStyle>,

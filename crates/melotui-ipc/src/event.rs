@@ -24,6 +24,7 @@ pub enum IpcEvent {
     PlaybackStopped,
     PlaybackProgress {
         position_ms: u64,
+        epoch: u64,
     },
     PlaybackFinished,
 

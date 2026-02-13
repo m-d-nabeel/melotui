@@ -24,14 +24,7 @@ impl fmt::Display for Command {
 }
 
 impl FromStr for Command {
-    type Err = (); // We used Unknown variant for errors in the original code, so Err is not really used meaningfully here, or we could use String.
-    // The original parse function returned Command, so FromStr should probably succeed and return Unknown on failure if we want to mimic it,
-    // but FromStr usually returns Result.
-    // However, the action handler expects a Command.
-    // I'll make FromStr return Ok(Command) always, using Unknown for errors, to match previous behavior of `parse`.
-    // Or better, return Result and let the caller handle it?
-    // The previous `parse` returned `Command::Unknown`.
-    // I will stick to that pattern for `FromStr` to be "infallible" in a sense that it returns a Command object.
+    type Err = ();
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         let trimmed = input.trim();

@@ -52,14 +52,14 @@ fn handle_playback_message(state: &mut AppState, msg: PlaybackMsg) -> Vec<AppMsg
         PlaybackMsg::DispatchPause => playback_action::handle_dispatch_pause(state),
         PlaybackMsg::DispatchResume => playback_action::handle_dispatch_resume(state),
         PlaybackMsg::DispatchStop => playback_action::handle_dispatch_stop(state),
-        PlaybackMsg::DispatchSeek { position_ms } => {
-            playback_action::handle_dispatch_seek(state, position_ms)
+        PlaybackMsg::DispatchSeek { position_ms, epoch } => {
+            playback_action::handle_dispatch_seek(state, position_ms, epoch)
         }
         PlaybackMsg::DispatchSetVisualizer { spectrum_style } => {
             ui_action::handle_dispatch_set_visualizer(state, spectrum_style)
         }
-        PlaybackMsg::AudioProgress { position_ms } => {
-            playback_action::handle_audio_progress(state, position_ms)
+        PlaybackMsg::AudioProgress { position_ms, epoch } => {
+            playback_action::handle_audio_progress(state, position_ms, epoch)
         }
         PlaybackMsg::AudioStarted { path } => playback_action::handle_audio_started(state, path),
         PlaybackMsg::AudioPaused => playback_action::handle_audio_paused(state),

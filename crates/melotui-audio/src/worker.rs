@@ -76,6 +76,7 @@ struct AudioEngine {
     time_keeper: TimeKeeper,
     vis_manager: VisualizerManager,
     dsp_params: AudioParams,
+    seek_epoch: u64,
 }
 
 impl AudioEngine {
@@ -86,6 +87,7 @@ impl AudioEngine {
             time_keeper: TimeKeeper::new(),
             vis_manager: VisualizerManager::new(),
             dsp_params: AudioParams::new(),
+            seek_epoch: 0,
         }
     }
 
@@ -95,7 +97,7 @@ impl AudioEngine {
             AudioCommand::Stop => self.do_stop(),
             AudioCommand::Pause => self.do_pause(worker),
             AudioCommand::Resume => self.do_resume(worker),
-            AudioCommand::Seek { position_ms } => self.do_seek(position_ms),
+            AudioCommand::Seek { position_ms, epoch } => self.do_seek(position_ms, epoch),
             AudioCommand::SetVisualizer { spectrum_style } => match spectrum_style {
                 Some(s) => self.vis_manager.set_style(s),
                 None => self.vis_manager.set_enabled(false),
@@ -174,12 +176,13 @@ impl AudioEngine {
         }
     }
 
-    fn do_seek(&mut self, ms: u64) {
+    fn do_seek(&mut self, ms: u64, epoch: u64) {
         let dur = Duration::from_millis(ms);
         if let Err(e) = self.sink.try_seek(dur) {
             tracing::error!("Seek Error: {:?}", e);
         } else {
             self.time_keeper.seek(dur);
+            self.seek_epoch = epoch;
         }
     }
 
@@ -197,6 +200,7 @@ impl AudioEngine {
         let pos = self.time_keeper.get_position();
         worker.send(IpcEvent::PlaybackProgress {
             position_ms: pos.as_millis() as u64,
+            epoch: self.seek_epoch,
         });
 
         if let Some(spectrum) = self.vis_manager.tick() {

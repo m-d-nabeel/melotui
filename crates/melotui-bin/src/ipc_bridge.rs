@@ -128,9 +128,10 @@ pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
             PlaybackMsg::DispatchPause => Some(IpcCommand::Audio(AudioCommand::Pause)),
             PlaybackMsg::DispatchResume => Some(IpcCommand::Audio(AudioCommand::Resume)),
             PlaybackMsg::DispatchStop => Some(IpcCommand::Audio(AudioCommand::Stop)),
-            PlaybackMsg::DispatchSeek { position_ms } => {
+            PlaybackMsg::DispatchSeek { position_ms, epoch } => {
                 Some(IpcCommand::Audio(AudioCommand::Seek {
                     position_ms: *position_ms,
+                    epoch: *epoch,
                 }))
             }
             PlaybackMsg::DispatchSetVisualizer { spectrum_style } => {
@@ -181,8 +182,8 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             AppMsg::Download(DownloadMsg::DownloadFailed { error })
         }
         IpcEvent::PlaybackStarted { path } => AppMsg::Playback(PlaybackMsg::AudioStarted { path }),
-        IpcEvent::PlaybackProgress { position_ms } => {
-            AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms })
+        IpcEvent::PlaybackProgress { position_ms, epoch } => {
+            AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms, epoch })
         }
         IpcEvent::PlaybackFinished => AppMsg::Playback(PlaybackMsg::AudioFinished),
         IpcEvent::PlaybackPaused => AppMsg::Playback(PlaybackMsg::AudioPaused),
