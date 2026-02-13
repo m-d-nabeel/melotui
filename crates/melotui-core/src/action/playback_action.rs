@@ -1,5 +1,3 @@
-use std::time::{Duration, Instant};
-
 use crate::{
     AppMsg, AppState,
     domain::TrackId,
@@ -14,11 +12,11 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
     let mut target_track_id: Option<TrackId> = None;
     let mut from_queue = false;
 
-    // context vars
+    let mut should_update_context = false;
+
     let mut new_context_queue: Vec<TrackId> = Vec::new();
     let mut new_context_idx: usize = 0;
     let mut new_source_name = String::new();
-    let mut should_update_context = false;
 
     // queue selection (rotate)
     if state.is_queue_focused() {
@@ -152,8 +150,10 @@ pub fn handle_request_prev(state: &mut AppState) -> Vec<AppMsg> {
     }
 
     state.session.playback.progress_ms = 0;
+    state.session.seek_epoch += 1;
     vec![AppMsg::Playback(PlaybackMsg::DispatchSeek {
         position_ms: 0,
+        epoch: state.session.seek_epoch,
     })]
 }
 
@@ -253,23 +253,16 @@ pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<App
     let dur = state.total_duration_ms() as i64;
     let new_ms = (cur + offset_seconds * 1000).clamp(0, dur);
 
-    // ignore stale progress after seek
-    state.session.last_seek_time = Some(Instant::now());
-
+    state.session.seek_epoch += 1;
     state.session.playback.progress_ms = new_ms as u64;
     vec![AppMsg::Playback(PlaybackMsg::DispatchSeek {
         position_ms: new_ms as u64,
+        epoch: state.session.seek_epoch,
     })]
 }
 
-pub fn handle_audio_progress(state: &mut AppState, position_ms: u64) -> Vec<AppMsg> {
-    if state.is_playing() {
-        // ignore stale progress after seek
-        if let Some(last) = state.session.last_seek_time
-            && last.elapsed() < Duration::from_millis(500)
-        {
-            return vec![];
-        }
+pub fn handle_audio_progress(state: &mut AppState, position_ms: u64, epoch: u64) -> Vec<AppMsg> {
+    if state.is_playing() && epoch >= state.session.seek_epoch {
         state.session.playback.progress_ms = position_ms;
     }
     vec![]
@@ -308,7 +301,7 @@ pub fn handle_dispatch_resume(_: &mut AppState) -> Vec<AppMsg> {
 pub fn handle_dispatch_stop(_: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
-pub fn handle_dispatch_seek(_: &mut AppState, _: u64) -> Vec<AppMsg> {
+pub fn handle_dispatch_seek(_: &mut AppState, _: u64, _: u64) -> Vec<AppMsg> {
     vec![]
 }
 pub fn handle_audio_started(_: &mut AppState, _: String) -> Vec<AppMsg> {

@@ -19,7 +19,7 @@ const BORDER: Color = Color::Rgb(88, 91, 112);
 
 pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
     // help screen area
-    let help_area = centered_rect(85, 90, area);
+    let help_area = centered_rect(90, 90, area);
 
     // clear bg
     frame.render_widget(Clear, help_area);
@@ -47,9 +47,10 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
     let sections = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(34),
-            Constraint::Percentage(33),
-            Constraint::Percentage(33),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
+            Constraint::Percentage(25),
         ])
         .split(inner);
 
@@ -74,6 +75,52 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
         " Queue ",
         registry.bindings.get(&KeyContext::Queue),
     );
+
+    render_command_section(frame, sections[3], " Commands ");
+}
+
+fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
+    let block = Block::default()
+        .title(
+            Line::from(Span::styled(
+                title,
+                Style::default().fg(HEADER_FG).add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Center),
+        )
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(OVERLAY))
+        .padding(Padding::horizontal(1));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let commands = vec![
+        (":q | :quit", "Quit App"),
+        (":r | :rescan", "Rescan Lib"),
+        (":dl <query>", "Download"),
+        (":v <style>", "Visualizer"),
+        (":noh", "Clear Search"),
+        (":pl create <n>", "New Playlist"),
+        (":pl del <n>", "Del Playlist"),
+        (":pl add <n>", "Add to Pl"),
+        (":artist <q>", "Search Artist"),
+        (":song <q>", "Search Song"),
+        (":album <q>", "Search Album"),
+    ];
+
+    let mut lines = vec![];
+    for (syntax, desc) in commands {
+        let line = Line::from(vec![
+            Span::styled(format!("{:15}", syntax), Style::default().fg(KEY_FG)),
+            Span::raw(" "),
+            Span::styled(desc, Style::default().fg(TEXT)),
+        ]);
+        lines.push(line);
+    }
+
+    let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true });
+    frame.render_widget(paragraph, inner);
 }
 
 fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&Vec<KeyBinding>>) {

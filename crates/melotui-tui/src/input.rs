@@ -4,7 +4,10 @@ use std::sync::OnceLock;
 use melotui_core::{
     AppMsg, AppState,
     keybinding::{KeyAction, KeyContext, KeyRegistry},
-    message::{library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg, ui::UIMsg},
+    message::{
+        download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
+        playback::PlaybackMsg, ui::UIMsg,
+    },
     state::UIMode,
 };
 
@@ -28,6 +31,16 @@ impl InputHandler {
 
         if *state.ui_mode() == UIMode::Command {
             contexts.push(KeyContext::CommandMode);
+            return contexts;
+        }
+
+        if *state.ui_mode() == UIMode::PlaylistPicker {
+            contexts.push(KeyContext::PlaylistPicker);
+            return contexts;
+        }
+
+        if *state.ui_mode() == UIMode::Confirm {
+            contexts.push(KeyContext::Confirm);
             return contexts;
         }
 
@@ -71,6 +84,11 @@ impl InputHandler {
                 && let KeyCode::Char(c) = key.code
             {
                 return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
+            }
+            if *state.ui_mode() == UIMode::PlaylistPicker
+                && let KeyCode::Char(c) = key.code
+            {
+                return Some(AppMsg::UI(UIMsg::PlaylistPickerUpdateQuery(c)));
             }
             return None;
         };
@@ -119,6 +137,31 @@ impl InputHandler {
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
                 {
                     return Some(AppMsg::Library(LibraryMsg::RequestToggleFavorite(track_id)));
+                }
+                None
+            }
+
+            // search cycling - only when search has results
+            KeyAction::SearchNext => {
+                if !state.search_matches().is_empty() {
+                    return Some(AppMsg::Library(LibraryMsg::SearchNext));
+                }
+                None
+            }
+            KeyAction::SearchPrev => {
+                if !state.search_matches().is_empty() {
+                    return Some(AppMsg::Library(LibraryMsg::SearchPrev));
+                }
+                None
+            }
+
+            // Esc: cancel download first, then clear search
+            KeyAction::CancelDownload => {
+                if state.is_download_active() {
+                    return Some(AppMsg::Download(DownloadMsg::RequestCancelDownload));
+                }
+                if !state.search_matches().is_empty() {
+                    return Some(AppMsg::Library(LibraryMsg::ClearSearch));
                 }
                 None
             }

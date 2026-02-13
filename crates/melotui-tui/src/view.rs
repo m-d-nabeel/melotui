@@ -10,8 +10,8 @@ use melotui_core::{AppState, UIMode};
 use crate::{
     image_cache::ImageCache,
     widgets::{
-        command_view, help_view, notification_popup, playback_view, sidebar, sound_control_view,
-        visualizer_view,
+        command_view, confirm_view, help_view, notification_popup, playback_view,
+        playlist_picker_view, sidebar, sound_control_view, visualizer_view,
     },
 };
 
@@ -53,6 +53,30 @@ pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
             .split(area)[1];
         frame.render_widget(Clear, overlay);
         command_view::draw(frame, overlay, state);
+    }
+
+    // playlist picker overlay
+    if *state.ui_mode() == UIMode::PlaylistPicker {
+        // Dim background
+        frame.render_widget(
+            Block::default().style(Style::default().add_modifier(Modifier::DIM)),
+            area,
+        );
+        // The picker calculates its own layout relative to the full area
+        playlist_picker_view::draw(frame, area, state);
+    }
+
+    // confirm dialog bottom bar
+    if *state.ui_mode() == UIMode::Confirm {
+        frame.render_widget(
+            Block::default().style(Style::default().add_modifier(Modifier::DIM)),
+            area,
+        );
+        let overlay = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(1)])
+            .split(area)[1];
+        confirm_view::draw(frame, overlay, state);
     }
 
     if state.ui_show_help() {

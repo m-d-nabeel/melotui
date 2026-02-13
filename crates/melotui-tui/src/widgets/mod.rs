@@ -5,5 +5,7 @@ pub mod notification_popup;
 pub mod playback_view;
 pub mod sidebar;
 // pub mod sidebar_view;
+pub mod confirm_view;
+pub mod playlist_picker_view;
 pub mod sound_control_view;
 pub mod visualizer_view;

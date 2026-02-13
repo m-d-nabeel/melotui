@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use crate::{
     navigation::state::NavigationState,
     playback::state::{PlaybackQueueState, PlaybackState, RepeatMode},
@@ -29,7 +27,7 @@ pub struct SessionState {
     pub visualizer_mode: VisualizerMode,
     pub spectrum_style: SpectrumStyle,
 
-    pub last_seek_time: Option<Instant>,
+    pub seek_epoch: u64,
 }
 
 impl Default for SessionState {
@@ -48,7 +46,7 @@ impl Default for SessionState {
             repeat_mode: RepeatMode::Off,
             visualizer_mode: VisualizerMode::AlbumArt,
             spectrum_style: SpectrumStyle::default(),
-            last_seek_time: None,
+            seek_epoch: 0,
         }
     }
 }
