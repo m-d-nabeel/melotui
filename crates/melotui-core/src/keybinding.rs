@@ -17,6 +17,8 @@ pub enum KeyContext {
     Library,
     Queue,
     TrackInfo,
+    PlaylistPicker,
+    Confirm,
     Global,
 }
 
@@ -75,6 +77,21 @@ pub enum KeyAction {
     ReverbDown,
     EchoUp,
     EchoDown,
+
+    // playlist picker
+    EnterPlaylistPicker,
+    ExitPlaylistPicker,
+    SubmitPlaylistPicker,
+    PlaylistPickerMoveUp,
+    PlaylistPickerMoveDown,
+    PlaylistPickerBackspace,
+
+    // playlist management
+    DeletePlaylist,
+
+    // confirm dialog
+    ConfirmYes,
+    ConfirmNo,
 }
 
 const OFFSET_SECONDS: i64 = 5;
@@ -137,6 +154,16 @@ impl KeyAction {
             KeyAction::ReverbDown => Some(AppMsg::Audio(AudioMsg::AdjustReverb(-0.05))),
             KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::AdjustEcho(0.05))),
             KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::AdjustEcho(-0.05))),
+
+            KeyAction::EnterPlaylistPicker => Some(AppMsg::UI(UIMsg::EnterPlaylistPicker)),
+            KeyAction::ExitPlaylistPicker => Some(AppMsg::UI(UIMsg::ExitPlaylistPicker)),
+            KeyAction::SubmitPlaylistPicker => Some(AppMsg::UI(UIMsg::SubmitPlaylistPicker)),
+            KeyAction::PlaylistPickerMoveUp => Some(AppMsg::UI(UIMsg::PlaylistPickerMoveUp)),
+            KeyAction::PlaylistPickerMoveDown => Some(AppMsg::UI(UIMsg::PlaylistPickerMoveDown)),
+            KeyAction::PlaylistPickerBackspace => Some(AppMsg::UI(UIMsg::PlaylistPickerBackspace)),
+            KeyAction::DeletePlaylist => Some(AppMsg::UI(UIMsg::DeletePlaylistConfirm)),
+            KeyAction::ConfirmYes => Some(AppMsg::UI(UIMsg::ConfirmYes)),
+            KeyAction::ConfirmNo => Some(AppMsg::UI(UIMsg::ConfirmNo)),
         }
     }
 }
@@ -229,6 +256,43 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('n'), KeyAction::SearchNext, "Next Match"),
                 KeyBinding::new(KeyCode::Char('N'), KeyAction::SearchPrev, "Prev Match")
                     .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(
+                    KeyCode::Char('p'),
+                    KeyAction::EnterPlaylistPicker,
+                    "Add to Playlist",
+                ),
+                KeyBinding::new(
+                    KeyCode::Char('D'),
+                    KeyAction::DeletePlaylist,
+                    "Delete Playlist",
+                )
+                .with_mod(KeyModifiers::SHIFT),
+            ],
+        );
+
+        // playlist picker context
+        bindings.insert(
+            KeyContext::PlaylistPicker,
+            vec![
+                KeyBinding::new(KeyCode::Esc, KeyAction::ExitPlaylistPicker, "Back"),
+                KeyBinding::new(KeyCode::Enter, KeyAction::SubmitPlaylistPicker, "Select"),
+                KeyBinding::new(KeyCode::Down, KeyAction::PlaylistPickerMoveDown, "Down"),
+                KeyBinding::new(KeyCode::Up, KeyAction::PlaylistPickerMoveUp, "Up"),
+                KeyBinding::new(
+                    KeyCode::Backspace,
+                    KeyAction::PlaylistPickerBackspace,
+                    "Delete",
+                ),
+            ],
+        );
+
+        // confirm dialog
+        bindings.insert(
+            KeyContext::Confirm,
+            vec![
+                KeyBinding::new(KeyCode::Char('y'), KeyAction::ConfirmYes, "Yes"),
+                KeyBinding::new(KeyCode::Char('n'), KeyAction::ConfirmNo, "No"),
+                KeyBinding::new(KeyCode::Esc, KeyAction::ConfirmNo, "Cancel"),
             ],
         );
 

@@ -104,6 +104,22 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::OpenHelp => ui_action::handle_open_help(state),
         UIMsg::CloseHelp => ui_action::handle_close_help(state),
         UIMsg::Resize(w, h) => ui_action::handle_resize(state, w, h),
+        UIMsg::EnterPlaylistPicker => ui_action::handle_enter_playlist_picker(state),
+        UIMsg::ExitPlaylistPicker => ui_action::handle_exit_playlist_picker(state),
+        UIMsg::SubmitPlaylistPicker => ui_action::handle_submit_playlist_picker(state),
+        UIMsg::PlaylistPickerMoveUp => ui_action::handle_playlist_picker_move_up(state),
+        UIMsg::PlaylistPickerMoveDown => ui_action::handle_playlist_picker_move_down(state),
+        UIMsg::PlaylistPickerUpdateQuery(c) => {
+            ui_action::handle_playlist_picker_update_query(state, c)
+        }
+        UIMsg::PlaylistPickerBackspace => ui_action::handle_playlist_picker_backspace(state),
+        UIMsg::DeletePlaylistConfirm => ui_action::handle_delete_playlist_confirm(state),
+        UIMsg::ShowConfirm {
+            message,
+            on_confirm,
+        } => ui_action::handle_show_confirm(state, message, on_confirm),
+        UIMsg::ConfirmYes => ui_action::handle_confirm_yes(state),
+        UIMsg::ConfirmNo => ui_action::handle_confirm_no(state),
     }
 }
 
@@ -142,6 +158,12 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
         } => library_action::handle_request_remove_from_playlist(state, playlist_id, track_id),
         LibraryMsg::PlaylistCreated { id, name } => {
             state.library.add_playlist(id, name);
+            if let Some(track_id) = state.session.ui.pending_add_track.take() {
+                return vec![AppMsg::Library(LibraryMsg::RequestAddToPlaylist {
+                    playlist_id: id,
+                    track_id,
+                })];
+            }
             vec![]
         }
     }
@@ -172,7 +194,6 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
 
 fn handle_database_message(_state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
     match msg {
-        // dispatch-only — these just forward to IPC, no local state change
         DatabaseMsg::DispatchToggleFavorite(_)
         | DatabaseMsg::DispatchCreatePlaylist(_)
         | DatabaseMsg::DispatchDeletePlaylist(_)

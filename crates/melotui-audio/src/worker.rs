@@ -19,10 +19,7 @@ pub fn run(mut worker: impl IpcWorker<AudioCommand>, spectrum_producer: Spectrum
     let stream_handle =
         rodio::OutputStreamBuilder::open_default_stream().expect("open default audio stream");
 
-    let mut engine = AudioEngine::new(
-        rodio::Sink::connect_new(stream_handle.mixer()),
-        spectrum_producer,
-    );
+    let mut engine = AudioEngine::new(Sink::connect_new(stream_handle.mixer()), spectrum_producer);
 
     loop {
         let commands = fetch_and_coalesce_commands(&mut worker);

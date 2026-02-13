@@ -12,11 +12,11 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
     let mut target_track_id: Option<TrackId> = None;
     let mut from_queue = false;
 
-    // context vars
+    let mut should_update_context = false;
+
     let mut new_context_queue: Vec<TrackId> = Vec::new();
     let mut new_context_idx: usize = 0;
     let mut new_source_name = String::new();
-    let mut should_update_context = false;
 
     // queue selection (rotate)
     if state.is_queue_focused() {

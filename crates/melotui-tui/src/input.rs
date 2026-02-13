@@ -34,6 +34,16 @@ impl InputHandler {
             return contexts;
         }
 
+        if *state.ui_mode() == UIMode::PlaylistPicker {
+            contexts.push(KeyContext::PlaylistPicker);
+            return contexts;
+        }
+
+        if *state.ui_mode() == UIMode::Confirm {
+            contexts.push(KeyContext::Confirm);
+            return contexts;
+        }
+
         if state.is_showing_track_info() {
             contexts.push(KeyContext::TrackInfo);
             contexts.push(KeyContext::Global);
@@ -74,6 +84,11 @@ impl InputHandler {
                 && let KeyCode::Char(c) = key.code
             {
                 return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
+            }
+            if *state.ui_mode() == UIMode::PlaylistPicker
+                && let KeyCode::Char(c) = key.code
+            {
+                return Some(AppMsg::UI(UIMsg::PlaylistPickerUpdateQuery(c)));
             }
             return None;
         };

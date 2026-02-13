@@ -7,7 +7,10 @@ use crate::{
         state::{LeftPanelMode, LibraryNavState},
     },
     playback::state::{PlaybackStatus, QueueEntry, QueueId, RepeatMode},
-    state::{Notification, NotificationKind, SessionState, SpectrumStyle, UIMode, VisualizerMode},
+    state::{
+        Notification, NotificationKind, SessionState, SpectrumStyle, UIMode, VisualizerMode,
+        ui::PlaylistPickerState,
+    },
     utils::{NoOpSpectrum, SpectrumSource},
 };
 use rand::Rng;
@@ -365,6 +368,14 @@ impl AppState {
 
     pub fn terminal_size(&self) -> (u16, u16) {
         self.session.ui.terminal_size
+    }
+
+    pub fn playlist_picker(&self) -> &PlaylistPickerState {
+        &self.session.ui.playlist_picker
+    }
+
+    pub fn confirm_dialog(&self) -> Option<&crate::state::ui::ConfirmDialog> {
+        self.session.ui.confirm_dialog.as_ref()
     }
 }
 

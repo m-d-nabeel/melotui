@@ -226,6 +226,22 @@ pub fn handle_request_delete_playlist(state: &mut AppState, name: String) -> Vec
         }
     };
 
+    // adjust selection to next/prev sibling before removing
+    if state.session.nav.library.selected_id == Some(SidebarNodeId::Playlist(pid)) {
+        let idx = state.library.playlist_order.iter().position(|&p| p == pid);
+        let new_sel = idx.and_then(|i| {
+            if i + 1 < state.library.playlist_order.len() {
+                Some(SidebarNodeId::Playlist(state.library.playlist_order[i + 1]))
+            } else if i > 0 {
+                Some(SidebarNodeId::Playlist(state.library.playlist_order[i - 1]))
+            } else {
+                None
+            }
+        });
+        state.session.nav.library.selected_id =
+            new_sel.or(Some(SidebarNodeId::Category(CategoryId::Playlists)));
+    }
+
     state.library.remove_playlist(pid);
 
     state.session.notification.current = Some(Notification::new(
