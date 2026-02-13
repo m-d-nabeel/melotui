@@ -95,24 +95,24 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let commands = vec![
-        (":q | :quit", "Quit App"),
-        (":r | :rescan", "Rescan Lib"),
-        (":dl <query>", "Download"),
-        (":v <style>", "Visualizer"),
-        (":noh", "Clear Search"),
-        (":pl create <n>", "New Playlist"),
-        (":pl del <n>", "Del Playlist"),
-        (":pl add <n>", "Add to Pl"),
-        (":artist <q>", "Search Artist"),
-        (":song <q>", "Search Song"),
-        (":album <q>", "Search Album"),
+    const COMMANDS: [(&str, &str); 11] = [
+        (":q | :quit     ", "Quit App"),
+        (":r | :rescan   ", "Rescan Lib"),
+        (":dl <query>    ", "Download"),
+        (":v <style>     ", "Visualizer"),
+        (":noh           ", "Clear Search"),
+        (":pl create <n> ", "New Playlist"),
+        (":pl del <n>    ", "Del Playlist"),
+        (":pl add <n>    ", "Add to Pl"),
+        (":artist <q>    ", "Search Artist"),
+        (":song <q>      ", "Search Song"),
+        (":album <q>     ", "Search Album"),
     ];
 
-    let mut lines = vec![];
-    for (syntax, desc) in commands {
+    let mut lines = Vec::with_capacity(COMMANDS.len());
+    for (syntax, desc) in COMMANDS {
         let line = Line::from(vec![
-            Span::styled(format!("{:15}", syntax), Style::default().fg(KEY_FG)),
+            Span::styled(syntax, Style::default().fg(KEY_FG)),
             Span::raw(" "),
             Span::styled(desc, Style::default().fg(TEXT)),
         ]);
