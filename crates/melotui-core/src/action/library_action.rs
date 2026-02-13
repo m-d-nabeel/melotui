@@ -1,7 +1,7 @@
 use crate::{
     AppMsg, AppState,
     command::SearchField,
-    domain::TrackId,
+    domain::{PlaylistId, TrackId},
     library::projector,
     message::database::DatabaseMsg,
     navigation::ids::{CategoryId, SidebarNodeId},
@@ -193,8 +193,104 @@ pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<
         ),
     ));
 
-    // Dispatch to database worker
+    // dispatch to DB
     vec![AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(id))]
+}
+
+pub fn handle_request_create_playlist(state: &mut AppState, name: String) -> Vec<AppMsg> {
+    if state.library.find_playlist_by_name(&name).is_some() {
+        state.session.notification.current = Some(Notification::new(
+            NotificationKind::Warning,
+            format!("Playlist '{}' already exists", name),
+        ));
+        return vec![];
+    }
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Creating playlist: {}", name),
+    ));
+
+    vec![AppMsg::Database(DatabaseMsg::DispatchCreatePlaylist(name))]
+}
+
+pub fn handle_request_delete_playlist(state: &mut AppState, name: String) -> Vec<AppMsg> {
+    let pid = match state.library.find_playlist_by_name(&name) {
+        Some(id) => id,
+        None => {
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Warning,
+                format!("Playlist '{}' not found", name),
+            ));
+            return vec![];
+        }
+    };
+
+    state.library.remove_playlist(pid);
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Deleted playlist: {}", name),
+    ));
+
+    vec![AppMsg::Database(DatabaseMsg::DispatchDeletePlaylist(pid))]
+}
+
+pub fn handle_request_add_to_playlist(
+    state: &mut AppState,
+    playlist_id: PlaylistId,
+    track_id: TrackId,
+) -> Vec<AppMsg> {
+    let pl_name = state
+        .library
+        .playlists
+        .get(&playlist_id)
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| "Playlist".to_string());
+
+    let track_title = state
+        .library
+        .get_track(track_id)
+        .map(|t| t.title.clone())
+        .unwrap_or_else(|| "Track".to_string());
+
+    state.library.add_track_to_playlist(playlist_id, track_id);
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Added '{}' to '{}'", track_title, pl_name),
+    ));
+
+    vec![AppMsg::Database(DatabaseMsg::DispatchAddToPlaylist {
+        playlist_id,
+        track_id,
+    })]
+}
+
+pub fn handle_request_remove_from_playlist(
+    state: &mut AppState,
+    playlist_id: PlaylistId,
+    track_id: TrackId,
+) -> Vec<AppMsg> {
+    let track_title = state
+        .library
+        .get_track(track_id)
+        .map(|t| t.title.clone())
+        .unwrap_or_else(|| "Track".to_string());
+
+    state
+        .library
+        .remove_track_from_playlist(playlist_id, track_id);
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Removed '{}' from playlist", track_title),
+    ));
+
+    vec![AppMsg::Database(DatabaseMsg::DispatchRemoveFromPlaylist {
+        playlist_id,
+        track_id,
+    })]
 }
 
 pub fn handle_search(state: &mut AppState, field: SearchField, query: String) -> Vec<AppMsg> {

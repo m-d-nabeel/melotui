@@ -46,6 +46,9 @@ pub enum Command {
     Search { field: SearchField, query: String },
     ChangeVisualizer { arg: SpectrumStyle },
     ClearSearch,
+    CreatePlaylist { name: String },
+    DeletePlaylist { name: String },
+    AddToPlaylist { name: String },
     Unknown(String),
 }
 
@@ -58,6 +61,9 @@ impl fmt::Display for Command {
             Command::Search { field, query } => write!(f, "{} {}", field, query),
             Command::ChangeVisualizer { arg } => write!(f, "visualizer {:?}", arg),
             Command::ClearSearch => write!(f, "noh"),
+            Command::CreatePlaylist { name } => write!(f, "pl create {}", name),
+            Command::DeletePlaylist { name } => write!(f, "pl del {}", name),
+            Command::AddToPlaylist { name } => write!(f, "pl add {}", name),
             Command::Unknown(s) => write!(f, "unknown: {}", s),
         }
     }
@@ -100,6 +106,38 @@ impl FromStr for Command {
                     Ok(Command::Unknown(
                         "Allowed: Cava, Default, Bar, Particle".into(),
                     ))
+                }
+            }
+
+            "pl" | "playlist" => {
+                let sub = parts.next().unwrap_or("");
+                let name = parts.collect::<Vec<_>>().join(" ");
+                match sub {
+                    "create" | "new" => {
+                        if name.is_empty() {
+                            Ok(Command::Unknown("pl create requires a name".into()))
+                        } else {
+                            Ok(Command::CreatePlaylist { name })
+                        }
+                    }
+                    "del" | "delete" | "rm" => {
+                        if name.is_empty() {
+                            Ok(Command::Unknown("pl del requires a name".into()))
+                        } else {
+                            Ok(Command::DeletePlaylist { name })
+                        }
+                    }
+                    "add" => {
+                        if name.is_empty() {
+                            Ok(Command::Unknown("pl add requires a playlist name".into()))
+                        } else {
+                            Ok(Command::AddToPlaylist { name })
+                        }
+                    }
+                    _ => Ok(Command::Unknown(format!(
+                        "pl: unknown subcommand '{}'",
+                        sub
+                    ))),
                 }
             }
 

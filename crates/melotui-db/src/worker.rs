@@ -94,7 +94,78 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
                 info!("Database worker shutting down");
                 break;
             }
-            Some(_) => { /* TODO: Implement other commands */ }
+            Some(DatabaseCommand::CreatePlaylist { name }) => match create_playlist(&conn, &name) {
+                Ok(id) => {
+                    info!("Created playlist '{}' with id {:?}", name, id);
+                    worker.send(IpcEvent::PlaylistCreated { id, name });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create playlist: {:?}", e);
+                    worker.send(IpcEvent::Error {
+                        message: format!("Failed to create playlist: {}", e),
+                    });
+                }
+            },
+            Some(DatabaseCommand::DeletePlaylist { playlist_id }) => {
+                let pid = PlaylistId(playlist_id as u64);
+                match delete_playlist(&conn, pid) {
+                    Ok(()) => {
+                        info!("Deleted playlist {:?}", pid);
+                        worker.send(IpcEvent::PlaylistDeleted { id: pid });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to delete playlist: {:?}", e);
+                        worker.send(IpcEvent::Error {
+                            message: format!("Failed to delete playlist: {}", e),
+                        });
+                    }
+                }
+            }
+            Some(DatabaseCommand::AddTrackToPlaylist {
+                playlist_id,
+                track_id,
+            }) => {
+                let pid = PlaylistId(playlist_id as u64);
+                let tid = TrackId(track_id as u64);
+                match add_to_playlist(&conn, pid, tid) {
+                    Ok(()) => {
+                        info!("Added track {:?} to playlist {:?}", tid, pid);
+                        worker.send(IpcEvent::PlaylistTrackAdded {
+                            playlist_id: pid,
+                            track_id: tid,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to add to playlist: {:?}", e);
+                        worker.send(IpcEvent::Error {
+                            message: format!("Failed to add to playlist: {}", e),
+                        });
+                    }
+                }
+            }
+            Some(DatabaseCommand::RemoveTrackFromPlaylist {
+                playlist_id,
+                track_id,
+            }) => {
+                let pid = PlaylistId(playlist_id as u64);
+                let tid = TrackId(track_id as u64);
+                match remove_from_playlist(&conn, pid, tid) {
+                    Ok(()) => {
+                        info!("Removed track {:?} from playlist {:?}", tid, pid);
+                        worker.send(IpcEvent::PlaylistTrackRemoved {
+                            playlist_id: pid,
+                            track_id: tid,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to remove from playlist: {:?}", e);
+                        worker.send(IpcEvent::Error {
+                            message: format!("Failed to remove from playlist: {}", e),
+                        });
+                    }
+                }
+            }
+            Some(_) => { /* unhandled commands */ }
             None => {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
@@ -393,4 +464,44 @@ fn toggle_favorite(conn: &rusqlite::Connection, id: TrackId) -> Result<bool> {
         |row| row.get(0),
     )?;
     Ok(new_state == 1)
+}
+
+fn create_playlist(conn: &rusqlite::Connection, name: &str) -> Result<PlaylistId> {
+    conn.execute("INSERT INTO playlists (name) VALUES (?)", params![name])?;
+    let id = conn.last_insert_rowid();
+    Ok(PlaylistId(id as u64))
+}
+
+fn delete_playlist(conn: &rusqlite::Connection, id: PlaylistId) -> Result<()> {
+    conn.execute("DELETE FROM playlists WHERE id = ?", params![id.0 as i64])?;
+    Ok(())
+}
+
+fn add_to_playlist(
+    conn: &rusqlite::Connection,
+    playlist_id: PlaylistId,
+    track_id: TrackId,
+) -> Result<()> {
+    let position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = ?",
+        params![playlist_id.0 as i64],
+        |row| row.get(0),
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+        params![playlist_id.0 as i64, track_id.0 as i64, position],
+    )?;
+    Ok(())
+}
+
+fn remove_from_playlist(
+    conn: &rusqlite::Connection,
+    playlist_id: PlaylistId,
+    track_id: TrackId,
+) -> Result<()> {
+    conn.execute(
+        "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+        params![playlist_id.0 as i64, track_id.0 as i64],
+    )?;
+    Ok(())
 }

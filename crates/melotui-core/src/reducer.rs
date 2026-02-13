@@ -126,6 +126,24 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
             state.session.nav.library.search = Default::default();
             vec![]
         }
+        LibraryMsg::RequestCreatePlaylist(name) => {
+            library_action::handle_request_create_playlist(state, name)
+        }
+        LibraryMsg::RequestDeletePlaylist(name) => {
+            library_action::handle_request_delete_playlist(state, name)
+        }
+        LibraryMsg::RequestAddToPlaylist {
+            playlist_id,
+            track_id,
+        } => library_action::handle_request_add_to_playlist(state, playlist_id, track_id),
+        LibraryMsg::RequestRemoveFromPlaylist {
+            playlist_id,
+            track_id,
+        } => library_action::handle_request_remove_from_playlist(state, playlist_id, track_id),
+        LibraryMsg::PlaylistCreated { id, name } => {
+            state.library.add_playlist(id, name);
+            vec![]
+        }
     }
 }
 
@@ -154,7 +172,11 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
 
 fn handle_database_message(_state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
     match msg {
-        // favorite toggle handled in ipc
-        DatabaseMsg::DispatchToggleFavorite(_) => vec![],
+        // dispatch-only — these just forward to IPC, no local state change
+        DatabaseMsg::DispatchToggleFavorite(_)
+        | DatabaseMsg::DispatchCreatePlaylist(_)
+        | DatabaseMsg::DispatchDeletePlaylist(_)
+        | DatabaseMsg::DispatchAddToPlaylist { .. }
+        | DatabaseMsg::DispatchRemoveFromPlaylist { .. } => vec![],
     }
 }

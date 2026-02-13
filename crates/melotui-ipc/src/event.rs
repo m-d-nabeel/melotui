@@ -1,4 +1,8 @@
-use melotui_core::{domain::TrackId, library::LibrarySnapshot, message::cover::CoverContext};
+use melotui_core::{
+    domain::{PlaylistId, TrackId},
+    library::LibrarySnapshot,
+    message::cover::CoverContext,
+};
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -41,6 +45,23 @@ pub enum IpcEvent {
     FavoriteToggled {
         track_id: TrackId,
         is_favorite: bool,
+    },
+
+    // playlists
+    PlaylistCreated {
+        id: PlaylistId,
+        name: String,
+    },
+    PlaylistDeleted {
+        id: PlaylistId,
+    },
+    PlaylistTrackAdded {
+        playlist_id: PlaylistId,
+        track_id: TrackId,
+    },
+    PlaylistTrackRemoved {
+        playlist_id: PlaylistId,
+        track_id: TrackId,
     },
 
     // cover

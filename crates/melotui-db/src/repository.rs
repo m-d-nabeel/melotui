@@ -149,6 +149,15 @@ impl LibraryRepository {
         Ok(())
     }
 
+    /// remove track from playlist
+    pub fn remove_from_playlist(&self, playlist_id: PlaylistId, track_id: TrackId) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+            params![playlist_id.0 as i64, track_id.0 as i64],
+        )?;
+        Ok(())
+    }
+
     /// inc play count
     pub fn increment_play_count(&self, id: TrackId) -> Result<()> {
         self.conn.execute(

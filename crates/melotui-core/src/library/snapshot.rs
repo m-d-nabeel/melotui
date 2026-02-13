@@ -127,6 +127,46 @@ impl LibrarySnapshot {
         }
     }
 
+    pub fn add_playlist(&mut self, id: PlaylistId, name: String) {
+        let meta = PlaylistMeta {
+            id,
+            name,
+            tracks: Vec::new(),
+        };
+        self.playlist_order.push(id);
+        self.playlists.insert(id, meta);
+    }
+
+    pub fn remove_playlist(&mut self, id: PlaylistId) {
+        self.playlists.remove(&id);
+        self.playlist_order.retain(|pid| *pid != id);
+    }
+
+    pub fn add_track_to_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
+        if let Some(p) = self
+            .playlists
+            .get_mut(&playlist_id)
+            .filter(|p| !p.tracks.contains(&track_id))
+        {
+            p.tracks.push(track_id);
+        }
+    }
+
+    pub fn remove_track_from_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
+        if let Some(p) = self.playlists.get_mut(&playlist_id) {
+            p.tracks.retain(|tid| *tid != track_id);
+        }
+    }
+
+    /// Find playlist by name (case-insensitive)
+    pub fn find_playlist_by_name(&self, name: &str) -> Option<PlaylistId> {
+        let lower = name.to_lowercase();
+        self.playlists
+            .values()
+            .find(|p| p.name.to_lowercase() == lower)
+            .map(|p| p.id)
+    }
+
     fn build_folder_tree(root: &Path, tracks: &HashMap<TrackId, TrackMeta>) -> DirectoryNode {
         let mut root_node = DirectoryNode {
             name: "Library".to_string(),

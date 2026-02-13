@@ -164,6 +164,32 @@ pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
                 track_id: track_id.0 as i64,
             }))
         }
+        AppMsg::Database(DatabaseMsg::DispatchCreatePlaylist(name)) => {
+            Some(IpcCommand::Database(DatabaseCommand::CreatePlaylist {
+                name: name.clone(),
+            }))
+        }
+        AppMsg::Database(DatabaseMsg::DispatchDeletePlaylist(pid)) => {
+            Some(IpcCommand::Database(DatabaseCommand::DeletePlaylist {
+                playlist_id: pid.0 as i64,
+            }))
+        }
+        AppMsg::Database(DatabaseMsg::DispatchAddToPlaylist {
+            playlist_id,
+            track_id,
+        }) => Some(IpcCommand::Database(DatabaseCommand::AddTrackToPlaylist {
+            playlist_id: playlist_id.0 as i64,
+            track_id: track_id.0 as i64,
+        })),
+        AppMsg::Database(DatabaseMsg::DispatchRemoveFromPlaylist {
+            playlist_id,
+            track_id,
+        }) => Some(IpcCommand::Database(
+            DatabaseCommand::RemoveTrackFromPlaylist {
+                playlist_id: playlist_id.0 as i64,
+                track_id: track_id.0 as i64,
+            },
+        )),
 
         _ => None,
     }
@@ -193,7 +219,33 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             is_favorite,
         } => {
             tracing::info!("Favorite toggled for track {:?}: {}", track_id, is_favorite);
-            // state updated optimistically
+            AppMsg::Noop
+        }
+        // playlist events - state updated optimistically
+        IpcEvent::PlaylistCreated { id, name } => {
+            tracing::info!("Playlist created: {:?} '{}'", id, name);
+            AppMsg::Library(LibraryMsg::PlaylistCreated { id, name })
+        }
+        IpcEvent::PlaylistDeleted { id } => {
+            tracing::info!("Playlist deleted: {:?}", id);
+            AppMsg::Noop
+        }
+        IpcEvent::PlaylistTrackAdded {
+            playlist_id,
+            track_id,
+        } => {
+            tracing::info!("Track {:?} added to playlist {:?}", track_id, playlist_id);
+            AppMsg::Noop
+        }
+        IpcEvent::PlaylistTrackRemoved {
+            playlist_id,
+            track_id,
+        } => {
+            tracing::info!(
+                "Track {:?} removed from playlist {:?}",
+                track_id,
+                playlist_id
+            );
             AppMsg::Noop
         }
         _ => AppMsg::Noop,
