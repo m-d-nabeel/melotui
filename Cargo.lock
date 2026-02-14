@@ -1478,10 +1478,13 @@ name = "melotui-cover"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dirs 6.0.0",
+ "hex",
  "image",
  "lofty",
  "melotui-core",
  "melotui-ipc",
+ "sha2",
  "tracing",
 ]
 

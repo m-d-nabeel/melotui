@@ -4,10 +4,11 @@ use melotui_ipc::{
     command::CoverCommand,
     event::IpcEvent,
 };
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 pub fn run(worker: WorkerEndpoint<CoverCommand>) {
     tracing::info!("Cover worker started");
+    let cache = crate::cache::CoverCache::new();
 
     let mut pending_playback: Option<CoverCommand> = None;
     let mut pending_info: Option<CoverCommand> = None;
@@ -29,11 +30,11 @@ pub fn run(worker: WorkerEndpoint<CoverCommand>) {
 
         // prioritize playback over info
         if let Some(cmd) = pending_playback.take() {
-            process_load(&worker, cmd);
+            process_load(&worker, cmd, &cache);
         }
 
         if let Some(cmd) = pending_info.take() {
-            process_load(&worker, cmd);
+            process_load(&worker, cmd, &cache);
         }
     }
 
@@ -53,21 +54,14 @@ fn update_pending(
     }
 }
 
-fn process_load(worker: &WorkerEndpoint<CoverCommand>, cmd: CoverCommand) {
-    use lofty::{file::TaggedFileExt, probe::Probe};
-
+fn process_load(
+    worker: &WorkerEndpoint<CoverCommand>,
+    cmd: CoverCommand,
+    cache: &crate::cache::CoverCache,
+) {
     if let CoverCommand::Load { id, path, context } = cmd {
         let start = Instant::now();
-
-        let load_result = (|| -> Option<Arc<image::DynamicImage>> {
-            let tagged_file = Probe::open(&path).ok()?.read().ok()?;
-            let tag = tagged_file
-                .primary_tag()
-                .or_else(|| tagged_file.first_tag())?;
-            let picture = tag.pictures().first()?;
-
-            image::load_from_memory(picture.data()).ok().map(Arc::new)
-        })();
+        let load_result = cache.get_or_load(&path);
 
         match load_result {
             Some(img) => {
