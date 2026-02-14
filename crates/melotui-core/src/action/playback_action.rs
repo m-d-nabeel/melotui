@@ -317,14 +317,13 @@ pub fn handle_audio_resumed(_: &mut AppState) -> Vec<AppMsg> {
 fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<AppMsg> {
     // throttle if same track requested within 1s
     let now = std::time::Instant::now();
-    if let Some(current_id) = state.session.playback.current {
-        if current_id == id {
-            if let Some(last) = state.session.last_play_time {
-                if now.duration_since(last) < std::time::Duration::from_secs(1) {
-                    return vec![];
-                }
-            }
-        }
+    if state.session.playback.current == Some(id)
+        && state
+            .session
+            .last_play_time
+            .is_some_and(|last| now.duration_since(last) < std::time::Duration::from_secs(1))
+    {
+        return vec![];
     }
 
     state.session.last_play_time = Some(now);
