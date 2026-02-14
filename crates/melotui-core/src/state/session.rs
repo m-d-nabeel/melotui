@@ -28,6 +28,8 @@ pub struct SessionState {
     pub spectrum_style: SpectrumStyle,
 
     pub seek_epoch: u64,
+
+    pub last_play_time: Option<std::time::Instant>,
 }
 
 impl Default for SessionState {
@@ -47,6 +49,7 @@ impl Default for SessionState {
             visualizer_mode: VisualizerMode::AlbumArt,
             spectrum_style: SpectrumStyle::default(),
             seek_epoch: 0,
+            last_play_time: None,
         }
     }
 }

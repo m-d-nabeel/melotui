@@ -7,14 +7,12 @@ use std::time::{Duration, Instant};
 
 pub struct InputProcessor {
     last_add_track: Option<(TrackId, Instant)>,
-    last_play_request: Option<Instant>,
 }
 
 impl InputProcessor {
     pub fn new() -> Self {
         Self {
             last_add_track: None,
-            last_play_request: None,
         }
     }
 
@@ -75,20 +73,9 @@ impl InputProcessor {
                     }
                 }
 
-                // debounce play selection
+                // throttling moved to core
                 AppMsg::Playback(PlaybackMsg::RequestPlaySelected) => {
-                    let now = Instant::now();
-                    let should_play = match self.last_play_request {
-                        Some(last_time) => {
-                            now.duration_since(last_time) > Duration::from_millis(1000)
-                        }
-                        None => true,
-                    };
-
-                    if should_play {
-                        self.last_play_request = Some(now);
-                        out.push(AppMsg::Playback(PlaybackMsg::RequestPlaySelected));
-                    }
+                    out.push(AppMsg::Playback(PlaybackMsg::RequestPlaySelected));
                 }
 
                 // pass through others
