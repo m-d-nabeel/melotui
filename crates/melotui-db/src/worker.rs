@@ -50,7 +50,7 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
                         message: e.to_string(),
                     });
                 } else {
-                    // Auto-prune after scan
+                    // auto-prune after scan
                     let pruned = prune_library(&conn).unwrap_or(0);
                     if pruned > 0 {
                         tracing::info!("Pruned {} dead tracks", pruned);
@@ -94,7 +94,78 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
                 info!("Database worker shutting down");
                 break;
             }
-            Some(_) => { /* TODO: Implement other commands */ }
+            Some(DatabaseCommand::CreatePlaylist { name }) => match create_playlist(&conn, &name) {
+                Ok(id) => {
+                    info!("Created playlist '{}' with id {:?}", name, id);
+                    worker.send(IpcEvent::PlaylistCreated { id, name });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to create playlist: {:?}", e);
+                    worker.send(IpcEvent::Error {
+                        message: format!("Failed to create playlist: {}", e),
+                    });
+                }
+            },
+            Some(DatabaseCommand::DeletePlaylist { playlist_id }) => {
+                let pid = PlaylistId(playlist_id as u64);
+                match delete_playlist(&conn, pid) {
+                    Ok(()) => {
+                        info!("Deleted playlist {:?}", pid);
+                        worker.send(IpcEvent::PlaylistDeleted { id: pid });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to delete playlist: {:?}", e);
+                        worker.send(IpcEvent::Error {
+                            message: format!("Failed to delete playlist: {}", e),
+                        });
+                    }
+                }
+            }
+            Some(DatabaseCommand::AddTrackToPlaylist {
+                playlist_id,
+                track_id,
+            }) => {
+                let pid = PlaylistId(playlist_id as u64);
+                let tid = TrackId(track_id as u64);
+                match add_to_playlist(&conn, pid, tid) {
+                    Ok(()) => {
+                        info!("Added track {:?} to playlist {:?}", tid, pid);
+                        worker.send(IpcEvent::PlaylistTrackAdded {
+                            playlist_id: pid,
+                            track_id: tid,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to add to playlist: {:?}", e);
+                        worker.send(IpcEvent::Error {
+                            message: format!("Failed to add to playlist: {}", e),
+                        });
+                    }
+                }
+            }
+            Some(DatabaseCommand::RemoveTrackFromPlaylist {
+                playlist_id,
+                track_id,
+            }) => {
+                let pid = PlaylistId(playlist_id as u64);
+                let tid = TrackId(track_id as u64);
+                match remove_from_playlist(&conn, pid, tid) {
+                    Ok(()) => {
+                        info!("Removed track {:?} from playlist {:?}", tid, pid);
+                        worker.send(IpcEvent::PlaylistTrackRemoved {
+                            playlist_id: pid,
+                            track_id: tid,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to remove from playlist: {:?}", e);
+                        worker.send(IpcEvent::Error {
+                            message: format!("Failed to remove from playlist: {}", e),
+                        });
+                    }
+                }
+            }
+            Some(_) => { /* unhandled commands */ }
             None => {
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
@@ -106,14 +177,12 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
 fn handle_scan_library(conn: &rusqlite::Connection, root: &Path) -> Result<()> {
     info!("Scanning library at: {:?}", root);
 
-    // Critical: Do NOT delete all tracks (destroys stable IDs)
-    // Upsert found tracks, optionally delete missing ones later
-    // For now, we just scan and add/update.
+    // do not delete all tracks
 
     let mut count = 0;
     let scan_start = std::time::Instant::now();
 
-    // Use transaction for speed
+    // use transaction
     conn.execute("BEGIN TRANSACTION", [])?;
 
     let res = scan_directory(conn, root, &mut count);
@@ -135,7 +204,7 @@ fn handle_scan_library(conn: &rusqlite::Connection, root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Remove tracks from DB where the file no longer exists on disk.
+/// remove non-existent tracks
 fn prune_library(conn: &rusqlite::Connection) -> Result<usize> {
     let mut stmt = conn.prepare("SELECT id, file_path FROM tracks")?;
     let rows = stmt.query_map([], |row| {
@@ -154,7 +223,7 @@ fn prune_library(conn: &rusqlite::Connection) -> Result<usize> {
         return Ok(0);
     }
 
-    // Delete in batches using transaction
+    // delete in batches
     conn.execute("BEGIN TRANSACTION", [])?;
     for id in &dead_ids {
         conn.execute("DELETE FROM tracks WHERE id = ?", params![id])?;
@@ -190,7 +259,7 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
         return None;
     }
 
-    // Lofty parsing
+    // lofty parsing
     let tagged_file = Probe::open(path).ok()?.read().ok()?;
     let properties = tagged_file.properties();
 
@@ -198,7 +267,7 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
 
     let bitrate = properties.audio_bitrate();
 
-    // Debug logging for troubleshooting
+    // logging for troubleshoot
     if bitrate.is_none() {
         tracing::warn!("Bitrate extraction failed for {:?}", path);
     }
@@ -270,8 +339,7 @@ struct TrackData {
     modified_at: i64,
 }
 
-// CHANGED: Use ON CONFLICT to update instead of insert.
-// This keeps the primary key (ID) stable if the file path exists.
+// upsert to keep IDs stable
 fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Result<()> {
     conn.execute(
         "INSERT INTO tracks (
@@ -308,7 +376,7 @@ fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Res
     Ok(())
 }
 
-/// Load all tracks from DB and build a LibrarySnapshot.
+/// load snapshot
 fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<LibrarySnapshot> {
     let mut stmt = conn.prepare(
         "SELECT id, file_path, title, artist, album, genre, year, is_favorite,
@@ -352,7 +420,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
         all_track_ids.push(id);
     }
 
-    // Load playlists from DB
+    // load playlists
     let mut playlists_vec = Vec::new();
     let mut playlist_stmt = conn.prepare("SELECT id, name FROM playlists ORDER BY name")?;
     let playlist_iter = playlist_stmt.query_map([], |row| {
@@ -363,7 +431,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
 
     for p in playlist_iter {
         let (pid, name) = p?;
-        // Load tracks for this playlist
+        // load playlist tracks
         let mut items_stmt = conn.prepare(
             "SELECT track_id FROM playlist_tracks WHERE playlist_id = ? ORDER BY position",
         )?;
@@ -384,7 +452,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
     Ok(LibrarySnapshot::new(root, playlists_vec, tracks_map))
 }
 
-/// Toggle favorite status for a track.
+/// toggle favorite
 fn toggle_favorite(conn: &rusqlite::Connection, id: TrackId) -> Result<bool> {
     conn.execute(
         "UPDATE tracks SET is_favorite = 1 - is_favorite, updated_at = strftime('%s', 'now') WHERE id = ?",
@@ -396,4 +464,44 @@ fn toggle_favorite(conn: &rusqlite::Connection, id: TrackId) -> Result<bool> {
         |row| row.get(0),
     )?;
     Ok(new_state == 1)
+}
+
+fn create_playlist(conn: &rusqlite::Connection, name: &str) -> Result<PlaylistId> {
+    conn.execute("INSERT INTO playlists (name) VALUES (?)", params![name])?;
+    let id = conn.last_insert_rowid();
+    Ok(PlaylistId(id as u64))
+}
+
+fn delete_playlist(conn: &rusqlite::Connection, id: PlaylistId) -> Result<()> {
+    conn.execute("DELETE FROM playlists WHERE id = ?", params![id.0 as i64])?;
+    Ok(())
+}
+
+fn add_to_playlist(
+    conn: &rusqlite::Connection,
+    playlist_id: PlaylistId,
+    track_id: TrackId,
+) -> Result<()> {
+    let position: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = ?",
+        params![playlist_id.0 as i64],
+        |row| row.get(0),
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO playlist_tracks (playlist_id, track_id, position) VALUES (?, ?, ?)",
+        params![playlist_id.0 as i64, track_id.0 as i64, position],
+    )?;
+    Ok(())
+}
+
+fn remove_from_playlist(
+    conn: &rusqlite::Connection,
+    playlist_id: PlaylistId,
+    track_id: TrackId,
+) -> Result<()> {
+    conn.execute(
+        "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+        params![playlist_id.0 as i64, track_id.0 as i64],
+    )?;
+    Ok(())
 }

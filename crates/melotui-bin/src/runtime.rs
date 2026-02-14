@@ -18,14 +18,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::ipc_bridge::{IpcRuntime, appmsg_to_ipc, ipc_to_appmsg};
+use crate::{
+    input_processor::InputProcessor,
+    ipc_bridge::{IpcRuntime, appmsg_to_ipc, ipc_to_appmsg},
+};
 
 pub fn run() -> Result<()> {
     tracing::info!("Starting melotui application");
 
     let (db_path, music_root) = resolve_paths()?;
 
-    // Start with an empty library - data loads async
+    // start empty library - data loads async
     let library = LibrarySnapshot::new(music_root.clone(), vec![], HashMap::new());
 
     let mut state = AppState::new(library);
@@ -35,7 +38,7 @@ pub fn run() -> Result<()> {
 
     let ipc = IpcRuntime::new(producer, db_path.clone());
 
-    // Request async library load
+    // request async library load
     ipc.dispatch(IpcCommand::Database(DatabaseCommand::LoadLibrary {
         root: music_root.clone(),
     }));
@@ -46,7 +49,7 @@ pub fn run() -> Result<()> {
         ipc_alive: true,
         running: true,
         effect_queue: VecDeque::new(),
-        _db_path: db_path,
+        input_processor: InputProcessor::new(),
         music_root,
     };
 
@@ -66,8 +69,27 @@ pub fn run() -> Result<()> {
             Duration::from_millis(100)
         };
 
+        // event coalescing loop
+        // drain up to 50 events - non-blocking after first
+        let mut events = Vec::with_capacity(10);
+
+        // blocking poll for first event
         if let Some(msg) = tui.poll_event(&state, timeout)? {
-            runtime.effect_queue.push_back(msg);
+            events.push(msg);
+
+            // non-blocking poll for next events
+            for _ in 0..50 {
+                if let Some(msg) = tui.poll_event(&state, Duration::ZERO)? {
+                    events.push(msg);
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if !events.is_empty() {
+            let processed = runtime.input_processor.coalesce(events);
+            runtime.effect_queue.extend(processed);
             should_render = true;
         }
 
@@ -102,7 +124,7 @@ struct RuntimeContext {
     ipc_alive: bool,
     running: bool,
     effect_queue: VecDeque<AppMsg>,
-    _db_path: PathBuf,
+    input_processor: InputProcessor,
     music_root: PathBuf,
 }
 
@@ -150,7 +172,7 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                 state.set_notification(NotificationKind::Info, "Library loaded");
             }
             IpcEvent::LibraryRescanned => {
-                // Trigger a reload after scan completes
+                // reload after scan
                 ctx.ipc
                     .dispatch(IpcCommand::Database(DatabaseCommand::LoadLibrary {
                         root: ctx.music_root.clone(),
@@ -167,7 +189,7 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
     let mut changed = false;
     while let Some(msg) = ctx.effect_queue.pop_front() {
         changed = true;
-        // Lifecycle
+        // lifecycle
         if matches!(msg, AppMsg::RequestQuit) {
             if ctx.ipc_alive {
                 ctx.ipc.dispatch(IpcCommand::Shutdown);
@@ -177,14 +199,14 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
             break;
         }
 
-        // Side Effects
+        // side effects
         if ctx.ipc_alive
             && let Some(cmd) = appmsg_to_ipc(&msg, state)
         {
             ctx.ipc.dispatch(cmd);
         }
 
-        // State Mutation
+        // state mutation
         let next_effects = reducer::reduce(state, msg);
         ctx.effect_queue.extend(next_effects);
     }

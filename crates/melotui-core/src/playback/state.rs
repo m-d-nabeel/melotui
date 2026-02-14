@@ -45,7 +45,7 @@ pub struct PlaybackState {
     pub active_node: Option<SidebarNodeId>,
     pub playing_from_queue: bool,
     pub active_queue_id: Option<QueueId>,
-    pub source_name: String,         // "Playlist: Jazz", "All Tracks"
+    pub source_name: String,         // e.g. "Playlist: Jazz"
     pub context_queue: Vec<TrackId>, // persistent playlist
     pub context_idx: usize,
     pub status: PlaybackStatus,

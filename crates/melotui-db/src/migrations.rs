@@ -1,13 +1,13 @@
-//! Database migration runner using PRAGMA user_version.
+//! DB migration runner
 
 use anyhow::Result;
 use rusqlite::Connection;
 use tracing::info;
 
-/// Current schema version. Increment when making schema changes.
+/// current schema version
 const CURRENT_VERSION: i32 = 1;
 
-/// Run migrations to bring the database up to the current version.
+/// run migrations
 pub fn run_migrations(conn: &Connection) -> Result<()> {
     let user_version: i32 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
     info!(
@@ -19,13 +19,13 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         migrate_v1(conn)?;
     }
 
-    // Set version to 1 as the new "Perfect" baseline
+    // set version 1
     conn.pragma_update(None, "user_version", 1)?;
     info!("Database migrated to version 1");
     Ok(())
 }
 
-/// V1: Consolidated Schema (Includes bitrate/sample_rate fixes)
+/// v1: schema
 fn migrate_v1(conn: &Connection) -> Result<()> {
     info!("Applying migration V1: Consolidated Schema");
     let schema_sql = include_str!("queries/schema.sql");

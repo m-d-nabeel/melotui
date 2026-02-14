@@ -1,3 +1,5 @@
+use crate::AppMsg;
+
 #[derive(Debug, Clone)]
 pub enum UIMsg {
     EnterCommandMode,
@@ -8,4 +10,18 @@ pub enum UIMsg {
     OpenHelp,
     CloseHelp,
     Resize(u16, u16),
+    EnterPlaylistPicker,
+    ExitPlaylistPicker,
+    SubmitPlaylistPicker,
+    PlaylistPickerMoveUp,
+    PlaylistPickerMoveDown,
+    PlaylistPickerUpdateQuery(char),
+    PlaylistPickerBackspace,
+    DeletePlaylistConfirm,
+    ShowConfirm {
+        message: String,
+        on_confirm: Box<AppMsg>,
+    },
+    ConfirmYes,
+    ConfirmNo,
 }

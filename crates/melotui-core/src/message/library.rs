@@ -1,4 +1,5 @@
-use crate::domain::TrackId;
+use crate::command::SearchField;
+use crate::domain::{PlaylistId, TrackId};
 
 #[derive(Debug, Clone)]
 pub enum LibraryMsg {
@@ -9,5 +10,26 @@ pub enum LibraryMsg {
     RequestToggleFavorite(TrackId),
     RemoveFromQueue,
     ClearQueue,
+    Search {
+        field: SearchField,
+        query: String,
+    },
+    SearchNext,
+    SearchPrev,
+    ClearSearch,
     RequestScanLibrary,
+    RequestCreatePlaylist(String),
+    RequestDeletePlaylist(String),
+    RequestAddToPlaylist {
+        playlist_id: PlaylistId,
+        track_id: TrackId,
+    },
+    RequestRemoveFromPlaylist {
+        playlist_id: PlaylistId,
+        track_id: TrackId,
+    },
+    PlaylistCreated {
+        id: PlaylistId,
+        name: String,
+    },
 }

@@ -4,7 +4,10 @@ use std::sync::OnceLock;
 use melotui_core::{
     AppMsg, AppState,
     keybinding::{KeyAction, KeyContext, KeyRegistry},
-    message::{library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg, ui::UIMsg},
+    message::{
+        download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
+        playback::PlaybackMsg, ui::UIMsg,
+    },
     state::UIMode,
 };
 
@@ -20,7 +23,7 @@ impl InputHandler {
     fn get_active_contexts(state: &AppState) -> Vec<KeyContext> {
         let mut contexts = Vec::with_capacity(3);
 
-        // Priority overlays
+        // priority overlays
         if state.ui_show_help() {
             contexts.push(KeyContext::Help);
             return contexts;
@@ -31,20 +34,30 @@ impl InputHandler {
             return contexts;
         }
 
+        if *state.ui_mode() == UIMode::PlaylistPicker {
+            contexts.push(KeyContext::PlaylistPicker);
+            return contexts;
+        }
+
+        if *state.ui_mode() == UIMode::Confirm {
+            contexts.push(KeyContext::Confirm);
+            return contexts;
+        }
+
         if state.is_showing_track_info() {
             contexts.push(KeyContext::TrackInfo);
             contexts.push(KeyContext::Global);
             return contexts;
         }
 
-        // Panel contexts
+        // panel contexts
         if state.is_library_focused() {
             contexts.push(KeyContext::Library);
         } else if state.is_queue_focused() {
             contexts.push(KeyContext::Queue);
         }
 
-        // Global
+        // global
         contexts.push(KeyContext::Global);
         contexts
     }
@@ -65,18 +78,23 @@ impl InputHandler {
             }
         }
 
-        // Fallback for command mode typing
+        // command mode typing fallback
         let Some(act) = action else {
             if *state.ui_mode() == UIMode::Command
                 && let KeyCode::Char(c) = key.code
             {
                 return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
             }
+            if *state.ui_mode() == UIMode::PlaylistPicker
+                && let KeyCode::Char(c) = key.code
+            {
+                return Some(AppMsg::UI(UIMsg::PlaylistPickerUpdateQuery(c)));
+            }
             return None;
         };
 
         match act {
-            // Enter: play selected track or toggle tree expand
+            // play selected or toggle expand
             KeyAction::ToggleTreeExpand => {
                 if state.is_library_focused() {
                     if state.get_selected_track_id_in_sidebar().is_some() {
@@ -93,7 +111,7 @@ impl InputHandler {
                 }
             }
 
-            // Add to queue
+            // add to queue
             KeyAction::AddToQueue => {
                 if state.is_library_focused()
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
@@ -103,7 +121,7 @@ impl InputHandler {
                 None
             }
 
-            // Play next
+            // play next
             KeyAction::QueuePlayNext => {
                 if state.is_library_focused()
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
@@ -113,7 +131,7 @@ impl InputHandler {
                 None
             }
 
-            // Toggle favorite
+            // toggle favorite
             KeyAction::ToggleFavorite => {
                 if state.is_library_focused()
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
@@ -123,12 +141,37 @@ impl InputHandler {
                 None
             }
 
-            // Submit command
+            // search cycling - only when search has results
+            KeyAction::SearchNext => {
+                if !state.search_matches().is_empty() {
+                    return Some(AppMsg::Library(LibraryMsg::SearchNext));
+                }
+                None
+            }
+            KeyAction::SearchPrev => {
+                if !state.search_matches().is_empty() {
+                    return Some(AppMsg::Library(LibraryMsg::SearchPrev));
+                }
+                None
+            }
+
+            // Esc: cancel download first, then clear search
+            KeyAction::CancelDownload => {
+                if state.is_download_active() {
+                    return Some(AppMsg::Download(DownloadMsg::RequestCancelDownload));
+                }
+                if !state.search_matches().is_empty() {
+                    return Some(AppMsg::Library(LibraryMsg::ClearSearch));
+                }
+                None
+            }
+
+            // submit command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
                 state.ui_command_buffer().clone(),
             ))),
 
-            // Direct mapping for other keys
+            // direct mapping
             _ => act.to_msg(),
         }
     }

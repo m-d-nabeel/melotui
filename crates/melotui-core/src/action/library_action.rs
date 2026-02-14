@@ -1,9 +1,11 @@
 use crate::{
     AppMsg, AppState,
-    domain::TrackId,
+    command::SearchField,
+    domain::{PlaylistId, TrackId},
     library::projector,
     message::database::DatabaseMsg,
     navigation::ids::{CategoryId, SidebarNodeId},
+    navigation::state::SearchState,
     playback::state::RepeatMode,
     state::{Notification, NotificationKind},
 };
@@ -191,6 +193,266 @@ pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<
         ),
     ));
 
-    // Dispatch to database worker
+    // dispatch to DB
     vec![AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(id))]
+}
+
+pub fn handle_request_create_playlist(state: &mut AppState, name: String) -> Vec<AppMsg> {
+    if state.library.find_playlist_by_name(&name).is_some() {
+        state.session.notification.current = Some(Notification::new(
+            NotificationKind::Warning,
+            format!("Playlist '{}' already exists", name),
+        ));
+        return vec![];
+    }
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Creating playlist: {}", name),
+    ));
+
+    vec![AppMsg::Database(DatabaseMsg::DispatchCreatePlaylist(name))]
+}
+
+pub fn handle_request_delete_playlist(state: &mut AppState, name: String) -> Vec<AppMsg> {
+    let pid = match state.library.find_playlist_by_name(&name) {
+        Some(id) => id,
+        None => {
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Warning,
+                format!("Playlist '{}' not found", name),
+            ));
+            return vec![];
+        }
+    };
+
+    // adjust selection to next/prev sibling before removing
+    if state.session.nav.library.selected_id == Some(SidebarNodeId::Playlist(pid)) {
+        let idx = state.library.playlist_order.iter().position(|&p| p == pid);
+        let new_sel = idx.and_then(|i| {
+            if i + 1 < state.library.playlist_order.len() {
+                Some(SidebarNodeId::Playlist(state.library.playlist_order[i + 1]))
+            } else if i > 0 {
+                Some(SidebarNodeId::Playlist(state.library.playlist_order[i - 1]))
+            } else {
+                None
+            }
+        });
+        state.session.nav.library.selected_id =
+            new_sel.or(Some(SidebarNodeId::Category(CategoryId::Playlists)));
+    }
+
+    state.library.remove_playlist(pid);
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Deleted playlist: {}", name),
+    ));
+
+    vec![AppMsg::Database(DatabaseMsg::DispatchDeletePlaylist(pid))]
+}
+
+pub fn handle_request_add_to_playlist(
+    state: &mut AppState,
+    playlist_id: PlaylistId,
+    track_id: TrackId,
+) -> Vec<AppMsg> {
+    let pl_name = state
+        .library
+        .playlists
+        .get(&playlist_id)
+        .map(|p| p.name.clone())
+        .unwrap_or_else(|| "Playlist".to_string());
+
+    let track_title = state
+        .library
+        .get_track(track_id)
+        .map(|t| t.title.clone())
+        .unwrap_or_else(|| "Track".to_string());
+
+    state.library.add_track_to_playlist(playlist_id, track_id);
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Added '{}' to '{}'", track_title, pl_name),
+    ));
+
+    vec![AppMsg::Database(DatabaseMsg::DispatchAddToPlaylist {
+        playlist_id,
+        track_id,
+    })]
+}
+
+pub fn handle_request_remove_from_playlist(
+    state: &mut AppState,
+    playlist_id: PlaylistId,
+    track_id: TrackId,
+) -> Vec<AppMsg> {
+    let track_title = state
+        .library
+        .get_track(track_id)
+        .map(|t| t.title.clone())
+        .unwrap_or_else(|| "Track".to_string());
+
+    state
+        .library
+        .remove_track_from_playlist(playlist_id, track_id);
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Removed '{}' from playlist", track_title),
+    ));
+
+    vec![AppMsg::Database(DatabaseMsg::DispatchRemoveFromPlaylist {
+        playlist_id,
+        track_id,
+    })]
+}
+
+pub fn handle_search(state: &mut AppState, field: SearchField, query: String) -> Vec<AppMsg> {
+    let search = &state.session.nav.library.search;
+    let is_repeat = search.field.as_ref() == Some(&field) && search.query == query;
+
+    if is_repeat {
+        let next = (search.index + 1) % search.matches.len().max(1);
+        state.session.nav.library.search.index = next;
+    } else {
+        let matches = collect_matches(&state.library, &field, &query);
+        state.session.nav.library.search = SearchState {
+            field: Some(field.clone()),
+            query: query.clone(),
+            matches,
+            index: 0,
+        };
+    }
+
+    let search = &state.session.nav.library.search;
+    if search.matches.is_empty() {
+        state.session.notification.current = Some(Notification::new(
+            NotificationKind::Warning,
+            format!("No results for {} {}", field, query),
+        ));
+        return vec![];
+    }
+
+    navigate_to_current_match(state);
+    vec![]
+}
+
+pub fn handle_search_next(state: &mut AppState) -> Vec<AppMsg> {
+    let search = &state.session.nav.library.search;
+    if search.matches.is_empty() {
+        return vec![];
+    }
+    let next = (search.index + 1) % search.matches.len();
+    state.session.nav.library.search.index = next;
+    navigate_to_current_match(state);
+    vec![]
+}
+
+pub fn handle_search_prev(state: &mut AppState) -> Vec<AppMsg> {
+    let search = &state.session.nav.library.search;
+    if search.matches.is_empty() {
+        return vec![];
+    }
+    let len = search.matches.len();
+    let prev = (search.index + len - 1) % len;
+    state.session.nav.library.search.index = prev;
+    navigate_to_current_match(state);
+    vec![]
+}
+
+fn navigate_to_current_match(state: &mut AppState) {
+    let search = &state.session.nav.library.search;
+    let node = search.matches[search.index].clone();
+    let idx_display = search.index + 1;
+    let total = search.matches.len();
+    let label = search
+        .field
+        .as_ref()
+        .map(|f| format!("{}", f))
+        .unwrap_or_default();
+    let query = search.query.clone();
+
+    // expand all ancestors
+    let root = state.library.root.clone();
+    let mut cur = node.clone();
+    while let Some(parent) = cur.parent(&root) {
+        state
+            .session
+            .nav
+            .library
+            .expanded_ids
+            .insert(parent.clone());
+        cur = parent;
+    }
+    state.session.nav.library.selected_id = Some(node.clone());
+
+    // scroll to it
+    let nav = &state.session.nav.library;
+    if let Some(idx) = projector::get_index_of(&state.library, nav, &node) {
+        let (_, h) = state.terminal_size();
+        let viewport_height = if h > 3 { (h - 3) as usize } else { 1 };
+        state.session.nav.library.scroll_offset = idx.saturating_sub(viewport_height / 2);
+    }
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("[{}/{}] {} {}", idx_display, total, label, query),
+    ));
+}
+
+fn collect_matches(
+    snapshot: &crate::library::LibrarySnapshot,
+    field: &SearchField,
+    query: &str,
+) -> Vec<SidebarNodeId> {
+    let q = query.to_lowercase();
+    match field {
+        SearchField::Artist => snapshot
+            .artists
+            .keys()
+            .filter(|k| k.to_lowercase().contains(&q))
+            .map(|k| SidebarNodeId::Artist(k.clone()))
+            .collect(),
+
+        SearchField::Song => snapshot
+            .tracks
+            .iter()
+            .filter(|(_, meta)| meta.title.to_lowercase().contains(&q))
+            .map(|(id, meta)| {
+                let parent = meta
+                    .artist
+                    .as_ref()
+                    .map(|a| SidebarNodeId::Artist(a.clone()))
+                    .unwrap_or(SidebarNodeId::Root);
+                SidebarNodeId::Track {
+                    id: *id,
+                    parent: Box::new(parent),
+                }
+            })
+            .collect(),
+
+        SearchField::Album => snapshot
+            .albums
+            .keys()
+            .filter(|k| k.to_lowercase().contains(&q))
+            .map(|k| SidebarNodeId::Album(k.clone()))
+            .collect(),
+
+        SearchField::Genre => snapshot
+            .genres
+            .keys()
+            .filter(|k| k.to_lowercase().contains(&q))
+            .map(|k| SidebarNodeId::Genre(k.clone()))
+            .collect(),
+
+        SearchField::Year => q
+            .parse::<u32>()
+            .ok()
+            .filter(|y| snapshot.years.contains_key(y))
+            .map(SidebarNodeId::Year)
+            .into_iter()
+            .collect(),
+    }
 }

@@ -1,5 +1,6 @@
 use crate::{format_duration, widgets::sidebar::generate_marquee_delayed};
 use melotui_core::AppState;
+use melotui_core::playback::state::QueueEntry;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -48,7 +49,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(inner_area);
 
-    // Draw "Now Playing" header
+    // now playing header
     let playing_from_queue = state.is_playing_from_queue();
     let current_track = state.get_playing_track();
 
@@ -130,7 +131,7 @@ fn draw_queue_table(
     frame: &mut Frame,
     area: Rect,
     state: &AppState,
-    tracks: &std::collections::VecDeque<melotui_core::playback::state::QueueEntry>,
+    tracks: &std::collections::VecDeque<QueueEntry>,
     selected_idx: usize,
     is_active: bool,
 ) {

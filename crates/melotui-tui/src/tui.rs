@@ -46,10 +46,8 @@ impl Tui {
     }
 
     pub fn shutdown(mut self) -> anyhow::Result<()> {
-        disable_raw_mode()?;
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen)?;
+        restore_terminal()?;
         self.terminal.show_cursor()?;
-
         tracing::info!("TUI shutdown complete");
         Ok(())
     }
@@ -77,7 +75,13 @@ impl Tui {
 
 impl Drop for Tui {
     fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let _ = restore_terminal();
     }
+}
+
+/// Restore terminal to normal mode. Safe to call from panic hooks.
+pub fn restore_terminal() -> anyhow::Result<()> {
+    disable_raw_mode()?;
+    execute!(stdout(), LeaveAlternateScreen)?;
+    Ok(())
 }

@@ -1,4 +1,4 @@
-//! Library Repository: Centralized database access with statement caching.
+//! DB repository
 
 use anyhow::Result;
 use melotui_core::domain::{PlaylistId, TrackId};
@@ -7,7 +7,7 @@ use std::path::Path;
 
 use crate::migrations::run_migrations;
 
-/// Filter for querying tracks.
+/// track query filter
 #[derive(Default, Debug, Clone)]
 pub struct TrackFilter {
     pub query: Option<String>,
@@ -19,7 +19,7 @@ pub struct TrackFilter {
     pub is_favorite: Option<bool>,
 }
 
-/// Lightweight track reference for lists.
+/// track row summary
 #[derive(Debug, Clone)]
 pub struct TrackRow {
     pub id: i64,
@@ -30,20 +30,20 @@ pub struct TrackRow {
     pub duration_ms: i64,
 }
 
-/// Repository for all database operations.
+/// database repo
 pub struct LibraryRepository {
     conn: Connection,
 }
 
 impl LibraryRepository {
-    /// Open or create database at path, run migrations.
+    /// open db and migrate
     pub fn open(path: &Path) -> Result<Self> {
         let conn = Connection::open(path)?;
         run_migrations(&conn)?;
         Ok(Self { conn })
     }
 
-    /// Get all tracks (lightweight).
+    /// get all tracks balance
     pub fn get_all_tracks(&self) -> Result<Vec<TrackRow>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, file_path, title, artist, album, duration_ms FROM tracks ORDER BY file_path",
@@ -63,7 +63,7 @@ impl LibraryRepository {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    /// Query tracks with filters (uses FTS5 for text search).
+    /// query tracks (FTS5)
     pub fn query_tracks(&self, filter: &TrackFilter) -> Result<Vec<TrackRow>> {
         let mut sql = String::from(
             "SELECT id, file_path, title, artist, album, duration_ms FROM tracks WHERE 1=1",
@@ -119,7 +119,7 @@ impl LibraryRepository {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
-    /// Create a new playlist.
+    /// create playlist
     pub fn create_playlist(&self, name: &str) -> Result<PlaylistId> {
         self.conn
             .execute("INSERT INTO playlists (name) VALUES (?)", params![name])?;
@@ -127,14 +127,14 @@ impl LibraryRepository {
         Ok(PlaylistId(id as u64))
     }
 
-    /// Delete a playlist.
+    /// delete playlist
     pub fn delete_playlist(&self, id: PlaylistId) -> Result<()> {
         self.conn
             .execute("DELETE FROM playlists WHERE id = ?", params![id.0 as i64])?;
         Ok(())
     }
 
-    /// Add track to playlist.
+    /// add track to playlist
     pub fn add_to_playlist(&self, playlist_id: PlaylistId, track_id: TrackId) -> Result<()> {
         let position: i64 = self.conn.query_row(
             "SELECT COALESCE(MAX(position), -1) + 1 FROM playlist_tracks WHERE playlist_id = ?",
@@ -149,7 +149,16 @@ impl LibraryRepository {
         Ok(())
     }
 
-    /// Increment play count for a track.
+    /// remove track from playlist
+    pub fn remove_from_playlist(&self, playlist_id: PlaylistId, track_id: TrackId) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+            params![playlist_id.0 as i64, track_id.0 as i64],
+        )?;
+        Ok(())
+    }
+
+    /// inc play count
     pub fn increment_play_count(&self, id: TrackId) -> Result<()> {
         self.conn.execute(
             "UPDATE tracks SET play_count = play_count + 1, updated_at = strftime('%s', 'now') WHERE id = ?",
@@ -158,7 +167,7 @@ impl LibraryRepository {
         Ok(())
     }
 
-    /// Toggle favorite status for a track.
+    /// toggle favorite
     pub fn toggle_favorite(&self, id: TrackId) -> Result<bool> {
         self.conn.execute(
             "UPDATE tracks SET is_favorite = 1 - is_favorite, updated_at = strftime('%s', 'now') WHERE id = ?",
@@ -172,7 +181,7 @@ impl LibraryRepository {
         Ok(new_state == 1)
     }
 
-    /// Get all favorite tracks.
+    /// get favorites
     pub fn get_favorites(&self) -> Result<Vec<TrackRow>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, file_path, title, artist, album, duration_ms FROM tracks WHERE is_favorite = 1 ORDER BY title",

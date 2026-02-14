@@ -1,8 +1,13 @@
-use melotui_core::library::LibrarySnapshot;
+use melotui_core::{
+    domain::{PlaylistId, TrackId},
+    library::LibrarySnapshot,
+    message::cover::CoverContext,
+};
+use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub enum IpcEvent {
-    // Downloads
+    // downloads
     DownloadStarted {
         query: String,
     },
@@ -14,7 +19,7 @@ pub enum IpcEvent {
         error: String,
     },
 
-    // Playback
+    // playback
     PlaybackStarted {
         path: String,
     },
@@ -23,28 +28,46 @@ pub enum IpcEvent {
     PlaybackStopped,
     PlaybackProgress {
         position_ms: u64,
+        epoch: u64,
     },
     PlaybackFinished,
 
-    // Errors
+    // errors
     Error {
         message: String,
     },
 
-    // Database
+    // database
     LibraryLoaded {
         snapshot: Box<LibrarySnapshot>,
     },
     LibraryRescanned,
     FavoriteToggled {
-        track_id: melotui_core::domain::TrackId,
+        track_id: TrackId,
         is_favorite: bool,
     },
 
-    // Cover
+    // playlists
+    PlaylistCreated {
+        id: PlaylistId,
+        name: String,
+    },
+    PlaylistDeleted {
+        id: PlaylistId,
+    },
+    PlaylistTrackAdded {
+        playlist_id: PlaylistId,
+        track_id: TrackId,
+    },
+    PlaylistTrackRemoved {
+        playlist_id: PlaylistId,
+        track_id: TrackId,
+    },
+
+    // cover
     CoverLoaded {
-        id: melotui_core::domain::TrackId,
-        cover: Option<std::sync::Arc<image::DynamicImage>>,
-        context: melotui_core::message::cover::CoverContext,
+        id: TrackId,
+        cover: Option<Arc<image::DynamicImage>>,
+        context: CoverContext,
     },
 }

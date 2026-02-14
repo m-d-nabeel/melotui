@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 
 const FFT_SIZE: usize = 4096;
 const NUM_BINS: usize = 512;
-const MIN_FREQ: f32 = 30.0; // to catch sub-bass
+const MIN_FREQ: f32 = 30.0; // catch sub-bass
 const MAX_FREQ: f32 = 18_000.0;
 
 pub struct SpectrumAnalyzer<C>
@@ -39,6 +39,7 @@ where
             }
         }
 
+        // wait for full buffer
         if self.buffer.len() < FFT_SIZE {
             return None;
         }
@@ -51,6 +52,7 @@ where
             Some(&divide_by_N),
         );
 
+        // shift buffer for next frame (75% overlap)
         let drain_amt = FFT_SIZE - 1024;
         if drain_amt < self.buffer.len() {
             self.buffer.drain(0..drain_amt);
@@ -60,6 +62,7 @@ where
 
         if let Ok(spectrum) = spectrum_result {
             let data = spectrum.to_map();
+            // map linear spectrum to log bins for UI
             let output = self.fill_log_bins(&data, NUM_BINS);
             return Some(output);
         }
@@ -74,7 +77,7 @@ where
         let log_max = MAX_FREQ.ln();
         let log_range = log_max - log_min;
 
-        // Convert sparse map to dense vectors
+        // sparse map to dense vectors
         let freqs: Vec<f32> = data.keys().map(|&k| k as f32).collect();
         let vals: Vec<f32> = data.values().copied().collect();
 
@@ -83,19 +86,19 @@ where
         }
 
         (0..bin_count).for_each(|i| {
-            // Target frequency for bin
+            // target frequency
             let norm_pos = i as f32 / (bin_count as f32 - 1.0);
             let target_freq = (log_min + norm_pos * log_range).exp();
 
-            // Define frequency window (small for low freq, large for high freq, min ~10Hz)
+            // frequency window
             let window_width = (target_freq * 0.05).max(11.0);
             let start_f = target_freq - window_width / 2.0;
             let end_f = target_freq + window_width / 2.0;
 
-            // Find max value in window
+            // max value in window
             let mut max_val = 0.0;
 
-            // Find start index efficiently
+            // find start index
             let start_idx = match freqs.binary_search_by(|f| f.partial_cmp(&start_f).unwrap()) {
                 Ok(idx) => idx,
                 Err(idx) => idx,
@@ -110,6 +113,7 @@ where
                 }
             }
 
+            // scale value based on position (highs usually quieter)
             output[i] = max_val.sqrt() * (1.0 + norm_pos);
         });
 

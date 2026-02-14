@@ -24,10 +24,10 @@ enum InternalEvent {
 pub fn run(worker: impl IpcWorker<DownloadCommand>) {
     tracing::info!("Download worker started");
 
-    // Bridge between download thread and IPC loop
+    // bridge download thread -> ipc
     let (internal_tx, internal_rx) = mpsc::channel::<InternalEvent>();
 
-    // Cancellation flag shared with download thread
+    // cancellation flag
     let mut cancel_flag: Option<Arc<AtomicBool>> = None;
 
     loop {
@@ -76,7 +76,7 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
             }
         }
 
-        // Check Download Progress
+        // check progress
         while let Ok(evt) = internal_rx.try_recv() {
             match evt {
                 InternalEvent::Progress(percent) => {
@@ -121,9 +121,9 @@ fn download_task(
         .arg("--output")
         .arg(format!("{}/%(title)s.%(ext)s", dl_path.display()))
         .arg(format!("ytsearch1:{}", query))
-        .arg("--newline") // Crucial for progress parsing
+        .arg("--newline") // needed for parsing
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped()) // Progress might come on stderr
+        .stderr(Stdio::piped())
         .spawn();
 
     let mut child = match cmd {
@@ -137,9 +137,7 @@ fn download_task(
         }
     };
 
-    // Read stdout/stderr without blocking cancellation check
-    // Read stdout/stderr with two small threads
-    // OR just use the reference implementation logic which spawns threads for IO.
+    // read stdout/stderr
 
     let stderr = child.stderr.take().unwrap();
     let stdout = child.stdout.take().unwrap();
@@ -147,14 +145,14 @@ fn download_task(
     let tx_err = tx.clone();
     let cancel_err = cancel.clone();
 
-    // Stderr reader
+    // stderr reader
     thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
             if cancel_err.load(Ordering::SeqCst) {
                 return;
             }
-            // yt-dlp sends progress to stdout or stderr
+            // check progress on stderr
             if let Some(pct) = parse_progress(&line) {
                 let _ = tx_err.send(InternalEvent::Progress(pct));
             }
@@ -164,7 +162,7 @@ fn download_task(
     let tx_out = tx.clone();
     let cancel_out = cancel.clone();
 
-    // Stdout reader
+    // stdout reader
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
         for line in reader.lines().map_while(Result::ok) {
@@ -172,14 +170,14 @@ fn download_task(
                 return;
             }
             tracing::debug!("yt-dlp: {}", line);
-            // Also check stdout for progress
+            // check progress on stdout
             if let Some(pct) = parse_progress(&line) {
                 let _ = tx_out.send(InternalEvent::Progress(pct));
             }
         }
     });
 
-    // Monitor process
+    // monitor process
     loop {
         if cancel.load(Ordering::SeqCst) {
             tracing::info!("Killing yt-dlp process...");

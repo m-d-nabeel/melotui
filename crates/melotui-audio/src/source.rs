@@ -4,18 +4,18 @@ use rodio::Source;
 use rodio::source::SeekError;
 use std::time::Duration;
 
-/// Wrapper to adapt FunDSP graphs for Rodio.
-/// Processes audio in 64-sample blocks for efficiency.
+/// FunDSP -> Rodio adapter
+/// block size 64
 pub struct FundspSource<S> {
     source: S,
     unit: Box<dyn AudioUnit>,
     channels: usize,
 
-    // Block Processing State
+    // block processing
     input_buffer: BufferVec,
     output_buffer: BufferVec,
 
-    // Queue for interleaved samples to yield to Rodio
+    // output queue
     output_queue: Vec<f32>,
     current_idx: usize,
 }
@@ -141,11 +141,11 @@ where
     fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
         self.source.try_seek(pos)?;
 
-        // Flush internal buffers
+        // flush buffers
         self.output_queue.clear();
         self.current_idx = 0;
 
-        // Reset DSP
+        // reset dsp
         self.unit.reset();
         self.unit.set_sample_rate(self.source.sample_rate() as f64);
 

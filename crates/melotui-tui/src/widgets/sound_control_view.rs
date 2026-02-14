@@ -16,8 +16,8 @@ struct SliderConfig<'a> {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    // 1. Container Block with Margins
-    // We use Padding to ensure content doesn't touch the borders
+    // container block
+    // padding for margins
     let block = Block::default()
         .title(" Mixer ")
         .title_style(Style::default().add_modifier(Modifier::BOLD))
@@ -29,7 +29,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Grid layout: 3 columns (equal spacing)
+    // 3 column grid
     let layout = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -41,12 +41,12 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         ])
         .split(inner);
 
-    // Skip the spacers (indices 1 and 3)
+    // skip spacers
     let col1 = layout[0];
     let col2 = layout[2];
     let col3 = layout[4];
 
-    // Helper: split column into 2 rows with vertical gap
+    // helper: split col into 2 rows
     let split_rows = |rect| {
         Layout::default()
             .direction(Direction::Vertical)
@@ -62,9 +62,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let c2 = split_rows(col2);
     let c3 = split_rows(col3);
 
-    // Render widgets
+    // render widgets
 
-    // Column 1: Master
+    // col 1: master
     render_sleek_slider(
         frame,
         c1[0],
@@ -88,7 +88,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         },
     );
 
-    // Column 2: EQ
+    // col 2: eq
     render_sleek_slider(
         frame,
         c2[0],
@@ -112,7 +112,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         },
     );
 
-    // Column 3: FX
+    // col 3: fx
     render_sleek_slider(
         frame,
         c3[0],
@@ -140,7 +140,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
     let ratio = ((config.val - config.min) / (config.max - config.min)).clamp(0.0, 1.0);
 
-    // Center content in cell (2 lines: label + slider)
+    // center content
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -154,13 +154,13 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
     let label_area = layout[1];
     let slider_area = layout[2];
 
-    // Row 1: label (left) --- value (right)
+    // row 1: label - value
     let header = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Fill(1), Constraint::Fill(1)])
         .split(label_area);
 
-    // Left: Label "Volume"
+    // left: label
     let label_span = Span::styled(
         config.label,
         Style::default()
@@ -169,7 +169,7 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
     );
     frame.render_widget(Paragraph::new(label_span), header[0]);
 
-    // Right: Value "80%"
+    // right: value
     let val_str = if config.label == "Speed" || config.label == "Bass" || config.label == "Treble" {
         format!("x{:.1}", config.val)
     } else {
@@ -182,24 +182,24 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
         header[1],
     );
 
-    // Row 2: sleek slider
+    // row 2: slider
     let width = slider_area.width as usize;
     if width < 1 {
         return;
     }
 
-    // Slider logic
-    // Calculate thumb position
-    // Active part (thumb left) colored
-    // Inactive part (thumb right) dark gray
-    // Thumb: colored circle
+    // slider logic
+    // thumb pos
+    // active part colored
+    // inactive part gray
+    // thumb circle
 
     let track_width = width.saturating_sub(1); // Reserve 1 char for thumb
     let thumb_pos = (ratio * track_width as f32).round() as usize;
     let remaining = track_width.saturating_sub(thumb_pos);
 
     // Use thin line "─" for sleek look
-    // Reference uses thin line
+    // thin line
     let active_line = "─".repeat(thumb_pos);
     let inactive_line = "─".repeat(remaining);
 

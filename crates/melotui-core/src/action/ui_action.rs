@@ -2,9 +2,12 @@ use std::time::{Duration, Instant};
 
 use crate::{
     AppMsg, AppState, Command, UIMode,
-    message::{download::DownloadMsg, library::LibraryMsg, playback::PlaybackMsg},
+    domain::PlaylistMeta,
+    message::{download::DownloadMsg, library::LibraryMsg, playback::PlaybackMsg, ui::UIMsg},
+    navigation::ids::SidebarNodeId,
     state::{
         Notification, NotificationKind, VisualizerMode,
+        ui::{ConfirmDialog, PlaylistPickerState},
         visualizer::{SpectrumStyle, is_cava_available},
     },
 };
@@ -12,6 +15,201 @@ use crate::{
 pub fn handle_open_help(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.show_help = true;
     vec![]
+}
+
+pub fn handle_show_confirm(
+    state: &mut AppState,
+    message: String,
+    on_confirm: Box<AppMsg>,
+) -> Vec<AppMsg> {
+    state.session.ui.mode = UIMode::Confirm;
+    state.session.ui.confirm_dialog = Some(ConfirmDialog {
+        message,
+        on_confirm,
+    });
+    vec![]
+}
+
+pub fn handle_confirm_yes(state: &mut AppState) -> Vec<AppMsg> {
+    let action = state
+        .session
+        .ui
+        .confirm_dialog
+        .take()
+        .map(|d| *d.on_confirm);
+    state.session.ui.mode = UIMode::Normal;
+    match action {
+        Some(msg) => vec![msg],
+        None => vec![],
+    }
+}
+
+pub fn handle_confirm_no(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.confirm_dialog = None;
+    state.session.ui.mode = UIMode::Normal;
+    vec![]
+}
+
+pub fn handle_delete_playlist_confirm(state: &mut AppState) -> Vec<AppMsg> {
+    let pid = match state.get_library_selection() {
+        Some(SidebarNodeId::Playlist(id)) => *id,
+        _ => return vec![],
+    };
+    let name = match state.library.get_playlist(pid) {
+        Some(p) => p.name.clone(),
+        None => return vec![],
+    };
+    handle_show_confirm(
+        state,
+        format!("Delete playlist \"{}\"?", name),
+        Box::new(AppMsg::Library(LibraryMsg::RequestDeletePlaylist(name))),
+    )
+}
+
+pub fn handle_enter_playlist_picker(state: &mut AppState) -> Vec<AppMsg> {
+    let track_id = match state.get_library_selection() {
+        Some(SidebarNodeId::Track { id, .. }) => *id,
+        _ => {
+            state.session.notification.current = Some(Notification {
+                kind: NotificationKind::Warning,
+                message: "Select a track first".to_string(),
+                progress: None,
+                created_at: Instant::now(),
+                dismiss_after: Some(Duration::from_secs(2)),
+            });
+            return vec![];
+        }
+    };
+
+    state.session.ui.mode = UIMode::PlaylistPicker;
+    state.session.ui.playlist_picker = PlaylistPickerState {
+        query: String::new(),
+        selection: 0,
+        scroll_offset: 0,
+        track_id: Some(track_id),
+    };
+    vec![]
+}
+
+pub fn handle_exit_playlist_picker(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.mode = UIMode::Normal;
+    state.session.ui.playlist_picker = Default::default();
+    vec![]
+}
+
+const PICKER_VIEWPORT: usize = 10;
+
+pub fn handle_playlist_picker_move_up(state: &mut AppState) -> Vec<AppMsg> {
+    let picker = &mut state.session.ui.playlist_picker;
+    picker.selection = picker.selection.saturating_sub(1);
+    if picker.selection < picker.scroll_offset {
+        picker.scroll_offset = picker.selection;
+    }
+    vec![]
+}
+
+pub fn handle_playlist_picker_move_down(state: &mut AppState) -> Vec<AppMsg> {
+    let max_idx = picker_max_index(state);
+    let picker = &mut state.session.ui.playlist_picker;
+    if picker.selection < max_idx {
+        picker.selection += 1;
+    }
+    if picker.selection >= picker.scroll_offset + PICKER_VIEWPORT {
+        picker.scroll_offset = picker.selection + 1 - PICKER_VIEWPORT;
+    }
+    vec![]
+}
+
+pub fn handle_playlist_picker_update_query(state: &mut AppState, c: char) -> Vec<AppMsg> {
+    state.session.ui.playlist_picker.query.push(c);
+    state.session.ui.playlist_picker.selection = 0;
+    state.session.ui.playlist_picker.scroll_offset = 0;
+    vec![]
+}
+
+pub fn handle_playlist_picker_backspace(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.playlist_picker.query.pop();
+    state.session.ui.playlist_picker.selection = 0;
+    state.session.ui.playlist_picker.scroll_offset = 0;
+    vec![]
+}
+
+/// total item count for the filtered picker list (including the "Create" option)
+fn picker_total_items(state: &AppState) -> usize {
+    let query = state.session.ui.playlist_picker.query.trim().to_lowercase();
+    let filtered = state
+        .library
+        .playlist_order
+        .iter()
+        .filter_map(|pid| state.library.playlists.get(pid))
+        .filter(|p| p.name.to_lowercase().contains(&query))
+        .count();
+
+    let exact = state
+        .library
+        .playlist_order
+        .iter()
+        .filter_map(|pid| state.library.playlists.get(pid))
+        .any(|p| p.name.to_lowercase() == query);
+
+    if !query.is_empty() && !exact {
+        filtered + 1
+    } else {
+        filtered
+    }
+}
+
+fn picker_max_index(state: &AppState) -> usize {
+    picker_total_items(state).saturating_sub(1)
+}
+
+pub fn handle_submit_playlist_picker(state: &mut AppState) -> Vec<AppMsg> {
+    let picker = &state.session.ui.playlist_picker;
+    let track_id = match picker.track_id {
+        Some(id) => id,
+        None => return vec![], // should not happen
+    };
+
+    let query = picker.query.trim();
+
+    let lower_query = query.to_lowercase();
+    let playlists: Vec<&PlaylistMeta> = state
+        .library
+        .playlist_order
+        .iter()
+        .filter_map(|pid| state.library.playlists.get(pid))
+        .filter(|p| p.name.to_lowercase().contains(&lower_query))
+        .collect();
+
+    // The logic:
+    // 0. If filtered list is empty, treat as "Create New" (if query not empty)
+    // 1. If selection index < playlists.len(), we picked an existing playlist.
+    // 2. If selection index == playlists.len(), we picked the "Create <query>" option (if shown).
+
+    let mut msgs = vec![];
+
+    if picker.selection < playlists.len() {
+        // picked existing
+        let playlist = playlists[picker.selection];
+        msgs.push(AppMsg::Library(LibraryMsg::RequestAddToPlaylist {
+            playlist_id: playlist.id,
+            track_id,
+        }));
+    } else if !query.is_empty() {
+        // create playlist then add track once ID arrives
+        msgs.push(AppMsg::Library(LibraryMsg::RequestCreatePlaylist(
+            query.to_string(),
+        )));
+        state.session.ui.pending_add_track = Some(track_id);
+    }
+
+    // close picker
+    msgs.push(AppMsg::UI(UIMsg::ExitPlaylistPicker));
+
+    state.session.ui.mode = UIMode::Normal;
+    state.session.ui.playlist_picker = Default::default();
+
+    msgs
 }
 
 pub fn handle_close_help(state: &mut AppState) -> Vec<AppMsg> {
@@ -97,6 +295,54 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                     spectrum_style: Some(arg),
                 })]
             }
+        }
+        Command::Search { field, query } => {
+            vec![AppMsg::Library(LibraryMsg::Search { field, query })]
+        }
+        Command::ClearSearch => {
+            state.session.nav.library.search = Default::default();
+            vec![]
+        }
+        Command::CreatePlaylist { name } => {
+            vec![AppMsg::Library(LibraryMsg::RequestCreatePlaylist(name))]
+        }
+        Command::DeletePlaylist { name } => {
+            vec![AppMsg::Library(LibraryMsg::RequestDeletePlaylist(name))]
+        }
+        Command::AddToPlaylist { name } => {
+            // resolve selected track
+            let track_id = match state.get_library_selection() {
+                Some(SidebarNodeId::Track { id, .. }) => *id,
+                _ => {
+                    state.session.notification.current = Some(Notification {
+                        kind: NotificationKind::Warning,
+                        message: "Select a track first".to_string(),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
+                    return vec![];
+                }
+            };
+
+            let playlist_id = match state.library.find_playlist_by_name(&name) {
+                Some(id) => id,
+                None => {
+                    state.session.notification.current = Some(Notification {
+                        kind: NotificationKind::Warning,
+                        message: format!("Playlist '{}' not found", name),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
+                    return vec![];
+                }
+            };
+
+            vec![AppMsg::Library(LibraryMsg::RequestAddToPlaylist {
+                playlist_id,
+                track_id,
+            })]
         }
         Command::Unknown(reason) => {
             state.session.notification.current = Some(Notification {

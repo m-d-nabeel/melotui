@@ -16,17 +16,17 @@ use std::collections::HashSet;
 
 use crate::widgets::sidebar::generate_marquee_delayed;
 
-// Theme constants
+// theme constants
 const ACTIVE_BORDER: Color = Color::Cyan;
 const INACTIVE_BORDER: Color = Color::Rgb(60, 60, 60);
 const SELECTED_BG: Color = Color::Rgb(40, 44, 52);
 const SELECTED_FG: Color = Color::White;
 
-// Playing state colors
+// playing state colors
 const PLAYING_TRACK_COLOR: Color = Color::Rgb(166, 227, 161); // Catppuccin Green (#a6e3a1)
 const ANCESTOR_COLOR: Color = Color::Rgb(148, 226, 213); // Catppuccin Teal (#94e2d5)
 
-// Icon colors
+// icon colors
 const FOLDER_ICON_COLOR: Color = Color::Rgb(215, 153, 33); // Gold
 const PLAYLIST_ICON_COLOR: Color = Color::Rgb(177, 98, 134); // Purple
 const CATEGORY_COLOR: Color = Color::Rgb(97, 175, 239); // Soft Blue
@@ -36,7 +36,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let total_rows = get_row_count(&state.library, nav);
     let is_active = state.is_library_focused();
 
-    // Container Block
+    // container block
     let border_style = if is_active {
         Style::default().fg(ACTIVE_BORDER)
     } else {
@@ -63,19 +63,20 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // Virtualization Logic
+    // virtualization: only render visible slice
     let visible_height = inner_area.height as usize;
     if visible_height == 0 {
         return;
     }
 
-    // We rely on scroll_offset managed by the reducer (nav_action.rs)
-    // The reducer ensures selected_id is kept roughly in view.
+    // scroll_offset from reducer
+    // reducer keeps selection in view
     let offset = nav.scroll_offset;
     let rows = get_visible_rows(&state.library, nav, offset, visible_height);
 
     let active_ancestors = get_playing_ancestors(state);
 
+    // render only the visible rows
     let items: Vec<ListItem> = rows
         .iter()
         .map(|row| render_row(row, state, inner_area.width, is_active, &active_ancestors))
@@ -83,7 +84,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let mut list_state = ratatui::widgets::ListState::default();
 
-    // Find index in rendered slice
+    // find index in rendered slice
     let selected_index = if let Some(sel_id) = state.get_library_selection() {
         rows.iter().position(|row| &row.id == sel_id)
     } else {
@@ -94,15 +95,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let list = List::new(items).highlight_style(Style::default().bg(SELECTED_BG));
     frame.render_stateful_widget(list, inner_area, &mut list_state);
 
-    // Modern Minimalist Scrollbar
+    // lean scrollbar
     let scrollbar = Scrollbar::default()
         .orientation(ScrollbarOrientation::VerticalRight)
         .symbols(ratatui::symbols::scrollbar::VERTICAL)
         .begin_symbol(None)
         .end_symbol(None)
-        .track_symbol(None) // Invisible track for modern look
+        .track_symbol(None) // invisible track
         .thumb_style(Style::default().fg(Color::DarkGray))
-        .track_style(Style::default().fg(Color::Black)); // Blend with bg
+        .track_style(Style::default().fg(Color::Black)); // blend with bg
 
     let mut scrollbar_state = ScrollbarState::new(total_rows).position(offset);
 
@@ -111,7 +112,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         area.inner(ratatui::layout::Margin {
             horizontal: 0,
             vertical: 1,
-        }), // Adjust for borders
+        }), // adjust for borders
         &mut scrollbar_state,
     );
 }
@@ -135,7 +136,7 @@ fn render_row(
 
     let is_ancestor = active_ancestors.contains(&row.id);
 
-    // Color logic
+    // color logic
     let row_color = if is_playing_track {
         PLAYING_TRACK_COLOR
     } else if is_ancestor {
@@ -146,7 +147,7 @@ fn render_row(
         Color::Gray
     };
 
-    // Icon styles
+    // icon styles
     let icon_style = if is_playing_track {
         Style::default().fg(PLAYING_TRACK_COLOR)
     } else if panel_active {
@@ -171,13 +172,13 @@ fn render_row(
         is_playing_track,
     );
 
-    // Text styles
+    // text styles
     let mut text_style = Style::default().fg(row_color);
     if is_playing_track || is_selected {
         text_style = text_style.add_modifier(Modifier::BOLD);
     }
 
-    // Content formatting
+    // content formatting
     let indent_level = row.level as usize;
     let indent_str = "  ".repeat(indent_level);
 
@@ -196,7 +197,7 @@ fn render_row(
         row.label.clone()
     };
 
-    // Build line
+    // build line
     let mut spans = vec![
         Span::raw(indent_str),
         Span::styled(icon, icon_style),
@@ -204,6 +205,7 @@ fn render_row(
         Span::styled(label_text, text_style),
     ];
     if is_playing_track {
+        // playback indicator
         spans.push(Span::styled(" 󰐊", Style::default().fg(PLAYING_TRACK_COLOR)));
     }
 
@@ -246,7 +248,7 @@ fn get_icon(
             }
         }
         SidebarNodeId::Folder(_) => {
-            // Folder Icon + Status
+            // folder icon + status
             if is_expandable {
                 if is_expanded { "  " } else { "  " }
             } else {
@@ -313,6 +315,7 @@ fn get_playing_ancestors(state: &AppState) -> HashSet<SidebarNodeId> {
     let mut ancestors = HashSet::new();
     if let Some(playing_node) = state.get_playing_node() {
         let mut current = playing_node.clone();
+        // walk up to library root to highlight folders/categories containing active track
         while let Some(parent) = current.parent(&state.library.root) {
             ancestors.insert(parent.clone());
             current = parent;

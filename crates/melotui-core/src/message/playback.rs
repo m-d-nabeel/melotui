@@ -21,6 +21,7 @@ pub enum PlaybackMsg {
     DispatchStop,
     DispatchSeek {
         position_ms: u64,
+        epoch: u64,
     },
     DispatchSetVisualizer {
         spectrum_style: Option<SpectrumStyle>,
@@ -28,6 +29,7 @@ pub enum PlaybackMsg {
 
     AudioProgress {
         position_ms: u64,
+        epoch: u64,
     },
     AudioStarted {
         path: String,

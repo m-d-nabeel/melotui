@@ -9,7 +9,7 @@ use crate::{
     fft::SpectrumAnalyzer,
 };
 
-// Helper alias
+// helper alias
 type AudioConsumer = <HeapRb<f32> as Split>::Cons;
 
 enum Backend {
@@ -20,7 +20,7 @@ enum Backend {
 
 pub struct VisualizerManager {
     backend: Backend,
-    // Idle consumers needed to "drain" unused streams so buffers don't overflow
+    // idle consumers to drain unused streams
     idle_internal: Option<AudioConsumer>,
     idle_cava: Option<CavaConsumer>,
     cava_process: Option<Cava>,
@@ -65,20 +65,20 @@ impl VisualizerManager {
     }
 
     pub fn attach_source(&mut self, consumer: AudioConsumer) {
-        self.detach_source(); // Reset current
+        self.detach_source(); // reset current
         self.idle_internal = Some(consumer);
         self.reconcile();
     }
 
     pub fn detach_source(&mut self) {
         self.take_active_to_idle();
-        self.idle_internal = None; // Drop the internal stream completely
+        self.idle_internal = None; // drop internal stream
         self.backend = Backend::None;
     }
 
     /// Returns spectrum data if available
     pub fn tick(&mut self) -> Option<Vec<f32>> {
-        // 1. Always drain idle internal stream
+        // 1. drain idle internal stream
         if let Some(consumer) = &mut self.idle_internal {
             while consumer.try_pop().is_some() {}
         }
@@ -91,7 +91,7 @@ impl VisualizerManager {
             Backend::Internal(analyzer) => analyzer.next_spectrum(),
             Backend::External(consumer) => {
                 let mut valid_frame = false;
-                // Drain strategy: read everything, keep latest
+                // drain strategy: keep latest
                 while consumer.occupied_len() >= 200 {
                     let _ = consumer.pop_slice(&mut self.cava_scratch);
                     valid_frame = true;
@@ -161,7 +161,7 @@ impl VisualizerManager {
                 }
                 Err(e) => {
                     tracing::error!("Failed to start Cava: {}", e);
-                    // Fallback to internal immediately if possible
+                    // fallback to internal
                     if let Some(cons) = self.idle_internal.take() {
                         self.backend = Backend::Internal(SpectrumAnalyzer::new(cons));
                     }

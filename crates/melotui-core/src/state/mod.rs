@@ -5,7 +5,7 @@ pub mod session;
 pub mod ui;
 pub mod visualizer;
 
-// Re-export specific structs for easier access
+// re-exports
 pub use audio::AudioState;
 pub use download::{DownloadJob, DownloadState, DownloadStatus};
 pub use notification::{Notification, NotificationKind, NotificationState};

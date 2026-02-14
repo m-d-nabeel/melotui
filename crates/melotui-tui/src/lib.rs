@@ -4,7 +4,7 @@ mod tui;
 mod view;
 mod widgets;
 
-pub use tui::{Tui, UIEvent};
+pub use tui::{Tui, UIEvent, restore_terminal};
 
 pub fn format_duration(ms: u64) -> String {
     let seconds = ms / 1000;

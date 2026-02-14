@@ -37,40 +37,40 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         NotificationKind::Progress => {
             let pct = notification.progress.unwrap_or(0);
 
-            // Render outer block
+            // outer block
             frame.render_widget(block, popup_area);
 
-            // 2. Define the area *inside* the borders
-            // Use margin 1 (Borders::ALL takes 1 cell)
+            // area inside borders
+            // margin 1
             let inner_area = popup_area.inner(Margin {
                 vertical: 1,
                 horizontal: 1,
             });
 
-            // Create layout to center gauge vertically
-            // Force gauge to 1 cell high
+            // center gauge layout
+            // gauge height 1
             let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Fill(1),   // Space above
-                    Constraint::Length(1), // THE GAUGE (Height 1)
-                    Constraint::Fill(1),   // Space below
+                    Constraint::Fill(1),   // space above
+                    Constraint::Length(1), // gauge row
+                    Constraint::Fill(1),   // space below
                 ])
                 .split(inner_area);
 
-            // 4. Render the Gauge into the thin middle chunk
+            // render gauge into chunk
             let gauge = Gauge::default()
                 .gauge_style(Style::default().fg(base_color).add_modifier(Modifier::BOLD))
                 .ratio(pct as f64 / 100.0)
                 .label(format!("{}%", pct))
                 .use_unicode(true);
-            // Note: No .block() - rendered above
+            // no .block() - already rendered above
 
             frame.render_widget(gauge, chunks[1]);
         }
 
         _ => {
-            // For text, let Paragraph handle block
+            // paragraph handles block
             let p = Paragraph::new(notification.message.clone())
                 .block(block)
                 .style(Style::default().fg(Color::White))

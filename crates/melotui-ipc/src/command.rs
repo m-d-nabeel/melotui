@@ -12,6 +12,7 @@ pub enum AudioCommand {
     Stop,
     Seek {
         position_ms: u64,
+        epoch: u64,
     },
     SetVisualizer {
         spectrum_style: Option<SpectrumStyle>,
@@ -45,6 +46,8 @@ pub enum DatabaseCommand {
     GetPlaylists,
     CreatePlaylist { name: String },
     AddTrackToPlaylist { playlist_id: i64, track_id: i64 },
+    DeletePlaylist { playlist_id: i64 },
+    RemoveTrackFromPlaylist { playlist_id: i64, track_id: i64 },
     IncrementPlayCount { track_id: i64 },
     ToggleFavorite { track_id: i64 },
     Query { sql: String },

@@ -1,4 +1,4 @@
-use crate::{navigation::ids::SidebarNodeId, playback::state::QueueId};
+use crate::{command::SearchField, navigation::ids::SidebarNodeId, playback::state::QueueId};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -9,10 +9,19 @@ pub enum LeftPanelMode {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct SearchState {
+    pub field: Option<SearchField>,
+    pub query: String,
+    pub matches: Vec<SidebarNodeId>,
+    pub index: usize,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct LibraryNavState {
     pub selected_id: Option<SidebarNodeId>,
     pub expanded_ids: HashSet<SidebarNodeId>,
     pub scroll_offset: usize,
+    pub search: SearchState,
 }
 
 #[derive(Debug, Clone, Default)]

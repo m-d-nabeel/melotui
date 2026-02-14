@@ -21,36 +21,40 @@ impl AudioParams {
 pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit> {
     let headroom = constant(0.707);
 
-    // Bass: Low shelf @ 80Hz
+    // bass: low shelf @ 80Hz
+    // cascading two filters for steeper slope
     let bass_node = ((pass() * headroom) | constant(80.0) | constant(0.707) | var(&params.bass))
         >> lowshelf()
         >> (pass() | constant(60.0) | constant(0.8) | constant(3.5))
         >> lowshelf();
 
-    // Treble: High shelf @ 3000Hz
+    // treble: high shelf @ 3000Hz
     let treble_node =
         (pass() | constant(3000.0) | constant(0.7) | var(&params.treble)) >> highshelf();
 
-    // Echo
+    // echo: simple feedback delay
     let echo_node = pass() & ((pass() * var(&params.echo)) >> delay(0.5));
 
     let mono_chain = bass_node >> treble_node >> echo_node;
 
-    // Stereo Reverb
+    // stereo reverb
     let wet_vol = var(&params.reverb);
     let wet_stereo = wet_vol.clone() | wet_vol;
     let dry_gain = constant(1.0) - var(&params.reverb);
     let dry_stereo = dry_gain.clone() | dry_gain;
 
     let stereo_pass = pass() | pass();
+    // dry path: scale original signal
     let dry_path = stereo_pass.clone() * dry_stereo;
 
-    // Reverb unit
+    // reverb unit
     let reverb_unit = reverb_stereo(10.0, 3.0, 0.5);
     let wet_path = reverb_unit * wet_stereo;
 
     let mixer_core = dry_path + wet_path;
+    // mix dry/wet signals
     let stereo_mixer = (stereo_pass.clone() ^ stereo_pass) >> mixer_core;
+    // ceiling to prevent clipping
     let limiter_stereo = limiter(0.001, 0.1) | limiter(0.001, 0.1);
 
     if channels == 1 {

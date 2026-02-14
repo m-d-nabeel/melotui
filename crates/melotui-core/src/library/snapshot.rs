@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use crate::domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta};
-use crate::navigation::ids::SidebarNodeId;
+use crate::navigation::ids::{CategoryId, SidebarNodeId};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectoryNode {
@@ -21,7 +21,7 @@ pub struct LibrarySnapshot {
     pub tracks: HashMap<TrackId, TrackMeta>,
     pub playlist_order: Vec<PlaylistId>,
 
-    // Indices for browsing
+    // browsing indices
     pub folder_tree: DirectoryNode,
     pub artists: HashMap<String, Vec<TrackId>>,
     pub albums: HashMap<String, Vec<TrackId>>,
@@ -44,13 +44,14 @@ impl LibrarySnapshot {
             playlists.insert(p.id, p);
         }
 
-        // Build Indices
+        // build indices
         let mut artists: HashMap<String, Vec<TrackId>> = HashMap::new();
         let mut albums: HashMap<String, Vec<TrackId>> = HashMap::new();
         let mut genres: HashMap<String, Vec<TrackId>> = HashMap::new();
         let mut years: HashMap<u32, Vec<TrackId>> = HashMap::new();
         let mut favorites = vec![];
 
+        // group tracks by various metadata for fast browsing
         for (id, meta) in &tracks {
             if let Some(a) = &meta.artist {
                 artists.entry(a.clone()).or_default().push(*id);
@@ -69,7 +70,7 @@ impl LibrarySnapshot {
             }
         }
 
-        // Sort indices for deterministic ordering
+        // sort indices
         for v in artists.values_mut() {
             v.sort();
         }
@@ -88,7 +89,7 @@ impl LibrarySnapshot {
             title_a.cmp(title_b)
         });
 
-        // Build Folder Tree
+        // build folder tree
         let folder_tree = Self::build_folder_tree(&root, &tracks);
 
         Self {
@@ -126,6 +127,46 @@ impl LibrarySnapshot {
         }
     }
 
+    pub fn add_playlist(&mut self, id: PlaylistId, name: String) {
+        let meta = PlaylistMeta {
+            id,
+            name,
+            tracks: Vec::new(),
+        };
+        self.playlist_order.push(id);
+        self.playlists.insert(id, meta);
+    }
+
+    pub fn remove_playlist(&mut self, id: PlaylistId) {
+        self.playlists.remove(&id);
+        self.playlist_order.retain(|pid| *pid != id);
+    }
+
+    pub fn add_track_to_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
+        if let Some(p) = self
+            .playlists
+            .get_mut(&playlist_id)
+            .filter(|p| !p.tracks.contains(&track_id))
+        {
+            p.tracks.push(track_id);
+        }
+    }
+
+    pub fn remove_track_from_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
+        if let Some(p) = self.playlists.get_mut(&playlist_id) {
+            p.tracks.retain(|tid| *tid != track_id);
+        }
+    }
+
+    /// Find playlist by name (case-insensitive)
+    pub fn find_playlist_by_name(&self, name: &str) -> Option<PlaylistId> {
+        let lower = name.to_lowercase();
+        self.playlists
+            .values()
+            .find(|p| p.name.to_lowercase() == lower)
+            .map(|p| p.id)
+    }
+
     fn build_folder_tree(root: &Path, tracks: &HashMap<TrackId, TrackMeta>) -> DirectoryNode {
         let mut root_node = DirectoryNode {
             name: "Library".to_string(),
@@ -134,10 +175,10 @@ impl LibrarySnapshot {
             tracks: Vec::new(),
         };
 
-        // 1. Group tracks by their direct parent folder
+        // 1. group by parent folder
         let mut path_map: HashMap<PathBuf, Vec<TrackId>> = HashMap::new();
         for (id, meta) in tracks {
-            // If not top-level, add to parent
+            // only include if under library root
             if let Some(parent) = meta.file_path.parent()
                 && parent.starts_with(root)
             {
@@ -145,22 +186,22 @@ impl LibrarySnapshot {
             }
         }
 
-        // 2. Iterate all folders that contain tracks and merge into the tree
+        // 2. merge folders into tree
         for (folder_path, mut tids) in path_map {
-            // Sort tracks by track number or filename (using ID for stability now)
+            // sort tracks
             tids.sort();
 
-            // Calculate relative path components
+            // relative path components
             if let Ok(relative) = folder_path.strip_prefix(root) {
                 let mut current_node = &mut root_node;
                 let mut current_abs_path = root.to_path_buf();
 
-                // Walk down the tree, creating nodes as needed
+                // walk tree, create nodes for each path component
                 for component in relative.components() {
                     let component_str = component.as_os_str().to_string_lossy().to_string();
                     current_abs_path.push(&component_str);
 
-                    // Find or create child
+                    // find or create child
                     let idx = if let Some(i) = current_node
                         .subdirs
                         .iter()
@@ -181,12 +222,12 @@ impl LibrarySnapshot {
                     current_node = &mut current_node.subdirs[idx];
                 }
 
-                // We remain at the leaf folder node
+                // leaf folder node
                 current_node.tracks = tids;
             }
         }
 
-        // 3. Sort subdirectories alphabetically for consistent UI
+        // 3. sort subdirs
         Self::sort_tree_recursive(&mut root_node);
 
         root_node
@@ -245,15 +286,15 @@ impl LibrarySnapshot {
                 }
             }
             SidebarNodeId::Folder(path) => {
-                // Traverse folder tree to find node
+                // find node in folder tree
                 if let Some(dir_node) = self.find_directory_node(path) {
-                    // For now, return tracks in this specific folder
+                    // return tracks in folder
                     self.resolve_track_list(&dir_node.tracks)
                 } else {
                     vec![]
                 }
             }
-            SidebarNodeId::Category(crate::navigation::ids::CategoryId::Favorites) => {
+            SidebarNodeId::Category(CategoryId::Favorites) => {
                 self.resolve_track_list(&self.favorites)
             }
             SidebarNodeId::Category(_) => vec![],
@@ -277,9 +318,7 @@ impl LibrarySnapshot {
                 .find_directory_node(path)
                 .map(|d| d.tracks.clone())
                 .unwrap_or_default(),
-            SidebarNodeId::Category(crate::navigation::ids::CategoryId::Favorites) => {
-                self.favorites.clone()
-            }
+            SidebarNodeId::Category(CategoryId::Favorites) => self.favorites.clone(),
             SidebarNodeId::Category(_) => vec![],
             SidebarNodeId::Track { .. } => vec![],
             SidebarNodeId::Root => vec![],

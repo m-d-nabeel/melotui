@@ -38,7 +38,7 @@ impl Cava {
 
         let stdout = process.stdout.take().ok_or(anyhow::anyhow!("No stdout"))?;
 
-        // Capacity for ~5 frames (5 * 200 = 1000)
+        // capacity for ~5 frames
         let ring = HeapRb::<f32>::new(1024);
         let (mut producer, consumer) = ring.split();
 
@@ -48,24 +48,24 @@ impl Cava {
         // Spawn CAVA stdout reader thread
         thread::spawn(move || {
             let mut reader = BufReader::new(stdout);
-            // CAVA format: 1 byte per bar (8-bit)
+            // cava: 1 byte per bar
             let mut buffer = vec![0u8; num_bars];
-            // Temp float buffer to avoid repeated allocations mapping bytes->floats
+            // mapping buffer
             let mut float_buffer = vec![0.0f32; num_bars];
 
             while running_clone.load(Ordering::Relaxed) {
                 if reader.read_exact(&mut buffer).is_ok() {
-                    // Check if ring has space for a full frame
+                    // check room for frame
                     if producer.vacant_len() >= num_bars {
-                        // Convert map 0-255 to 0.0-1.0
+                        // normalize 0-255 to 0-1
                         for (i, &b) in buffer.iter().enumerate() {
                             float_buffer[i] = b as f32 / 255.0;
                         }
 
-                        // Push all at once (or slice)
+                        // push frame
                         let _ = producer.push_slice(&float_buffer);
                     } else {
-                        // Drop frame (backpressure)
+                        // drop frame (backpressure)
                         // We already read it from stdout, so it's discarded.
                         // This ensures we don't block the reader, but we also don't fill the buffer with old data.
                         // Ideally we might want to discard *older* data in the ring, but for SPSC,
@@ -93,7 +93,7 @@ fn create_cava_config(bars: usize) -> anyhow::Result<std::path::PathBuf> {
     let temp_dir = std::env::temp_dir();
     let config_path = temp_dir.join("melotui_cava.conf");
 
-    // CAVA config: standard bars, raw binary
+    // cava config
     let config = format!(
         r#"
 [general]

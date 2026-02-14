@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use crate::{
     AppMsg,
     message::{
-        audio::AudioMsg, download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
-        playback::PlaybackMsg, ui::UIMsg,
+        audio::AudioMsg, library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg,
+        ui::UIMsg,
     },
 };
 
@@ -17,12 +17,14 @@ pub enum KeyContext {
     Library,
     Queue,
     TrackInfo,
+    PlaylistPicker,
+    Confirm,
     Global,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeyAction {
-    // System
+    // system
     Quit,
     OpenHelp,
     CloseHelp,
@@ -31,7 +33,7 @@ pub enum KeyAction {
     SubmitCommand,
     BackspaceCommand,
 
-    // Navigation
+    // navigation
     TogglePanel,
     ToggleVisualizer,
     MoveUp,
@@ -40,7 +42,7 @@ pub enum KeyAction {
     ShowTrackInfo,
     HideTrackInfo,
 
-    // Playback
+    // playback
     PlaySelected,
     PlayNextTrack,
     PlayPrevTrack,
@@ -51,7 +53,7 @@ pub enum KeyAction {
     ToggleShuffle,
     CycleRepeat,
 
-    // Library/Queue
+    // library/queue
     AddToQueue,
     QueuePlayNext,
     RemoveFromQueue,
@@ -59,8 +61,10 @@ pub enum KeyAction {
     ScanLibrary,
     CancelDownload,
     ToggleFavorite,
+    SearchNext,
+    SearchPrev,
 
-    // Audio
+    // audio
     VolUp,
     VolDown,
     SpeedUp,
@@ -73,9 +77,24 @@ pub enum KeyAction {
     ReverbDown,
     EchoUp,
     EchoDown,
+
+    // playlist picker
+    EnterPlaylistPicker,
+    ExitPlaylistPicker,
+    SubmitPlaylistPicker,
+    PlaylistPickerMoveUp,
+    PlaylistPickerMoveDown,
+    PlaylistPickerBackspace,
+
+    // playlist management
+    DeletePlaylist,
+
+    // confirm dialog
+    ConfirmYes,
+    ConfirmNo,
 }
 
-const OFFSET_SECONDS: i64 = 10;
+const OFFSET_SECONDS: i64 = 5;
 
 impl KeyAction {
     pub fn to_msg(&self) -> Option<AppMsg> {
@@ -116,11 +135,13 @@ impl KeyAction {
             KeyAction::RemoveFromQueue => Some(AppMsg::Library(LibraryMsg::RemoveFromQueue)),
             KeyAction::ClearQueue => Some(AppMsg::Library(LibraryMsg::ClearQueue)),
             KeyAction::ScanLibrary => Some(AppMsg::Library(LibraryMsg::RequestScanLibrary)),
-            KeyAction::CancelDownload => Some(AppMsg::Download(DownloadMsg::RequestCancelDownload)),
-            KeyAction::ToggleFavorite => None, // Track ID resolved in input.rs
-            KeyAction::AddToQueue => None,     // Track ID resolved in input.rs
-            KeyAction::QueuePlayNext => None,  // Track ID resolved in input.rs
-            KeyAction::SubmitCommand => None,  // Uses command buffer from state
+            KeyAction::CancelDownload => None, // conditional in input.rs
+            KeyAction::ToggleFavorite => None, // id resolved in input.rs
+            KeyAction::SearchNext => None,     // conditional in input.rs
+            KeyAction::SearchPrev => None,     // conditional in input.rs
+            KeyAction::AddToQueue => None,     // id resolved in input.rs
+            KeyAction::QueuePlayNext => None,  // id resolved in input.rs
+            KeyAction::SubmitCommand => None,  // uses command buffer
             KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05))),
             KeyAction::VolDown => Some(AppMsg::Audio(AudioMsg::AdjustVolume(-0.05))),
             KeyAction::SpeedUp => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(0.1))),
@@ -133,6 +154,16 @@ impl KeyAction {
             KeyAction::ReverbDown => Some(AppMsg::Audio(AudioMsg::AdjustReverb(-0.05))),
             KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::AdjustEcho(0.05))),
             KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::AdjustEcho(-0.05))),
+
+            KeyAction::EnterPlaylistPicker => Some(AppMsg::UI(UIMsg::EnterPlaylistPicker)),
+            KeyAction::ExitPlaylistPicker => Some(AppMsg::UI(UIMsg::ExitPlaylistPicker)),
+            KeyAction::SubmitPlaylistPicker => Some(AppMsg::UI(UIMsg::SubmitPlaylistPicker)),
+            KeyAction::PlaylistPickerMoveUp => Some(AppMsg::UI(UIMsg::PlaylistPickerMoveUp)),
+            KeyAction::PlaylistPickerMoveDown => Some(AppMsg::UI(UIMsg::PlaylistPickerMoveDown)),
+            KeyAction::PlaylistPickerBackspace => Some(AppMsg::UI(UIMsg::PlaylistPickerBackspace)),
+            KeyAction::DeletePlaylist => Some(AppMsg::UI(UIMsg::DeletePlaylistConfirm)),
+            KeyAction::ConfirmYes => Some(AppMsg::UI(UIMsg::ConfirmYes)),
+            KeyAction::ConfirmNo => Some(AppMsg::UI(UIMsg::ConfirmNo)),
         }
     }
 }
@@ -161,7 +192,7 @@ impl KeyBinding {
     }
 }
 
-// Key binding registry
+// key binding registry
 #[derive(Debug)]
 pub struct KeyRegistry {
     pub bindings: HashMap<KeyContext, Vec<KeyBinding>>,
@@ -171,7 +202,7 @@ impl Default for KeyRegistry {
     fn default() -> Self {
         let mut bindings = HashMap::new();
 
-        // Help context
+        // help context
         bindings.insert(
             KeyContext::Help,
             vec![
@@ -196,7 +227,7 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Command context
+        // command context
         bindings.insert(
             KeyContext::CommandMode,
             vec![
@@ -206,7 +237,7 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Library context
+        // library context
         bindings.insert(
             KeyContext::Library,
             vec![
@@ -222,10 +253,50 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('A'), KeyAction::QueuePlayNext, "Play Next")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('f'), KeyAction::ToggleFavorite, "Favorite"),
+                KeyBinding::new(KeyCode::Char('n'), KeyAction::SearchNext, "Next Match"),
+                KeyBinding::new(KeyCode::Char('N'), KeyAction::SearchPrev, "Prev Match")
+                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(
+                    KeyCode::Char('p'),
+                    KeyAction::EnterPlaylistPicker,
+                    "Add to Playlist",
+                ),
+                KeyBinding::new(
+                    KeyCode::Char('D'),
+                    KeyAction::DeletePlaylist,
+                    "Delete Playlist",
+                )
+                .with_mod(KeyModifiers::SHIFT),
             ],
         );
 
-        // Queue context
+        // playlist picker context
+        bindings.insert(
+            KeyContext::PlaylistPicker,
+            vec![
+                KeyBinding::new(KeyCode::Esc, KeyAction::ExitPlaylistPicker, "Back"),
+                KeyBinding::new(KeyCode::Enter, KeyAction::SubmitPlaylistPicker, "Select"),
+                KeyBinding::new(KeyCode::Down, KeyAction::PlaylistPickerMoveDown, "Down"),
+                KeyBinding::new(KeyCode::Up, KeyAction::PlaylistPickerMoveUp, "Up"),
+                KeyBinding::new(
+                    KeyCode::Backspace,
+                    KeyAction::PlaylistPickerBackspace,
+                    "Delete",
+                ),
+            ],
+        );
+
+        // confirm dialog
+        bindings.insert(
+            KeyContext::Confirm,
+            vec![
+                KeyBinding::new(KeyCode::Char('y'), KeyAction::ConfirmYes, "Yes"),
+                KeyBinding::new(KeyCode::Char('n'), KeyAction::ConfirmNo, "No"),
+                KeyBinding::new(KeyCode::Esc, KeyAction::ConfirmNo, "Cancel"),
+            ],
+        );
+
+        // queue context
         bindings.insert(
             KeyContext::Queue,
             vec![
@@ -244,7 +315,7 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // Global context
+        // global context
         bindings.insert(
             KeyContext::Global,
             vec![
