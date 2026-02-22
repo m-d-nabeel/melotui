@@ -27,6 +27,17 @@ impl Notification {
             dismiss_after: Some(std::time::Duration::from_secs(2)),
         }
     }
+
+    pub fn with_duration(mut self, secs: u64) -> Self {
+        self.dismiss_after = Some(std::time::Duration::from_secs(secs));
+        self
+    }
+
+    pub fn with_progress(mut self, progress: u8) -> Self {
+        self.progress = Some(progress);
+        self.dismiss_after = None;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Default)]

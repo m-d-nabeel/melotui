@@ -1,5 +1,3 @@
-use std::time::{Duration, Instant};
-
 use crate::{
     AppMsg, AppState, Command, UIMode,
     domain::PlaylistMeta,
@@ -70,13 +68,10 @@ pub fn handle_enter_playlist_picker(state: &mut AppState) -> Vec<AppMsg> {
     let track_id = match state.get_library_selection() {
         Some(SidebarNodeId::Track { id, .. }) => *id,
         _ => {
-            state.session.notification.current = Some(Notification {
-                kind: NotificationKind::Warning,
-                message: "Select a track first".to_string(),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(2)),
-            });
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Warning,
+                "Select a track first",
+            ));
             return vec![];
         }
     };
@@ -267,25 +262,21 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::Library(LibraryMsg::RequestScanLibrary)]
         }
         Command::Download { query } => {
-            state.session.notification.current = Some(Notification {
-                kind: NotificationKind::Info,
-                message: format!("Downloading: {}", query),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(2)),
-            });
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Info,
+                format!("Downloading: {}", query),
+            ));
             vec![AppMsg::Download(DownloadMsg::RequestDownload { query })]
         }
         Command::ChangeVisualizer { arg } => {
             if arg == SpectrumStyle::Cava && !is_cava_available() {
-                state.session.notification.current = Some(Notification {
-                    kind: NotificationKind::Warning,
-                    message: "CAVA is not available. Install CAVA for the CAVA visualizer style."
-                        .to_string(),
-                    progress: None,
-                    created_at: Instant::now(),
-                    dismiss_after: Some(Duration::from_secs(5)),
-                });
+                state.session.notification.current = Some(
+                    Notification::new(
+                        NotificationKind::Warning,
+                        "CAVA is not available. Install CAVA for the CAVA visualizer style.",
+                    )
+                    .with_duration(5),
+                );
                 vec![]
             } else {
                 state.session.spectrum_style = arg.clone();
@@ -313,13 +304,10 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             let track_id = match state.get_library_selection() {
                 Some(SidebarNodeId::Track { id, .. }) => *id,
                 _ => {
-                    state.session.notification.current = Some(Notification {
-                        kind: NotificationKind::Warning,
-                        message: "Select a track first".to_string(),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
+                    state.session.notification.current = Some(Notification::new(
+                        NotificationKind::Warning,
+                        "Select a track first",
+                    ));
                     return vec![];
                 }
             };
@@ -327,13 +315,10 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             let playlist_id = match state.library.find_playlist_by_name(&name) {
                 Some(id) => id,
                 None => {
-                    state.session.notification.current = Some(Notification {
-                        kind: NotificationKind::Warning,
-                        message: format!("Playlist '{}' not found", name),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
+                    state.session.notification.current = Some(Notification::new(
+                        NotificationKind::Warning,
+                        format!("Playlist '{}' not found", name),
+                    ));
                     return vec![];
                 }
             };
@@ -347,13 +332,10 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             let track_id = match state.get_library_selection() {
                 Some(SidebarNodeId::Track { id, .. }) => *id,
                 _ => {
-                    state.session.notification.current = Some(Notification {
-                        kind: NotificationKind::Warning,
-                        message: "Select a track first".to_string(),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
+                    state.session.notification.current = Some(Notification::new(
+                        NotificationKind::Warning,
+                        "Select a track first",
+                    ));
                     return vec![];
                 }
             };
@@ -361,13 +343,10 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             let playlist_id = match state.library.find_playlist_by_name(&name) {
                 Some(id) => id,
                 None => {
-                    state.session.notification.current = Some(Notification {
-                        kind: NotificationKind::Warning,
-                        message: format!("Playlist '{}' not found", name),
-                        progress: None,
-                        created_at: Instant::now(),
-                        dismiss_after: Some(Duration::from_secs(2)),
-                    });
+                    state.session.notification.current = Some(Notification::new(
+                        NotificationKind::Warning,
+                        format!("Playlist '{}' not found", name),
+                    ));
                     return vec![];
                 }
             };
@@ -378,13 +357,10 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             })]
         }
         Command::Unknown(reason) => {
-            state.session.notification.current = Some(Notification {
-                kind: NotificationKind::Error,
-                message: format!("Unknown command: {}", reason),
-                progress: None,
-                created_at: Instant::now(),
-                dismiss_after: Some(Duration::from_secs(2)),
-            });
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Error,
+                format!("Unknown command: {}", reason),
+            ));
             vec![]
         }
     }

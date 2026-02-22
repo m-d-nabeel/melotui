@@ -294,9 +294,46 @@ pub fn handle_request_remove_from_playlist(
         .map(|t| t.title.clone())
         .unwrap_or_else(|| "Track".to_string());
 
+    // save index if removing selected track to keep cursor stable
+    let mut restore_selection_idx = None;
+    if let Some(SidebarNodeId::Track {
+        id: selected_tid,
+        parent,
+    }) = state.get_library_selection()
+        && *selected_tid == track_id
+        && matches!(**parent, SidebarNodeId::Playlist(pid) if pid == playlist_id)
+        && let Some(idx) = projector::get_index_of(
+            &state.library,
+            state.library_nav(),
+            &SidebarNodeId::Track {
+                id: track_id,
+                parent: parent.clone(),
+            },
+        )
+    {
+        restore_selection_idx = Some(idx);
+    }
+
     state
         .library
         .remove_track_from_playlist(playlist_id, track_id);
+
+    // restore selection idx
+    if let Some(old_idx) = restore_selection_idx {
+        let nav = &state.session.nav.library;
+        let new_count = projector::get_row_count(&state.library, nav);
+
+        if new_count > 0 {
+            // clamp
+            let target_idx = old_idx.min(new_count - 1);
+            if let Some(node) = projector::get_node_at_index(&state.library, nav, target_idx) {
+                state.session.nav.library.selected_id = Some(node);
+            }
+        } else {
+            // empty list -> select header
+            state.session.nav.library.selected_id = Some(SidebarNodeId::Playlist(playlist_id));
+        }
+    }
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,

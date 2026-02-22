@@ -1,7 +1,4 @@
-use std::{
-    fs,
-    time::{Duration, Instant},
-};
+use std::fs;
 
 use crate::{
     AppMsg, AppState,
@@ -21,13 +18,13 @@ fn enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
     if !download_dir.exists()
         && let Err(e) = fs::create_dir_all(&download_dir)
     {
-        state.session.notification.current = Some(Notification {
-            kind: NotificationKind::Error,
-            message: format!("Failed to create Downloads folder: {e}"),
-            progress: None,
-            created_at: Instant::now(),
-            dismiss_after: Some(Duration::from_secs(4)),
-        });
+        state.session.notification.current = Some(
+            Notification::new(
+                NotificationKind::Error,
+                format!("Failed to create Downloads folder: {e}"),
+            )
+            .with_duration(4),
+        );
         return vec![];
     }
 
@@ -36,13 +33,10 @@ fn enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
         download_path: download_dir,
     });
 
-    state.session.notification.current = Some(Notification {
-        kind: NotificationKind::Info,
-        message: format!("Queued: {}", query),
-        progress: None,
-        created_at: Instant::now(),
-        dismiss_after: Some(Duration::from_secs(2)),
-    });
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Queued: {}", query),
+    ));
 
     if matches!(state.session.download.status, DownloadStatus::Idle) {
         return vec![AppMsg::Download(DownloadMsg::BeginNextDownload)];
@@ -64,13 +58,8 @@ pub fn handle_begin_next_download(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_download_progress(state: &mut AppState, percent: u8) -> Vec<AppMsg> {
-    state.session.notification.current = Some(Notification {
-        kind: NotificationKind::Progress,
-        message: "".to_owned(),
-        progress: Some(percent),
-        created_at: Instant::now(),
-        dismiss_after: None,
-    });
+    state.session.notification.current =
+        Some(Notification::new(NotificationKind::Progress, "").with_progress(percent));
     if let DownloadStatus::Running { .. } = &state.session.download.status {
         state.session.download.status = DownloadStatus::Running { percent };
     }
@@ -78,13 +67,11 @@ pub fn handle_download_progress(state: &mut AppState, percent: u8) -> Vec<AppMsg
 }
 
 pub fn handle_download_finished(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.notification.current = Some(Notification {
-        kind: NotificationKind::Info,
-        message: "Download complete".into(),
-        progress: Some(100),
-        created_at: Instant::now(),
-        dismiss_after: Some(Duration::from_secs(2)),
-    });
+    state.session.notification.current = Some(
+        Notification::new(NotificationKind::Info, "Download complete")
+            .with_progress(100)
+            .with_duration(2),
+    );
     state.session.download.status = DownloadStatus::Idle;
     vec![
         AppMsg::Library(LibraryMsg::RequestScanLibrary),
@@ -93,13 +80,8 @@ pub fn handle_download_finished(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_download_failed(state: &mut AppState, error: String) -> Vec<AppMsg> {
-    state.session.notification.current = Some(Notification {
-        kind: NotificationKind::Error,
-        message: error.clone(),
-        progress: None,
-        created_at: Instant::now(),
-        dismiss_after: Some(Duration::from_secs(4)),
-    });
+    state.session.notification.current =
+        Some(Notification::new(NotificationKind::Error, error).with_duration(4));
     state.session.download.status = DownloadStatus::Idle;
     vec![AppMsg::Download(DownloadMsg::BeginNextDownload)]
 }
