@@ -65,11 +65,8 @@ impl Cava {
                         // push frame
                         let _ = producer.push_slice(&float_buffer);
                     } else {
-                        // drop frame (backpressure)
-                        // We already read it from stdout, so it's discarded.
-                        // This ensures we don't block the reader, but we also don't fill the buffer with old data.
-                        // Ideally we might want to discard *older* data in the ring, but for SPSC,
-                        // keeping the consumer draining fast is the key.
+                        // drop frame for backpressure
+                        // keeping consumer fast is key for SPSC
                     }
                 } else {
                     break;

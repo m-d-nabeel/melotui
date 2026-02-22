@@ -251,7 +251,7 @@ pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // 1. data source
+    // data source
     let spectrum = &state.spectrum_smooth; // smoothed data
     let peaks = &state.spectrum_peaks; // peak data
 
@@ -391,7 +391,7 @@ pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
                 });
             }
 
-            // 3. mirror logic
+            // mirror logic
             let center_x = width / 2.0;
             let num_bands = center_x as usize;
             if num_bands == 0 {

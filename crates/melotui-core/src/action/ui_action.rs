@@ -181,10 +181,9 @@ pub fn handle_submit_playlist_picker(state: &mut AppState) -> Vec<AppMsg> {
         .filter(|p| p.name.to_lowercase().contains(&lower_query))
         .collect();
 
-    // The logic:
-    // 0. If filtered list is empty, treat as "Create New" (if query not empty)
-    // 1. If selection index < playlists.len(), we picked an existing playlist.
-    // 2. If selection index == playlists.len(), we picked the "Create <query>" option (if shown).
+    // selection logic:
+    // in bounds: picked existing
+    // out of bounds/empty: create new
 
     let mut msgs = vec![];
 
@@ -340,6 +339,40 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             };
 
             vec![AppMsg::Library(LibraryMsg::RequestAddToPlaylist {
+                playlist_id,
+                track_id,
+            })]
+        }
+        Command::RemoveFromPlaylist { name } => {
+            let track_id = match state.get_library_selection() {
+                Some(SidebarNodeId::Track { id, .. }) => *id,
+                _ => {
+                    state.session.notification.current = Some(Notification {
+                        kind: NotificationKind::Warning,
+                        message: "Select a track first".to_string(),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
+                    return vec![];
+                }
+            };
+
+            let playlist_id = match state.library.find_playlist_by_name(&name) {
+                Some(id) => id,
+                None => {
+                    state.session.notification.current = Some(Notification {
+                        kind: NotificationKind::Warning,
+                        message: format!("Playlist '{}' not found", name),
+                        progress: None,
+                        created_at: Instant::now(),
+                        dismiss_after: Some(Duration::from_secs(2)),
+                    });
+                    return vec![];
+                }
+            };
+
+            vec![AppMsg::Library(LibraryMsg::RequestRemoveFromPlaylist {
                 playlist_id,
                 track_id,
             })]

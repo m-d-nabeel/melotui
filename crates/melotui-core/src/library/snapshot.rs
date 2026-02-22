@@ -175,7 +175,7 @@ impl LibrarySnapshot {
             tracks: Vec::new(),
         };
 
-        // 1. group by parent folder
+        // group by parent folder
         let mut path_map: HashMap<PathBuf, Vec<TrackId>> = HashMap::new();
         for (id, meta) in tracks {
             // only include if under library root
@@ -186,7 +186,7 @@ impl LibrarySnapshot {
             }
         }
 
-        // 2. merge folders into tree
+        // merge folders into tree
         for (folder_path, mut tids) in path_map {
             // sort tracks
             tids.sort();
@@ -227,7 +227,7 @@ impl LibrarySnapshot {
             }
         }
 
-        // 3. sort subdirs
+        // sort subdirs
         Self::sort_tree_recursive(&mut root_node);
 
         root_node

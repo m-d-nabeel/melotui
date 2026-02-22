@@ -49,6 +49,7 @@ pub enum Command {
     CreatePlaylist { name: String },
     DeletePlaylist { name: String },
     AddToPlaylist { name: String },
+    RemoveFromPlaylist { name: String },
     Unknown(String),
 }
 
@@ -64,6 +65,7 @@ impl fmt::Display for Command {
             Command::CreatePlaylist { name } => write!(f, "pl create {}", name),
             Command::DeletePlaylist { name } => write!(f, "pl del {}", name),
             Command::AddToPlaylist { name } => write!(f, "pl add {}", name),
+            Command::RemoveFromPlaylist { name } => write!(f, "pl rm {}", name),
             Command::Unknown(s) => write!(f, "unknown: {}", s),
         }
     }
@@ -120,7 +122,7 @@ impl FromStr for Command {
                             Ok(Command::CreatePlaylist { name })
                         }
                     }
-                    "del" | "delete" | "rm" => {
+                    "del" | "delete" => {
                         if name.is_empty() {
                             Ok(Command::Unknown("pl del requires a name".into()))
                         } else {
@@ -132,6 +134,13 @@ impl FromStr for Command {
                             Ok(Command::Unknown("pl add requires a playlist name".into()))
                         } else {
                             Ok(Command::AddToPlaylist { name })
+                        }
+                    }
+                    "remove" | "rm" => {
+                        if name.is_empty() {
+                            Ok(Command::Unknown("pl rm requires a playlist name".into()))
+                        } else {
+                            Ok(Command::RemoveFromPlaylist { name })
                         }
                     }
                     _ => Ok(Command::Unknown(format!(

@@ -70,7 +70,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         ])
         .split(inner_area);
 
-    // 1. album art center crop
+    // album art center crop
     if art_state.source.is_some() {
         let area = chunks[0];
         art_state.update_protocol(picker, area);
@@ -81,7 +81,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         }
     }
 
-    // 2. info area layout
+    // info area layout
     let info_area = chunks[1];
     let info_layout = Layout::default()
         .direction(Direction::Vertical)

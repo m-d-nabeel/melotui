@@ -78,7 +78,7 @@ impl VisualizerManager {
 
     /// Returns spectrum data if available
     pub fn tick(&mut self) -> Option<Vec<f32>> {
-        // 1. drain idle internal stream
+        // drain idle internal stream
         if let Some(consumer) = &mut self.idle_internal {
             while consumer.try_pop().is_some() {}
         }

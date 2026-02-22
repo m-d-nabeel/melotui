@@ -88,6 +88,7 @@ pub enum KeyAction {
 
     // playlist management
     DeletePlaylist,
+    RemoveFromPlaylist,
 
     // confirm dialog
     ConfirmYes,
@@ -162,6 +163,7 @@ impl KeyAction {
             KeyAction::PlaylistPickerMoveDown => Some(AppMsg::UI(UIMsg::PlaylistPickerMoveDown)),
             KeyAction::PlaylistPickerBackspace => Some(AppMsg::UI(UIMsg::PlaylistPickerBackspace)),
             KeyAction::DeletePlaylist => Some(AppMsg::UI(UIMsg::DeletePlaylistConfirm)),
+            KeyAction::RemoveFromPlaylist => None, // id resolved in input.rs
             KeyAction::ConfirmYes => Some(AppMsg::UI(UIMsg::ConfirmYes)),
             KeyAction::ConfirmNo => Some(AppMsg::UI(UIMsg::ConfirmNo)),
         }
@@ -261,6 +263,12 @@ impl Default for KeyRegistry {
                     KeyAction::EnterPlaylistPicker,
                     "Add to Playlist",
                 ),
+                KeyBinding::new(
+                    KeyCode::Char('P'),
+                    KeyAction::RemoveFromPlaylist,
+                    "Remove from Playlist",
+                )
+                .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(
                     KeyCode::Char('D'),
                     KeyAction::DeletePlaylist,

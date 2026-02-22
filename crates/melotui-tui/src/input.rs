@@ -8,6 +8,7 @@ use melotui_core::{
         download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
         playback::PlaybackMsg, ui::UIMsg,
     },
+    navigation::ids::SidebarNodeId,
     state::UIMode,
 };
 
@@ -137,6 +138,22 @@ impl InputHandler {
                     && let Some(track_id) = state.get_selected_track_id_in_sidebar()
                 {
                     return Some(AppMsg::Library(LibraryMsg::RequestToggleFavorite(track_id)));
+                }
+                None
+            }
+
+            KeyAction::RemoveFromPlaylist => {
+                if state.is_library_focused()
+                    && let Some(SidebarNodeId::Track {
+                        id: track_id,
+                        parent,
+                    }) = state.get_library_selection()
+                    && let SidebarNodeId::Playlist(playlist_id) = **parent
+                {
+                    return Some(AppMsg::Library(LibraryMsg::RequestRemoveFromPlaylist {
+                        playlist_id,
+                        track_id: *track_id,
+                    }));
                 }
                 None
             }

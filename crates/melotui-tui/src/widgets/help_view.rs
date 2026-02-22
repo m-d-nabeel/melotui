@@ -95,7 +95,7 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    const COMMANDS: [(&str, &str); 11] = [
+    const COMMANDS: [(&str, &str); 12] = [
         (":q | :quit     ", "Quit App"),
         (":r | :rescan   ", "Rescan Lib"),
         (":dl <query>    ", "Download"),
@@ -104,6 +104,7 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
         (":pl create <n> ", "New Playlist"),
         (":pl del <n>    ", "Del Playlist"),
         (":pl add <n>    ", "Add to Pl"),
+        (":pl rm <n>     ", "Rem from Pl"),
         (":artist <q>    ", "Search Artist"),
         (":song <q>      ", "Search Song"),
         (":album <q>     ", "Search Album"),
