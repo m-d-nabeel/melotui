@@ -1,6 +1,8 @@
 [package]
 name = "melotui-tui"
-version = "0.1.0"
+version = "0.2.0"
+authors = ["m-d-nabeel"]
+repository = "https://github.com/m-d-nabeel/melotui"
 edition = "2024"
 
 [features]
