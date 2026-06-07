@@ -47,40 +47,54 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
     let inner = block.inner(help_area);
     frame.render_widget(block, help_area);
 
-    // split into sections
+    // Responsive column count based on width
+    let registry = InputHandler::get_registry();
+    let col_count = if inner.width < 100 {
+        2
+    } else if inner.width < 160 {
+        3
+    } else {
+        4
+    };
+
+    let constraints: Vec<Constraint> = (0..col_count).map(|_| Constraint::Fill(1)).collect();
     let sections = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-        ])
+        .constraints(constraints)
         .split(inner);
 
-    // get bindings
-    let registry = InputHandler::get_registry();
-
-    render_section(
-        frame,
-        sections[0],
-        " Global ",
-        registry.bindings.get(&KeyContext::Global),
-    );
-    render_section(
-        frame,
-        sections[1],
-        " Library ",
-        registry.bindings.get(&KeyContext::Library),
-    );
-    render_section(
-        frame,
-        sections[2],
-        " Queue ",
-        registry.bindings.get(&KeyContext::Queue),
-    );
-
-    render_command_section(frame, sections[3], " Commands ");
+    // Render sections based on available columns
+    let mut col = 0;
+    if col < col_count {
+        render_section(
+            frame,
+            sections[col],
+            " Global ",
+            registry.bindings.get(&KeyContext::Global),
+        );
+        col += 1;
+    }
+    if col < col_count {
+        render_section(
+            frame,
+            sections[col],
+            " Library ",
+            registry.bindings.get(&KeyContext::Library),
+        );
+        col += 1;
+    }
+    if col < col_count {
+        render_section(
+            frame,
+            sections[col],
+            " Queue ",
+            registry.bindings.get(&KeyContext::Queue),
+        );
+        col += 1;
+    }
+    if col < col_count {
+        render_command_section(frame, sections[col], " Commands ");
+    }
 }
 
 fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {

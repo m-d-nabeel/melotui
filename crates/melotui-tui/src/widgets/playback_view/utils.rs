@@ -1,5 +1,5 @@
 use melotui_core::playback::state::{PlaybackStatus, RepeatMode};
-use ratatui::style::Style;
+use ratatui::style::{Modifier, Style};
 use ratatui::text::Span;
 
 use crate::theme::Theme;
@@ -21,7 +21,10 @@ pub fn get_status_icon(status: &PlaybackStatus) -> (&'static str, ratatui::style
 pub fn get_repeat_icon(mode: &RepeatMode) -> Span<'static> {
     let t = theme();
     match mode {
-        RepeatMode::Off => Span::styled(" ", Style::default().fg(t.fg_muted)),
+        RepeatMode::Off => Span::styled(
+            "󰑗 ",
+            Style::default().fg(t.fg_muted).add_modifier(Modifier::DIM),
+        ),
         RepeatMode::PlayOnce => Span::styled("󰑗 ", Style::default().fg(t.accent_primary)),
         RepeatMode::Track => Span::styled("󰑘 ", Style::default().fg(t.slider_reverb)),
         RepeatMode::Playlist => Span::styled("󰑖 ", Style::default().fg(t.accent_playing)),
@@ -31,8 +34,11 @@ pub fn get_repeat_icon(mode: &RepeatMode) -> Span<'static> {
 pub fn get_shuffle_icon(active: bool) -> Span<'static> {
     let t = theme();
     if active {
-        Span::styled(" ", Style::default().fg(t.accent_playing))
+        Span::styled("󰒟 ", Style::default().fg(t.accent_playing))
     } else {
-        Span::styled(" ", Style::default().fg(t.fg_muted))
+        Span::styled(
+            "󰒟 ",
+            Style::default().fg(t.fg_muted).add_modifier(Modifier::DIM),
+        )
     }
 }

@@ -1,8 +1,10 @@
 use melotui_core::message::ui::UIMsg;
 use ratatui::backend::CrosstermBackend;
 use ratatui::crossterm::event::Event;
-use ratatui::crossterm::terminal::{LeaveAlternateScreen, disable_raw_mode, enable_raw_mode};
-use ratatui::crossterm::{event, execute};
+use ratatui::crossterm::terminal::{
+    ClearType, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+};
+use ratatui::crossterm::{cursor, event, execute, terminal};
 use ratatui::{Terminal, crossterm::terminal::EnterAlternateScreen};
 use std::io::{Stdout, stdout};
 use std::time::Duration;
@@ -25,7 +27,7 @@ pub struct Tui {
 impl Tui {
     pub fn new() -> anyhow::Result<Self> {
         enable_raw_mode()?;
-        execute!(stdout(), EnterAlternateScreen)?;
+        execute!(stdout(), EnterAlternateScreen, cursor::Hide)?;
         let backend = CrosstermBackend::new(stdout());
         let terminal = Terminal::new(backend)?;
 
@@ -45,9 +47,10 @@ impl Tui {
         Ok(())
     }
 
-    pub fn shutdown(mut self) -> anyhow::Result<()> {
-        restore_terminal()?;
-        self.terminal.show_cursor()?;
+    pub fn shutdown(self) -> anyhow::Result<()> {
+        // Drop self first to release the terminal backend,
+        // then restore_terminal() handles the rest via Drop.
+        drop(self);
         tracing::info!("TUI shutdown complete");
         Ok(())
     }
@@ -79,9 +82,23 @@ impl Drop for Tui {
     }
 }
 
-/// Restore terminal to normal mode. Safe to call from panic hooks.
+/// Restore terminal to normal mode.
+///
+/// Best-effort: tries ALL cleanup steps even if one fails.
+/// This ensures the terminal is usable after exit, panic, or error.
+/// Called from Drop, panic hook, and normal shutdown.
 pub fn restore_terminal() -> anyhow::Result<()> {
-    disable_raw_mode()?;
-    execute!(stdout(), LeaveAlternateScreen)?;
+    let mut out = stdout();
+
+    // Step 1: Clear the alternate screen to remove any image protocol artifacts
+    // (Kitty/Sixel protocol data can linger and corrupt the shell after exit)
+    let _ = execute!(out, terminal::Clear(ClearType::All));
+
+    // Step 2: Leave alternate screen and show cursor
+    let _ = execute!(out, LeaveAlternateScreen, cursor::Show);
+
+    // Step 3: Disable raw mode (must be last — restores line buffering)
+    let _ = disable_raw_mode();
+
     Ok(())
 }

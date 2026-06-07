@@ -9,7 +9,8 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, List, ListItem, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Block, BorderType, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState,
     },
 };
 use std::collections::HashSet;
@@ -57,6 +58,30 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let visible_height = inner_area.height as usize;
     if visible_height == 0 {
+        return;
+    }
+
+    // Empty state: show placeholder when no rows
+    if total_rows == 0 {
+        let empty_msg = Paragraph::new(Line::from(vec![
+            Span::styled("  ", Style::default().fg(t.fg_muted)),
+            Span::styled(
+                "No tracks found",
+                Style::default()
+                    .fg(t.fg_muted)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]))
+        .alignment(ratatui::layout::Alignment::Center);
+
+        let y_offset = inner_area.height / 2;
+        let centered = Rect {
+            x: inner_area.x,
+            y: inner_area.y + y_offset,
+            width: inner_area.width,
+            height: 1,
+        };
+        frame.render_widget(empty_msg, centered);
         return;
     }
 
