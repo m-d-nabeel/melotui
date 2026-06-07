@@ -12,7 +12,7 @@ pub enum UIMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum FocusMode {
     #[default]
-    Full,               // sidebar + visualizer + mixer + playback
+    Full, // sidebar + visualizer + mixer + playback
     Visualizer,         // visualizer fills entire screen
     Playback,           // minimal now-playing strip centered
     VisualizerPlayback, // visualizer + playback, no sidebar/mixer

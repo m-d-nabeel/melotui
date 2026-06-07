@@ -77,8 +77,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         Span::styled("█", Style::default().fg(t.fg_primary)),
     ]);
 
-    let input_widget =
-        Paragraph::new(input_content).style(Style::default().bg(t.bg_input));
+    let input_widget = Paragraph::new(input_content).style(Style::default().bg(t.bg_input));
     frame.render_widget(input_widget, input_area);
 
     // visible slice of the list

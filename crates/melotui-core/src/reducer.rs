@@ -123,6 +123,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::CycleFocusMode => ui_action::handle_cycle_focus_mode(state),
         UIMsg::SetFocusMode(mode) => ui_action::handle_set_focus_mode(state, mode),
         UIMsg::SetSidebarWidth(width) => ui_action::handle_set_sidebar_width(state, width),
+        UIMsg::AdjustSidebarWidth(delta) => ui_action::handle_adjust_sidebar_width(state, delta),
     }
 }
 

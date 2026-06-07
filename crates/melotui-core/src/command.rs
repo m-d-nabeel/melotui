@@ -169,7 +169,9 @@ impl FromStr for Command {
             "focus" | "zen" => {
                 let arg = parts.next().unwrap_or("");
                 if arg.is_empty() {
-                    Ok(Command::Unknown("focus requires a mode: full, viz, play, vp".into()))
+                    Ok(Command::Unknown(
+                        "focus requires a mode: full, viz, play, vp".into(),
+                    ))
                 } else if let Ok(mode) = FocusMode::from_str(arg) {
                     Ok(Command::Focus { mode })
                 } else {
@@ -189,9 +191,7 @@ impl FromStr for Command {
                         "Sidebar width {} out of range (15-80)",
                         w
                     ))),
-                    Err(_) => Ok(Command::Unknown(
-                        "sidebar requires a number (15-80)".into(),
-                    )),
+                    Err(_) => Ok(Command::Unknown("sidebar requires a number (15-80)".into())),
                 }
             }
 

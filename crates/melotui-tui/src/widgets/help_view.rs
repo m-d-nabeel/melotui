@@ -29,9 +29,14 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
             Line::from(vec![
                 Span::styled(
                     "  Keyboard Shortcuts ",
-                    Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(t.accent_primary)
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("(press q or Esc to close)", Style::default().fg(t.help_subtext)),
+                Span::styled(
+                    "(press q or Esc to close)",
+                    Style::default().fg(t.help_subtext),
+                ),
             ])
             .alignment(Alignment::Center),
         )
@@ -84,7 +89,9 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
         .title(
             Line::from(Span::styled(
                 title,
-                Style::default().fg(t.help_header).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(t.help_header)
+                    .add_modifier(Modifier::BOLD),
             ))
             .alignment(Alignment::Center),
         )
@@ -132,7 +139,9 @@ fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&
         .title(
             Line::from(Span::styled(
                 title,
-                Style::default().fg(t.help_header).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(t.help_header)
+                    .add_modifier(Modifier::BOLD),
             ))
             .alignment(Alignment::Center),
         )
@@ -166,7 +175,10 @@ fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&
         let key_display = keys.join("  ");
 
         let line = Line::from(vec![
-            Span::styled(format!("{:12}", key_display), Style::default().fg(t.help_key)),
+            Span::styled(
+                format!("{:12}", key_display),
+                Style::default().fg(t.help_key),
+            ),
             Span::raw(" "),
             Span::styled(desc, Style::default().fg(t.help_text)),
         ]);

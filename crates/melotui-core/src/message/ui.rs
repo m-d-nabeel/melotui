@@ -29,4 +29,5 @@ pub enum UIMsg {
     SetFocusMode(FocusMode),
     // Sidebar width
     SetSidebarWidth(u16),
+    AdjustSidebarWidth(i16),
 }

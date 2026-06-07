@@ -42,7 +42,12 @@ pub struct AppState {
 // lifecycle
 impl AppState {
     pub fn new(library: LibrarySnapshot) -> Self {
+        let config = crate::config::AppConfig::load();
         let mut session = SessionState::default();
+
+        // Apply config to session
+        session.ui.sidebar_width = config.ui.sidebar_width;
+        session.ui.scrolloff = config.ui.scrolloff;
 
         // select first item
         if let Some(first_node) = projector::get_node_at_index(&library, &session.nav.library, 0) {

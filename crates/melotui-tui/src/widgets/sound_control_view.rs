@@ -187,9 +187,7 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
 
     let label_span = Span::styled(
         config.label,
-        Style::default()
-            .add_modifier(Modifier::BOLD)
-            .fg(t.fg_muted),
+        Style::default().add_modifier(Modifier::BOLD).fg(t.fg_muted),
     );
     frame.render_widget(Paragraph::new(label_span), header[0]);
 

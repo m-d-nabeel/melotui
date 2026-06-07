@@ -75,58 +75,58 @@ impl Theme {
     pub fn catppuccin_mocha() -> Self {
         Self {
             // Panel chrome
-            border_active: Color::Rgb(137, 180, 250),    // Blue
-            border_inactive: Color::Rgb(69, 71, 90),     // Surface1
+            border_active: Color::Rgb(137, 180, 250), // Blue
+            border_inactive: Color::Rgb(69, 71, 90),  // Surface1
 
             // Backgrounds
-            bg_selected: Color::Rgb(40, 44, 52),         // Custom dark selection
-            bg_overlay: Color::Rgb(24, 24, 37),          // Mantle
-            bg_input: Color::Rgb(20, 20, 25),            // Deep dark
+            bg_selected: Color::Rgb(40, 44, 52), // Custom dark selection
+            bg_overlay: Color::Rgb(24, 24, 37),  // Mantle
+            bg_input: Color::Rgb(20, 20, 25),    // Deep dark
 
             // Text hierarchy
-            fg_primary: Color::Rgb(205, 214, 244),       // Text
-            fg_secondary: Color::Rgb(186, 194, 222),     // Subtext1
-            fg_muted: Color::Rgb(108, 112, 134),         // Overlay0
+            fg_primary: Color::Rgb(205, 214, 244),   // Text
+            fg_secondary: Color::Rgb(186, 194, 222), // Subtext1
+            fg_muted: Color::Rgb(108, 112, 134),     // Overlay0
 
             // Semantic accents
-            accent_primary: Color::Rgb(137, 180, 250),   // Blue
-            accent_playing: Color::Rgb(166, 227, 161),   // Green
-            accent_ancestor: Color::Rgb(148, 226, 213),  // Teal
-            accent_info: Color::Rgb(137, 180, 250),      // Blue
-            accent_warning: Color::Rgb(249, 226, 175),   // Yellow
-            accent_error: Color::Rgb(243, 139, 168),     // Red
+            accent_primary: Color::Rgb(137, 180, 250), // Blue
+            accent_playing: Color::Rgb(166, 227, 161), // Green
+            accent_ancestor: Color::Rgb(148, 226, 213), // Teal
+            accent_info: Color::Rgb(137, 180, 250),    // Blue
+            accent_warning: Color::Rgb(249, 226, 175), // Yellow
+            accent_error: Color::Rgb(243, 139, 168),   // Red
 
             // Playback status
-            status_playing: Color::Rgb(166, 227, 161),   // Green
-            status_paused: Color::Rgb(249, 226, 175),    // Yellow
-            status_stopped: Color::Rgb(243, 139, 168),   // Red
+            status_playing: Color::Rgb(166, 227, 161), // Green
+            status_paused: Color::Rgb(249, 226, 175),  // Yellow
+            status_stopped: Color::Rgb(243, 139, 168), // Red
 
             // Category icons
-            icon_folder: Color::Rgb(215, 153, 33),       // Gold
-            icon_playlist: Color::Rgb(177, 98, 134),     // Purple
-            icon_category: Color::Rgb(97, 175, 239),     // Soft Blue
+            icon_folder: Color::Rgb(215, 153, 33),   // Gold
+            icon_playlist: Color::Rgb(177, 98, 134), // Purple
+            icon_category: Color::Rgb(97, 175, 239), // Soft Blue
 
             // Mixer sliders
-            slider_volume: Color::Rgb(166, 227, 161),    // Green
-            slider_speed: Color::Rgb(137, 180, 250),     // Blue
-            slider_bass: Color::Rgb(249, 226, 175),      // Yellow
-            slider_treble: Color::Rgb(148, 226, 213),    // Teal
-            slider_reverb: Color::Rgb(203, 166, 247),    // Mauve
-            slider_echo: Color::Rgb(243, 139, 168),      // Red
-            slider_track: Color::Rgb(69, 71, 90),        // Surface1
+            slider_volume: Color::Rgb(166, 227, 161), // Green
+            slider_speed: Color::Rgb(137, 180, 250),  // Blue
+            slider_bass: Color::Rgb(249, 226, 175),   // Yellow
+            slider_treble: Color::Rgb(148, 226, 213), // Teal
+            slider_reverb: Color::Rgb(203, 166, 247), // Mauve
+            slider_echo: Color::Rgb(243, 139, 168),   // Red
+            slider_track: Color::Rgb(69, 71, 90),     // Surface1
 
             // Help view
-            help_key: Color::Rgb(243, 139, 168),         // Pink
-            help_header: Color::Rgb(166, 227, 161),      // Green
-            help_text: Color::Rgb(205, 214, 244),        // Text
-            help_subtext: Color::Rgb(166, 173, 200),     // Subtext0
-            help_overlay_bg: Color::Rgb(69, 71, 90),     // Surface1
-            help_border: Color::Rgb(88, 91, 112),        // Surface2
+            help_key: Color::Rgb(243, 139, 168),     // Pink
+            help_header: Color::Rgb(166, 227, 161),  // Green
+            help_text: Color::Rgb(205, 214, 244),    // Text
+            help_subtext: Color::Rgb(166, 173, 200), // Subtext0
+            help_overlay_bg: Color::Rgb(69, 71, 90), // Surface1
+            help_border: Color::Rgb(88, 91, 112),    // Surface2
 
             // Track info badges
-            badge_lossless: Color::Rgb(166, 227, 161),   // Green
-            badge_lossy: Color::Rgb(137, 180, 250),      // Blue
-            badge_detail_bg: Color::Rgb(69, 71, 90),     // Surface1
+            badge_lossless: Color::Rgb(166, 227, 161), // Green
+            badge_lossy: Color::Rgb(137, 180, 250),    // Blue
+            badge_detail_bg: Color::Rgb(69, 71, 90),   // Surface1
         }
     }
 }

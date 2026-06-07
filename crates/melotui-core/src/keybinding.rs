@@ -96,6 +96,10 @@ pub enum KeyAction {
 
     // focus mode
     CycleFocusMode,
+
+    // panel resize
+    ShrinkSidebar,
+    GrowSidebar,
 }
 
 const OFFSET_SECONDS: i64 = 5;
@@ -170,6 +174,8 @@ impl KeyAction {
             KeyAction::ConfirmYes => Some(AppMsg::UI(UIMsg::ConfirmYes)),
             KeyAction::ConfirmNo => Some(AppMsg::UI(UIMsg::ConfirmNo)),
             KeyAction::CycleFocusMode => Some(AppMsg::UI(UIMsg::CycleFocusMode)),
+            KeyAction::ShrinkSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(-2))),
+            KeyAction::GrowSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(2))),
         }
     }
 }
@@ -374,6 +380,10 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('E'), KeyAction::EchoDown, "Echo-")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::F(1), KeyAction::CycleFocusMode, "Focus Mode"),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::ShrinkSidebar, "Sidebar-")
+                    .with_mod(KeyModifiers::CONTROL),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::GrowSidebar, "Sidebar+")
+                    .with_mod(KeyModifiers::CONTROL),
             ],
         );
 

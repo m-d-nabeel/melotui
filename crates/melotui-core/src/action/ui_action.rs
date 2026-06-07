@@ -363,12 +363,8 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             ));
             vec![]
         }
-        Command::Focus { mode } => {
-            handle_set_focus_mode(state, mode)
-        }
-        Command::Sidebar { width } => {
-            handle_set_sidebar_width(state, width)
-        }
+        Command::Focus { mode } => handle_set_focus_mode(state, mode),
+        Command::Sidebar { width } => handle_set_sidebar_width(state, width),
     }
 }
 
@@ -401,11 +397,15 @@ pub fn handle_set_focus_mode(state: &mut AppState, mode: FocusMode) -> Vec<AppMs
 pub fn handle_set_sidebar_width(state: &mut AppState, width: u16) -> Vec<AppMsg> {
     state.session.ui.sidebar_width = width;
     state.session.notification.current = Some(
-        Notification::new(
-            NotificationKind::Info,
-            format!("Sidebar width: {}", width),
-        )
-        .with_duration(2),
+        Notification::new(NotificationKind::Info, format!("Sidebar width: {}", width))
+            .with_duration(2),
     );
+    vec![]
+}
+
+pub fn handle_adjust_sidebar_width(state: &mut AppState, delta: i16) -> Vec<AppMsg> {
+    let current = state.session.ui.sidebar_width as i16;
+    let new_width = (current + delta).clamp(15, 80) as u16;
+    state.session.ui.sidebar_width = new_width;
     vec![]
 }

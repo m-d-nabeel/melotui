@@ -99,9 +99,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         let no_playing_lines = vec![Line::from(vec![
             Span::styled(
                 " ▶ ",
-                Style::default()
-                    .fg(t.fg_muted)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(t.fg_muted).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 "No song playing",

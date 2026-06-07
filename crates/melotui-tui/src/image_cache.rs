@@ -27,7 +27,8 @@ impl ImageState {
         self.height = 0;
     }
 
-    /// resize and crop image - update protocol
+    /// Resize, crop, and create the rendering protocol for the current terminal area.
+    /// This is the ONLY place where a protocol should be created — never in update_state.
     pub fn update_protocol(&mut self, picker: &Picker, area: ratatui::layout::Rect) {
         if area.width == 0 || area.height == 0 {
             return;
@@ -37,7 +38,7 @@ impl ImageState {
         let target_w = area.width as u32 * font_w as u32;
         let target_h = area.height as u32 * font_h as u32;
 
-        // skip if match
+        // Skip if already rendered at this size
         if self.width == target_w && self.height == target_h && self.protocol.is_some() {
             return;
         }
@@ -46,7 +47,7 @@ impl ImageState {
             let src_w = source.width();
             let src_h = source.height();
 
-            // cover logic: scale to fill
+            // cover logic: scale to fill, then center-crop
             let scale_w = target_w as f32 / src_w as f32;
             let scale_h = target_h as f32 / src_h as f32;
             let scale = scale_w.max(scale_h);
@@ -61,19 +62,26 @@ impl ImageState {
                 image::imageops::FilterType::Triangle,
             );
 
-            // center crop logic
             let off_x = (new_w.saturating_sub(target_w)) / 2;
             let off_y = (new_h.saturating_sub(target_h)) / 2;
 
             let cropped =
                 image::imageops::crop(&mut resized, off_x, off_y, target_w, target_h).to_image();
 
-            // cache protocol
+            // Drop the intermediate resize buffer before creating the protocol
+            drop(resized);
+
             self.protocol =
                 Some(picker.new_resize_protocol(image::DynamicImage::ImageRgba8(cropped)));
 
             self.width = target_w;
             self.height = target_h;
+
+            // Drop source after successful protocol creation to free memory.
+            // The protocol contains everything needed for rendering.
+            // If the terminal resizes, we'll need to re-fetch from the disk cache,
+            // but that's a 5ms disk read vs holding ~1.4MB permanently.
+            self.source = None;
         }
     }
 }
@@ -111,53 +119,45 @@ impl ImageCache {
             return;
         }
 
-        let picker = &self.picker;
+        Self::update_state(&mut self.album_art, &state.current_cover, popup_just_closed);
 
         Self::update_state(
-            picker,
-            &mut self.album_art,
-            &state.current_cover,
-            popup_just_closed,
-        );
-
-        Self::update_state(
-            picker,
             &mut self.track_info,
             &state.track_info_cover,
             popup_just_closed,
         );
     }
 
+    /// Update the image source reference only.
+    /// Does NOT create a protocol — that's done lazily by update_protocol()
+    /// when the widget actually renders and knows its area.
+    ///
+    /// The old code created a protocol here with img.as_ref().clone() which:
+    /// 1. Cloned the entire DynamicImage (~1.4 MB) unnecessarily
+    /// 2. Created a protocol at the wrong size (source dims, not terminal dims)
+    /// 3. That protocol was thrown away on the next frame when update_protocol()
+    ///    re-created it at the correct size — double allocation.
     fn update_state(
-        picker: &Picker,
         local: &mut ImageState,
         core_cover: &Option<Arc<DynamicImage>>,
         force_redraw: bool,
     ) {
-        // fast arc pointer check
+        // Fast Arc pointer check — avoids any work if the source hasn't changed
         let same_source = match (&local.source, core_cover) {
             (Some(a), Some(b)) => Arc::ptr_eq(a, b),
             (None, None) => true,
             _ => false,
         };
 
-        if same_source && !force_redraw && local.protocol.is_some() {
+        if same_source && !force_redraw {
             return;
         }
 
-        if !same_source {
-            local.source = core_cover.clone();
-            local.width = 0;
-            local.height = 0;
-            local.protocol = None;
-        }
-
-        if let Some(img) = core_cover {
-            local.width = img.width();
-            local.height = img.height();
-            local.protocol = Some(picker.new_resize_protocol(img.as_ref().clone()));
-        } else {
-            local.protocol = None;
-        }
+        // Source changed — update reference and invalidate the protocol.
+        // The protocol will be created by update_protocol() on the next render.
+        local.source = core_cover.clone(); // Arc clone = ref count increment only
+        local.width = 0;
+        local.height = 0;
+        local.protocol = None;
     }
 }

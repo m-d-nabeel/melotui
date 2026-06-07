@@ -74,11 +74,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             height: content_height.min(inner_area.height),
         };
 
-        let p = Paragraph::new(content).alignment(Alignment::Center).style(
-            Style::default()
-                .fg(t.fg_muted)
-                .add_modifier(Modifier::BOLD),
-        );
+        let p = Paragraph::new(content)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(t.fg_muted).add_modifier(Modifier::BOLD));
 
         frame.render_widget(p, centered_rect);
     }
