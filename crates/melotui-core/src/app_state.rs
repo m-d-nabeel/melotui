@@ -345,7 +345,7 @@ impl AppState {
         self.session.ui.show_help
     }
 
-    pub fn ui_command_buffer(&self) -> &String {
+    pub fn ui_command_buffer(&self) -> &tui_input::Input {
         &self.session.ui.command_buffer
     }
 

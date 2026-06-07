@@ -14,6 +14,7 @@ pub enum IpcEvent {
     DownloadProgress {
         percent: u8,
     },
+    DownloadItemFinished,
     DownloadFinished,
     DownloadFailed {
         error: String,

@@ -69,7 +69,7 @@ pub struct ConfirmDialog {
 #[derive(Debug, Clone)]
 pub struct UIState {
     pub mode: UIMode,
-    pub command_buffer: String,
+    pub command_buffer: tui_input::Input,
     pub playlist_picker: PlaylistPickerState,
     /// track waiting to be added after async playlist creation
     pub pending_add_track: Option<TrackId>,
@@ -86,7 +86,7 @@ impl Default for UIState {
     fn default() -> Self {
         Self {
             mode: UIMode::default(),
-            command_buffer: String::new(),
+            command_buffer: tui_input::Input::default(),
             playlist_picker: PlaylistPickerState::default(),
             pending_add_track: None,
             confirm_dialog: None,

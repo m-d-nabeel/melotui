@@ -31,7 +31,6 @@ pub enum KeyAction {
     EnterCommandMode,
     ExitCommandMode,
     SubmitCommand,
-    BackspaceCommand,
 
     // navigation
     TogglePanel,
@@ -113,7 +112,6 @@ impl KeyAction {
 
             KeyAction::EnterCommandMode => Some(AppMsg::UI(UIMsg::EnterCommandMode)),
             KeyAction::ExitCommandMode => Some(AppMsg::UI(UIMsg::ExitCommandMode)),
-            KeyAction::BackspaceCommand => Some(AppMsg::UI(UIMsg::BackspaceCommand)),
 
             KeyAction::MoveUp => Some(AppMsg::Navigation(NavigationMsg::MoveUp)),
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
@@ -245,7 +243,6 @@ impl Default for KeyRegistry {
             vec![
                 KeyBinding::new(KeyCode::Esc, KeyAction::ExitCommandMode, "Exit"),
                 KeyBinding::new(KeyCode::Enter, KeyAction::SubmitCommand, "Execute"),
-                KeyBinding::new(KeyCode::Backspace, KeyAction::BackspaceCommand, "Delete"),
             ],
         );
 

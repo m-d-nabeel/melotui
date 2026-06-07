@@ -4,8 +4,7 @@ use crate::{AppMsg, state::ui::FocusMode};
 pub enum UIMsg {
     EnterCommandMode,
     ExitCommandMode,
-    UpdateCommand(char),
-    BackspaceCommand,
+    CommandInput(ratatui::crossterm::event::KeyEvent),
     SubmitCommand(String),
     OpenHelp,
     CloseHelp,

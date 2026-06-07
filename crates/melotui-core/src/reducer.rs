@@ -98,8 +98,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
     match msg {
         UIMsg::EnterCommandMode => ui_action::handle_enter_command_mode(state),
         UIMsg::ExitCommandMode => ui_action::handle_exit_command_mode(state),
-        UIMsg::UpdateCommand(c) => ui_action::handle_update_command(state, c),
-        UIMsg::BackspaceCommand => ui_action::handle_backspace_command(state),
+        UIMsg::CommandInput(key) => ui_action::handle_command_input(state, key),
         UIMsg::SubmitCommand(input) => ui_action::handle_submit_command(state, input),
         UIMsg::OpenHelp => ui_action::handle_open_help(state),
         UIMsg::CloseHelp => ui_action::handle_close_help(state),

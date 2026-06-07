@@ -203,6 +203,9 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::DownloadProgress { percent } => {
             AppMsg::Download(DownloadMsg::DownloadProgress { percent })
         }
+        IpcEvent::DownloadItemFinished => {
+            AppMsg::Library(LibraryMsg::RequestScanLibrary)
+        }
         IpcEvent::DownloadFinished => AppMsg::Download(DownloadMsg::DownloadFinished),
         IpcEvent::DownloadFailed { error } => {
             AppMsg::Download(DownloadMsg::DownloadFailed { error })

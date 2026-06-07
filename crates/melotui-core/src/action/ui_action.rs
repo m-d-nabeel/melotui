@@ -219,24 +219,21 @@ pub fn handle_resize(state: &mut AppState, w: u16, h: u16) -> Vec<AppMsg> {
 pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     tracing::debug!("Enter Command Mode");
     state.session.ui.mode = UIMode::Command;
-    state.session.ui.command_buffer.clear();
+    state.session.ui.command_buffer.reset();
     vec![]
 }
 
 pub fn handle_exit_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     tracing::debug!("Exit Command Mode");
     state.session.ui.mode = UIMode::Normal;
-    state.session.ui.command_buffer.clear();
+    state.session.ui.command_buffer.reset();
     vec![]
 }
 
-pub fn handle_update_command(state: &mut AppState, c: char) -> Vec<AppMsg> {
-    state.session.ui.command_buffer.push(c);
-    vec![]
-}
-
-pub fn handle_backspace_command(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.ui.command_buffer.pop();
+pub fn handle_command_input(state: &mut AppState, key: ratatui::crossterm::event::KeyEvent) -> Vec<AppMsg> {
+    use tui_input::backend::crossterm::EventHandler;
+    let event = ratatui::crossterm::event::Event::Key(key);
+    state.session.ui.command_buffer.handle_event(&event);
     vec![]
 }
 
@@ -247,7 +244,7 @@ pub fn handle_submit_command(state: &mut AppState, input: String) -> Vec<AppMsg>
 
 fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
     state.session.ui.mode = UIMode::Normal;
-    state.session.ui.command_buffer.clear();
+    state.session.ui.command_buffer.reset();
 
     let input = input.trim();
     if input.is_empty() {
