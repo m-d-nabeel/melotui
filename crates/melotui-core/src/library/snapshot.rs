@@ -23,10 +23,10 @@ pub struct LibrarySnapshot {
 
     // browsing indices
     pub folder_tree: DirectoryNode,
-    pub artists: HashMap<String, Vec<TrackId>>,
-    pub albums: HashMap<String, Vec<TrackId>>,
-    pub genres: HashMap<String, Vec<TrackId>>,
-    pub years: HashMap<u32, Vec<TrackId>>,
+    pub artists: std::collections::BTreeMap<String, Vec<TrackId>>,
+    pub albums: std::collections::BTreeMap<String, Vec<TrackId>>,
+    pub genres: std::collections::BTreeMap<String, Vec<TrackId>>,
+    pub years: std::collections::BTreeMap<u32, Vec<TrackId>>,
     pub favorites: Vec<TrackId>,
 }
 
@@ -45,10 +45,14 @@ impl LibrarySnapshot {
         }
 
         // build indices
-        let mut artists: HashMap<String, Vec<TrackId>> = HashMap::new();
-        let mut albums: HashMap<String, Vec<TrackId>> = HashMap::new();
-        let mut genres: HashMap<String, Vec<TrackId>> = HashMap::new();
-        let mut years: HashMap<u32, Vec<TrackId>> = HashMap::new();
+        let mut artists: std::collections::BTreeMap<String, Vec<TrackId>> =
+            std::collections::BTreeMap::new();
+        let mut albums: std::collections::BTreeMap<String, Vec<TrackId>> =
+            std::collections::BTreeMap::new();
+        let mut genres: std::collections::BTreeMap<String, Vec<TrackId>> =
+            std::collections::BTreeMap::new();
+        let mut years: std::collections::BTreeMap<u32, Vec<TrackId>> =
+            std::collections::BTreeMap::new();
         let mut favorites = vec![];
 
         // group tracks by various metadata for fast browsing

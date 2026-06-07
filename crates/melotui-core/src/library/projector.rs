@@ -14,11 +14,88 @@ pub struct SidebarRow {
 
 /// visible row count
 pub fn get_row_count(snapshot: &LibrarySnapshot, nav: &LibraryNavState) -> usize {
-    let mut count = 0;
-    traverse_visible_nodes(snapshot, nav, |_| {
-        count += 1;
-        false
-    });
+    let mut count = 7; // Categories: Folders, Favorites, Artists, Albums, Genres, Years, Playlists
+
+    if nav
+        .expanded_ids
+        .contains(&SidebarNodeId::Category(CategoryId::Folders))
+    {
+        count += count_directory(&snapshot.folder_tree, &nav.expanded_ids);
+    }
+    if nav
+        .expanded_ids
+        .contains(&SidebarNodeId::Category(CategoryId::Favorites))
+    {
+        count += snapshot.favorites.len();
+    }
+    if nav
+        .expanded_ids
+        .contains(&SidebarNodeId::Category(CategoryId::Artists))
+    {
+        count += count_generic_map(&snapshot.artists, &nav.expanded_ids, SidebarNodeId::Artist);
+    }
+    if nav
+        .expanded_ids
+        .contains(&SidebarNodeId::Category(CategoryId::Albums))
+    {
+        count += count_generic_map(&snapshot.albums, &nav.expanded_ids, SidebarNodeId::Album);
+    }
+    if nav
+        .expanded_ids
+        .contains(&SidebarNodeId::Category(CategoryId::Genres))
+    {
+        count += count_generic_map(&snapshot.genres, &nav.expanded_ids, SidebarNodeId::Genre);
+    }
+    if nav
+        .expanded_ids
+        .contains(&SidebarNodeId::Category(CategoryId::Years))
+    {
+        count += count_generic_map(&snapshot.years, &nav.expanded_ids, SidebarNodeId::Year);
+    }
+    if nav
+        .expanded_ids
+        .contains(&SidebarNodeId::Category(CategoryId::Playlists))
+    {
+        for pid in &snapshot.playlist_order {
+            if let Some(playlist) = snapshot.playlists.get(pid) {
+                count += 1;
+                if nav.expanded_ids.contains(&SidebarNodeId::Playlist(*pid)) {
+                    count += playlist.tracks.len();
+                }
+            }
+        }
+    }
+
+    count
+}
+
+fn count_directory(node: &DirectoryNode, expanded_ids: &HashSet<SidebarNodeId>) -> usize {
+    let mut count = node.subdirs.len() + node.tracks.len();
+    for subdir in &node.subdirs {
+        let id = SidebarNodeId::Folder(subdir.path.clone());
+        if expanded_ids.contains(&id) {
+            count += count_directory(subdir, expanded_ids);
+        }
+    }
+    count
+}
+
+fn count_generic_map<K, IDGen>(
+    map: &std::collections::BTreeMap<K, Vec<crate::domain::TrackId>>,
+    expanded_ids: &HashSet<SidebarNodeId>,
+    id_gen: IDGen,
+) -> usize
+where
+    K: std::hash::Hash + Eq + Clone,
+    IDGen: Fn(K) -> SidebarNodeId,
+{
+    let mut count = map.len();
+    for (key, tids) in map {
+        let id = id_gen(key.clone());
+        if expanded_ids.contains(&id) {
+            count += tids.len();
+        }
+    }
     count
 }
 
@@ -300,7 +377,7 @@ where
 
 /// generic map visitor
 fn visit_generic_map<K, F, IDGen>(
-    map: &std::collections::HashMap<K, Vec<crate::domain::TrackId>>,
+    map: &std::collections::BTreeMap<K, Vec<crate::domain::TrackId>>,
     expanded_ids: &HashSet<SidebarNodeId>,
     level: u8,
     id_gen: IDGen,
@@ -312,10 +389,7 @@ where
     F: FnMut(SidebarRow) -> bool,
     IDGen: Fn(K) -> SidebarNodeId,
 {
-    let mut keys: Vec<&K> = map.keys().collect();
-    keys.sort();
-
-    for key in keys {
+    for (key, tids) in map {
         let id = id_gen(key.clone());
         let expanded = expanded_ids.contains(&id);
 
@@ -329,7 +403,7 @@ where
             return true;
         }
 
-        if expanded && let Some(tids) = map.get(key) {
+        if expanded {
             for tid in tids {
                 if let Some(track) = snapshot.tracks.get(tid) {
                     let t_id = SidebarNodeId::Track {
