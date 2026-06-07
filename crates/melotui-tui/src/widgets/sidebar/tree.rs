@@ -192,14 +192,11 @@ fn render_row(
     };
 
     // Build line
-    let mut spans = vec![
+    let spans = vec![
         Span::raw(indent_str),
         Span::styled(icon_str, icon_style),
         Span::styled(label_text, text_style),
     ];
-    if is_playing_track {
-        spans.push(Span::styled(" 󰐊", Style::default().fg(t.accent_playing)));
-    }
 
     ListItem::new(Line::from(spans))
 }
@@ -238,13 +235,13 @@ fn get_icon(
     is_playing: bool,
 ) -> String {
     if is_playing {
-        return " ".to_string();
+        return "󰐊 ".to_string();
     }
 
     match id {
         SidebarNodeId::Root => "󰉋 ".to_string(),
         SidebarNodeId::Category(cat) => {
-            let arrow = if is_expanded { "▾" } else { "▸" };
+            let arrow = if is_expanded { "" } else { "" };
             let icon = match cat {
                 CategoryId::Folders => "󰉋",
                 CategoryId::Artists => "󰠃",
@@ -252,31 +249,31 @@ fn get_icon(
                 CategoryId::Playlists => "󰲳",
                 CategoryId::Genres => "󰊗",
                 CategoryId::Years => "󰔠",
-                CategoryId::Favorites => "",
+                CategoryId::Favorites => "󰋎",
             };
             format!("{} {} ", arrow, icon)
         }
         SidebarNodeId::Folder(_) => {
             if is_expandable {
-                let arrow = if is_expanded { "▾" } else { "▸" };
-                format!("{} {} ", arrow, "")
+                let arrow = if is_expanded { "" } else { "" };
+                format!("{} {} ", arrow, "󰉋")
             } else {
-                " ".to_string()
+                "󰉋 ".to_string()
             }
         }
         SidebarNodeId::Playlist(_) => {
             if is_expandable {
-                let arrow = if is_expanded { "▾" } else { "▸" };
-                format!("{} {} ", arrow, "")
+                let arrow = if is_expanded { "" } else { "" };
+                format!("{} {} ", arrow, "󰲳")
             } else {
-                " ".to_string()
+                "󰲳 ".to_string()
             }
         }
         // Tracks are leaf nodes — no arrow, just icon
         SidebarNodeId::Track { .. } => "♪ ".to_string(),
         SidebarNodeId::Artist(_) => {
             if is_expandable {
-                let arrow = if is_expanded { "▾" } else { "▸" };
+                let arrow = if is_expanded { "" } else { "" };
                 format!("{} {} ", arrow, "󰠃")
             } else {
                 "󰠃 ".to_string()
@@ -284,7 +281,7 @@ fn get_icon(
         }
         SidebarNodeId::Album(_) => {
             if is_expandable {
-                let arrow = if is_expanded { "▾" } else { "▸" };
+                let arrow = if is_expanded { "" } else { "" };
                 format!("{} {} ", arrow, "󰀥")
             } else {
                 "󰀥 ".to_string()
@@ -292,7 +289,7 @@ fn get_icon(
         }
         SidebarNodeId::Genre(_) => {
             if is_expandable {
-                let arrow = if is_expanded { "▾" } else { "▸" };
+                let arrow = if is_expanded { "" } else { "" };
                 format!("{} {} ", arrow, "󰊗")
             } else {
                 "󰊗 ".to_string()
@@ -300,7 +297,7 @@ fn get_icon(
         }
         SidebarNodeId::Year(_) => {
             if is_expandable {
-                let arrow = if is_expanded { "▾" } else { "▸" };
+                let arrow = if is_expanded { "" } else { "" };
                 format!("{} {} ", arrow, "󰔠")
             } else {
                 "󰔠 ".to_string()
