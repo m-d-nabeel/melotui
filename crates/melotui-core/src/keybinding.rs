@@ -93,6 +93,9 @@ pub enum KeyAction {
     // confirm dialog
     ConfirmYes,
     ConfirmNo,
+
+    // focus mode
+    CycleFocusMode,
 }
 
 const OFFSET_SECONDS: i64 = 5;
@@ -166,6 +169,7 @@ impl KeyAction {
             KeyAction::RemoveFromPlaylist => None, // id resolved in input.rs
             KeyAction::ConfirmYes => Some(AppMsg::UI(UIMsg::ConfirmYes)),
             KeyAction::ConfirmNo => Some(AppMsg::UI(UIMsg::ConfirmNo)),
+            KeyAction::CycleFocusMode => Some(AppMsg::UI(UIMsg::CycleFocusMode)),
         }
     }
 }
@@ -369,6 +373,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoUp, "Echo+"),
                 KeyBinding::new(KeyCode::Char('E'), KeyAction::EchoDown, "Echo-")
                     .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::F(1), KeyAction::CycleFocusMode, "Focus Mode"),
             ],
         );
 

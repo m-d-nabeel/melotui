@@ -95,12 +95,14 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    const COMMANDS: [(&str, &str); 12] = [
+    const COMMANDS: [(&str, &str); 14] = [
         (":q | :quit     ", "Quit App"),
         (":r | :rescan   ", "Rescan Lib"),
         (":dl <query>    ", "Download"),
         (":v <style>     ", "Visualizer"),
         (":noh           ", "Clear Search"),
+        (":focus <mode>  ", "Focus Mode"),
+        (":sidebar <n>   ", "Sidebar Width"),
         (":pl create <n> ", "New Playlist"),
         (":pl del <n>    ", "Del Playlist"),
         (":pl add <n>    ", "Add to Pl"),

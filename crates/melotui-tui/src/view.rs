@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph},
 };
 
-use melotui_core::{AppState, UIMode};
+use melotui_core::{AppState, UIMode, state::ui::FocusMode};
 
 use crate::{
     image_cache::ImageCache,
@@ -16,8 +16,8 @@ use crate::{
     },
 };
 
-const MIN_WIDTH: u16 = 80;
-const MIN_HEIGHT: u16 = 20;
+const MIN_WIDTH: u16 = 60;
+const MIN_HEIGHT: u16 = 10;
 
 pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
     let area = frame.area();
@@ -28,20 +28,31 @@ pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
         return;
     }
 
-    // main layout — sidebar uses configurable width
+    // Dispatch to focus mode layout
+    match state.focus_mode() {
+        FocusMode::Full => draw_full(frame, area, state, image_cache),
+        FocusMode::Visualizer => draw_visualizer_only(frame, area, state, image_cache),
+        FocusMode::Playback => draw_playback_only(frame, area, state),
+        FocusMode::VisualizerPlayback => draw_viz_playback(frame, area, state, image_cache),
+    }
+
+    // Overlays render on top regardless of focus mode
+    draw_overlays(frame, area, state);
+}
+
+/// Full layout: sidebar + visualizer + mixer + playback
+fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut ImageCache) {
     let sidebar_width = state.sidebar_width();
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(sidebar_width), Constraint::Fill(1)])
         .split(area);
 
-    // Vertical right: visualizer fills remaining, controls get fixed minimum
     let right_vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(14)])
         .split(horizontal[1]);
 
-    // Controls: mixer fills remaining, playback gets priority (essential)
     let control_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Fill(1), Constraint::Length(7)])
@@ -51,10 +62,52 @@ pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
     visualizer_view::draw(frame, right_vertical[0], state, image_cache);
     sound_control_view::draw(frame, control_chunks[0], state);
     playback_view::draw(frame, control_chunks[1], state);
+}
 
+/// Visualizer fills entire area
+fn draw_visualizer_only(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    image_cache: &mut ImageCache,
+) {
+    visualizer_view::draw(frame, area, state, image_cache);
+}
+
+/// Minimal playback strip centered vertically
+fn draw_playback_only(frame: &mut Frame, area: Rect, state: &AppState) {
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(7),
+            Constraint::Fill(1),
+        ])
+        .split(area);
+
+    playback_view::draw(frame, layout[1], state);
+}
+
+/// Visualizer top + playback bottom, no sidebar or mixer
+fn draw_viz_playback(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    image_cache: &mut ImageCache,
+) {
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Fill(1), Constraint::Length(7)])
+        .split(area);
+
+    visualizer_view::draw(frame, layout[0], state, image_cache);
+    playback_view::draw(frame, layout[1], state);
+}
+
+/// Overlays: command bar, playlist picker, confirm dialog, help, notifications
+fn draw_overlays(frame: &mut Frame, area: Rect, state: &AppState) {
     notification_popup::draw(frame, frame.area(), state);
 
-    // command overlay
     if *state.ui_mode() == UIMode::Command {
         frame.render_widget(
             Block::default().style(Style::default().add_modifier(Modifier::DIM)),
@@ -68,18 +121,14 @@ pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
         command_view::draw(frame, overlay, state);
     }
 
-    // playlist picker overlay
     if *state.ui_mode() == UIMode::PlaylistPicker {
-        // Dim background
         frame.render_widget(
             Block::default().style(Style::default().add_modifier(Modifier::DIM)),
             area,
         );
-        // The picker calculates its own layout relative to the full area
         playlist_picker_view::draw(frame, area, state);
     }
 
-    // confirm dialog bottom bar
     if *state.ui_mode() == UIMode::Confirm {
         frame.render_widget(
             Block::default().style(Style::default().add_modifier(Modifier::DIM)),
@@ -110,7 +159,6 @@ fn draw_too_small(frame: &mut Frame, area: Rect) {
     .alignment(Alignment::Center)
     .style(Style::default().fg(theme.accent_warning));
 
-    // Center the message
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

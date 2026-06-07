@@ -381,6 +381,10 @@ impl AppState {
     pub fn sidebar_width(&self) -> u16 {
         self.session.ui.sidebar_width
     }
+
+    pub fn focus_mode(&self) -> crate::state::ui::FocusMode {
+        self.session.ui.focus_mode
+    }
 }
 
 // next song prediction

@@ -9,6 +9,49 @@ pub enum UIMode {
     Confirm,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FocusMode {
+    #[default]
+    Full,               // sidebar + visualizer + mixer + playback
+    Visualizer,         // visualizer fills entire screen
+    Playback,           // minimal now-playing strip centered
+    VisualizerPlayback, // visualizer + playback, no sidebar/mixer
+}
+
+impl FocusMode {
+    pub fn cycle(self) -> Self {
+        match self {
+            FocusMode::Full => FocusMode::Visualizer,
+            FocusMode::Visualizer => FocusMode::Playback,
+            FocusMode::Playback => FocusMode::VisualizerPlayback,
+            FocusMode::VisualizerPlayback => FocusMode::Full,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            FocusMode::Full => "Full",
+            FocusMode::Visualizer => "Visualizer",
+            FocusMode::Playback => "Playback",
+            FocusMode::VisualizerPlayback => "Viz+Play",
+        }
+    }
+}
+
+impl std::str::FromStr for FocusMode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "full" | "f" | "all" => Ok(FocusMode::Full),
+            "viz" | "v" | "visualizer" => Ok(FocusMode::Visualizer),
+            "play" | "p" | "playback" => Ok(FocusMode::Playback),
+            "vp" | "vizplay" => Ok(FocusMode::VisualizerPlayback),
+            _ => Err(()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct PlaylistPickerState {
     pub query: String,
@@ -36,6 +79,7 @@ pub struct UIState {
     pub scrolloff: usize,
     pub terminal_size: (u16, u16),
     pub sidebar_width: u16,
+    pub focus_mode: FocusMode,
 }
 
 impl Default for UIState {
@@ -50,6 +94,7 @@ impl Default for UIState {
             scrolloff: 8,
             terminal_size: (0, 0),
             sidebar_width: 28,
+            focus_mode: FocusMode::default(),
         }
     }
 }

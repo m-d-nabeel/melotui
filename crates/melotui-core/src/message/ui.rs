@@ -1,4 +1,4 @@
-use crate::AppMsg;
+use crate::{AppMsg, state::ui::FocusMode};
 
 #[derive(Debug, Clone)]
 pub enum UIMsg {
@@ -24,4 +24,9 @@ pub enum UIMsg {
     },
     ConfirmYes,
     ConfirmNo,
+    // Focus mode
+    CycleFocusMode,
+    SetFocusMode(FocusMode),
+    // Sidebar width
+    SetSidebarWidth(u16),
 }

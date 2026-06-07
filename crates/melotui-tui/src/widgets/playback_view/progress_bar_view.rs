@@ -4,6 +4,13 @@ use ratatui::{
     widgets::Paragraph,
 };
 
+use crate::theme::Theme;
+
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
+
 #[derive(Clone, Copy)]
 #[allow(unused)]
 pub enum ProgressBarTheme {
@@ -20,22 +27,19 @@ pub struct ProgressBarConfig {
 }
 
 pub fn render_progress_bar(config: ProgressBarConfig) -> Paragraph<'static> {
-    let filled_count = (config.ratio * config.width as f64).round() as usize;
-    let empty_count = config.width.saturating_sub(filled_count);
+    let t = theme();
+    let width = config.width;
+    if width == 0 {
+        return Paragraph::new(Line::default());
+    }
+
+    let filled_count = (config.ratio * width as f64).round() as usize;
+    let empty_count = width.saturating_sub(filled_count);
 
     let (filled_str, empty_str) = match config.theme {
         ProgressBarTheme::Capsule => {
-            let body = if filled_count > 0 {
-                if filled_count == 1 {
-                    "●".to_string()
-                } else {
-                    let body_len = filled_count.saturating_sub(2);
-                    format!("{}", "█".repeat(body_len))
-                }
-            } else {
-                "".to_string()
-            };
-            (body, "▒".repeat(empty_count))
+            // Simple fill — no caps that eat 2 chars (the old dead-zone bug)
+            ("━".repeat(filled_count), "─".repeat(empty_count))
         }
 
         ProgressBarTheme::Retro => ("█".repeat(filled_count), "▒".repeat(empty_count)),
@@ -45,7 +49,7 @@ pub fn render_progress_bar(config: ProgressBarConfig) -> Paragraph<'static> {
 
     let line = Line::from(vec![
         Span::styled(filled_str, Style::default().fg(config.color)),
-        Span::styled(empty_str, Style::default().fg(Color::DarkGray)),
+        Span::styled(empty_str, Style::default().fg(t.slider_track)),
     ]);
 
     Paragraph::new(line)

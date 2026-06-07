@@ -5,7 +5,7 @@ use crate::{
     navigation::ids::SidebarNodeId,
     state::{
         Notification, NotificationKind, VisualizerMode,
-        ui::{ConfirmDialog, PlaylistPickerState},
+        ui::{ConfirmDialog, FocusMode, PlaylistPickerState},
         visualizer::{SpectrumStyle, is_cava_available},
     },
 };
@@ -363,6 +363,12 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             ));
             vec![]
         }
+        Command::Focus { mode } => {
+            handle_set_focus_mode(state, mode)
+        }
+        Command::Sidebar { width } => {
+            handle_set_sidebar_width(state, width)
+        }
     }
 }
 
@@ -370,5 +376,36 @@ pub fn handle_dispatch_set_visualizer(
     _state: &mut AppState,
     _active: Option<SpectrumStyle>,
 ) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_cycle_focus_mode(state: &mut AppState) -> Vec<AppMsg> {
+    let next = state.session.ui.focus_mode.cycle();
+    state.session.ui.focus_mode = next;
+    state.session.notification.current = Some(
+        Notification::new(NotificationKind::Info, format!("Focus: {}", next.label()))
+            .with_duration(2),
+    );
+    vec![]
+}
+
+pub fn handle_set_focus_mode(state: &mut AppState, mode: FocusMode) -> Vec<AppMsg> {
+    state.session.ui.focus_mode = mode;
+    state.session.notification.current = Some(
+        Notification::new(NotificationKind::Info, format!("Focus: {}", mode.label()))
+            .with_duration(2),
+    );
+    vec![]
+}
+
+pub fn handle_set_sidebar_width(state: &mut AppState, width: u16) -> Vec<AppMsg> {
+    state.session.ui.sidebar_width = width;
+    state.session.notification.current = Some(
+        Notification::new(
+            NotificationKind::Info,
+            format!("Sidebar width: {}", width),
+        )
+        .with_duration(2),
+    );
     vec![]
 }
