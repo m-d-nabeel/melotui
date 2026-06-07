@@ -35,6 +35,7 @@ pub struct UIState {
     pub show_help: bool,
     pub scrolloff: usize,
     pub terminal_size: (u16, u16),
+    pub sidebar_width: u16,
 }
 
 impl Default for UIState {
@@ -48,6 +49,7 @@ impl Default for UIState {
             show_help: false,
             scrolloff: 8,
             terminal_size: (0, 0),
+            sidebar_width: 28,
         }
     }
 }

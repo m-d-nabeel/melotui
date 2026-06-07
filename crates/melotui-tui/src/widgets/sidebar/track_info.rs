@@ -2,13 +2,18 @@ use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Line,
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
 use ratatui_image::StatefulImage;
 
-use crate::{format_duration, image_cache::ImageCache};
+use crate::{format_duration, image_cache::ImageCache, theme::Theme};
+
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 const MAX_ART_HEIGHT_PERCENT: u16 = 40;
 const MIN_ART_HEIGHT: u16 = 15;
@@ -35,15 +40,17 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         None => return,
     };
 
+    let t = theme();
+
     // main block
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::DarkGray))
+        .border_style(Style::default().fg(t.border_inactive))
         .title(" Track Info ")
         .title_style(
             Style::default()
-                .fg(Color::Cyan)
+                .fg(t.accent_primary)
                 .add_modifier(Modifier::BOLD),
         )
         .padding(ratatui::widgets::Padding::new(2, 2, 1, 1));
@@ -103,7 +110,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let title_line = Line::from(ratatui::text::Span::styled(
         &track.title,
         Style::default()
-            .fg(Color::Cyan)
+            .fg(t.accent_primary)
             .add_modifier(Modifier::BOLD),
     ));
     frame.render_widget(
@@ -115,7 +122,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let artist_str = track.artist.as_deref().unwrap_or("Unknown Artist");
     let artist_line = Line::from(ratatui::text::Span::styled(
         artist_str,
-        Style::default().fg(Color::White),
+        Style::default().fg(t.fg_primary),
     ));
     frame.render_widget(
         Paragraph::new(artist_line).alignment(ratatui::layout::Alignment::Center),
@@ -127,7 +134,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         let album_line = Line::from(ratatui::text::Span::styled(
             album,
             Style::default()
-                .fg(Color::Gray)
+                .fg(t.fg_secondary)
                 .add_modifier(Modifier::ITALIC),
         ));
         frame.render_widget(
@@ -143,15 +150,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
 
     let mut badge_parts = Vec::new();
     let fmt_color = if format == "FLAC" || format == "WAV" {
-        Color::Green
+        t.badge_lossless
     } else {
-        Color::Blue
+        t.badge_lossy
     };
     badge_parts.push(ratatui::text::Span::styled(
         format!(" {} ", format),
         Style::default()
             .bg(fmt_color)
-            .fg(Color::Black)
+            .fg(ratatui::style::Color::Black)
             .add_modifier(Modifier::BOLD),
     ));
 
@@ -159,7 +166,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         badge_parts.push(ratatui::text::Span::raw(" "));
         badge_parts.push(ratatui::text::Span::styled(
             format!(" {} kbps ", bitrate),
-            Style::default().bg(Color::DarkGray).fg(Color::White),
+            Style::default().bg(t.badge_detail_bg).fg(t.fg_primary),
         ));
     }
 
@@ -167,7 +174,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         badge_parts.push(ratatui::text::Span::raw(" "));
         badge_parts.push(ratatui::text::Span::styled(
             format!(" {} Hz ", sample),
-            Style::default().bg(Color::DarkGray).fg(Color::White),
+            Style::default().bg(t.badge_detail_bg).fg(t.fg_primary),
         ));
     }
     // always render widget
@@ -189,14 +196,14 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     frame.render_widget(
         Paragraph::new(details_str)
             .alignment(ratatui::layout::Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray)),
+            .style(Style::default().fg(t.fg_muted)),
         info_layout[6],
     );
 
     // separator
     let sep = Line::from(ratatui::text::Span::styled(
         "─".repeat(info_area.width as usize),
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(t.fg_muted),
     ));
     frame.render_widget(
         Paragraph::new(sep).alignment(ratatui::layout::Alignment::Center),
@@ -221,24 +228,24 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
 
     let info_text = vec![
         Line::from(vec![
-            ratatui::text::Span::styled("📁 Folder: ", Style::default().fg(Color::Cyan)),
+            ratatui::text::Span::styled("📁 Folder: ", Style::default().fg(t.accent_primary)),
             ratatui::text::Span::raw(parent_folder),
         ]),
         Line::from(vec![
-            ratatui::text::Span::styled("📄 File:   ", Style::default().fg(Color::Cyan)),
+            ratatui::text::Span::styled("📄 File:   ", Style::default().fg(t.accent_primary)),
             ratatui::text::Span::raw(filename),
         ]),
         Line::from(vec![
-            ratatui::text::Span::styled("💾 Size:   ", Style::default().fg(Color::Cyan)),
+            ratatui::text::Span::styled("💾 Size:   ", Style::default().fg(t.accent_primary)),
             ratatui::text::Span::raw(format!("{:.2} MB", size_mb)),
         ]),
         Line::from(""), // Spacer
         Line::from(vec![
-            ratatui::text::Span::styled("📍 Path:   ", Style::default().fg(Color::DarkGray)),
+            ratatui::text::Span::styled("📍 Path:   ", Style::default().fg(t.fg_muted)),
             ratatui::text::Span::styled(
                 track.file_path.to_string_lossy(),
                 Style::default()
-                    .fg(Color::DarkGray)
+                    .fg(t.fg_muted)
                     .add_modifier(Modifier::ITALIC),
             ),
         ]),

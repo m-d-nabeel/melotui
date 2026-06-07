@@ -2,16 +2,22 @@ mod progress_bar_view;
 mod utils;
 use crate::{
     format_duration,
+    theme::Theme,
     widgets::playback_view::progress_bar_view::{ProgressBarConfig, ProgressBarTheme},
 };
 use melotui_core::{AppState, playback::state::RepeatMode};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Padding, Paragraph},
 };
+
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     // Container block
@@ -43,10 +49,11 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let current_track = state.get_playing_track();
     let next_song_name = state.predict_next_song();
     let (status_icon, status_color) = utils::get_status_icon(state.playback_status());
+    let t = theme();
     let (source_icon, source_color) = if state.is_playing_from_queue() {
-        ("Q", Color::Yellow)
+        ("Q", t.accent_warning)
     } else {
-        ("♪", Color::Blue)
+        ("♪", t.accent_info)
     };
 
     // Row 1: title & controls
@@ -65,8 +72,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                     Style::default().fg(status_color),
                 ),
                 Span::styled(&track.title, Style::default().add_modifier(Modifier::BOLD)),
-                Span::styled(" • ", Style::default().fg(Color::DarkGray)),
-                Span::styled(artist, Style::default().fg(Color::Gray)),
+                Span::styled(" • ", Style::default().fg(t.fg_muted)),
+                Span::styled(artist, Style::default().fg(t.fg_secondary)),
             ])
         } else {
             Line::from(vec![
@@ -114,7 +121,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
         // Render time left
         frame.render_widget(
-            Paragraph::new(format_duration(current_ms)).style(Style::default().fg(Color::DarkGray)),
+            Paragraph::new(format_duration(current_ms)).style(Style::default().fg(t.fg_muted)),
             h_chunks[0],
         );
 
@@ -136,7 +143,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         frame.render_widget(
             Paragraph::new(total_str)
                 .alignment(Alignment::Right)
-                .style(Style::default().fg(Color::DarkGray)),
+                .style(Style::default().fg(t.fg_muted)),
             h_chunks[2],
         );
     }
@@ -151,11 +158,11 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             RepeatMode::Off => ("Up Next: ", next_song_name.as_str()),
         };
         let next_text = Line::from(vec![
-            Span::styled(label, Style::default().fg(Color::DarkGray)),
+            Span::styled(label, Style::default().fg(t.fg_muted)),
             Span::styled(
                 name,
                 Style::default()
-                    .fg(Color::DarkGray)
+                    .fg(t.fg_muted)
                     .add_modifier(Modifier::ITALIC | Modifier::DIM),
             ),
         ]);

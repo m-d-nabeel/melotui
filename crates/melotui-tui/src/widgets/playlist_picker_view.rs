@@ -6,11 +6,18 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
+use crate::theme::Theme;
 use melotui_core::{AppState, domain::PlaylistMeta};
+
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 const MAX_VISIBLE: usize = 10;
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
+    let t = theme();
     let picker = state.playlist_picker();
 
     let query = picker.query.trim().to_lowercase();
@@ -63,15 +70,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         Span::styled(
             "Playlist: ",
             Style::default()
-                .fg(Color::Blue)
+                .fg(t.accent_info)
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw(&picker.query),
-        Span::styled("█", Style::default().fg(Color::White)),
+        Span::styled("█", Style::default().fg(t.fg_primary)),
     ]);
 
     let input_widget =
-        Paragraph::new(input_content).style(Style::default().bg(Color::Rgb(20, 20, 25)));
+        Paragraph::new(input_content).style(Style::default().bg(t.bg_input));
     frame.render_widget(input_widget, input_area);
 
     // visible slice of the list
@@ -83,9 +90,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .map(|(vi, (name, is_create))| {
             let abs_idx = scroll + vi;
             let style = if abs_idx == picker.selection {
-                Style::default().fg(Color::Black).bg(Color::Blue)
+                Style::default().fg(Color::Black).bg(t.accent_info)
             } else {
-                Style::default().fg(Color::White).bg(Color::Rgb(15, 15, 20))
+                Style::default().fg(t.fg_primary).bg(t.bg_overlay)
             };
 
             let prefix = if *is_create { "+ " } else { "  " };
@@ -96,7 +103,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::TOP)
-            .style(Style::default().bg(Color::Rgb(15, 15, 20))),
+            .style(Style::default().bg(t.bg_overlay)),
     );
 
     frame.render_widget(list, list_area);

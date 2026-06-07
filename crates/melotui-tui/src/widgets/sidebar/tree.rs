@@ -13,23 +13,16 @@ use ratatui::{
     },
 };
 use std::collections::HashSet;
+use unicode_width::UnicodeWidthStr;
 
+use crate::theme::Theme;
 use crate::widgets::sidebar::generate_marquee_delayed;
 
-// theme constants
-const ACTIVE_BORDER: Color = Color::Cyan;
-const INACTIVE_BORDER: Color = Color::Rgb(60, 60, 60);
-const SELECTED_BG: Color = Color::Rgb(40, 44, 52);
-const SELECTED_FG: Color = Color::White;
-
-// playing state colors
-const PLAYING_TRACK_COLOR: Color = Color::Rgb(166, 227, 161); // Catppuccin Green (#a6e3a1)
-const ANCESTOR_COLOR: Color = Color::Rgb(148, 226, 213); // Catppuccin Teal (#94e2d5)
-
-// icon colors
-const FOLDER_ICON_COLOR: Color = Color::Rgb(215, 153, 33); // Gold
-const PLAYLIST_ICON_COLOR: Color = Color::Rgb(177, 98, 134); // Purple
-const CATEGORY_COLOR: Color = Color::Rgb(97, 175, 239); // Soft Blue
+fn theme() -> &'static Theme {
+    // In the future, this will come from AppState. For now, use default.
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let nav = state.library_nav();
@@ -37,10 +30,11 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let is_active = state.is_library_focused();
 
     // container block
+    let t = theme();
     let border_style = if is_active {
-        Style::default().fg(ACTIVE_BORDER)
+        Style::default().fg(t.border_active)
     } else {
-        Style::default().fg(INACTIVE_BORDER)
+        Style::default().fg(t.border_inactive)
     };
 
     let title = if is_active {
@@ -48,7 +42,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             " Library ",
             Style::default()
                 .add_modifier(Modifier::BOLD)
-                .fg(ACTIVE_BORDER),
+                .fg(t.border_active),
         )])
     } else {
         Line::from(" Library ")
@@ -92,7 +86,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     };
     list_state.select(selected_index);
 
-    let list = List::new(items).highlight_style(Style::default().bg(SELECTED_BG));
+    let list = List::new(items).highlight_style(Style::default().bg(t.bg_selected));
     frame.render_stateful_widget(list, inner_area, &mut list_state);
 
     // lean scrollbar
@@ -102,7 +96,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .begin_symbol(None)
         .end_symbol(None)
         .track_symbol(None) // invisible track
-        .thumb_style(Style::default().fg(Color::DarkGray))
+        .thumb_style(Style::default().fg(t.fg_muted))
         .track_style(Style::default().fg(Color::Black)); // blend with bg
 
     let mut scrollbar_state = ScrollbarState::new(total_rows).position(offset);
@@ -136,33 +130,35 @@ fn render_row(
 
     let is_ancestor = active_ancestors.contains(&row.id);
 
+    let t = theme();
+
     // color logic
     let row_color = if is_playing_track {
-        PLAYING_TRACK_COLOR
+        t.accent_playing
     } else if is_ancestor {
-        ANCESTOR_COLOR
+        t.accent_ancestor
     } else if is_selected {
-        SELECTED_FG
+        t.fg_primary
     } else {
-        Color::Gray
+        t.fg_secondary
     };
 
     // icon styles
     let icon_style = if is_playing_track {
-        Style::default().fg(PLAYING_TRACK_COLOR)
+        Style::default().fg(t.accent_playing)
     } else if panel_active {
         match row.id {
-            SidebarNodeId::Folder(_) => Style::default().fg(FOLDER_ICON_COLOR),
-            SidebarNodeId::Playlist(_) => Style::default().fg(PLAYLIST_ICON_COLOR),
-            SidebarNodeId::Category(_) => Style::default().fg(CATEGORY_COLOR),
+            SidebarNodeId::Folder(_) => Style::default().fg(t.icon_folder),
+            SidebarNodeId::Playlist(_) => Style::default().fg(t.icon_playlist),
+            SidebarNodeId::Category(_) => Style::default().fg(t.icon_category),
             SidebarNodeId::Artist(_)
             | SidebarNodeId::Album(_)
             | SidebarNodeId::Genre(_)
-            | SidebarNodeId::Year(_) => Style::default().fg(CATEGORY_COLOR),
-            _ => Style::default().fg(Color::Gray),
+            | SidebarNodeId::Year(_) => Style::default().fg(t.icon_category),
+            _ => Style::default().fg(t.fg_secondary),
         }
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(t.fg_muted)
     };
 
     let icon = get_icon(
@@ -188,11 +184,8 @@ fn render_row(
 
     let label_text = if is_selected && panel_active {
         generate_marquee_delayed(&row.label, available_text_width as usize, state)
-    } else if row.label.len() > available_text_width as usize {
-        format!(
-            "{}…",
-            &row.label[0..available_text_width.saturating_sub(1) as usize]
-        )
+    } else if UnicodeWidthStr::width(row.label.as_str()) > available_text_width as usize {
+        truncate_to_width(&row.label, available_text_width as usize)
     } else {
         row.label.clone()
     };
@@ -206,10 +199,27 @@ fn render_row(
     ];
     if is_playing_track {
         // playback indicator
-        spans.push(Span::styled(" 󰐊", Style::default().fg(PLAYING_TRACK_COLOR)));
+        spans.push(Span::styled(" 󰐊", Style::default().fg(t.accent_playing)));
     }
 
     ListItem::new(Line::from(spans))
+}
+
+/// Truncate a string to fit within `max_width` display columns, appending '…'.
+/// Uses unicode character widths for safety with multi-byte and wide characters.
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    let mut width = 0;
+    let mut result = String::new();
+    for ch in s.chars() {
+        let ch_width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width >= max_width {
+            break;
+        }
+        width += ch_width;
+        result.push(ch);
+    }
+    result.push('…');
+    result
 }
 
 fn get_icon(

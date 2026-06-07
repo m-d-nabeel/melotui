@@ -1,3 +1,4 @@
+use crate::theme::Theme;
 use melotui_core::AppState;
 use ratatui::{
     Frame,
@@ -6,6 +7,11 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Padding, Paragraph},
 };
+
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 struct SliderConfig<'a> {
     label: &'a str,
@@ -16,6 +22,7 @@ struct SliderConfig<'a> {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
+    let t = theme();
     // container block
     // padding for margins
     let block = Block::default()
@@ -23,7 +30,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .title_style(Style::default().add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::LightBlue))
+        .border_style(Style::default().fg(t.border_inactive))
         .padding(Padding::horizontal(2)); // Horizontal margin inside
 
     let inner = block.inner(area);
@@ -73,7 +80,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.volume(),
             min: 0.0,
             max: 1.5,
-            color: Color::Green,
+            color: t.slider_volume,
         },
     );
     render_sleek_slider(
@@ -84,7 +91,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.speed(),
             min: 0.5,
             max: 2.0,
-            color: Color::Blue,
+            color: t.slider_speed,
         },
     );
 
@@ -97,7 +104,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.bass(),
             min: 0.0,
             max: 5.0,
-            color: Color::Yellow,
+            color: t.slider_bass,
         },
     );
     render_sleek_slider(
@@ -108,7 +115,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.treble(),
             min: 0.0,
             max: 5.0,
-            color: Color::Cyan,
+            color: t.slider_treble,
         },
     );
 
@@ -121,7 +128,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.reverb(),
             min: 0.0,
             max: 1.0,
-            color: Color::Magenta,
+            color: t.slider_reverb,
         },
     );
     render_sleek_slider(
@@ -132,12 +139,13 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.echo(),
             min: 0.0,
             max: 0.9,
-            color: Color::Red,
+            color: t.slider_echo,
         },
     );
 }
 
 fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
+    let t = theme();
     let ratio = ((config.val - config.min) / (config.max - config.min)).clamp(0.0, 1.0);
 
     // center content
@@ -165,7 +173,7 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
         config.label,
         Style::default()
             .add_modifier(Modifier::BOLD)
-            .fg(Color::DarkGray),
+            .fg(t.fg_muted),
     );
     frame.render_widget(Paragraph::new(label_span), header[0]);
 
@@ -177,7 +185,7 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
     };
     frame.render_widget(
         Paragraph::new(val_str)
-            .style(Style::default().fg(Color::DarkGray))
+            .style(Style::default().fg(t.fg_muted))
             .alignment(Alignment::Right),
         header[1],
     );
@@ -188,22 +196,13 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
         return;
     }
 
-    // slider logic
-    // thumb pos
-    // active part colored
-    // inactive part gray
-    // thumb circle
-
     let track_width = width.saturating_sub(1); // Reserve 1 char for thumb
     let thumb_pos = (ratio * track_width as f32).round() as usize;
     let remaining = track_width.saturating_sub(thumb_pos);
 
     // Use thin line "─" for sleek look
-    // thin line
     let active_line = "─".repeat(thumb_pos);
     let inactive_line = "─".repeat(remaining);
-
-    let track_color = Color::Rgb(60, 60, 60); // Deep gray for inactive part
 
     let slider_line = Line::from(vec![
         // Active Track (Colored)
@@ -211,7 +210,7 @@ fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
         // Thumb (Colored Circle)
         Span::styled("●", Style::default().fg(config.color)),
         // Inactive Track (Dark Gray)
-        Span::styled(inactive_line, Style::default().fg(track_color)),
+        Span::styled(inactive_line, Style::default().fg(t.slider_track)),
     ]);
 
     frame.render_widget(Paragraph::new(slider_line), slider_area);

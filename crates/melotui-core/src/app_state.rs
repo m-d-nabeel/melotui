@@ -377,6 +377,10 @@ impl AppState {
     pub fn confirm_dialog(&self) -> Option<&crate::state::ui::ConfirmDialog> {
         self.session.ui.confirm_dialog.as_ref()
     }
+
+    pub fn sidebar_width(&self) -> u16 {
+        self.session.ui.sidebar_width
+    }
 }
 
 // next song prediction
