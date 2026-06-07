@@ -14,7 +14,7 @@ fn theme() -> &'static Theme {
     THEME.get_or_init(Theme::default)
 }
 
-const BRANDING_ART: &str = r#"
+const BRANDING_ART_WIDE: &str = r#"
 ░▒▓██████████████▓▒░░▒▓████████▓▒░▒▓█▓▒░      ░▒▓██████▓▒░▒▓████████▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
 ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
 ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
@@ -23,6 +23,14 @@ const BRANDING_ART: &str = r#"
 ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
 ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓████████▓▒░▒▓████████▓▒░▒▓██████▓▒░  ░▒▓█▓▒░    ░▒▓██████▓▒░░▒▓█▓▒░ 
 "#;
+
+// Compact branding for narrower terminals (< 92 cols)
+const BRANDING_ART_COMPACT: &str = r#"
+ ╔╦╗╔═╗╦  ╔═╗╔╦╗╦ ╦╦
+ ║║║║╣ ║  ║ ║ ║ ║ ║║
+ ╩ ╩╚═╝╩═╝╚═╝ ╩ ╚═╝╩
+"#;
+
 const DESCRIPTION: &str = "The Terminal Music Player";
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache) {
@@ -38,7 +46,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // shared center cover crop logic
     if art_state.source.is_some() {
         art_state.update_protocol(&cache.picker, inner_area);
 
@@ -47,7 +54,14 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             frame.render_stateful_widget(image, inner_area, protocol);
         }
     } else {
-        let art_clean = BRANDING_ART.trim_matches('\n');
+        // Select branding art based on available width
+        let art = if inner_area.width >= 92 {
+            BRANDING_ART_WIDE
+        } else {
+            BRANDING_ART_COMPACT
+        };
+
+        let art_clean = art.trim_matches('\n');
         let content = format!("{}\n\n{}", art_clean, DESCRIPTION);
 
         let content_height = (art_clean.lines().count() + 2) as u16;
@@ -57,7 +71,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             x: inner_area.x,
             y: inner_area.y + y_offset,
             width: inner_area.width,
-            height: content_height,
+            height: content_height.min(inner_area.height),
         };
 
         let p = Paragraph::new(content).alignment(Alignment::Center).style(

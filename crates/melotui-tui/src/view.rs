@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     widgets::{Block, Clear, Paragraph},
 };
 
@@ -108,11 +108,13 @@ fn draw_viz_playback(
 fn draw_overlays(frame: &mut Frame, area: Rect, state: &AppState) {
     notification_popup::draw(frame, frame.area(), state);
 
+    // Shared dim overlay — uses a dark background that works on all terminals
+    // (Modifier::DIM is ignored by many terminal emulators)
+    let dim_block =
+        Block::default().style(Style::default().bg(ratatui::style::Color::Rgb(10, 10, 15)));
+
     if *state.ui_mode() == UIMode::Command {
-        frame.render_widget(
-            Block::default().style(Style::default().add_modifier(Modifier::DIM)),
-            area,
-        );
+        frame.render_widget(dim_block.clone(), area);
         let overlay = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0), Constraint::Length(3)])
@@ -122,30 +124,17 @@ fn draw_overlays(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     if *state.ui_mode() == UIMode::PlaylistPicker {
-        frame.render_widget(
-            Block::default().style(Style::default().add_modifier(Modifier::DIM)),
-            area,
-        );
+        frame.render_widget(dim_block.clone(), area);
         playlist_picker_view::draw(frame, area, state);
     }
 
     if *state.ui_mode() == UIMode::Confirm {
-        frame.render_widget(
-            Block::default().style(Style::default().add_modifier(Modifier::DIM)),
-            area,
-        );
-        let overlay = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(1)])
-            .split(area)[1];
-        confirm_view::draw(frame, overlay, state);
+        frame.render_widget(dim_block.clone(), area);
+        confirm_view::draw(frame, area, state);
     }
 
     if state.ui_show_help() {
-        frame.render_widget(
-            Block::default().style(Style::default().add_modifier(Modifier::DIM)),
-            area,
-        );
+        frame.render_widget(dim_block, area);
         help_view::draw(frame, area, state);
     }
 }
