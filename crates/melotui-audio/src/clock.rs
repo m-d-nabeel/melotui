@@ -70,3 +70,56 @@ impl TimeKeeper {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::thread::sleep;
+
+    #[test]
+    fn test_timekeeper_basic_flow() {
+        let mut clock = TimeKeeper::new();
+        assert_eq!(clock.get_position(), Duration::ZERO);
+        assert!(!clock.is_playing);
+
+        clock.start();
+        assert!(clock.is_playing);
+        sleep(Duration::from_millis(50));
+        let pos1 = clock.get_position();
+        assert!(pos1 > Duration::ZERO);
+
+        clock.pause();
+        assert!(!clock.is_playing);
+        let pos2 = clock.get_position();
+        sleep(Duration::from_millis(50));
+        let pos3 = clock.get_position();
+        assert_eq!(pos2, pos3, "Position should not change while paused");
+
+        clock.stop();
+        assert_eq!(clock.get_position(), Duration::ZERO);
+    }
+
+    #[test]
+    fn test_timekeeper_speed() {
+        let mut clock = TimeKeeper::new();
+        clock.start();
+        clock.set_speed(2.0);
+        sleep(Duration::from_millis(50));
+        clock.pause();
+        
+        // At 2x speed, 50ms real time is ~100ms accumulated
+        let pos = clock.get_position().as_millis();
+        assert!(pos >= 80 && pos <= 150, "Expected around 100ms, got {}ms", pos);
+    }
+
+    #[test]
+    fn test_timekeeper_seek() {
+        let mut clock = TimeKeeper::new();
+        clock.seek(Duration::from_secs(10));
+        assert_eq!(clock.get_position(), Duration::from_secs(10));
+
+        clock.start();
+        sleep(Duration::from_millis(50));
+        assert!(clock.get_position() > Duration::from_secs(10));
+    }
+}
