@@ -1,17 +1,17 @@
 use std::{path::PathBuf, sync::mpsc, thread};
 
+use melotui_bus::{
+    channel::inprocess,
+    command::{AudioCommand, CoverCommand, DatabaseCommand, DownloadCommand, IpcCommand},
+    event::IpcEvent,
+    spectrum_bridge::SpectrumProducer,
+};
 use melotui_core::{
     AppMsg, AppState,
     message::{
         cover::CoverMsg, database::DatabaseMsg, download::DownloadMsg, library::LibraryMsg,
         playback::PlaybackMsg,
     },
-};
-use melotui_bus::{
-    channel::inprocess,
-    command::{AudioCommand, CoverCommand, DatabaseCommand, DownloadCommand, IpcCommand},
-    event::IpcEvent,
-    spectrum_bridge::SpectrumProducer,
 };
 
 pub struct IpcRuntime {

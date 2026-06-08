@@ -163,8 +163,8 @@ fn draw_too_small(frame: &mut Frame, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::{backend::TestBackend, Terminal};
     use melotui_core::library::snapshot::LibrarySnapshot;
+    use ratatui::{Terminal, backend::TestBackend};
     use std::collections::HashMap;
 
     fn test_state() -> AppState {
@@ -177,39 +177,54 @@ mod tests {
     fn test_viewport_too_small() {
         let state = test_state();
         let mut image_cache = ImageCache::new();
-        
+
         // Terminal smaller than MIN_WIDTH (60)
         let backend = TestBackend::new(50, 20);
         let mut terminal = Terminal::new(backend).unwrap();
-        
-        terminal.draw(|f| {
-            draw(f, &state, &mut image_cache);
-        }).unwrap();
-        
+
+        terminal
+            .draw(|f| {
+                draw(f, &state, &mut image_cache);
+            })
+            .unwrap();
+
         let buffer = terminal.backend().buffer();
         // Look for the "Terminal too small" text
-        let content = (0..50).map(|x| buffer[(x, 10)].symbol().to_string()).collect::<String>();
-        assert!(content.contains("Terminal too small") || 
-            (0..20).any(|y| (0..50).map(|x| buffer[(x, y)].symbol().to_string()).collect::<String>().contains("Terminal too small")));
+        let content = (0..50)
+            .map(|x| buffer[(x, 10)].symbol().to_string())
+            .collect::<String>();
+        assert!(
+            content.contains("Terminal too small")
+                || (0..20).any(|y| (0..50)
+                    .map(|x| buffer[(x, y)].symbol().to_string())
+                    .collect::<String>()
+                    .contains("Terminal too small"))
+        );
     }
 
     #[test]
     fn test_viewport_sufficient_size() {
         let state = test_state();
         let mut image_cache = ImageCache::new();
-        
+
         // Terminal larger than minimum (60x10)
         let backend = TestBackend::new(80, 24);
         let mut terminal = Terminal::new(backend).unwrap();
-        
-        terminal.draw(|f| {
-            draw(f, &state, &mut image_cache);
-        }).unwrap();
-        
+
+        terminal
+            .draw(|f| {
+                draw(f, &state, &mut image_cache);
+            })
+            .unwrap();
+
         let buffer = terminal.backend().buffer();
         // Should not contain "Terminal too small"
         let full_text = (0..24)
-            .map(|y| (0..80).map(|x| buffer[(x, y)].symbol().to_string()).collect::<String>())
+            .map(|y| {
+                (0..80)
+                    .map(|x| buffer[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
             .collect::<Vec<String>>()
             .join("\n");
         assert!(!full_text.contains("Terminal too small"));

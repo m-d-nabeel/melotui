@@ -444,7 +444,7 @@ mod tests {
     fn test_handle_open_help() {
         let mut state = test_state();
         assert!(!state.session.ui.show_help);
-        
+
         let effects = handle_open_help(&mut state);
         assert!(state.session.ui.show_help);
         assert!(effects.is_empty());
@@ -454,11 +454,11 @@ mod tests {
     fn test_handle_command_mode() {
         let mut state = test_state();
         assert_eq!(state.session.ui.mode, UIMode::Normal);
-        
+
         let effects = handle_enter_command_mode(&mut state);
         assert_eq!(state.session.ui.mode, UIMode::Command);
         assert!(effects.is_empty());
-        
+
         let effects = handle_exit_command_mode(&mut state);
         assert_eq!(state.session.ui.mode, UIMode::Normal);
         assert!(effects.is_empty());
@@ -468,10 +468,14 @@ mod tests {
     fn test_handle_submit_command_quit() {
         let mut state = test_state();
         state.session.ui.mode = UIMode::Command;
-        
+
         let effects = handle_submit_command(&mut state, "quit".to_string());
-        
-        assert_eq!(state.session.ui.mode, UIMode::Normal, "Should return to normal mode");
+
+        assert_eq!(
+            state.session.ui.mode,
+            UIMode::Normal,
+            "Should return to normal mode"
+        );
         assert_eq!(effects.len(), 1);
         assert!(matches!(effects[0], AppMsg::RequestQuit));
     }
@@ -480,11 +484,14 @@ mod tests {
     fn test_handle_submit_command_unknown() {
         let mut state = test_state();
         state.session.ui.mode = UIMode::Command;
-        
+
         let effects = handle_submit_command(&mut state, "invalidcmd".to_string());
-        
+
         assert_eq!(state.session.ui.mode, UIMode::Normal);
         assert!(effects.is_empty());
-        assert!(matches!(state.current_notification().unwrap().kind, NotificationKind::Error));
+        assert!(matches!(
+            state.current_notification().unwrap().kind,
+            NotificationKind::Error
+        ));
     }
 }

@@ -106,10 +106,14 @@ mod tests {
         clock.set_speed(2.0);
         sleep(Duration::from_millis(50));
         clock.pause();
-        
+
         // At 2x speed, 50ms real time is ~100ms accumulated
         let pos = clock.get_position().as_millis();
-        assert!(pos >= 80 && pos <= 150, "Expected around 100ms, got {}ms", pos);
+        assert!(
+            pos >= 80 && pos <= 150,
+            "Expected around 100ms, got {}ms",
+            pos
+        );
     }
 
     #[test]

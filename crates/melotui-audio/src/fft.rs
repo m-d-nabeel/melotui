@@ -124,8 +124,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ringbuf::traits::{Producer, Split};
     use ringbuf::HeapRb;
+    use ringbuf::traits::{Producer, Split};
 
     #[test]
     fn test_spectrum_analyzer_incomplete_frame() {

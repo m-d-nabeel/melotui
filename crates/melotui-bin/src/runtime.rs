@@ -1,15 +1,15 @@
 use anyhow::Result;
+use melotui_bus::{
+    command::{DatabaseCommand, IpcCommand},
+    event::IpcEvent,
+    spectrum_bridge,
+};
 use melotui_core::{
     AppMsg, AppState,
     library::LibrarySnapshot,
     message::ui::UIMsg,
     reducer,
     state::{NotificationKind, visualizer::update_visualizer_physics},
-};
-use melotui_bus::{
-    command::{DatabaseCommand, IpcCommand},
-    event::IpcEvent,
-    spectrum_bridge,
 };
 use melotui_tui::Tui;
 use std::{

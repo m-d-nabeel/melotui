@@ -44,18 +44,19 @@ impl<C: Send> IpcWorker<C> for WorkerEndpoint<C> {
 mod tests {
     use super::*;
     use crate::command::DatabaseCommand;
-    
 
     #[test]
     fn test_bus_channel_communication() {
         // Create the central event bus (hub)
         let (bus_rx, bus_tx) = hub();
-        
+
         // Join a mock database worker to the bus
         let (cmd_tx, worker) = join_worker::<DatabaseCommand>(bus_tx);
 
         // Send a command to the worker
-        cmd_tx.send(DatabaseCommand::ToggleFavorite { track_id: 1 }).unwrap();
+        cmd_tx
+            .send(DatabaseCommand::ToggleFavorite { track_id: 1 })
+            .unwrap();
 
         // Worker should receive it
         let cmd = worker.try_recv().expect("Worker should receive command");
@@ -70,7 +71,7 @@ mod tests {
         // Hub should receive the event
         let evt = bus_rx.try_recv().expect("Hub should receive event");
         match evt {
-            IpcEvent::LibraryRescanned => {},
+            IpcEvent::LibraryRescanned => {}
             _ => panic!("Expected LibraryRescanned"),
         }
     }

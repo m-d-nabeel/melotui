@@ -351,24 +351,27 @@ mod tests {
     fn test_state() -> AppState {
         let mut tracks = HashMap::new();
         let track_id = crate::domain::ids::TrackId(1);
-        tracks.insert(track_id, TrackMeta {
-            id: track_id,
-            file_path: std::path::PathBuf::from("/tmp/test.mp3"),
-            title: "Test Track".into(),
-            artist: None,
-            album: None,
-            genre: None,
-            year: None,
-            is_favorite: false,
-            track_number: None,
-            duration_ms: 10000,
-            bitrate: None,
-            sample_rate: None,
-            format: "mp3".into(),
-            has_cover: false,
-            file_size_bytes: 1024,
-        });
-        
+        tracks.insert(
+            track_id,
+            TrackMeta {
+                id: track_id,
+                file_path: std::path::PathBuf::from("/tmp/test.mp3"),
+                title: "Test Track".into(),
+                artist: None,
+                album: None,
+                genre: None,
+                year: None,
+                is_favorite: false,
+                track_number: None,
+                duration_ms: 10000,
+                bitrate: None,
+                sample_rate: None,
+                format: "mp3".into(),
+                has_cover: false,
+                file_size_bytes: 1024,
+            },
+        );
+
         let library = LibrarySnapshot::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
         AppState::new(library)
     }
@@ -377,10 +380,10 @@ mod tests {
     fn test_toggle_library_queue() {
         let mut state = test_state();
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Library);
-        
+
         handle_toggle_library_queue(&mut state);
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Queue);
-        
+
         handle_toggle_library_queue(&mut state);
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Library);
     }
@@ -389,19 +392,29 @@ mod tests {
     fn test_switch_to_playlists() {
         let mut state = test_state();
         handle_switch_to_playlists(&mut state);
-        
+
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Library);
-        assert_eq!(state.session.nav.library.selected_id, Some(SidebarNodeId::Category(CategoryId::Playlists)));
-        assert!(state.session.nav.library.expanded_ids.contains(&SidebarNodeId::Category(CategoryId::Playlists)));
+        assert_eq!(
+            state.session.nav.library.selected_id,
+            Some(SidebarNodeId::Category(CategoryId::Playlists))
+        );
+        assert!(
+            state
+                .session
+                .nav
+                .library
+                .expanded_ids
+                .contains(&SidebarNodeId::Category(CategoryId::Playlists))
+        );
     }
 
     #[test]
     fn test_switch_to_tracks() {
         let mut state = test_state();
         state.session.nav.show_track_info = true;
-        
+
         handle_switch_to_tracks(&mut state);
-        
+
         assert_eq!(state.session.nav.show_track_info, false);
     }
 
@@ -410,12 +423,12 @@ mod tests {
         let mut state = test_state();
         let node = SidebarNodeId::Category(CategoryId::Artists);
         state.session.nav.library.selected_id = Some(node.clone());
-        
+
         assert!(!state.session.nav.library.expanded_ids.contains(&node));
-        
+
         handle_toggle_tree_expand(&mut state);
         assert!(state.session.nav.library.expanded_ids.contains(&node));
-        
+
         handle_toggle_tree_expand(&mut state);
         assert!(!state.session.nav.library.expanded_ids.contains(&node));
     }

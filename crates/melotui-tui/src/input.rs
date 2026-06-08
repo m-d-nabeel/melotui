@@ -195,11 +195,8 @@ impl InputHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use melotui_core::{library::snapshot::LibrarySnapshot, reducer::reduce};
     use ratatui::crossterm::event::KeyModifiers;
-    use melotui_core::{
-        library::snapshot::LibrarySnapshot,
-        reducer::reduce,
-    };
 
     fn test_state() -> AppState {
         let root = std::path::PathBuf::from("/tmp");
@@ -216,7 +213,7 @@ mod tests {
         // When help is shown, escape or 'q' closes it
         let esc_key = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
         let msg = InputHandler::handle(esc_key, &state);
-        
+
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::CloseHelp))));
     }
 
@@ -227,71 +224,86 @@ mod tests {
 
         let char_key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty());
         let msg = InputHandler::handle(char_key, &state);
-        
+
         // Should dispatch as CommandInput
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::CommandInput(_)))));
 
         // Submit command on Enter
         let enter_key = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
         let msg = InputHandler::handle(enter_key, &state);
-        
+
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::SubmitCommand(_)))));
     }
 
     #[test]
     fn test_playlist_picker_input() {
-        use melotui_core::domain::{TrackMeta, ids::TrackId};
         use melotui_core::command::SearchField;
-        
+        use melotui_core::domain::{TrackMeta, ids::TrackId};
+
         let mut tracks = std::collections::HashMap::new();
         let track_id = TrackId(1);
-        tracks.insert(track_id, TrackMeta {
-            id: track_id,
-            file_path: std::path::PathBuf::from("/tmp/test.mp3"),
-            title: "Test Track".into(),
-            artist: None,
-            album: None,
-            genre: None,
-            year: None,
-            is_favorite: false,
-            track_number: None,
-            duration_ms: 10000,
-            bitrate: None,
-            sample_rate: None,
-            format: "mp3".into(),
-            has_cover: false,
-            file_size_bytes: 1024,
-        });
-        
+        tracks.insert(
+            track_id,
+            TrackMeta {
+                id: track_id,
+                file_path: std::path::PathBuf::from("/tmp/test.mp3"),
+                title: "Test Track".into(),
+                artist: None,
+                album: None,
+                genre: None,
+                year: None,
+                is_favorite: false,
+                track_number: None,
+                duration_ms: 10000,
+                bitrate: None,
+                sample_rate: None,
+                format: "mp3".into(),
+                has_cover: false,
+                file_size_bytes: 1024,
+            },
+        );
+
         let library = LibrarySnapshot::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
         let mut state = AppState::new(library);
-        
+
         // Ensure a track is selected using Search
-        reduce(&mut state, AppMsg::Library(LibraryMsg::Search { field: SearchField::Song, query: "Test".to_string() }));
-        
+        reduce(
+            &mut state,
+            AppMsg::Library(LibraryMsg::Search {
+                field: SearchField::Song,
+                query: "Test".to_string(),
+            }),
+        );
+
         // Open the playlist picker
         reduce(&mut state, AppMsg::UI(UIMsg::EnterPlaylistPicker));
 
         // Typing updates query
         let char_key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty());
         let msg = InputHandler::handle(char_key, &state);
-        
-        assert!(matches!(msg, Some(AppMsg::UI(UIMsg::PlaylistPickerUpdateQuery('x')))));
-        
+
+        assert!(matches!(
+            msg,
+            Some(AppMsg::UI(UIMsg::PlaylistPickerUpdateQuery('x')))
+        ));
+
         // Enter submits picker
         let enter_key = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
         let msg = InputHandler::handle(enter_key, &state);
-        
+
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::SubmitPlaylistPicker))));
     }
 
     #[test]
     fn test_global_playback_controls() {
         let state = test_state();
-        
+
         let space_key = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::empty());
         let msg = InputHandler::handle(space_key, &state);
-        
-        assert!(matches!(msg, Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))));
+
+        assert!(matches!(
+            msg,
+            Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))
+        ));
     }
 }

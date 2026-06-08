@@ -2,12 +2,12 @@ use anyhow::Result;
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::Accessor;
+use melotui_bus::event::IpcEvent;
+use melotui_bus::{channel::IpcWorker, command::DatabaseCommand};
 use melotui_core::{
     domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta},
     library::LibrarySnapshot,
 };
-use melotui_bus::event::IpcEvent;
-use melotui_bus::{channel::IpcWorker, command::DatabaseCommand};
 use rusqlite::params;
 use std::collections::HashMap;
 use std::fs;
