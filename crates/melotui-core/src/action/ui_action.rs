@@ -405,7 +405,25 @@ pub fn handle_set_sidebar_width(state: &mut AppState, width: u16) -> Vec<AppMsg>
 
 pub fn handle_adjust_sidebar_width(state: &mut AppState, delta: i16) -> Vec<AppMsg> {
     let current = state.session.ui.sidebar_width as i16;
-    let new_width = (current + delta).clamp(15, 80) as u16;
-    state.session.ui.sidebar_width = new_width;
+    let term_w = state.terminal_size().0 as i16;
+
+    let mut new_width = current + delta;
+
+    if delta < 0 {
+        if current > 80 {
+            new_width = 80;
+        } else if new_width < 28 {
+            new_width = 0;
+        }
+    } else if delta > 0 {
+        if current == 0 {
+            new_width = 28;
+        } else if new_width > 80 {
+            new_width = term_w;
+        }
+    }
+
+    new_width = new_width.clamp(0, term_w.max(80));
+    state.session.ui.sidebar_width = new_width as u16;
     vec![]
 }

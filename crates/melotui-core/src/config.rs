@@ -21,7 +21,7 @@ pub struct AppConfig {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct UiConfig {
-    /// Sidebar width in columns (15-80)
+    /// Sidebar width in columns (28-80)
     pub sidebar_width: u16,
     /// Scroll offset — lines to keep visible above/below cursor
     pub scrolloff: usize,
@@ -65,7 +65,7 @@ impl AppConfig {
 
     /// Validate and clamp config values to valid ranges.
     fn validated(mut self) -> Self {
-        self.ui.sidebar_width = self.ui.sidebar_width.clamp(15, 80);
+        self.ui.sidebar_width = self.ui.sidebar_width.clamp(28, 80);
         self.ui.scrolloff = self.ui.scrolloff.clamp(0, 20);
         self
     }
