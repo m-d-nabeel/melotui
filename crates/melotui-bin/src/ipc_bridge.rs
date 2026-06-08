@@ -7,7 +7,7 @@ use melotui_core::{
         playback::PlaybackMsg,
     },
 };
-use melotui_ipc::{
+use melotui_bus::{
     channel::inprocess,
     command::{AudioCommand, CoverCommand, DatabaseCommand, DownloadCommand, IpcCommand},
     event::IpcEvent,

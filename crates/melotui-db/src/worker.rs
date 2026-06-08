@@ -6,8 +6,8 @@ use melotui_core::{
     domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta},
     library::LibrarySnapshot,
 };
-use melotui_ipc::event::IpcEvent;
-use melotui_ipc::{channel::IpcWorker, command::DatabaseCommand};
+use melotui_bus::event::IpcEvent;
+use melotui_bus::{channel::IpcWorker, command::DatabaseCommand};
 use rusqlite::params;
 use std::collections::HashMap;
 use std::fs;

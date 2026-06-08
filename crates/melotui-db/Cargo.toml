@@ -7,7 +7,7 @@ edition = "2024"
 
 [dependencies]
 melotui-core = { path = "../melotui-core" }
-melotui-ipc = { path = "../melotui-ipc" }
+melotui-bus = { path = "../melotui-bus" }
 rusqlite = { version = "0.38", features = ["bundled", "time"] }
 anyhow = "1"
 tracing = "0.1"

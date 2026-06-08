@@ -1,5 +1,5 @@
 use melotui_core::message::cover::CoverContext;
-use melotui_ipc::{
+use melotui_bus::{
     channel::{IpcWorker, inprocess::WorkerEndpoint},
     command::CoverCommand,
     event::IpcEvent,

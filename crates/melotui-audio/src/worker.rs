@@ -1,4 +1,4 @@
-use melotui_ipc::{
+use melotui_bus::{
     channel::IpcWorker, command::AudioCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
 };
 use ringbuf::{HeapRb, traits::Split};

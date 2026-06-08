@@ -7,7 +7,7 @@ edition = "2024"
 
 [dependencies]
 melotui-core = { path = "../melotui-core" }
-melotui-ipc = { path = "../melotui-ipc" }
+melotui-bus = { path = "../melotui-bus" }
 tracing = "0.1"
 
 [dev-dependencies]

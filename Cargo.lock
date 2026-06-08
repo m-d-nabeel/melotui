@@ -1440,8 +1440,8 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "fundsp",
+ "melotui-bus",
  "melotui-core",
- "melotui-ipc",
  "mockall",
  "ringbuf",
  "rodio",
@@ -1456,15 +1456,24 @@ dependencies = [
  "anyhow",
  "dirs",
  "melotui-audio",
+ "melotui-bus",
  "melotui-core",
  "melotui-cover",
  "melotui-db",
  "melotui-download",
- "melotui-ipc",
  "melotui-tui",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "melotui-bus"
+version = "0.2.0"
+dependencies = [
+ "image",
+ "melotui-core",
+ "tracing",
 ]
 
 [[package]]
@@ -1493,8 +1502,8 @@ dependencies = [
  "hex",
  "image",
  "lofty",
+ "melotui-bus",
  "melotui-core",
- "melotui-ipc",
  "sha2",
  "tracing",
 ]
@@ -1506,8 +1515,8 @@ dependencies = [
  "anyhow",
  "dirs",
  "lofty",
+ "melotui-bus",
  "melotui-core",
- "melotui-ipc",
  "mockall",
  "rusqlite",
  "tracing",
@@ -1517,18 +1526,9 @@ dependencies = [
 name = "melotui-download"
 version = "0.2.0"
 dependencies = [
+ "melotui-bus",
  "melotui-core",
- "melotui-ipc",
  "mockall",
- "tracing",
-]
-
-[[package]]
-name = "melotui-ipc"
-version = "0.2.0"
-dependencies = [
- "image",
- "melotui-core",
  "tracing",
 ]
 

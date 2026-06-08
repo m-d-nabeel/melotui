@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use melotui_ipc::{channel::IpcWorker, command::DownloadCommand, event::IpcEvent};
+use melotui_bus::{channel::IpcWorker, command::DownloadCommand, event::IpcEvent};
 
 use crate::progress::parse_progress;
 

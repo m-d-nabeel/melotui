@@ -6,7 +6,7 @@ use melotui_core::{
     reducer,
     state::{NotificationKind, visualizer::update_visualizer_physics},
 };
-use melotui_ipc::{
+use melotui_bus::{
     command::{DatabaseCommand, IpcCommand},
     event::IpcEvent,
     spectrum_bridge,
