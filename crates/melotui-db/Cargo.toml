@@ -13,3 +13,6 @@ anyhow = "1"
 tracing = "0.1"
 lofty = "0.22"
 dirs = "6"
+
+[dev-dependencies]
+mockall = "0.14.0"

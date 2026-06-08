@@ -205,3 +205,54 @@ impl Command {
         Self::from_str(input).unwrap_or(Command::Unknown("parse error".into()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_quit() {
+        assert_eq!(Command::parse("q"), Command::Quit);
+        assert_eq!(Command::parse("quit"), Command::Quit);
+        assert_eq!(Command::parse("exit"), Command::Quit);
+    }
+
+    #[test]
+    fn test_parse_search_field() {
+        assert_eq!(Command::parse("a Adele"), Command::Search { field: SearchField::Artist, query: "Adele".into() });
+        assert_eq!(Command::parse("artist Adele"), Command::Search { field: SearchField::Artist, query: "Adele".into() });
+        assert_eq!(Command::parse("song Hello"), Command::Search { field: SearchField::Song, query: "Hello".into() });
+    }
+
+    #[test]
+    fn test_parse_search_empty() {
+        assert_eq!(Command::parse("a"), Command::Unknown("artist requires a query".into()));
+    }
+
+    #[test]
+    fn test_parse_visualizer() {
+        assert_eq!(Command::parse("v particle"), Command::ChangeVisualizer { arg: SpectrumStyle::Particle });
+        assert_eq!(Command::parse("v"), Command::Unknown("Visualizer requires an argument".into()));
+        assert_eq!(Command::parse("v unknown"), Command::Unknown("Allowed: Cava, Default, Bar, Particle".into()));
+    }
+
+    #[test]
+    fn test_parse_playlist() {
+        assert_eq!(Command::parse("pl create My Playlist"), Command::CreatePlaylist { name: "My Playlist".into() });
+        assert_eq!(Command::parse("pl create"), Command::Unknown("pl create requires a name".into()));
+        assert_eq!(Command::parse("pl rm Old"), Command::RemoveFromPlaylist { name: "Old".into() });
+    }
+
+    #[test]
+    fn test_parse_sidebar() {
+        assert_eq!(Command::parse("sidebar 40"), Command::Sidebar { width: 40 });
+        assert_eq!(Command::parse("sidebar 20"), Command::Unknown("Sidebar width 20 out of range (28-80)".into()));
+        assert_eq!(Command::parse("sidebar abc"), Command::Unknown("sidebar requires a number (28-80)".into()));
+    }
+
+    #[test]
+    fn test_parse_empty() {
+        assert_eq!(Command::parse(""), Command::Unknown("empty command".into()));
+        assert_eq!(Command::parse("   "), Command::Unknown("empty command".into()));
+    }
+}

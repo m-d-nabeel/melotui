@@ -493,3 +493,80 @@ fn collect_matches(
             .collect(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{domain::TrackMeta, library::snapshot::LibrarySnapshot};
+    use std::collections::HashMap;
+
+    fn test_state() -> AppState {
+        let mut tracks = HashMap::new();
+        let track_id = crate::domain::ids::TrackId(1);
+        tracks.insert(track_id, TrackMeta {
+            id: track_id,
+            file_path: std::path::PathBuf::from("/tmp/test.mp3"),
+            title: "Test Track".into(),
+            artist: None,
+            album: None,
+            genre: None,
+            year: None,
+            is_favorite: false,
+            track_number: None,
+            duration_ms: 10000,
+            bitrate: None,
+            sample_rate: None,
+            format: "mp3".into(),
+            has_cover: false,
+            file_size_bytes: 1024,
+        });
+        
+        let library = LibrarySnapshot::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
+        AppState::new(library)
+    }
+
+    #[test]
+    fn test_add_to_queue() {
+        let mut state = test_state();
+        let track_id = crate::domain::ids::TrackId(1);
+        handle_add_to_queue(&mut state, track_id);
+        
+        assert_eq!(state.session.playback_queue.items.len(), 1);
+        assert_eq!(state.session.playback_queue.items[0].track_id, track_id);
+    }
+
+    #[test]
+    fn test_clear_queue() {
+        let mut state = test_state();
+        let track_id = crate::domain::ids::TrackId(1);
+        handle_add_to_queue(&mut state, track_id);
+        assert_eq!(state.session.playback_queue.items.len(), 1);
+        
+        handle_clear_queue(&mut state);
+        assert!(state.session.playback_queue.items.is_empty());
+    }
+
+    #[test]
+    fn test_toggle_favorite() {
+        let mut state = test_state();
+        let track_id = crate::domain::ids::TrackId(1);
+        
+        assert!(!state.library.get_track(track_id).unwrap().is_favorite);
+        
+        let effects = handle_request_toggle_favorite(&mut state, track_id);
+        
+        assert!(state.library.get_track(track_id).unwrap().is_favorite);
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(id)) if id == track_id));
+    }
+
+    #[test]
+    fn test_create_playlist() {
+        let mut state = test_state();
+        let effects = handle_request_create_playlist(&mut state, "My Playlist".into());
+        
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(&effects[0], AppMsg::Database(DatabaseMsg::DispatchCreatePlaylist(name)) if name == "My Playlist"));
+    }
+}
+

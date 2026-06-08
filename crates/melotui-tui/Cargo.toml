@@ -18,3 +18,6 @@ melotui-core = { path = "../melotui-core" }
 ratatui-image = { version = "10.0.4", default-features = false }
 image = "0.25"
 unicode-width = "0.2"
+
+[dev-dependencies]
+mockall = "0.14.0"
