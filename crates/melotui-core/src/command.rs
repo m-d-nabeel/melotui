@@ -186,7 +186,7 @@ impl FromStr for Command {
             "sidebar" | "sb" => {
                 let arg = parts.next().unwrap_or("");
                 match arg.parse::<u16>() {
-                    Ok(w) if w >= 15 && w <= 80 => Ok(Command::Sidebar { width: w }),
+                    Ok(w) if (15..=80).contains(&w) => Ok(Command::Sidebar { width: w }),
                     Ok(w) => Ok(Command::Unknown(format!(
                         "Sidebar width {} out of range (15-80)",
                         w

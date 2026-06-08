@@ -13,6 +13,7 @@ use std::path::PathBuf;
 /// ```
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct AppConfig {
     pub ui: UiConfig,
 }
@@ -24,14 +25,6 @@ pub struct UiConfig {
     pub sidebar_width: u16,
     /// Scroll offset — lines to keep visible above/below cursor
     pub scrolloff: usize,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            ui: UiConfig::default(),
-        }
-    }
 }
 
 impl Default for UiConfig {
