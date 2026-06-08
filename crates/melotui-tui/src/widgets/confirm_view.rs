@@ -1,12 +1,18 @@
 use ratatui::{
     Frame,
-    layout::Rect,
-    style::{Color, Modifier, Style},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 
+use crate::theme::Theme;
 use melotui_core::AppState;
+
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let dialog = match state.confirm_dialog() {
@@ -14,22 +20,61 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         None => return,
     };
 
-    frame.render_widget(Clear, area);
+    let t = theme();
+
+    // Center a bordered dialog box
+    let popup_width = (dialog.message.len() as u16 + 16).min(area.width.saturating_sub(4));
+    let popup_height = 3;
+
+    let popup_area = centered_rect(popup_width, popup_height, area);
+
+    frame.render_widget(Clear, popup_area);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(t.accent_warning))
+        .style(Style::default().bg(t.bg_overlay));
+
+    let inner = block.inner(popup_area);
+    frame.render_widget(block, popup_area);
 
     let line = Line::from(vec![
         Span::styled(
             &dialog.message,
             Style::default()
-                .fg(Color::Yellow)
+                .fg(t.accent_warning)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::raw(" "),
-        Span::styled("[y]", Style::default().fg(Color::Green)),
+        Span::raw("  "),
+        Span::styled("[y]", Style::default().fg(t.accent_playing)),
         Span::raw("es / "),
-        Span::styled("[n]", Style::default().fg(Color::Red)),
+        Span::styled("[n]", Style::default().fg(t.accent_error)),
         Span::raw("o"),
     ]);
 
-    let paragraph = Paragraph::new(line).style(Style::default().bg(Color::Rgb(25, 25, 30)));
-    frame.render_widget(paragraph, area);
+    let paragraph = Paragraph::new(line).alignment(Alignment::Center);
+    frame.render_widget(paragraph, inner);
+}
+
+fn centered_rect(width: u16, height: u16, area: Rect) -> Rect {
+    let vert = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(height),
+            Constraint::Fill(1),
+        ])
+        .split(area);
+
+    let horiz = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(width),
+            Constraint::Fill(1),
+        ])
+        .split(vert[1]);
+
+    horiz[1]
 }

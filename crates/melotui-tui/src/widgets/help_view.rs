@@ -1,21 +1,18 @@
 use crate::input::InputHandler;
+use crate::theme::Theme;
 use melotui_core::keybinding::{KeyBinding, KeyContext};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
 };
 
-// help colors
-const OVERLAY: Color = Color::Rgb(69, 71, 90);
-const TEXT: Color = Color::Rgb(205, 214, 244);
-const SUBTEXT: Color = Color::Rgb(166, 173, 200);
-const ACCENT: Color = Color::Rgb(137, 180, 250); // Blue
-const KEY_FG: Color = Color::Rgb(243, 139, 168); // Pink
-const HEADER_FG: Color = Color::Rgb(166, 227, 161); // Green
-const BORDER: Color = Color::Rgb(88, 91, 112);
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
     // help screen area
@@ -24,83 +21,109 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
     // clear bg
     frame.render_widget(Clear, help_area);
 
+    let t = theme();
+
     // main block
     let block = Block::default()
         .title(
             Line::from(vec![
                 Span::styled(
                     "  Keyboard Shortcuts ",
-                    Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(t.accent_primary)
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled("(press q or Esc to close)", Style::default().fg(SUBTEXT)),
+                Span::styled(
+                    "(press q or Esc to close)",
+                    Style::default().fg(t.help_subtext),
+                ),
             ])
             .alignment(Alignment::Center),
         )
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(BORDER))
+        .border_style(Style::default().fg(t.help_border))
         .padding(Padding::uniform(1));
 
     let inner = block.inner(help_area);
     frame.render_widget(block, help_area);
 
-    // split into sections
+    // Responsive column count based on width
+    let registry = InputHandler::get_registry();
+    let col_count = if inner.width < 100 {
+        2
+    } else if inner.width < 160 {
+        3
+    } else {
+        4
+    };
+
+    let constraints: Vec<Constraint> = (0..col_count).map(|_| Constraint::Fill(1)).collect();
     let sections = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-            Constraint::Percentage(25),
-        ])
+        .constraints(constraints)
         .split(inner);
 
-    // get bindings
-    let registry = InputHandler::get_registry();
-
-    render_section(
-        frame,
-        sections[0],
-        " Global ",
-        registry.bindings.get(&KeyContext::Global),
-    );
-    render_section(
-        frame,
-        sections[1],
-        " Library ",
-        registry.bindings.get(&KeyContext::Library),
-    );
-    render_section(
-        frame,
-        sections[2],
-        " Queue ",
-        registry.bindings.get(&KeyContext::Queue),
-    );
-
-    render_command_section(frame, sections[3], " Commands ");
+    // Render sections based on available columns
+    let mut col = 0;
+    if col < col_count {
+        render_section(
+            frame,
+            sections[col],
+            " Global ",
+            registry.bindings.get(&KeyContext::Global),
+        );
+        col += 1;
+    }
+    if col < col_count {
+        render_section(
+            frame,
+            sections[col],
+            " Library ",
+            registry.bindings.get(&KeyContext::Library),
+        );
+        col += 1;
+    }
+    if col < col_count {
+        render_section(
+            frame,
+            sections[col],
+            " Queue ",
+            registry.bindings.get(&KeyContext::Queue),
+        );
+        col += 1;
+    }
+    if col < col_count {
+        render_command_section(frame, sections[col], " Commands ");
+    }
 }
 
 fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
+    let t = theme();
     let block = Block::default()
         .title(
             Line::from(Span::styled(
                 title,
-                Style::default().fg(HEADER_FG).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(t.help_header)
+                    .add_modifier(Modifier::BOLD),
             ))
             .alignment(Alignment::Center),
         )
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(OVERLAY))
+        .border_style(Style::default().fg(t.help_overlay_bg))
         .padding(Padding::horizontal(1));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    const COMMANDS: [(&str, &str); 12] = [
+    const COMMANDS: [(&str, &str); 14] = [
         (":q | :quit     ", "Quit App"),
         (":r | :rescan   ", "Rescan Lib"),
         (":dl <query>    ", "Download"),
         (":v <style>     ", "Visualizer"),
         (":noh           ", "Clear Search"),
+        (":focus <mode>  ", "Focus Mode"),
+        (":sidebar <n>   ", "Sidebar Width"),
         (":pl create <n> ", "New Playlist"),
         (":pl del <n>    ", "Del Playlist"),
         (":pl add <n>    ", "Add to Pl"),
@@ -113,9 +136,9 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
     let mut lines = Vec::with_capacity(COMMANDS.len());
     for (syntax, desc) in COMMANDS {
         let line = Line::from(vec![
-            Span::styled(syntax, Style::default().fg(KEY_FG)),
+            Span::styled(syntax, Style::default().fg(t.help_key)),
             Span::raw(" "),
-            Span::styled(desc, Style::default().fg(TEXT)),
+            Span::styled(desc, Style::default().fg(t.help_text)),
         ]);
         lines.push(line);
     }
@@ -125,16 +148,19 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
 }
 
 fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&Vec<KeyBinding>>) {
+    let t = theme();
     let block = Block::default()
         .title(
             Line::from(Span::styled(
                 title,
-                Style::default().fg(HEADER_FG).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(t.help_header)
+                    .add_modifier(Modifier::BOLD),
             ))
             .alignment(Alignment::Center),
         )
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(OVERLAY))
+        .border_style(Style::default().fg(t.help_overlay_bg))
         .padding(Padding::horizontal(1));
 
     let inner = block.inner(area);
@@ -163,9 +189,12 @@ fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&
         let key_display = keys.join("  ");
 
         let line = Line::from(vec![
-            Span::styled(format!("{:12}", key_display), Style::default().fg(KEY_FG)),
+            Span::styled(
+                format!("{:12}", key_display),
+                Style::default().fg(t.help_key),
+            ),
             Span::raw(" "),
-            Span::styled(desc, Style::default().fg(TEXT)),
+            Span::styled(desc, Style::default().fg(t.help_text)),
         ]);
         lines.push(line);
     }

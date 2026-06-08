@@ -1,4 +1,4 @@
-use crate::state::SpectrumStyle;
+use crate::state::{SpectrumStyle, ui::FocusMode};
 use std::fmt;
 use std::str::FromStr;
 
@@ -50,6 +50,8 @@ pub enum Command {
     DeletePlaylist { name: String },
     AddToPlaylist { name: String },
     RemoveFromPlaylist { name: String },
+    Focus { mode: FocusMode },
+    Sidebar { width: u16 },
     Unknown(String),
 }
 
@@ -66,6 +68,8 @@ impl fmt::Display for Command {
             Command::DeletePlaylist { name } => write!(f, "pl del {}", name),
             Command::AddToPlaylist { name } => write!(f, "pl add {}", name),
             Command::RemoveFromPlaylist { name } => write!(f, "pl rm {}", name),
+            Command::Focus { mode } => write!(f, "focus {:?}", mode),
+            Command::Sidebar { width } => write!(f, "sidebar {}", width),
             Command::Unknown(s) => write!(f, "unknown: {}", s),
         }
     }
@@ -158,6 +162,36 @@ impl FromStr for Command {
                     Ok(Command::Unknown(format!("{} requires a query", field)))
                 } else {
                     Ok(Command::Search { field, query })
+                }
+            }
+
+            // focus mode
+            "focus" | "zen" => {
+                let arg = parts.next().unwrap_or("");
+                if arg.is_empty() {
+                    Ok(Command::Unknown(
+                        "focus requires a mode: full, viz, play, vp".into(),
+                    ))
+                } else if let Ok(mode) = FocusMode::from_str(arg) {
+                    Ok(Command::Focus { mode })
+                } else {
+                    Ok(Command::Unknown(format!(
+                        "Unknown focus mode '{}'. Use: full, viz, play, vp",
+                        arg
+                    )))
+                }
+            }
+
+            // sidebar width
+            "sidebar" | "sb" => {
+                let arg = parts.next().unwrap_or("");
+                match arg.parse::<u16>() {
+                    Ok(w) if (28..=80).contains(&w) => Ok(Command::Sidebar { width: w }),
+                    Ok(w) => Ok(Command::Unknown(format!(
+                        "Sidebar width {} out of range (28-80)",
+                        w
+                    ))),
+                    Err(_) => Ok(Command::Unknown("sidebar requires a number (28-80)".into())),
                 }
             }
 

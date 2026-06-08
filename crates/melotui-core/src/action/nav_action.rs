@@ -133,7 +133,9 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                     state.session.nav.library.scroll_offset = 0;
                 }
                 // Check if new selection needs cover load
-                if let Some(tid) = state.get_selected_track_id_in_sidebar() {
+                if state.session.nav.show_track_info
+                    && let Some(tid) = state.get_selected_track_id_in_sidebar()
+                {
                     request_info_cover_load(state, tid, &mut effects);
                 }
                 return effects;
@@ -175,7 +177,9 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                     }
                 }
             }
-            if let Some(tid) = state.get_selected_track_id_in_sidebar() {
+            if state.session.nav.show_track_info
+                && let Some(tid) = state.get_selected_track_id_in_sidebar()
+            {
                 request_info_cover_load(state, tid, &mut effects);
             }
         }
@@ -196,7 +200,9 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
             } else {
                 state.session.nav.queue.selected_queue_id = Some(queue[0].id);
             }
-            if let Some(tid) = state.get_selected_track_id_in_queue() {
+            if state.session.nav.show_track_info
+                && let Some(tid) = state.get_selected_track_id_in_queue()
+            {
                 request_info_cover_load(state, tid, &mut effects);
             }
         }
@@ -219,7 +225,9 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                     state.session.nav.library.selected_id = Some(first);
                     state.session.nav.library.scroll_offset = 0;
                 }
-                if let Some(tid) = state.get_selected_track_id_in_sidebar() {
+                if state.session.nav.show_track_info
+                    && let Some(tid) = state.get_selected_track_id_in_sidebar()
+                {
                     request_info_cover_load(state, tid, &mut effects);
                 }
                 return effects;
@@ -277,7 +285,9 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                     }
                 }
             }
-            if let Some(tid) = state.get_selected_track_id_in_sidebar() {
+            if state.session.nav.show_track_info
+                && let Some(tid) = state.get_selected_track_id_in_sidebar()
+            {
                 request_info_cover_load(state, tid, &mut effects);
             }
         }
@@ -301,7 +311,9 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                     state.session.nav.queue.selected_queue_id = Some(queue[0].id);
                 }
             }
-            if let Some(tid) = state.get_selected_track_id_in_queue() {
+            if state.session.nav.show_track_info
+                && let Some(tid) = state.get_selected_track_id_in_queue()
+            {
                 request_info_cover_load(state, tid, &mut effects);
             }
         }

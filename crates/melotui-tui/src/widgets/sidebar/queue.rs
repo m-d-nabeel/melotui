@@ -1,27 +1,28 @@
-use crate::{format_duration, widgets::sidebar::generate_marquee_delayed};
+use crate::{format_duration, theme::Theme, widgets::sidebar::generate_marquee_delayed};
 use melotui_core::AppState;
 use melotui_core::playback::state::QueueEntry;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState},
 };
 
-const ACTIVE_BORDER: Color = Color::Cyan;
-const INACTIVE_BORDER: Color = Color::Rgb(60, 60, 60);
-const SELECTED_BG: Color = Color::Rgb(40, 44, 52);
-const PLAYING_TRACK_COLOR: Color = Color::Rgb(166, 227, 161); // Catppuccin Green (#a6e3a1)
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let queue = state.queue();
     let is_active = state.is_queue_focused();
 
+    let t = theme();
     let border_style = if is_active {
-        Style::default().fg(ACTIVE_BORDER)
+        Style::default().fg(t.border_active)
     } else {
-        Style::default().fg(INACTIVE_BORDER)
+        Style::default().fg(t.border_inactive)
     };
 
     let title_text = if is_active {
@@ -29,7 +30,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             " Queue ",
             Style::default()
                 .add_modifier(Modifier::BOLD)
-                .fg(ACTIVE_BORDER),
+                .fg(t.border_active),
         )
     } else {
         Span::raw(" Queue ")
@@ -66,13 +67,13 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                     Span::styled(
                         " ▶ ",
                         Style::default()
-                            .fg(PLAYING_TRACK_COLOR)
+                            .fg(t.accent_playing)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
                         title_marquee,
                         Style::default()
-                            .fg(PLAYING_TRACK_COLOR)
+                            .fg(t.accent_playing)
                             .add_modifier(Modifier::BOLD),
                     ),
                 ]),
@@ -81,13 +82,13 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                     Span::styled(
                         track.artist.as_deref().unwrap_or("Unknown"),
                         Style::default()
-                            .fg(Color::White)
+                            .fg(t.fg_primary)
                             .add_modifier(Modifier::ITALIC),
                     ),
-                    Span::styled(" • ", Style::default().fg(Color::DarkGray)),
+                    Span::styled(" • ", Style::default().fg(t.fg_muted)),
                     Span::styled(
                         format_duration(track.duration_ms),
-                        Style::default().fg(Color::DarkGray),
+                        Style::default().fg(t.fg_muted),
                     ),
                 ]),
             ];
@@ -98,14 +99,12 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         let no_playing_lines = vec![Line::from(vec![
             Span::styled(
                 " ▶ ",
-                Style::default()
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(t.fg_muted).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 "No song playing",
                 Style::default()
-                    .fg(Color::DarkGray)
+                    .fg(t.fg_muted)
                     .add_modifier(Modifier::ITALIC),
             ),
         ])];
@@ -115,7 +114,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     if queue.is_empty() {
         let empty_para = Paragraph::new("Empty")
             .alignment(ratatui::layout::Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray));
+            .style(Style::default().fg(t.fg_muted));
         frame.render_widget(empty_para, chunks[1]);
     } else {
         let selected_id = state.get_queue_selection_id();
@@ -135,6 +134,7 @@ fn draw_queue_table(
     selected_idx: usize,
     is_active: bool,
 ) {
+    let t = theme();
     let playing_id = state.get_playing_track_id();
     let is_playing_queue = state.is_playing_from_queue();
 
@@ -152,15 +152,15 @@ fn draw_queue_table(
 
             let mut row_style = Style::default();
             if is_selected {
-                row_style = row_style.bg(SELECTED_BG);
+                row_style = row_style.bg(t.bg_selected);
             }
 
             let text_color = if is_current {
-                PLAYING_TRACK_COLOR
+                t.accent_playing
             } else if is_selected {
-                Color::White
+                t.fg_primary
             } else {
-                Color::Gray
+                t.fg_secondary
             };
 
             let display_title = if is_selected && is_active {
@@ -170,15 +170,15 @@ fn draw_queue_table(
                 title.to_string()
             };
 
-            let icon_symbol = if is_current { "▶" } else { "" };
+            let icon_symbol = if is_current { "▶" } else { "" };
             let icon_style = if is_current {
-                Style::default().fg(PLAYING_TRACK_COLOR)
+                Style::default().fg(t.accent_playing)
             } else {
-                Style::default().fg(Color::DarkGray)
+                Style::default().fg(t.fg_muted)
             };
 
             Row::new(vec![
-                Cell::from(format!("{:>3}", i + 1)).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(format!("{:>3}", i + 1)).style(Style::default().fg(t.fg_muted)),
                 Cell::from(icon_symbol).style(icon_style),
                 Cell::from(display_title).style(Style::default().fg(text_color).add_modifier(
                     if is_current {
@@ -187,7 +187,7 @@ fn draw_queue_table(
                         Modifier::empty()
                     },
                 )),
-                Cell::from(format_duration(duration)).style(Style::default().fg(Color::DarkGray)),
+                Cell::from(format_duration(duration)).style(Style::default().fg(t.fg_muted)),
             ])
             .style(row_style)
         })
@@ -195,7 +195,7 @@ fn draw_queue_table(
 
     let header = Row::new(vec!["  #", " ", "Title", "Time"]).style(
         Style::default()
-            .fg(Color::DarkGray)
+            .fg(t.fg_muted)
             .add_modifier(Modifier::UNDERLINED),
     );
 

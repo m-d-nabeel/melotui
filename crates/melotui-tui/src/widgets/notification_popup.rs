@@ -1,18 +1,25 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     widgets::{Block, BorderType, Borders, Clear, Gauge, Paragraph, Wrap},
 };
 
+use crate::theme::Theme;
 use melotui_core::AppState;
 use melotui_core::state::NotificationKind;
+
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let Some(notification) = state.current_notification() else {
         return;
     };
 
+    let t = theme();
     let width = 35;
     let height = 4;
     let popup_area = top_right_rect(width, height, area, 1);
@@ -20,10 +27,10 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(Clear, popup_area);
 
     let (base_color, title, icon) = match notification.kind {
-        NotificationKind::Progress => (Color::Cyan, "Downloading", "⟳"),
-        NotificationKind::Info => (Color::Blue, "Info", "ℹ"),
-        NotificationKind::Warning => (Color::Yellow, "Warning", "⚠"),
-        NotificationKind::Error => (Color::Red, "Error", "✖"),
+        NotificationKind::Progress => (t.accent_info, "Downloading", "⟳"),
+        NotificationKind::Info => (t.accent_info, "Info", "ℹ"),
+        NotificationKind::Warning => (t.accent_warning, "Warning", "⚠"),
+        NotificationKind::Error => (t.accent_error, "Error", "✖"),
     };
 
     let block = Block::default()
@@ -73,7 +80,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             // paragraph handles block
             let p = Paragraph::new(notification.message.clone())
                 .block(block)
-                .style(Style::default().fg(Color::White))
+                .style(Style::default().fg(t.fg_primary))
                 .alignment(Alignment::Left)
                 .wrap(Wrap { trim: true });
 
@@ -89,9 +96,8 @@ fn top_right_rect(w: u16, h: u16, area: Rect, margin: u16) -> Rect {
     let x = (area.x + area.width)
         .saturating_sub(effective_width)
         .saturating_sub(margin);
-    let y = (area.y)
-        .saturating_sub(effective_height)
-        .saturating_sub(margin);
+    // Fixed: position popup at top with margin, not at y=0
+    let y = area.y + margin;
 
     Rect {
         x,

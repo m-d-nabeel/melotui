@@ -1,24 +1,27 @@
 use melotui_core::AppState;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::Line,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
 use ratatui_image::StatefulImage;
 
-use crate::{format_duration, image_cache::ImageCache};
+use crate::{format_duration, image_cache::ImageCache, theme::Theme};
+
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 const MAX_ART_HEIGHT_PERCENT: u16 = 40;
 const MIN_ART_HEIGHT: u16 = 15;
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache) {
-    // access state via cache
     let art_state = &mut cache.track_info;
     let picker = &cache.picker;
 
-    // selection context
     let track_id = if state.is_library_focused() {
         state.get_selected_track_id_in_sidebar()
     } else {
@@ -35,15 +38,16 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         None => return,
     };
 
-    // main block
+    let t = theme();
+
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::DarkGray))
+        .border_style(Style::default().fg(t.border_inactive))
         .title(" Track Info ")
         .title_style(
             Style::default()
-                .fg(Color::Cyan)
+                .fg(t.accent_primary)
                 .add_modifier(Modifier::BOLD),
         )
         .padding(ratatui::widgets::Padding::new(2, 2, 1, 1));
@@ -51,9 +55,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // art and info layout
+    // Art + info split
     let art_height = if art_state.source.is_some() {
-        // art height from height %
         std::cmp::max(
             MIN_ART_HEIGHT,
             inner_area.height * MAX_ART_HEIGHT_PERCENT / 100,
@@ -64,30 +67,78 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(art_height), // Art
-            Constraint::Min(8),             // Info Area
-        ])
+        .constraints([Constraint::Length(art_height), Constraint::Min(4)])
         .split(inner_area);
 
-    // album art center crop
+    // Album art
     if art_state.source.is_some() {
-        let area = chunks[0];
-        art_state.update_protocol(picker, area);
+        let art_area = chunks[0];
+        art_state.update_protocol(picker, art_area);
 
         if let Some(protocol) = &mut art_state.protocol {
             let image = StatefulImage::default().resize(ratatui_image::Resize::Fit(None));
-            frame.render_stateful_widget(image, area, protocol);
+            frame.render_stateful_widget(image, art_area, protocol);
         }
     }
 
-    // info area layout
+    // Adaptive info area — degrade gracefully based on available height
     let info_area = chunks[1];
-    let info_layout = Layout::default()
+    let available = info_area.height as usize;
+
+    if available < 3 {
+        // Ultra-compact: just title
+        render_title(frame, info_area, track, t);
+        return;
+    }
+
+    if available < 8 {
+        // Compact: title + artist + album
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(2), // Title
+                Constraint::Length(1), // Artist
+                Constraint::Length(1), // Album
+                Constraint::Min(0),    // Flex spacer
+            ])
+            .split(info_area);
+
+        render_title(frame, layout[0], track, t);
+        render_artist(frame, layout[1], track, t);
+        render_album(frame, layout[2], track, t);
+        return;
+    }
+
+    if available < 14 {
+        // Medium: title + artist + album + badges + details
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Spacer
+                Constraint::Length(2), // Title
+                Constraint::Length(1), // Artist
+                Constraint::Length(1), // Album
+                Constraint::Length(1), // Spacer
+                Constraint::Length(1), // Badges
+                Constraint::Length(1), // Details
+                Constraint::Min(0),    // Flex
+            ])
+            .split(info_area);
+
+        render_title(frame, layout[1], track, t);
+        render_artist(frame, layout[2], track, t);
+        render_album(frame, layout[3], track, t);
+        render_badges(frame, layout[5], track, t);
+        render_details(frame, layout[6], track, t);
+        return;
+    }
+
+    // Full: everything
+    let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(1), // Spacer
-            Constraint::Length(2), // Title (Bold, Large)
+            Constraint::Length(2), // Title
             Constraint::Length(1), // Artist
             Constraint::Length(1), // Album
             Constraint::Length(1), // Spacer
@@ -95,88 +146,114 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             Constraint::Length(1), // Details
             Constraint::Length(1), // Spacer
             Constraint::Length(1), // Separator
-            Constraint::Min(4),    // File Info (Fill rest)
+            Constraint::Min(4),    // File Info
         ])
         .split(info_area);
 
-    // title
-    let title_line = Line::from(ratatui::text::Span::styled(
+    render_title(frame, layout[1], track, t);
+    render_artist(frame, layout[2], track, t);
+    render_album(frame, layout[3], track, t);
+    render_badges(frame, layout[5], track, t);
+    render_details(frame, layout[6], track, t);
+
+    // Separator
+    let sep = Line::from(Span::styled(
+        "─".repeat(info_area.width as usize),
+        Style::default().fg(t.fg_muted),
+    ));
+    frame.render_widget(Paragraph::new(sep).alignment(Alignment::Center), layout[8]);
+
+    // File info
+    render_file_info(frame, layout[9], track, t);
+}
+
+// ── Render helpers ──────────────────────────────────────────────────────────
+
+fn render_title(frame: &mut Frame, area: Rect, track: &melotui_core::domain::TrackMeta, t: &Theme) {
+    let line = Line::from(Span::styled(
         &track.title,
         Style::default()
-            .fg(Color::Cyan)
+            .fg(t.accent_primary)
             .add_modifier(Modifier::BOLD),
     ));
-    frame.render_widget(
-        Paragraph::new(title_line).alignment(ratatui::layout::Alignment::Center),
-        info_layout[1],
-    );
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
+}
 
-    // artist
+fn render_artist(
+    frame: &mut Frame,
+    area: Rect,
+    track: &melotui_core::domain::TrackMeta,
+    t: &Theme,
+) {
     let artist_str = track.artist.as_deref().unwrap_or("Unknown Artist");
-    let artist_line = Line::from(ratatui::text::Span::styled(
-        artist_str,
-        Style::default().fg(Color::White),
-    ));
-    frame.render_widget(
-        Paragraph::new(artist_line).alignment(ratatui::layout::Alignment::Center),
-        info_layout[2],
-    );
+    let line = Line::from(Span::styled(artist_str, Style::default().fg(t.fg_primary)));
+    frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
+}
 
-    // album
+fn render_album(frame: &mut Frame, area: Rect, track: &melotui_core::domain::TrackMeta, t: &Theme) {
     if let Some(album) = &track.album {
-        let album_line = Line::from(ratatui::text::Span::styled(
+        let line = Line::from(Span::styled(
             album,
             Style::default()
-                .fg(Color::Gray)
+                .fg(t.fg_secondary)
                 .add_modifier(Modifier::ITALIC),
         ));
-        frame.render_widget(
-            Paragraph::new(album_line).alignment(ratatui::layout::Alignment::Center),
-            info_layout[3],
-        );
+        frame.render_widget(Paragraph::new(line).alignment(Alignment::Center), area);
     }
+}
 
-    // audio specs
+fn render_badges(
+    frame: &mut Frame,
+    area: Rect,
+    track: &melotui_core::domain::TrackMeta,
+    t: &Theme,
+) {
     let bitrate = track.bitrate.unwrap_or(0);
     let sample = track.sample_rate.unwrap_or(0);
     let format = track.format.to_uppercase();
 
-    let mut badge_parts = Vec::new();
+    let mut parts = Vec::new();
     let fmt_color = if format == "FLAC" || format == "WAV" {
-        Color::Green
+        t.badge_lossless
     } else {
-        Color::Blue
+        t.badge_lossy
     };
-    badge_parts.push(ratatui::text::Span::styled(
+    parts.push(Span::styled(
         format!(" {} ", format),
         Style::default()
             .bg(fmt_color)
-            .fg(Color::Black)
+            .fg(ratatui::style::Color::Black)
             .add_modifier(Modifier::BOLD),
     ));
 
     if bitrate > 0 {
-        badge_parts.push(ratatui::text::Span::raw(" "));
-        badge_parts.push(ratatui::text::Span::styled(
+        parts.push(Span::raw(" "));
+        parts.push(Span::styled(
             format!(" {} kbps ", bitrate),
-            Style::default().bg(Color::DarkGray).fg(Color::White),
+            Style::default().bg(t.badge_detail_bg).fg(t.fg_primary),
         ));
     }
 
     if sample > 0 {
-        badge_parts.push(ratatui::text::Span::raw(" "));
-        badge_parts.push(ratatui::text::Span::styled(
+        parts.push(Span::raw(" "));
+        parts.push(Span::styled(
             format!(" {} Hz ", sample),
-            Style::default().bg(Color::DarkGray).fg(Color::White),
+            Style::default().bg(t.badge_detail_bg).fg(t.fg_primary),
         ));
     }
-    // always render widget
-    frame.render_widget(
-        Paragraph::new(Line::from(badge_parts)).alignment(ratatui::layout::Alignment::Center),
-        info_layout[5],
-    );
 
-    // details row
+    frame.render_widget(
+        Paragraph::new(Line::from(parts)).alignment(Alignment::Center),
+        area,
+    );
+}
+
+fn render_details(
+    frame: &mut Frame,
+    area: Rect,
+    track: &melotui_core::domain::TrackMeta,
+    t: &Theme,
+) {
     let mut details = Vec::new();
     if let Some(y) = track.year {
         details.push(format!("{}", y));
@@ -186,26 +263,21 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     }
     details.push(format_duration(track.duration_ms));
     let details_str = details.join(" • ");
+
     frame.render_widget(
         Paragraph::new(details_str)
-            .alignment(ratatui::layout::Alignment::Center)
-            .style(Style::default().fg(Color::DarkGray)),
-        info_layout[6],
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(t.fg_muted)),
+        area,
     );
+}
 
-    // separator
-    let sep = Line::from(ratatui::text::Span::styled(
-        "─".repeat(info_area.width as usize),
-        Style::default().fg(Color::DarkGray),
-    ));
-    frame.render_widget(
-        Paragraph::new(sep).alignment(ratatui::layout::Alignment::Center),
-        info_layout[8],
-    );
-
-    // file details
-    let file_info_area = info_layout[9];
-    // calculate values
+fn render_file_info(
+    frame: &mut Frame,
+    area: Rect,
+    track: &melotui_core::domain::TrackMeta,
+    t: &Theme,
+) {
     let parent_folder = track
         .file_path
         .parent()
@@ -221,31 +293,28 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
 
     let info_text = vec![
         Line::from(vec![
-            ratatui::text::Span::styled("📁 Folder: ", Style::default().fg(Color::Cyan)),
-            ratatui::text::Span::raw(parent_folder),
+            Span::styled("📁 Folder: ", Style::default().fg(t.accent_primary)),
+            Span::raw(parent_folder),
         ]),
         Line::from(vec![
-            ratatui::text::Span::styled("📄 File:   ", Style::default().fg(Color::Cyan)),
-            ratatui::text::Span::raw(filename),
+            Span::styled("📄 File:   ", Style::default().fg(t.accent_primary)),
+            Span::raw(filename),
         ]),
         Line::from(vec![
-            ratatui::text::Span::styled("💾 Size:   ", Style::default().fg(Color::Cyan)),
-            ratatui::text::Span::raw(format!("{:.2} MB", size_mb)),
+            Span::styled("💾 Size:   ", Style::default().fg(t.accent_primary)),
+            Span::raw(format!("{:.2} MB", size_mb)),
         ]),
-        Line::from(""), // Spacer
+        Line::from(""),
         Line::from(vec![
-            ratatui::text::Span::styled("📍 Path:   ", Style::default().fg(Color::DarkGray)),
-            ratatui::text::Span::styled(
+            Span::styled("📍 Path:   ", Style::default().fg(t.fg_muted)),
+            Span::styled(
                 track.file_path.to_string_lossy(),
                 Style::default()
-                    .fg(Color::DarkGray)
+                    .fg(t.fg_muted)
                     .add_modifier(Modifier::ITALIC),
             ),
         ]),
     ];
 
-    frame.render_widget(
-        Paragraph::new(info_text).wrap(Wrap { trim: true }),
-        file_info_area,
-    );
+    frame.render_widget(Paragraph::new(info_text).wrap(Wrap { trim: true }), area);
 }

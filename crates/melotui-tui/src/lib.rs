@@ -1,5 +1,6 @@
 mod image_cache;
 mod input;
+pub mod theme;
 mod tui;
 mod view;
 mod widgets;

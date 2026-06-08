@@ -17,6 +17,7 @@ use crate::progress::parse_progress;
 
 enum InternalEvent {
     Progress(u8),
+    ItemFinished,
     Finished,
     Failed(String),
 }
@@ -82,6 +83,9 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                 InternalEvent::Progress(percent) => {
                     worker.send(IpcEvent::DownloadProgress { percent });
                 }
+                InternalEvent::ItemFinished => {
+                    worker.send(IpcEvent::DownloadItemFinished);
+                }
                 InternalEvent::Finished => {
                     worker.send(IpcEvent::DownloadFinished);
                     cancel_flag = None;
@@ -107,20 +111,26 @@ fn download_task(
 ) {
     tracing::debug!("YT-DLP Thread Spawned, root: {:?}", dl_path);
 
+    let target = if query.starts_with("http://") || query.starts_with("https://") {
+        query.clone()
+    } else {
+        format!("ytsearch1:{}", query)
+    };
+
     let cmd = Command::new("yt-dlp")
         .arg("-x")
         .arg("-f")
         .arg("bestaudio/best")
         .arg("--extract-audio")
         .arg("--audio-format")
-        .arg("mp3")
-        .arg("--audio-quality")
-        .arg("0")
+        .arg("flac")
         .arg("--embed-thumbnail")
         .arg("--add-metadata")
         .arg("--output")
         .arg(format!("{}/%(title)s.%(ext)s", dl_path.display()))
-        .arg(format!("ytsearch1:{}", query))
+        .arg("--exec")
+        .arg("echo MELOTUI_ITEM_FINISHED")
+        .arg(target)
         .arg("--newline") // needed for parsing
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -173,6 +183,9 @@ fn download_task(
             // check progress on stdout
             if let Some(pct) = parse_progress(&line) {
                 let _ = tx_out.send(InternalEvent::Progress(pct));
+            }
+            if line.contains("MELOTUI_ITEM_FINISHED") {
+                let _ = tx_out.send(InternalEvent::ItemFinished);
             }
         }
     });

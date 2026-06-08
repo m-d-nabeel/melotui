@@ -25,7 +25,9 @@ pub fn run(mut worker: impl IpcWorker<AudioCommand>, spectrum_producer: Spectrum
         let commands = fetch_and_coalesce_commands(&mut worker);
 
         for cmd in commands {
-            engine.handle_command(cmd, &mut worker);
+            if !engine.handle_command(cmd, &mut worker) {
+                return;
+            }
         }
 
         engine.tick(&mut worker);
@@ -88,7 +90,11 @@ impl AudioEngine {
         }
     }
 
-    fn handle_command<W: IpcWorker<AudioCommand>>(&mut self, cmd: AudioCommand, worker: &mut W) {
+    fn handle_command<W: IpcWorker<AudioCommand>>(
+        &mut self,
+        cmd: AudioCommand,
+        worker: &mut W,
+    ) -> bool {
         match cmd {
             AudioCommand::Play { path } => self.do_play(path, worker),
             AudioCommand::Stop => self.do_stop(),
@@ -108,8 +114,9 @@ impl AudioEngine {
             AudioCommand::SetTreble(v) => self.dsp_params.treble.set_value(v),
             AudioCommand::SetReverb(v) => self.dsp_params.reverb.set_value(v),
             AudioCommand::SetEcho(v) => self.dsp_params.echo.set_value(v),
-            AudioCommand::Shutdown => std::process::exit(0),
+            AudioCommand::Shutdown => return false,
         }
+        true
     }
 
     fn do_play<W: IpcWorker<AudioCommand>>(&mut self, path: PathBuf, worker: &mut W) {

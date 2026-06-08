@@ -1,11 +1,10 @@
-use crate::AppMsg;
+use crate::{AppMsg, state::ui::FocusMode};
 
 #[derive(Debug, Clone)]
 pub enum UIMsg {
     EnterCommandMode,
     ExitCommandMode,
-    UpdateCommand(char),
-    BackspaceCommand,
+    CommandInput(ratatui::crossterm::event::KeyEvent),
     SubmitCommand(String),
     OpenHelp,
     CloseHelp,
@@ -24,4 +23,10 @@ pub enum UIMsg {
     },
     ConfirmYes,
     ConfirmNo,
+    // Focus mode
+    CycleFocusMode,
+    SetFocusMode(FocusMode),
+    // Sidebar width
+    SetSidebarWidth(u16),
+    AdjustSidebarWidth(i16),
 }

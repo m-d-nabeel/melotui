@@ -19,7 +19,10 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
 
 // marquee helper
 pub fn generate_marquee_delayed(text: &str, max_width: usize, state: &AppState) -> String {
-    if text.len() <= max_width {
+    use unicode_width::UnicodeWidthStr;
+
+    let text_width = UnicodeWidthStr::width(text);
+    if text_width <= max_width {
         return text.to_string();
     }
     let delay = 3.0;
@@ -30,7 +33,7 @@ pub fn generate_marquee_delayed(text: &str, max_width: usize, state: &AppState) 
     let speed = 2.0;
     let active_scroll_time = time_since_nav - delay;
     let gap = 6;
-    let full_len = text.len() + gap;
+    let full_len = text.chars().count() + gap;
     let offset = (active_scroll_time * speed) as usize % full_len;
     let display_text = format!("{}{}{}", text, " ".repeat(gap), text);
     display_text.chars().skip(offset).take(max_width).collect()

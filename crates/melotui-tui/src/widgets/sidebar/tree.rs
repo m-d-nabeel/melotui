@@ -9,38 +9,31 @@ use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, List, ListItem, Scrollbar, ScrollbarOrientation, ScrollbarState,
+        Block, BorderType, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState,
     },
 };
 use std::collections::HashSet;
+use unicode_width::UnicodeWidthStr;
 
+use crate::theme::Theme;
 use crate::widgets::sidebar::generate_marquee_delayed;
 
-// theme constants
-const ACTIVE_BORDER: Color = Color::Cyan;
-const INACTIVE_BORDER: Color = Color::Rgb(60, 60, 60);
-const SELECTED_BG: Color = Color::Rgb(40, 44, 52);
-const SELECTED_FG: Color = Color::White;
-
-// playing state colors
-const PLAYING_TRACK_COLOR: Color = Color::Rgb(166, 227, 161); // Catppuccin Green (#a6e3a1)
-const ANCESTOR_COLOR: Color = Color::Rgb(148, 226, 213); // Catppuccin Teal (#94e2d5)
-
-// icon colors
-const FOLDER_ICON_COLOR: Color = Color::Rgb(215, 153, 33); // Gold
-const PLAYLIST_ICON_COLOR: Color = Color::Rgb(177, 98, 134); // Purple
-const CATEGORY_COLOR: Color = Color::Rgb(97, 175, 239); // Soft Blue
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let nav = state.library_nav();
     let total_rows = get_row_count(&state.library, nav);
     let is_active = state.is_library_focused();
 
-    // container block
+    let t = theme();
     let border_style = if is_active {
-        Style::default().fg(ACTIVE_BORDER)
+        Style::default().fg(t.border_active)
     } else {
-        Style::default().fg(INACTIVE_BORDER)
+        Style::default().fg(t.border_inactive)
     };
 
     let title = if is_active {
@@ -48,7 +41,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             " Library ",
             Style::default()
                 .add_modifier(Modifier::BOLD)
-                .fg(ACTIVE_BORDER),
+                .fg(t.border_active),
         )])
     } else {
         Line::from(" Library ")
@@ -63,20 +56,40 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // virtualization: only render visible slice
     let visible_height = inner_area.height as usize;
     if visible_height == 0 {
         return;
     }
 
-    // scroll_offset from reducer
-    // reducer keeps selection in view
+    // Empty state: show placeholder when no rows
+    if total_rows == 0 {
+        let empty_msg = Paragraph::new(Line::from(vec![
+            Span::styled("  ", Style::default().fg(t.fg_muted)),
+            Span::styled(
+                "No tracks found",
+                Style::default()
+                    .fg(t.fg_muted)
+                    .add_modifier(Modifier::ITALIC),
+            ),
+        ]))
+        .alignment(ratatui::layout::Alignment::Center);
+
+        let y_offset = inner_area.height / 2;
+        let centered = Rect {
+            x: inner_area.x,
+            y: inner_area.y + y_offset,
+            width: inner_area.width,
+            height: 1,
+        };
+        frame.render_widget(empty_msg, centered);
+        return;
+    }
+
     let offset = nav.scroll_offset;
     let rows = get_visible_rows(&state.library, nav, offset, visible_height);
 
     let active_ancestors = get_playing_ancestors(state);
 
-    // render only the visible rows
     let items: Vec<ListItem> = rows
         .iter()
         .map(|row| render_row(row, state, inner_area.width, is_active, &active_ancestors))
@@ -84,7 +97,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let mut list_state = ratatui::widgets::ListState::default();
 
-    // find index in rendered slice
     let selected_index = if let Some(sel_id) = state.get_library_selection() {
         rows.iter().position(|row| &row.id == sel_id)
     } else {
@@ -92,7 +104,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     };
     list_state.select(selected_index);
 
-    let list = List::new(items).highlight_style(Style::default().bg(SELECTED_BG));
+    let list = List::new(items).highlight_style(Style::default().bg(t.bg_selected));
     frame.render_stateful_widget(list, inner_area, &mut list_state);
 
     // lean scrollbar
@@ -101,9 +113,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .symbols(ratatui::symbols::scrollbar::VERTICAL)
         .begin_symbol(None)
         .end_symbol(None)
-        .track_symbol(None) // invisible track
-        .thumb_style(Style::default().fg(Color::DarkGray))
-        .track_style(Style::default().fg(Color::Black)); // blend with bg
+        .track_symbol(None)
+        .thumb_style(Style::default().fg(t.fg_muted))
+        .track_style(Style::default().fg(Color::Black));
 
     let mut scrollbar_state = ScrollbarState::new(total_rows).position(offset);
 
@@ -112,7 +124,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         area.inner(ratatui::layout::Margin {
             horizontal: 0,
             vertical: 1,
-        }), // adjust for borders
+        }),
         &mut scrollbar_state,
     );
 }
@@ -136,36 +148,42 @@ fn render_row(
 
     let is_ancestor = active_ancestors.contains(&row.id);
 
+    let t = theme();
+
     // color logic
     let row_color = if is_playing_track {
-        PLAYING_TRACK_COLOR
+        t.accent_playing
     } else if is_ancestor {
-        ANCESTOR_COLOR
+        t.accent_ancestor
     } else if is_selected {
-        SELECTED_FG
+        t.fg_primary
     } else {
-        Color::Gray
+        t.fg_secondary
     };
 
     // icon styles
     let icon_style = if is_playing_track {
-        Style::default().fg(PLAYING_TRACK_COLOR)
+        Style::default().fg(t.accent_playing)
     } else if panel_active {
         match row.id {
-            SidebarNodeId::Folder(_) => Style::default().fg(FOLDER_ICON_COLOR),
-            SidebarNodeId::Playlist(_) => Style::default().fg(PLAYLIST_ICON_COLOR),
-            SidebarNodeId::Category(_) => Style::default().fg(CATEGORY_COLOR),
+            SidebarNodeId::Folder(_) => Style::default().fg(t.icon_folder),
+            SidebarNodeId::Playlist(_) => Style::default().fg(t.icon_playlist),
+            SidebarNodeId::Category(_) => Style::default().fg(t.icon_category),
             SidebarNodeId::Artist(_)
             | SidebarNodeId::Album(_)
             | SidebarNodeId::Genre(_)
-            | SidebarNodeId::Year(_) => Style::default().fg(CATEGORY_COLOR),
-            _ => Style::default().fg(Color::Gray),
+            | SidebarNodeId::Year(_) => Style::default().fg(t.icon_category),
+            _ => Style::default().fg(t.fg_secondary),
         }
     } else {
-        Style::default().fg(Color::DarkGray)
+        Style::default().fg(t.fg_muted)
     };
 
-    let icon = get_icon(
+    // Get pre-padded icon string.
+    // Nerd Font PUA glyphs need surrounding spaces for consistent terminal
+    // rendering — without them the glyph compresses when adjacent to other
+    // characters and expands on selection. The padding is intentional.
+    let icon_str = get_icon(
         &row.id,
         row.is_expanded,
         row.is_expandable,
@@ -178,40 +196,63 @@ fn render_row(
         text_style = text_style.add_modifier(Modifier::BOLD);
     }
 
-    // content formatting
+    // Indent: 1 space per level for hierarchy depth
     let indent_level = row.level as usize;
-    let indent_str = "  ".repeat(indent_level);
+    let indent_str = " ".repeat(indent_level);
 
-    let icon_width = 2;
-    let meta_width = (indent_str.len() + icon_width + 3) as u16;
+    // Width: [indent] [icon_str] [label]
+    // icon_str includes its own padding so no extra separator needed.
+    // Nerd font icons are 2-cell wide but unicode_width reports 1,
+    // so we hardcode the display width of each icon string.
+    let icon_display_width = icon_display_cells(&icon_str);
+    let meta_width = (indent_level + icon_display_width) as u16;
     let available_text_width = width.saturating_sub(meta_width);
 
     let label_text = if is_selected && panel_active {
         generate_marquee_delayed(&row.label, available_text_width as usize, state)
-    } else if row.label.len() > available_text_width as usize {
-        format!(
-            "{}…",
-            &row.label[0..available_text_width.saturating_sub(1) as usize]
-        )
+    } else if UnicodeWidthStr::width(row.label.as_str()) > available_text_width as usize {
+        truncate_to_width(&row.label, available_text_width as usize)
     } else {
         row.label.clone()
     };
 
-    // build line
-    let mut spans = vec![
+    // Build line
+    let spans = vec![
         Span::raw(indent_str),
-        Span::styled(icon, icon_style),
-        Span::raw(" "),
+        Span::styled(icon_str, icon_style),
         Span::styled(label_text, text_style),
     ];
-    if is_playing_track {
-        // playback indicator
-        spans.push(Span::styled(" 󰐊", Style::default().fg(PLAYING_TRACK_COLOR)));
-    }
 
     ListItem::new(Line::from(spans))
 }
 
+/// Truncate a string to fit within `max_width` display columns, appending '…'.
+fn truncate_to_width(s: &str, max_width: usize) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    let mut width = 0;
+    let mut result = String::new();
+    for ch in s.chars() {
+        let ch_width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width + ch_width >= max_width {
+            break;
+        }
+        width += ch_width;
+        result.push(ch);
+    }
+    result.push('…');
+    result
+}
+
+/// Returns a pre-padded icon string for the tree row.
+///
+/// Nerd Font glyphs live in Unicode's Private Use Area and render at
+/// variable widths depending on adjacent characters. Surrounding each
+/// glyph with spaces prevents compression/expansion artifacts.
+///
+/// Format for expandable nodes: "arrow icon " (e.g. "▾ 󰉋 ")
+/// Format for leaf nodes:       "icon " (e.g. "♪ ")
 fn get_icon(
     id: &SidebarNodeId,
     is_expanded: bool,
@@ -219,103 +260,98 @@ fn get_icon(
     is_playing: bool,
 ) -> String {
     if is_playing {
-        return "  ".to_string();
+        return "󰐊 ".to_string();
     }
 
-    let s = match id {
-        SidebarNodeId::Root => " 󰉋 ",
+    match id {
+        SidebarNodeId::Root => "󰉋 ".to_string(),
         SidebarNodeId::Category(cat) => {
-            if is_expanded {
-                match cat {
-                    CategoryId::Folders => " 󰉋 ",
-                    CategoryId::Artists => " 󰠃 ",
-                    CategoryId::Albums => " 󰀥 ",
-                    CategoryId::Playlists => " 󰲳 ",
-                    CategoryId::Genres => " 󰊗 ",
-                    CategoryId::Years => " 󰔠 ",
-                    CategoryId::Favorites => "  ",
-                }
-            } else {
-                match cat {
-                    CategoryId::Folders => " 󰉋 ",
-                    CategoryId::Artists => " 󰠃 ",
-                    CategoryId::Albums => " 󰀥 ",
-                    CategoryId::Playlists => " 󰲳 ",
-                    CategoryId::Genres => " 󰊗 ",
-                    CategoryId::Years => " 󰔠 ",
-                    CategoryId::Favorites => "  ",
-                }
-            }
+            let arrow = if is_expanded { "" } else { "" };
+            let icon = match cat {
+                CategoryId::Folders => "󰉋",
+                CategoryId::Artists => "󰠃",
+                CategoryId::Albums => "󰀥",
+                CategoryId::Playlists => "󰲳",
+                CategoryId::Genres => "󰊗",
+                CategoryId::Years => "󰔠",
+                CategoryId::Favorites => "󰋎",
+            };
+            format!("{} {} ", arrow, icon)
         }
         SidebarNodeId::Folder(_) => {
-            // folder icon + status
             if is_expandable {
-                if is_expanded { "  " } else { "  " }
+                let arrow = if is_expanded { "" } else { "" };
+                format!("{} {} ", arrow, "󰉋")
             } else {
-                "   " // No arrow
+                "󰉋 ".to_string()
             }
         }
         SidebarNodeId::Playlist(_) => {
             if is_expandable {
-                if is_expanded { "  " } else { "  " }
+                let arrow = if is_expanded { "" } else { "" };
+                format!("{} {} ", arrow, "󰲳")
             } else {
-                "   "
+                "󰲳 ".to_string()
             }
         }
-        SidebarNodeId::Track { .. } => "  ",
+        // Tracks are leaf nodes — no arrow, just icon
+        SidebarNodeId::Track { .. } => "♪ ".to_string(),
         SidebarNodeId::Artist(_) => {
             if is_expandable {
-                if is_expanded {
-                    " 󰠃 "
-                } else {
-                    " 󰠃 "
-                }
+                let arrow = if is_expanded { "" } else { "" };
+                format!("{} {} ", arrow, "󰠃")
             } else {
-                "  󰠃 "
+                "󰠃 ".to_string()
             }
         }
         SidebarNodeId::Album(_) => {
             if is_expandable {
-                if is_expanded {
-                    " 󰀥 "
-                } else {
-                    " 󰀥 "
-                }
+                let arrow = if is_expanded { "" } else { "" };
+                format!("{} {} ", arrow, "󰀥")
             } else {
-                "  󰀥 "
+                "󰀥 ".to_string()
             }
         }
         SidebarNodeId::Genre(_) => {
             if is_expandable {
-                if is_expanded {
-                    " 󰊗 "
-                } else {
-                    " 󰊗 "
-                }
+                let arrow = if is_expanded { "" } else { "" };
+                format!("{} {} ", arrow, "󰊗")
             } else {
-                "  󰊗 "
+                "󰊗 ".to_string()
             }
         }
         SidebarNodeId::Year(_) => {
             if is_expandable {
-                if is_expanded {
-                    " 󰔠 "
-                } else {
-                    " 󰔠 "
-                }
+                let arrow = if is_expanded { "" } else { "" };
+                format!("{} {} ", arrow, "󰔠")
             } else {
-                "  󰔠 "
+                "󰔠 ".to_string()
             }
         }
-    };
-    s.to_string()
+    }
+}
+
+/// Estimate the display cell count of an icon string.
+/// Nerd Font PUA glyphs are 2-cell wide in most terminal fonts,
+/// but `unicode_width` reports them as 1. We account for this by
+/// counting each non-ASCII, non-space character as 2 cells.
+fn icon_display_cells(s: &str) -> usize {
+    let mut width = 0;
+    for ch in s.chars() {
+        if ch == ' ' || ch.is_ascii() {
+            width += 1;
+        } else {
+            // Nerd Font / PUA glyph — assume 2 terminal cells
+            width += 2;
+        }
+    }
+    width
 }
 
 fn get_playing_ancestors(state: &AppState) -> HashSet<SidebarNodeId> {
     let mut ancestors = HashSet::new();
     if let Some(playing_node) = state.get_playing_node() {
         let mut current = playing_node.clone();
-        // walk up to library root to highlight folders/categories containing active track
         while let Some(parent) = current.parent(&state.library.root) {
             ancestors.insert(parent.clone());
             current = parent;

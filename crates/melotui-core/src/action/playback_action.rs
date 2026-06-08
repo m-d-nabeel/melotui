@@ -374,9 +374,42 @@ fn update_active_node(state: &mut AppState, new_id: TrackId) {
         };
 
     if let Some(p) = parent_box {
-        state.session.playback.active_node = Some(SidebarNodeId::Track {
+        let new_node = SidebarNodeId::Track {
             id: new_id,
-            parent: p,
-        });
+            parent: p.clone(),
+        };
+        state.session.playback.active_node = Some(new_node.clone());
+
+        if !state.is_playing_from_queue()
+            && let Some(SidebarNodeId::Track {
+                parent: ref sel_p, ..
+            }) = state.session.nav.library.selected_id
+            && *sel_p == p
+        {
+            state.session.nav.library.selected_id = Some(new_node.clone());
+
+            let nav = &state.session.nav.library;
+            let total_rows = crate::library::projector::get_row_count(&state.library, nav);
+            if let Some(idx) =
+                crate::library::projector::get_index_of(&state.library, nav, &new_node)
+            {
+                let (_, h) = state.terminal_size();
+                if h > 3 {
+                    let viewport_height = (h - 3) as usize;
+                    let scrolloff = state.scrolloff().min(viewport_height / 2);
+
+                    if state.session.nav.library.scroll_offset > idx {
+                        state.session.nav.library.scroll_offset = idx.saturating_sub(scrolloff);
+                    } else if idx
+                        >= state.session.nav.library.scroll_offset + viewport_height - scrolloff
+                    {
+                        let target_offset = idx + scrolloff + 1;
+                        let raw_offset = target_offset.saturating_sub(viewport_height);
+                        let max_offset = total_rows.saturating_sub(viewport_height);
+                        state.session.nav.library.scroll_offset = raw_offset.min(max_offset);
+                    }
+                }
+            }
+        }
     }
 }

@@ -55,16 +55,10 @@ impl InputProcessor {
                 AppMsg::Library(LibraryMsg::AddToQueue(track_id)) => {
                     let now = Instant::now();
                     let should_add = match self.last_add_track {
-                        Some((last_id, last_time)) => {
-                            // same track: 500ms debounce
-                            if last_id == track_id {
-                                now.duration_since(last_time) > Duration::from_millis(500)
-                            } else {
-                                // diff track: allow
-                                true
-                            }
+                        Some((last_id, last_time)) if last_id == track_id => {
+                            now.duration_since(last_time) > Duration::from_millis(500)
                         }
-                        None => true,
+                        Some(_) | None => true,
                     };
 
                     if should_add {

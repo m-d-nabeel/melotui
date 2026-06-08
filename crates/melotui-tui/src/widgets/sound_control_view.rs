@@ -1,3 +1,4 @@
+use crate::theme::Theme;
 use melotui_core::AppState;
 use ratatui::{
     Frame,
@@ -7,24 +8,46 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Padding, Paragraph},
 };
 
+fn theme() -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+    THEME.get_or_init(Theme::default)
+}
+
+/// How to format the slider value display.
+/// Using an enum instead of string-matching the label name.
+#[derive(Clone, Copy)]
+enum SliderFormat {
+    Percent,    // "75%"
+    Multiplier, // "x1.5"
+}
+
 struct SliderConfig<'a> {
     label: &'a str,
     val: f32,
     min: f32,
     max: f32,
     color: Color,
+    format: SliderFormat,
+}
+
+impl SliderConfig<'_> {
+    fn format_value(&self) -> String {
+        match self.format {
+            SliderFormat::Percent => format!("{:.0}%", self.val * 100.0),
+            SliderFormat::Multiplier => format!("x{:.1}", self.val),
+        }
+    }
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    // container block
-    // padding for margins
+    let t = theme();
     let block = Block::default()
         .title(" Mixer ")
         .title_style(Style::default().add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::LightBlue))
-        .padding(Padding::horizontal(2)); // Horizontal margin inside
+        .border_style(Style::default().fg(t.border_inactive))
+        .padding(Padding::horizontal(2));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -41,19 +64,17 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         ])
         .split(inner);
 
-    // skip spacers
     let col1 = layout[0];
     let col2 = layout[2];
     let col3 = layout[4];
 
-    // helper: split col into 2 rows
     let split_rows = |rect| {
         Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Fill(1),   // Top Control
-                Constraint::Length(1), // Vertical Gap
-                Constraint::Fill(1),   // Bottom Control
+                Constraint::Fill(1),
+                Constraint::Length(1),
+                Constraint::Fill(1),
             ])
             .split(rect)
     };
@@ -62,9 +83,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let c2 = split_rows(col2);
     let c3 = split_rows(col3);
 
-    // render widgets
-
-    // col 1: master
+    // Col 1: Volume + Speed
     render_sleek_slider(
         frame,
         c1[0],
@@ -73,7 +92,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.volume(),
             min: 0.0,
             max: 1.5,
-            color: Color::Green,
+            color: t.slider_volume,
+            format: SliderFormat::Percent,
         },
     );
     render_sleek_slider(
@@ -84,11 +104,12 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.speed(),
             min: 0.5,
             max: 2.0,
-            color: Color::Blue,
+            color: t.slider_speed,
+            format: SliderFormat::Multiplier,
         },
     );
 
-    // col 2: eq
+    // Col 2: Bass + Treble
     render_sleek_slider(
         frame,
         c2[0],
@@ -97,7 +118,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.bass(),
             min: 0.0,
             max: 5.0,
-            color: Color::Yellow,
+            color: t.slider_bass,
+            format: SliderFormat::Multiplier,
         },
     );
     render_sleek_slider(
@@ -108,11 +130,12 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.treble(),
             min: 0.0,
             max: 5.0,
-            color: Color::Cyan,
+            color: t.slider_treble,
+            format: SliderFormat::Multiplier,
         },
     );
 
-    // col 3: fx
+    // Col 3: Reverb + Echo
     render_sleek_slider(
         frame,
         c3[0],
@@ -121,7 +144,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.reverb(),
             min: 0.0,
             max: 1.0,
-            color: Color::Magenta,
+            color: t.slider_reverb,
+            format: SliderFormat::Percent,
         },
     );
     render_sleek_slider(
@@ -132,86 +156,66 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             val: state.echo(),
             min: 0.0,
             max: 0.9,
-            color: Color::Red,
+            color: t.slider_echo,
+            format: SliderFormat::Percent,
         },
     );
 }
 
 fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
+    let t = theme();
     let ratio = ((config.val - config.min) / (config.max - config.min)).clamp(0.0, 1.0);
 
-    // center content
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(0),    // Top Spacer
-            Constraint::Length(1), // Row 1: Label & Value
-            Constraint::Length(1), // Row 2: Slider Line
-            Constraint::Min(0),    // Bottom Spacer
+            Constraint::Min(0),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
         ])
         .split(area);
 
     let label_area = layout[1];
     let slider_area = layout[2];
 
-    // row 1: label - value
+    // Row 1: label + value
     let header = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Fill(1), Constraint::Fill(1)])
         .split(label_area);
 
-    // left: label
     let label_span = Span::styled(
         config.label,
-        Style::default()
-            .add_modifier(Modifier::BOLD)
-            .fg(Color::DarkGray),
+        Style::default().add_modifier(Modifier::BOLD).fg(t.fg_muted),
     );
     frame.render_widget(Paragraph::new(label_span), header[0]);
 
-    // right: value
-    let val_str = if config.label == "Speed" || config.label == "Bass" || config.label == "Treble" {
-        format!("x{:.1}", config.val)
-    } else {
-        format!("{:.0}%", config.val * 100.0)
-    };
+    let val_str = config.format_value();
     frame.render_widget(
         Paragraph::new(val_str)
-            .style(Style::default().fg(Color::DarkGray))
+            .style(Style::default().fg(t.fg_muted))
             .alignment(Alignment::Right),
         header[1],
     );
 
-    // row 2: slider
+    // Row 2: slider
     let width = slider_area.width as usize;
     if width < 1 {
         return;
     }
 
-    // slider logic
-    // thumb pos
-    // active part colored
-    // inactive part gray
-    // thumb circle
-
-    let track_width = width.saturating_sub(1); // Reserve 1 char for thumb
+    let track_width = width.saturating_sub(1);
     let thumb_pos = (ratio * track_width as f32).round() as usize;
     let remaining = track_width.saturating_sub(thumb_pos);
 
-    // Use thin line "─" for sleek look
-    // thin line
     let active_line = "─".repeat(thumb_pos);
     let inactive_line = "─".repeat(remaining);
 
-    let track_color = Color::Rgb(60, 60, 60); // Deep gray for inactive part
-
     let slider_line = Line::from(vec![
-        // Active Track (Colored)
         Span::styled(active_line, Style::default().fg(config.color)),
-        // Thumb (Colored Circle)
         Span::styled("●", Style::default().fg(config.color)),
-        // Inactive Track (Dark Gray)
-        Span::styled(inactive_line, Style::default().fg(track_color)),
+        Span::styled(inactive_line, Style::default().fg(t.slider_track)),
     ]);
 
     frame.render_widget(Paragraph::new(slider_line), slider_area);

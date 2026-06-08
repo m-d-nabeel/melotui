@@ -42,7 +42,12 @@ pub struct AppState {
 // lifecycle
 impl AppState {
     pub fn new(library: LibrarySnapshot) -> Self {
+        let config = crate::config::AppConfig::load();
         let mut session = SessionState::default();
+
+        // Apply config to session
+        session.ui.sidebar_width = config.ui.sidebar_width;
+        session.ui.scrolloff = config.ui.scrolloff;
 
         // select first item
         if let Some(first_node) = projector::get_node_at_index(&library, &session.nav.library, 0) {
@@ -340,7 +345,7 @@ impl AppState {
         self.session.ui.show_help
     }
 
-    pub fn ui_command_buffer(&self) -> &String {
+    pub fn ui_command_buffer(&self) -> &tui_input::Input {
         &self.session.ui.command_buffer
     }
 
@@ -376,6 +381,14 @@ impl AppState {
 
     pub fn confirm_dialog(&self) -> Option<&crate::state::ui::ConfirmDialog> {
         self.session.ui.confirm_dialog.as_ref()
+    }
+
+    pub fn sidebar_width(&self) -> u16 {
+        self.session.ui.sidebar_width
+    }
+
+    pub fn focus_mode(&self) -> crate::state::ui::FocusMode {
+        self.session.ui.focus_mode
     }
 }
 

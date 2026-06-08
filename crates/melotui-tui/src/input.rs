@@ -81,10 +81,8 @@ impl InputHandler {
 
         // command mode typing fallback
         let Some(act) = action else {
-            if *state.ui_mode() == UIMode::Command
-                && let KeyCode::Char(c) = key.code
-            {
-                return Some(AppMsg::UI(UIMsg::UpdateCommand(c)));
+            if *state.ui_mode() == UIMode::Command {
+                return Some(AppMsg::UI(UIMsg::CommandInput(key)));
             }
             if *state.ui_mode() == UIMode::PlaylistPicker
                 && let KeyCode::Char(c) = key.code
@@ -185,7 +183,7 @@ impl InputHandler {
 
             // submit command
             KeyAction::SubmitCommand => Some(AppMsg::UI(UIMsg::SubmitCommand(
-                state.ui_command_buffer().clone(),
+                state.ui_command_buffer().value().to_string(),
             ))),
 
             // direct mapping
