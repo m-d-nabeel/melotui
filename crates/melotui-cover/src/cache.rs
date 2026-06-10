@@ -175,3 +175,41 @@ fn release_memory_to_os() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use std::io::Write;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_compute_cache_key_and_path() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("test_track.mp3");
+
+        let mut file = File::create(&file_path).unwrap();
+        file.write_all(b"fake mp3 data").unwrap();
+
+        let mut cache = CoverCache::new();
+        // Override cache dir for testing
+        cache.cache_dir = dir.path().join("covers");
+
+        let key = cache.compute_cache_key(&file_path);
+        assert!(key.is_some());
+
+        let key_str = key.unwrap();
+        assert_eq!(key_str.len(), 64); // SHA-256 hex string
+
+        let cache_path = cache.get_cache_path(&key_str);
+
+        // Assert sharding logic (first two chars)
+        let expected_shard = &key_str[0..2];
+        let parent = cache_path.parent().unwrap();
+        assert_eq!(parent.file_name().unwrap(), expected_shard);
+        assert_eq!(
+            cache_path.file_name().unwrap().to_str().unwrap(),
+            format!("{}.jpg", key_str)
+        );
+    }
+}

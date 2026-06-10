@@ -363,3 +363,173 @@ impl LibrarySnapshot {
         Some((picture.data().to_vec(), picture.mime_type()?.to_string()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_mock_track(
+        id: u64,
+        path: &str,
+        artist: Option<&str>,
+        album: Option<&str>,
+        genre: Option<&str>,
+        fav: bool,
+    ) -> TrackMeta {
+        TrackMeta {
+            id: TrackId(id),
+            file_path: PathBuf::from(path),
+            title: format!("Track {}", id),
+            artist: artist.map(|s| s.to_string()),
+            album: album.map(|s| s.to_string()),
+            genre: genre.map(|s| s.to_string()),
+            year: Some(2020),
+            track_number: None,
+            duration_ms: 1000,
+            bitrate: None,
+            sample_rate: None,
+            format: "mp3".to_string(),
+            has_cover: false,
+            file_size_bytes: 1000,
+            is_favorite: fav,
+        }
+    }
+
+    #[test]
+    fn test_build_folder_tree() {
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            TrackId(1),
+            create_mock_track(1, "/library/rock/song1.mp3", None, None, None, false),
+        );
+        tracks.insert(
+            TrackId(2),
+            create_mock_track(2, "/library/rock/song2.mp3", None, None, None, false),
+        );
+        tracks.insert(
+            TrackId(3),
+            create_mock_track(3, "/library/jazz/song3.mp3", None, None, None, false),
+        );
+
+        let root = PathBuf::from("/library");
+        let snapshot = LibrarySnapshot::new(root, vec![], tracks);
+
+        assert_eq!(snapshot.folder_tree.name, "Library");
+        assert_eq!(snapshot.folder_tree.subdirs.len(), 2);
+
+        let jazz_node = snapshot
+            .folder_tree
+            .subdirs
+            .iter()
+            .find(|d| d.name == "jazz")
+            .unwrap();
+        assert_eq!(jazz_node.tracks.len(), 1);
+        assert_eq!(jazz_node.tracks[0], TrackId(3));
+
+        let rock_node = snapshot
+            .folder_tree
+            .subdirs
+            .iter()
+            .find(|d| d.name == "rock")
+            .unwrap();
+        assert_eq!(rock_node.tracks.len(), 2);
+    }
+
+    #[test]
+    fn test_toggle_favorite_sorting() {
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            TrackId(1),
+            create_mock_track(1, "/lib/A.mp3", None, None, None, false),
+        );
+        tracks.insert(
+            TrackId(2),
+            create_mock_track(2, "/lib/B.mp3", None, None, None, false),
+        );
+        tracks.insert(
+            TrackId(3),
+            create_mock_track(3, "/lib/Z.mp3", None, None, None, false),
+        );
+
+        let mut snapshot = LibrarySnapshot::new(PathBuf::from("/lib"), vec![], tracks);
+
+        snapshot.toggle_favorite(TrackId(2), true);
+        snapshot.toggle_favorite(TrackId(3), true);
+        snapshot.toggle_favorite(TrackId(1), true);
+
+        // Should be sorted alphabetically by title: "Track 1", "Track 2", "Track 3"
+        assert_eq!(snapshot.favorites, vec![TrackId(1), TrackId(2), TrackId(3)]);
+
+        snapshot.toggle_favorite(TrackId(2), false);
+        assert_eq!(snapshot.favorites, vec![TrackId(1), TrackId(3)]);
+    }
+
+    #[test]
+    fn test_resolve_tracks_for_node() {
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            TrackId(1),
+            create_mock_track(
+                1,
+                "/lib/A.mp3",
+                Some("ArtistA"),
+                Some("AlbumA"),
+                Some("Jazz"),
+                false,
+            ),
+        );
+        tracks.insert(
+            TrackId(2),
+            create_mock_track(
+                2,
+                "/lib/B.mp3",
+                Some("ArtistB"),
+                Some("AlbumA"),
+                Some("Rock"),
+                true,
+            ),
+        );
+
+        let snapshot = LibrarySnapshot::new(PathBuf::from("/lib"), vec![], tracks);
+
+        // Test Artist Node
+        let artist_node = SidebarNodeId::Artist("ArtistA".into());
+        let resolved = snapshot.resolve_tracks_for_node(&artist_node);
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].id, TrackId(1));
+
+        // Test Album Node
+        let album_node = SidebarNodeId::Album("AlbumA".into());
+        let resolved = snapshot.resolve_tracks_for_node(&album_node);
+        assert_eq!(resolved.len(), 2);
+
+        // Test Favorites Node
+        let fav_node = SidebarNodeId::Category(CategoryId::Favorites);
+        let resolved = snapshot.resolve_tracks_for_node(&fav_node);
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].id, TrackId(2));
+    }
+
+    #[test]
+    fn test_playlist_management() {
+        let mut snapshot = LibrarySnapshot::new(PathBuf::from("/lib"), vec![], HashMap::new());
+        let p_id = PlaylistId(10);
+
+        snapshot.add_playlist(p_id, "Workout".into());
+        assert!(snapshot.playlists.contains_key(&p_id));
+
+        snapshot.add_track_to_playlist(p_id, TrackId(1));
+        assert_eq!(snapshot.playlists.get(&p_id).unwrap().tracks.len(), 1);
+
+        // Prevent duplicates
+        snapshot.add_track_to_playlist(p_id, TrackId(1));
+        assert_eq!(snapshot.playlists.get(&p_id).unwrap().tracks.len(), 1);
+
+        snapshot.remove_track_from_playlist(p_id, TrackId(1));
+        assert_eq!(snapshot.playlists.get(&p_id).unwrap().tracks.len(), 0);
+
+        snapshot.remove_playlist(p_id);
+        assert!(!snapshot.playlists.contains_key(&p_id));
+        assert!(!snapshot.playlist_order.contains(&p_id));
+    }
+}

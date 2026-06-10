@@ -252,3 +252,65 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         _ => AppMsg::Noop,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use melotui_core::domain::TrackId;
+
+    #[test]
+    fn test_ipc_to_appmsg_translation() {
+        // Test playback progress translation
+        let evt = IpcEvent::PlaybackProgress {
+            position_ms: 1000,
+            epoch: 1,
+        };
+        let msg = ipc_to_appmsg(evt);
+        match msg {
+            AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms, epoch }) => {
+                assert_eq!(position_ms, 1000);
+                assert_eq!(epoch, 1);
+            }
+            _ => panic!("Expected AudioProgress msg"),
+        }
+
+        // Test download progress
+        let evt = IpcEvent::DownloadProgress { percent: 45 };
+        let msg = ipc_to_appmsg(evt);
+        match msg {
+            AppMsg::Download(DownloadMsg::DownloadProgress { percent }) => {
+                assert_eq!(percent, 45);
+            }
+            _ => panic!("Expected DownloadProgress msg"),
+        }
+    }
+
+    #[test]
+    fn test_appmsg_to_ipc_translation() {
+        let state = AppState::new(melotui_core::library::LibrarySnapshot::new(
+            PathBuf::from("/"),
+            vec![],
+            std::collections::HashMap::new(),
+        ));
+
+        // Test UI Playback Stop command
+        let msg = AppMsg::Playback(PlaybackMsg::DispatchStop);
+        let cmd = appmsg_to_ipc(&msg, &state).unwrap();
+        match cmd {
+            IpcCommand::Audio(AudioCommand::Stop) => {}
+            _ => panic!("Expected Audio Stop command"),
+        }
+
+        // Test Database toggle favorite command
+        let msg = AppMsg::Database(
+            melotui_core::message::database::DatabaseMsg::DispatchToggleFavorite(TrackId(42)),
+        );
+        let cmd = appmsg_to_ipc(&msg, &state).unwrap();
+        match cmd {
+            IpcCommand::Database(DatabaseCommand::ToggleFavorite { track_id }) => {
+                assert_eq!(track_id, 42);
+            }
+            _ => panic!("Expected Database ToggleFavorite command"),
+        }
+    }
+}
