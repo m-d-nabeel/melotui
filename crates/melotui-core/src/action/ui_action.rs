@@ -9,6 +9,7 @@ use crate::{
         visualizer::{SpectrumStyle, is_cava_available},
     },
 };
+use ratatui::crossterm::event::{Event, KeyEvent};
 
 pub fn handle_open_help(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.show_help = true;
@@ -230,12 +231,9 @@ pub fn handle_exit_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
-pub fn handle_command_input(
-    state: &mut AppState,
-    key: ratatui::crossterm::event::KeyEvent,
-) -> Vec<AppMsg> {
+pub fn handle_command_input(state: &mut AppState, key: KeyEvent) -> Vec<AppMsg> {
     use tui_input::backend::crossterm::EventHandler;
-    let event = ratatui::crossterm::event::Event::Key(key);
+    let event = Event::Key(key);
     state.session.ui.command_buffer.handle_event(&event);
     vec![]
 }
@@ -426,4 +424,72 @@ pub fn handle_adjust_sidebar_width(state: &mut AppState, delta: i16) -> Vec<AppM
     new_width = new_width.clamp(0, term_w.max(80));
     state.session.ui.sidebar_width = new_width as u16;
     vec![]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::library::snapshot::Library;
+    use std::collections::HashMap;
+
+    fn test_state() -> AppState {
+        let root = std::path::PathBuf::from("/tmp");
+        let library = Library::new(root, vec![], HashMap::new());
+        AppState::new(library)
+    }
+
+    #[test]
+    fn test_handle_open_help() {
+        let mut state = test_state();
+        assert!(!state.session.ui.show_help);
+
+        let effects = handle_open_help(&mut state);
+        assert!(state.session.ui.show_help);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn test_handle_command_mode() {
+        let mut state = test_state();
+        assert_eq!(state.session.ui.mode, UIMode::Normal);
+
+        let effects = handle_enter_command_mode(&mut state);
+        assert_eq!(state.session.ui.mode, UIMode::Command);
+        assert!(effects.is_empty());
+
+        let effects = handle_exit_command_mode(&mut state);
+        assert_eq!(state.session.ui.mode, UIMode::Normal);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn test_handle_submit_command_quit() {
+        let mut state = test_state();
+        state.session.ui.mode = UIMode::Command;
+
+        let effects = handle_submit_command(&mut state, "quit".to_string());
+
+        assert_eq!(
+            state.session.ui.mode,
+            UIMode::Normal,
+            "Should return to normal mode"
+        );
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], AppMsg::RequestQuit));
+    }
+
+    #[test]
+    fn test_handle_submit_command_unknown() {
+        let mut state = test_state();
+        state.session.ui.mode = UIMode::Command;
+
+        let effects = handle_submit_command(&mut state, "invalidcmd".to_string());
+
+        assert_eq!(state.session.ui.mode, UIMode::Normal);
+        assert!(effects.is_empty());
+        assert!(matches!(
+            state.current_notification().unwrap().kind,
+            NotificationKind::Error
+        ));
+    }
 }

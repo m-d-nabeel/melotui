@@ -4,11 +4,12 @@ members = [
   "crates/melotui-core",
   "crates/melotui-tui",
   "crates/melotui-audio",
-  "crates/melotui-ipc",
+  "crates/melotui-bus",
   "crates/melotui-bin",
   "crates/melotui-download",
   "crates/melotui-db",
   "crates/melotui-cover",
+  "crates/melotui-engine",
 ]
 
 [profile.production]

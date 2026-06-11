@@ -1,4 +1,4 @@
-use crate::library::snapshot::{DirectoryNode, LibrarySnapshot};
+use crate::library::snapshot::{DirectoryNode, Library};
 use crate::navigation::ids::{CategoryId, SidebarNodeId};
 use crate::navigation::state::LibraryNavState;
 use std::collections::HashSet;
@@ -13,7 +13,7 @@ pub struct SidebarRow {
 }
 
 /// visible row count
-pub fn get_row_count(snapshot: &LibrarySnapshot, nav: &LibraryNavState) -> usize {
+pub fn get_row_count(snapshot: &Library, nav: &LibraryNavState) -> usize {
     let mut count = 7; // Categories: Folders, Favorites, Artists, Albums, Genres, Years, Playlists
 
     if nav
@@ -101,7 +101,7 @@ where
 
 /// get visible rows
 pub fn get_visible_rows(
-    snapshot: &LibrarySnapshot,
+    snapshot: &Library,
     nav: &LibraryNavState,
     skip: usize,
     take: usize,
@@ -122,7 +122,7 @@ pub fn get_visible_rows(
 
 /// find node index
 pub fn get_index_of(
-    snapshot: &LibrarySnapshot,
+    snapshot: &Library,
     nav: &LibraryNavState,
     target: &SidebarNodeId,
 ) -> Option<usize> {
@@ -143,7 +143,7 @@ pub fn get_index_of(
 
 /// get node at index
 pub fn get_node_at_index(
-    snapshot: &LibrarySnapshot,
+    snapshot: &Library,
     nav: &LibraryNavState,
     target_index: usize,
 ) -> Option<SidebarNodeId> {
@@ -163,7 +163,7 @@ pub fn get_node_at_index(
 }
 
 /// traverse visible nodes
-fn traverse_visible_nodes<F>(snapshot: &LibrarySnapshot, nav: &LibraryNavState, mut visitor: F)
+fn traverse_visible_nodes<F>(snapshot: &Library, nav: &LibraryNavState, mut visitor: F)
 where
     F: FnMut(SidebarRow) -> bool,
 {
@@ -251,7 +251,7 @@ fn visit_directory<F>(
     node: &DirectoryNode,
     expanded_ids: &HashSet<SidebarNodeId>,
     level: u8,
-    snapshot: &LibrarySnapshot,
+    snapshot: &Library,
     visitor: &mut F,
 ) -> bool
 where
@@ -301,7 +301,7 @@ fn visit_favorites<F>(
     favorites: &[crate::domain::TrackId],
     parent_id: &SidebarNodeId,
     level: u8,
-    snapshot: &LibrarySnapshot,
+    snapshot: &Library,
     visitor: &mut F,
 ) -> bool
 where
@@ -328,7 +328,7 @@ where
 }
 
 fn visit_playlists<F>(
-    snapshot: &LibrarySnapshot,
+    snapshot: &Library,
     expanded_ids: &HashSet<SidebarNodeId>,
     level: u8,
     visitor: &mut F,
@@ -381,7 +381,7 @@ fn visit_generic_map<K, F, IDGen>(
     expanded_ids: &HashSet<SidebarNodeId>,
     level: u8,
     id_gen: IDGen,
-    snapshot: &LibrarySnapshot,
+    snapshot: &Library,
     visitor: &mut F,
 ) -> bool
 where

@@ -105,6 +105,16 @@ impl ImageCache {
         }
     }
 
+    #[cfg(test)]
+    pub fn empty() -> Self {
+        Self {
+            picker: Picker::halfblocks(),
+            album_art: ImageState::new(),
+            track_info: ImageState::new(),
+            was_obscured: false,
+        }
+    }
+
     pub fn update(&mut self, state: &AppState) {
         let is_obscured = state.current_notification().is_some()
             || *state.ui_mode() == UIMode::Command
@@ -159,5 +169,49 @@ impl ImageCache {
         local.width = 0;
         local.height = 0;
         local.protocol = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use melotui_core::library::Library;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_image_state_reset() {
+        let mut state = ImageState::new();
+        state.width = 100;
+        state.height = 100;
+        state.source = Some(Arc::new(DynamicImage::new_rgb8(10, 10)));
+
+        state.reset();
+
+        assert_eq!(state.width, 0);
+        assert_eq!(state.height, 0);
+        assert!(state.source.is_none());
+        assert!(state.protocol.is_none());
+    }
+
+    #[test]
+    fn test_image_cache_obscured_reset() {
+        let mut cache = ImageCache::empty();
+        let mut app_state = AppState::new(Library::new(
+            PathBuf::from("/"),
+            vec![],
+            std::collections::HashMap::new(),
+        ));
+
+        // Setup some fake state
+        cache.album_art.width = 50;
+
+        use melotui_core::{AppMsg, message::ui::UIMsg, reducer};
+
+        // When help is shown, it should reset the cache
+        reducer::reduce(&mut app_state, AppMsg::UI(UIMsg::OpenHelp));
+        cache.update(&app_state);
+
+        assert_eq!(cache.album_art.width, 0);
+        assert!(cache.album_art.source.is_none());
     }
 }

@@ -1,9 +1,9 @@
-use melotui_core::message::cover::CoverContext;
-use melotui_ipc::{
+use melotui_bus::{
     channel::{IpcWorker, inprocess::WorkerEndpoint},
     command::CoverCommand,
     event::IpcEvent,
 };
+use melotui_core::message::cover::CoverContext;
 use std::time::Instant;
 
 pub fn run(worker: WorkerEndpoint<CoverCommand>) {

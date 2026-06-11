@@ -1,100 +1,29 @@
-use std::{path::PathBuf, sync::mpsc, thread};
+//! Message translation between AppMsg (core domain) and IpcCommand/IpcEvent (worker protocol).
+//!
+//! These functions are pure translations — no state mutations, no side effects.
+//! The `appmsg_to_ipc` function takes a `&Path` for the library root instead of
+//! `&AppState`, keeping this layer decoupled from UI state.
 
-use melotui_core::{
-    AppMsg, AppState,
-    message::{
-        cover::CoverMsg, database::DatabaseMsg, download::DownloadMsg, library::LibraryMsg,
-        playback::PlaybackMsg,
-    },
-};
-use melotui_ipc::{
-    channel::inprocess,
+use std::path::Path;
+
+use melotui_bus::{
     command::{AudioCommand, CoverCommand, DatabaseCommand, DownloadCommand, IpcCommand},
     event::IpcEvent,
-    spectrum_bridge::SpectrumProducer,
+};
+use melotui_core::{
+    AppMsg,
+    message::{
+        audio::AudioMsg, cover::CoverMsg, database::DatabaseMsg, download::DownloadMsg,
+        library::LibraryMsg, playback::PlaybackMsg,
+    },
 };
 
-pub struct IpcRuntime {
-    // events from workers
-    pub event_rx: mpsc::Receiver<IpcEvent>,
-
-    // typed routers
-    download_tx: mpsc::Sender<DownloadCommand>,
-    audio_tx: mpsc::Sender<AudioCommand>,
-    db_tx: mpsc::Sender<DatabaseCommand>,
-    cover_tx: mpsc::Sender<CoverCommand>,
-}
-
-impl IpcRuntime {
-    pub fn new(spectrum_producer: SpectrumProducer, db_path: PathBuf) -> Self {
-        let (ui_rx, bus_tx) = inprocess::hub();
-
-        // spawn download worker
-        let (dl_tx, dl_worker) = inprocess::join_worker::<DownloadCommand>(bus_tx.clone());
-        thread::spawn(move || {
-            melotui_download::run(dl_worker);
-            tracing::info!("IPC Runtime initialized with Download worker");
-        });
-
-        // spawn audio worker
-        let (audio_tx, audio_worker) = inprocess::join_worker::<AudioCommand>(bus_tx.clone());
-        thread::spawn(move || {
-            melotui_audio::run(audio_worker, spectrum_producer);
-            tracing::info!("IPC Runtime initialized with Audio worker");
-        });
-
-        // spawn database worker
-        let (db_tx, db_worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx.clone());
-        thread::spawn(move || {
-            melotui_db::run(db_worker, db_path);
-            tracing::info!("IPC Runtime initialized with Database worker");
-        });
-
-        // spawn cover worker
-        let (cover_tx, cover_worker) = inprocess::join_worker::<CoverCommand>(bus_tx.clone());
-        thread::spawn(move || {
-            melotui_cover::run(cover_worker);
-            tracing::info!("IPC Runtime initialized with Cover worker");
-        });
-
-        Self {
-            event_rx: ui_rx,
-            download_tx: dl_tx,
-            audio_tx,
-            db_tx,
-            cover_tx,
-        }
-    }
-
-    pub fn dispatch(&self, cmd: IpcCommand) {
-        match cmd {
-            IpcCommand::Download(c) => {
-                let _ = self.download_tx.send(c);
-            }
-            IpcCommand::Audio(c) => {
-                let _ = self.audio_tx.send(c);
-            }
-            IpcCommand::Database(c) => {
-                tracing::info!("Dispatching database command: {:?}", c);
-                let _ = self.db_tx.send(c);
-            }
-            IpcCommand::Cover(c) => {
-                let _ = self.cover_tx.send(c);
-            }
-            IpcCommand::Shutdown => {
-                tracing::info!("IPC Runtime shutting down all workers...");
-                let _ = self.download_tx.send(DownloadCommand::Shutdown);
-                let _ = self.audio_tx.send(AudioCommand::Shutdown);
-                let _ = self.db_tx.send(DatabaseCommand::Shutdown);
-                let _ = self.cover_tx.send(CoverCommand::Shutdown);
-            }
-        }
-    }
-}
-
-pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
-    use melotui_core::message::{audio::AudioMsg, download::DownloadMsg, playback::PlaybackMsg};
-
+/// Translate an AppMsg into an IpcCommand to dispatch to a worker.
+///
+/// Returns `None` if the message doesn't map to any worker command.
+/// `library_root` is needed for `RequestScanLibrary` — the caller passes
+/// `state.library.root` without leaking `&AppState` into this layer.
+pub fn appmsg_to_ipc(msg: &AppMsg, library_root: &Path) -> Option<IpcCommand> {
     match msg {
         // --- Cover ---
         AppMsg::Cover(CoverMsg::RequestLoad { id, path, context }) => {
@@ -156,7 +85,7 @@ pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
         // --- Database Controls ---
         AppMsg::Library(LibraryMsg::RequestScanLibrary) => {
             Some(IpcCommand::Database(DatabaseCommand::ScanLibrary {
-                root: state.library.root.clone(),
+                root: library_root.to_path_buf(),
             }))
         }
         AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(track_id)) => {
@@ -195,6 +124,7 @@ pub fn appmsg_to_ipc(msg: &AppMsg, state: &AppState) -> Option<IpcCommand> {
     }
 }
 
+/// Translate an IpcEvent from a worker into an AppMsg for the reducer.
 pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
     match evt {
         IpcEvent::CoverLoaded { id, cover, context } => {
@@ -250,5 +180,77 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             AppMsg::Noop
         }
         _ => AppMsg::Noop,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use melotui_core::domain::TrackId;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_ipc_to_appmsg_translation() {
+        // Test playback progress translation
+        let evt = IpcEvent::PlaybackProgress {
+            position_ms: 1000,
+            epoch: 1,
+        };
+        let msg = ipc_to_appmsg(evt);
+        match msg {
+            AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms, epoch }) => {
+                assert_eq!(position_ms, 1000);
+                assert_eq!(epoch, 1);
+            }
+            _ => panic!("Expected AudioProgress msg"),
+        }
+
+        // Test download progress
+        let evt = IpcEvent::DownloadProgress { percent: 45 };
+        let msg = ipc_to_appmsg(evt);
+        match msg {
+            AppMsg::Download(DownloadMsg::DownloadProgress { percent }) => {
+                assert_eq!(percent, 45);
+            }
+            _ => panic!("Expected DownloadProgress msg"),
+        }
+    }
+
+    #[test]
+    fn test_appmsg_to_ipc_translation() {
+        let root = PathBuf::from("/music");
+
+        // Test UI Playback Stop command
+        let msg = AppMsg::Playback(PlaybackMsg::DispatchStop);
+        let cmd = appmsg_to_ipc(&msg, &root).unwrap();
+        match cmd {
+            IpcCommand::Audio(AudioCommand::Stop) => {}
+            _ => panic!("Expected Audio Stop command"),
+        }
+
+        // Test Database toggle favorite command
+        let msg = AppMsg::Database(
+            melotui_core::message::database::DatabaseMsg::DispatchToggleFavorite(TrackId(42)),
+        );
+        let cmd = appmsg_to_ipc(&msg, &root).unwrap();
+        match cmd {
+            IpcCommand::Database(DatabaseCommand::ToggleFavorite { track_id }) => {
+                assert_eq!(track_id, 42);
+            }
+            _ => panic!("Expected Database ToggleFavorite command"),
+        }
+    }
+
+    #[test]
+    fn test_scan_library_uses_provided_root() {
+        let root = PathBuf::from("/my/music/library");
+        let msg = AppMsg::Library(LibraryMsg::RequestScanLibrary);
+        let cmd = appmsg_to_ipc(&msg, &root).unwrap();
+        match cmd {
+            IpcCommand::Database(DatabaseCommand::ScanLibrary { root: scan_root }) => {
+                assert_eq!(scan_root, PathBuf::from("/my/music/library"));
+            }
+            _ => panic!("Expected Database ScanLibrary command"),
+        }
     }
 }

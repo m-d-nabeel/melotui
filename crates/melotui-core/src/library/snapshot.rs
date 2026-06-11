@@ -14,14 +14,34 @@ pub struct DirectoryNode {
     pub tracks: Vec<TrackId>,
 }
 
+/// In-memory representation of the music library.
+///
+/// Contains the canonical track data plus **materialized indices** (artists, albums,
+/// genres, years, folder tree, favorites) built at construction time for fast browsing.
+///
+/// # Mutation categories
+///
+/// Methods on `Library` fall into three categories:
+///
+/// 1. **Full Reconstruction** ([`Library::new`]): Builds the entire struct from raw data.
+///    Called after structural events (scan completed, library imported, DB reload).
+///    Rebuilds all indices from scratch.
+///
+/// 2. **Incremental Mutations** (`toggle_favorite`, `add_playlist`, etc.): Update only
+///    the affected indices in O(1) amortized time. Called optimistically from the reducer
+///    before DB confirmation. These do NOT rebuild the folder tree or artist/album/genre/year
+///    indices because those are unaffected by playlist or favorite changes.
+///
+/// 3. **Read-Only Queries** (`get_track`, `resolve_tracks_for_node`, etc.): Pure lookups
+///    against the current in-memory state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LibrarySnapshot {
+pub struct Library {
     pub root: PathBuf,
     pub playlists: HashMap<PlaylistId, PlaylistMeta>,
     pub tracks: HashMap<TrackId, TrackMeta>,
     pub playlist_order: Vec<PlaylistId>,
 
-    // browsing indices
+    // Materialized indices — rebuilt only during full reconstruction
     pub folder_tree: DirectoryNode,
     pub artists: std::collections::BTreeMap<String, Vec<TrackId>>,
     pub albums: std::collections::BTreeMap<String, Vec<TrackId>>,
@@ -30,7 +50,16 @@ pub struct LibrarySnapshot {
     pub favorites: Vec<TrackId>,
 }
 
-impl LibrarySnapshot {
+impl Library {
+    // =========================================================================
+    // Full Reconstruction — called after structural events (scan, import, reload)
+    // =========================================================================
+
+    /// Build a new Library from raw data, constructing all materialized indices.
+    ///
+    /// This is the **only** path that rebuilds folder_tree, artists, albums,
+    /// genres, and years. Use for structural events only (scan completed,
+    /// library imported, metadata refreshed).
     pub fn new(
         root: PathBuf,
         playlists_vec: Vec<PlaylistMeta>,
@@ -110,6 +139,14 @@ impl LibrarySnapshot {
         }
     }
 
+    // =========================================================================
+    // Incremental Mutations — O(1) amortized, only touch affected indices.
+    // Called optimistically from the reducer before DB confirmation.
+    // These NEVER rebuild folder_tree/artists/albums/genres/years.
+    // =========================================================================
+
+    /// Toggle a track's favorite status. Only updates `tracks[id].is_favorite`
+    /// and the `favorites` index. O(n) worst case due to sorted insert.
     pub fn toggle_favorite(&mut self, track_id: TrackId, is_favorite: bool) {
         if let Some(track) = self.tracks.get_mut(&track_id) {
             track.is_favorite = is_favorite;
@@ -131,6 +168,7 @@ impl LibrarySnapshot {
         }
     }
 
+    /// Add a playlist. Only touches `playlists` and `playlist_order`. O(1).
     pub fn add_playlist(&mut self, id: PlaylistId, name: String) {
         let meta = PlaylistMeta {
             id,
@@ -141,11 +179,13 @@ impl LibrarySnapshot {
         self.playlists.insert(id, meta);
     }
 
+    /// Remove a playlist. Only touches `playlists` and `playlist_order`. O(n).
     pub fn remove_playlist(&mut self, id: PlaylistId) {
         self.playlists.remove(&id);
         self.playlist_order.retain(|pid| *pid != id);
     }
 
+    /// Add a track to a playlist. Only touches `playlist.tracks`. O(n) duplicate check.
     pub fn add_track_to_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
         if let Some(p) = self
             .playlists
@@ -156,13 +196,18 @@ impl LibrarySnapshot {
         }
     }
 
+    /// Remove a track from a playlist. Only touches `playlist.tracks`. O(n).
     pub fn remove_track_from_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
         if let Some(p) = self.playlists.get_mut(&playlist_id) {
             p.tracks.retain(|tid| *tid != track_id);
         }
     }
 
-    /// Find playlist by name (case-insensitive)
+    // =========================================================================
+    // Read-Only Queries — pure lookups, no mutations
+    // =========================================================================
+
+    /// Find playlist by name (case-insensitive).
     pub fn find_playlist_by_name(&self, name: &str) -> Option<PlaylistId> {
         let lower = name.to_lowercase();
         self.playlists
@@ -244,14 +289,17 @@ impl LibrarySnapshot {
         }
     }
 
+    /// Look up a track by ID.
     pub fn get_track(&self, id: TrackId) -> Option<&TrackMeta> {
         self.tracks.get(&id)
     }
 
+    /// Look up a playlist by ID.
     pub fn get_playlist(&self, id: PlaylistId) -> Option<&PlaylistMeta> {
         self.playlists.get(&id)
     }
 
+    /// Resolve a sidebar node to its list of tracks (by reference).
     pub fn resolve_tracks_for_node(&self, node: &SidebarNodeId) -> Vec<&TrackMeta> {
         match node {
             SidebarNodeId::Playlist(pid) => {
@@ -361,5 +409,175 @@ impl LibrarySnapshot {
             .or_else(|| tagged_file.first_tag())?;
         let picture = tag.pictures().first()?;
         Some((picture.data().to_vec(), picture.mime_type()?.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_mock_track(
+        id: u64,
+        path: &str,
+        artist: Option<&str>,
+        album: Option<&str>,
+        genre: Option<&str>,
+        fav: bool,
+    ) -> TrackMeta {
+        TrackMeta {
+            id: TrackId(id),
+            file_path: PathBuf::from(path),
+            title: format!("Track {}", id),
+            artist: artist.map(|s| s.to_string()),
+            album: album.map(|s| s.to_string()),
+            genre: genre.map(|s| s.to_string()),
+            year: Some(2020),
+            track_number: None,
+            duration_ms: 1000,
+            bitrate: None,
+            sample_rate: None,
+            format: "mp3".to_string(),
+            has_cover: false,
+            file_size_bytes: 1000,
+            is_favorite: fav,
+        }
+    }
+
+    #[test]
+    fn test_build_folder_tree() {
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            TrackId(1),
+            create_mock_track(1, "/library/rock/song1.mp3", None, None, None, false),
+        );
+        tracks.insert(
+            TrackId(2),
+            create_mock_track(2, "/library/rock/song2.mp3", None, None, None, false),
+        );
+        tracks.insert(
+            TrackId(3),
+            create_mock_track(3, "/library/jazz/song3.mp3", None, None, None, false),
+        );
+
+        let root = PathBuf::from("/library");
+        let snapshot = Library::new(root, vec![], tracks);
+
+        assert_eq!(snapshot.folder_tree.name, "Library");
+        assert_eq!(snapshot.folder_tree.subdirs.len(), 2);
+
+        let jazz_node = snapshot
+            .folder_tree
+            .subdirs
+            .iter()
+            .find(|d| d.name == "jazz")
+            .unwrap();
+        assert_eq!(jazz_node.tracks.len(), 1);
+        assert_eq!(jazz_node.tracks[0], TrackId(3));
+
+        let rock_node = snapshot
+            .folder_tree
+            .subdirs
+            .iter()
+            .find(|d| d.name == "rock")
+            .unwrap();
+        assert_eq!(rock_node.tracks.len(), 2);
+    }
+
+    #[test]
+    fn test_toggle_favorite_sorting() {
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            TrackId(1),
+            create_mock_track(1, "/lib/A.mp3", None, None, None, false),
+        );
+        tracks.insert(
+            TrackId(2),
+            create_mock_track(2, "/lib/B.mp3", None, None, None, false),
+        );
+        tracks.insert(
+            TrackId(3),
+            create_mock_track(3, "/lib/Z.mp3", None, None, None, false),
+        );
+
+        let mut snapshot = Library::new(PathBuf::from("/lib"), vec![], tracks);
+
+        snapshot.toggle_favorite(TrackId(2), true);
+        snapshot.toggle_favorite(TrackId(3), true);
+        snapshot.toggle_favorite(TrackId(1), true);
+
+        // Should be sorted alphabetically by title: "Track 1", "Track 2", "Track 3"
+        assert_eq!(snapshot.favorites, vec![TrackId(1), TrackId(2), TrackId(3)]);
+
+        snapshot.toggle_favorite(TrackId(2), false);
+        assert_eq!(snapshot.favorites, vec![TrackId(1), TrackId(3)]);
+    }
+
+    #[test]
+    fn test_resolve_tracks_for_node() {
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            TrackId(1),
+            create_mock_track(
+                1,
+                "/lib/A.mp3",
+                Some("ArtistA"),
+                Some("AlbumA"),
+                Some("Jazz"),
+                false,
+            ),
+        );
+        tracks.insert(
+            TrackId(2),
+            create_mock_track(
+                2,
+                "/lib/B.mp3",
+                Some("ArtistB"),
+                Some("AlbumA"),
+                Some("Rock"),
+                true,
+            ),
+        );
+
+        let snapshot = Library::new(PathBuf::from("/lib"), vec![], tracks);
+
+        // Test Artist Node
+        let artist_node = SidebarNodeId::Artist("ArtistA".into());
+        let resolved = snapshot.resolve_tracks_for_node(&artist_node);
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].id, TrackId(1));
+
+        // Test Album Node
+        let album_node = SidebarNodeId::Album("AlbumA".into());
+        let resolved = snapshot.resolve_tracks_for_node(&album_node);
+        assert_eq!(resolved.len(), 2);
+
+        // Test Favorites Node
+        let fav_node = SidebarNodeId::Category(CategoryId::Favorites);
+        let resolved = snapshot.resolve_tracks_for_node(&fav_node);
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].id, TrackId(2));
+    }
+
+    #[test]
+    fn test_playlist_management() {
+        let mut snapshot = Library::new(PathBuf::from("/lib"), vec![], HashMap::new());
+        let p_id = PlaylistId(10);
+
+        snapshot.add_playlist(p_id, "Workout".into());
+        assert!(snapshot.playlists.contains_key(&p_id));
+
+        snapshot.add_track_to_playlist(p_id, TrackId(1));
+        assert_eq!(snapshot.playlists.get(&p_id).unwrap().tracks.len(), 1);
+
+        // Prevent duplicates
+        snapshot.add_track_to_playlist(p_id, TrackId(1));
+        assert_eq!(snapshot.playlists.get(&p_id).unwrap().tracks.len(), 1);
+
+        snapshot.remove_track_from_playlist(p_id, TrackId(1));
+        assert_eq!(snapshot.playlists.get(&p_id).unwrap().tracks.len(), 0);
+
+        snapshot.remove_playlist(p_id);
+        assert!(!snapshot.playlists.contains_key(&p_id));
+        assert!(!snapshot.playlist_order.contains(&p_id));
     }
 }

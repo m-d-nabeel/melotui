@@ -16,3 +16,6 @@ image = "0.25"
 ratatui = "0.30"
 rand = "0.9"
 tui-input = { version = "0.15.3", features = ["crossterm"] }
+
+[dev-dependencies]
+mockall = "0.14.0"

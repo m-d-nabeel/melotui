@@ -1,153 +1,25 @@
-# melotui — Deep Project Analysis
+# melotui — Detailed Technical Analysis
 
-> **Scope**: Full codebase audit across all 8 crates · ~10,684 lines of Rust · Rust Edition 2024
+## 1. 📊 Codebase Metrics Overview
 
----
+### 1a. Total Lines of Code by Crate
 
-## Project Overview
-
-melotui is a **terminal-based music player** written in Rust with a modular workspace architecture. It features real-time audio playback with DSP effects, spectrum visualization, library management backed by SQLite, YouTube download integration, and a rich TUI powered by Ratatui.
-
-### Crate Breakdown
-
-| Crate | Lines | Purpose |
-|---|---|---|
-| `melotui-core` | ~3,800 | State management, domain models, reducer, actions, navigation |
-| `melotui-tui` | ~2,100 | Terminal UI rendering, input handling, widgets |
-| `melotui-audio` | ~900 | Audio playback (Rodio), DSP graph (FunDSP), FFT analysis, CAVA |
-| `melotui-bin` | ~620 | Main binary, runtime loop, IPC bridge, logging |
-| `melotui-db` | ~660 | SQLite database, library scanning, migrations |
-| `melotui-ipc` | ~400 | Inter-process communication layer, command/event types |
-| `melotui-download` | ~280 | YouTube download worker via `yt-dlp` |
-| `melotui-cover` | ~200 | Album art extraction, disk caching with SHA-256 |
-
----
-
-## Architecture Analysis
-
-### 🏗️ Overall Architecture — Elm/Redux-Style Unidirectional Data Flow
-
-```mermaid
-graph TB
-    subgraph "Main Thread"
-        TUI["TUI (Input + Render)"]
-        Runtime["Runtime Loop"]
-        Reducer["Reducer"]
-        AppState["AppState"]
-    end
-
-    subgraph "Worker Threads"
-        Audio["Audio Worker"]
-        Download["Download Worker"]
-        DB["Database Worker"]
-        Cover["Cover Worker"]
-    end
-
-    TUI -->|KeyEvent → AppMsg| Runtime
-    Runtime -->|AppMsg| Reducer
-    Reducer -->|Mutate| AppState
-    Reducer -->|Side Effects → AppMsg| Runtime
-    Runtime -->|IpcCommand| Audio
-    Runtime -->|IpcCommand| Download
-    Runtime -->|IpcCommand| DB
-    Runtime -->|IpcCommand| Cover
-    Audio -->|IpcEvent| Runtime
-    Download -->|IpcEvent| Runtime
-    DB -->|IpcEvent| Runtime
-    Cover -->|IpcEvent| Runtime
-    AppState -->|Read| TUI
+```text
+melotui-core: ~3,821 lines
+melotui-tui: ~2,053 lines
+melotui-audio: ~896 lines
+melotui-bin: ~618 lines
+melotui-db: ~659 lines
+melotui-ipc: ~399 lines
+melotui-download: ~283 lines
+melotui-cover: ~201 lines
+--------------------------------------------------
+Total: ~8,930 lines of Rust
 ```
-
-> [!NOTE]
-> The architecture follows a **single-threaded reducer with background workers** pattern. All state mutations occur on the main thread via the reducer. Workers communicate through typed `mpsc` channels. This is a clean, maintainable design.
-
----
-
-## Strengths
-
-### 1. 🏛️ Excellent Modular Architecture
-
-- **8 well-separated crates** with clean dependency boundaries
-- One-way dependency flow: `core` ← `tui`, `audio`, `ipc`, `db`, `download`, `cover` ← `bin`
-- No circular dependencies; each crate has a focused responsibility
-- The `bin` crate is the only integration point, keeping the domain pure
-
-### 2. 🔄 Elm-Style State Management (Reducer Pattern)
-
-- [AppMsg](file:///home/m-d-nabeel/Project/melotui/crates/melotui-core/src/message/mod.rs#L15-L32): Well-categorized message enum with clear domain separation (Navigation, Playback, Audio, UI, Library, Download, Cover, Database)
-- [reducer.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-core/src/reducer.rs): Pure-ish reducer that returns `Vec<AppMsg>` side effects — elegant and testable
-- Action handlers are split into focused files: [playback_action.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-core/src/action/playback_action.rs) (383 lines), [library_action.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-core/src/action/library_action.rs) (496 lines), etc.
-- **Dispatch/Request naming convention** makes the message flow direction clear
-
-### 3. 🎵 Sophisticated Audio Pipeline
-
-- **FunDSP integration** for real-time audio effects with a proper DSP graph ([effects.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-audio/src/effects.rs)):
-  - Bass shelf (cascaded dual-stage at 60/80Hz), treble shelf (3kHz), echo (feedback delay), stereo reverb
-  - Per-channel limiter to prevent clipping
-- **FundspSource adapter** ([source.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-audio/src/source.rs)): Block-based processing (64 samples) bridging FunDSP to Rodio — handles seek correctly with DSP reset
-- **Dual visualizer backend**: Internal FFT analyzer + CAVA external process
-- **SpectrumSniffer tap** for non-intrusive audio data extraction via ring buffer
-
-### 4. 🗄️ Well-Designed Database Layer
-
-- [schema.sql](file:///home/m-d-nabeel/Project/melotui/crates/melotui-db/src/queries/schema.sql): Production-quality schema with:
-  - WAL mode and `PRAGMA foreign_keys`
-  - FTS5 full-text search on tracks with automatic sync triggers
-  - `CHECK` constraints on data validity (year range, positive bitrate, etc.)
-  - Proper `ON DELETE CASCADE` for playlist tracks
-  - Indexed columns for common queries (artist, album, genre, year, favorites)
-- [migrations.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-db/src/migrations.rs): Versioned migration system using `user_version` pragma
-- **Upsert pattern** (`ON CONFLICT DO UPDATE`) to keep track IDs stable across rescans
-- Auto-pruning of dead tracks after library scan
-
-### 5. 🎨 Rich Feature Set
-
-- **Multiple visualization styles**: CAVA, Default, Bar, Particle — with smooth physics interpolation
-- **Tree-based sidebar**: Folders, Favorites, Artists, Albums, Genres, Years, Playlists — all browsable and expandable
-- **Virtual scrolling**: The [projector.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-core/src/library/projector.rs) uses a visitor pattern for lazy row computation — efficient even with large libraries
-- **Keybinding system**: Context-aware [KeyRegistry](file:///home/m-d-nabeel/Project/melotui/crates/melotui-core/src/keybinding.rs#L198-L201) with separate bindings per UI mode (Help, Command, Library, Queue, etc.)
-- **Vim-inspired UX**: `hjkl` navigation, `:` command mode, `/` search with `n`/`N` cycling
-- **Cover art caching**: SHA-256 keyed, sharded directory structure, resized to 360px
-
-### 6. 🔧 Production-Ready CI/CD
-
-- [ci.yml](file:///home/m-d-nabeel/Project/melotui/.github/workflows/ci.yml): Multi-platform testing (Ubuntu, Windows, macOS), `clippy` and `fmt` enforcement
-- [release.yml](file:///home/m-d-nabeel/Project/melotui/.github/workflows/release.yml): Cross-platform release builds (Linux x86_64, Windows x86_64, macOS x86_64 + aarch64) with automatic GitHub releases
-- **Production build profile** with `lto = "fat"`, `codegen-units = 1`, `strip = true` — maximally optimized binaries
-
-### 7. 🔁 Smart Event Processing
-
-- [InputProcessor](file:///home/m-d-nabeel/Project/melotui/crates/melotui-bin/src/input_processor.rs): Coalesces seeks, volume changes, and deduplicates rapid queue adds — prevents UI stutter from key repeat
-- [AudioEngine command coalescing](file:///home/m-d-nabeel/Project/melotui/crates/melotui-audio/src/worker.rs#L38-L68): Batches commands and keeps only the latest seek/volume — prevents audio engine backlog
-- **Playback throttling** ([playback_action.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-core/src/action/playback_action.rs#L318-L327)): 1-second debounce on same-track play requests
-- **Seek epoch system**: Prevents stale progress updates from overwriting fresh seek positions
-
-### 8. 🧹 Zero Unsafe Code
-
-- The entire codebase has **no `unsafe` blocks** — impressive for an audio application
-
-### 9. ⚡ Smart Render Scheduling
-
-- [runtime.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-bin/src/runtime.rs#L65-L117): Adaptive tick rate — 16ms when visualizer is active (60fps), 100ms otherwise. Only re-renders when state changes (`should_render` flag)
-
----
-
-## Weaknesses & Issues
-
-### 1. 🚨 Zero Test Coverage
-
-> [!CAUTION]
-> **No test files exist anywhere in the project.** No `#[test]`, no `#[cfg(test)]`, no integration tests, no benchmark tests. For a 10,600+ line project with complex state management, audio processing, and database operations, this is a critical gap.
-
-**Impact**: Every refactor is a gamble. The reducer pattern is *ideal* for unit testing (pure functions), yet none exist.
 
 ### 2. 🏗️ Architectural Issues
 
-#### 2a. IPC Naming Misnomer
-
-The `melotui-ipc` crate is named "Inter-Process Communication" but uses **in-process `mpsc` channels** ([inprocess.rs](file:///home/m-d-nabeel/Project/melotui/crates/melotui-ipc/src/channel/inprocess.rs)). There are no separate processes; all workers are threads within the same process. The abstraction suggests future extensibility (out-of-process workers), but as-is, the name is misleading.
-
-#### 2b. Worker Loop Busy-Polling
+#### 2a. Worker Loop Busy-Polling
 
 All worker threads use `try_recv()` + `thread::sleep()` polling loops:
 

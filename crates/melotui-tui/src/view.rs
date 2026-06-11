@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Color, Style},
     widgets::{Block, Clear, Paragraph},
 };
 
@@ -110,8 +110,7 @@ fn draw_overlays(frame: &mut Frame, area: Rect, state: &AppState) {
 
     // Shared dim overlay — uses a dark background that works on all terminals
     // (Modifier::DIM is ignored by many terminal emulators)
-    let dim_block =
-        Block::default().style(Style::default().bg(ratatui::style::Color::Rgb(10, 10, 15)));
+    let dim_block = Block::default().style(Style::default().bg(Color::Rgb(10, 10, 15)));
 
     if *state.ui_mode() == UIMode::Command {
         frame.render_widget(dim_block.clone(), area);
@@ -158,4 +157,75 @@ fn draw_too_small(frame: &mut Frame, area: Rect) {
         .split(area);
 
     frame.render_widget(msg, popup_layout[1]);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use melotui_core::library::snapshot::Library;
+    use ratatui::{Terminal, backend::TestBackend};
+    use std::collections::HashMap;
+
+    fn test_state() -> AppState {
+        let root = std::path::PathBuf::from("/tmp");
+        let library = Library::new(root, vec![], HashMap::new());
+        AppState::new(library)
+    }
+
+    #[test]
+    fn test_viewport_too_small() {
+        let state = test_state();
+        let mut image_cache = ImageCache::empty();
+
+        // Terminal smaller than MIN_WIDTH (60)
+        let backend = TestBackend::new(50, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                draw(f, &state, &mut image_cache);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        // Look for the "Terminal too small" text
+        let content = (0..50)
+            .map(|x| buffer[(x, 10)].symbol().to_string())
+            .collect::<String>();
+        assert!(
+            content.contains("Terminal too small")
+                || (0..20).any(|y| (0..50)
+                    .map(|x| buffer[(x, y)].symbol().to_string())
+                    .collect::<String>()
+                    .contains("Terminal too small"))
+        );
+    }
+
+    #[test]
+    fn test_viewport_sufficient_size() {
+        let state = test_state();
+        let mut image_cache = ImageCache::empty();
+
+        // Terminal larger than minimum (60x10)
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|f| {
+                draw(f, &state, &mut image_cache);
+            })
+            .unwrap();
+
+        let buffer = terminal.backend().buffer();
+        // Should not contain "Terminal too small"
+        let full_text = (0..24)
+            .map(|y| {
+                (0..80)
+                    .map(|x| buffer[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<String>>()
+            .join("\n");
+        assert!(!full_text.contains("Terminal too small"));
+    }
 }

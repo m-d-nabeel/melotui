@@ -200,4 +200,112 @@ impl LibraryRepository {
 
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
+
+    #[cfg(test)]
+    pub fn open_in_memory() -> Result<Self> {
+        let conn = Connection::open_in_memory()?;
+        run_migrations(&conn)?;
+        Ok(Self { conn })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_playlist_crud() -> Result<()> {
+        let repo = LibraryRepository::open_in_memory()?;
+
+        // Create
+        let p_id = repo.create_playlist("My Playlist")?;
+        assert!(p_id.0 > 0);
+
+        // Setup mock track
+        repo.conn.execute(
+            "INSERT INTO tracks (id, file_path, title, duration_ms, format, file_size_bytes, file_modified_at) VALUES (?, ?, ?, ?, 'mp3', 1024, 0)",
+            params![1_i64, "/path/track1.mp3", "Track 1", 300000_i64],
+        )?;
+
+        // Add
+        repo.add_to_playlist(p_id, TrackId(1))?;
+        let count: i64 = repo.conn.query_row(
+            "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?",
+            params![p_id.0 as i64],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 1);
+
+        // Remove
+        repo.remove_from_playlist(p_id, TrackId(1))?;
+        let count: i64 = repo.conn.query_row(
+            "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?",
+            params![p_id.0 as i64],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 0);
+
+        // Delete
+        repo.delete_playlist(p_id)?;
+        let count: i64 = repo.conn.query_row(
+            "SELECT COUNT(*) FROM playlists WHERE id = ?",
+            params![p_id.0 as i64],
+            |row| row.get(0),
+        )?;
+        assert_eq!(count, 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_track_favorites() -> Result<()> {
+        let repo = LibraryRepository::open_in_memory()?;
+
+        repo.conn.execute(
+            "INSERT INTO tracks (id, file_path, title, duration_ms, format, file_size_bytes, file_modified_at) VALUES (?, ?, ?, ?, 'mp3', 1024, 0)",
+            params![2_i64, "/path/track2.mp3", "Track 2", 200000_i64],
+        )?;
+
+        // Initially not favorite
+        let favs = repo.get_favorites()?;
+        assert!(favs.is_empty());
+
+        // Toggle to favorite
+        let is_fav = repo.toggle_favorite(TrackId(2))?;
+        assert!(is_fav);
+
+        let favs = repo.get_favorites()?;
+        assert_eq!(favs.len(), 1);
+        assert_eq!(favs[0].id, 2);
+
+        // Toggle back
+        let is_fav = repo.toggle_favorite(TrackId(2))?;
+        assert!(!is_fav);
+
+        let favs = repo.get_favorites()?;
+        assert!(favs.is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_increment_play_count() -> Result<()> {
+        let repo = LibraryRepository::open_in_memory()?;
+
+        repo.conn.execute(
+            "INSERT INTO tracks (id, file_path, title, duration_ms, play_count, format, file_size_bytes, file_modified_at) VALUES (?, ?, ?, ?, 0, 'mp3', 1024, 0)",
+            params![3_i64, "/path/track3.mp3", "Track 3", 100000_i64],
+        )?;
+
+        repo.increment_play_count(TrackId(3))?;
+
+        let play_count: i64 = repo.conn.query_row(
+            "SELECT play_count FROM tracks WHERE id = ?",
+            params![3_i64],
+            |row| row.get(0),
+        )?;
+        assert_eq!(play_count, 1);
+
+        Ok(())
+    }
 }

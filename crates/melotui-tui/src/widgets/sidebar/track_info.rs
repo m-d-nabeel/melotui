@@ -2,9 +2,9 @@ use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Padding, Paragraph, Wrap},
 };
 use ratatui_image::StatefulImage;
 
@@ -50,27 +50,23 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
                 .fg(t.accent_primary)
                 .add_modifier(Modifier::BOLD),
         )
-        .padding(ratatui::widgets::Padding::new(2, 2, 1, 1));
+        .padding(Padding::new(2, 2, 1, 1));
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    // Art + info split
-    let art_height = if art_state.source.is_some() {
-        std::cmp::max(
-            MIN_ART_HEIGHT,
-            inner_area.height * MAX_ART_HEIGHT_PERCENT / 100,
-        )
-    } else {
-        0
-    };
+    // Art + info split - Always allocate space for art to prevent layout jumping
+    let art_height = std::cmp::max(
+        MIN_ART_HEIGHT,
+        inner_area.height * MAX_ART_HEIGHT_PERCENT / 100,
+    );
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(art_height), Constraint::Min(4)])
         .split(inner_area);
 
-    // Album art
+    // Album art or placeholder
     if art_state.source.is_some() {
         let art_area = chunks[0];
         art_state.update_protocol(picker, art_area);
@@ -79,6 +75,21 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             let image = StatefulImage::default().resize(ratatui_image::Resize::Fit(None));
             frame.render_stateful_widget(image, art_area, protocol);
         }
+    } else {
+        let art_area = chunks[0];
+        let placeholder = Paragraph::new("♪")
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(t.fg_muted).add_modifier(Modifier::BOLD));
+
+        let y_offset = art_area.height.saturating_sub(1) / 2;
+        let centered_rect = Rect {
+            x: art_area.x,
+            y: art_area.y + y_offset,
+            width: art_area.width,
+            height: 1,
+        };
+
+        frame.render_widget(placeholder, centered_rect);
     }
 
     // Adaptive info area — degrade gracefully based on available height
@@ -222,7 +233,7 @@ fn render_badges(
         format!(" {} ", format),
         Style::default()
             .bg(fmt_color)
-            .fg(ratatui::style::Color::Black)
+            .fg(Color::Black)
             .add_modifier(Modifier::BOLD),
     ));
 

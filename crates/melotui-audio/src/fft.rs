@@ -120,3 +120,63 @@ where
         output
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ringbuf::HeapRb;
+    use ringbuf::traits::{Producer, Split};
+
+    #[test]
+    fn test_spectrum_analyzer_incomplete_frame() {
+        let rb = HeapRb::<f32>::new(8192);
+        let (mut prod, cons) = rb.split();
+        let mut analyzer = SpectrumAnalyzer::new(cons);
+
+        // Push fewer than FFT_SIZE samples
+        for _ in 0..1024 {
+            prod.try_push(0.0).unwrap();
+        }
+
+        // Should return None because it doesn't have enough samples
+        assert!(analyzer.next_spectrum().is_none());
+    }
+
+    #[test]
+    fn test_spectrum_analyzer_full_frame() {
+        let rb = HeapRb::<f32>::new(8192);
+        let (mut prod, cons) = rb.split();
+        let mut analyzer = SpectrumAnalyzer::new(cons);
+
+        // Push enough for a full frame
+        for _ in 0..FFT_SIZE {
+            prod.try_push(0.5).unwrap();
+        }
+
+        let spectrum = analyzer.next_spectrum();
+        assert!(spectrum.is_some());
+        let data = spectrum.unwrap();
+        assert_eq!(data.len(), NUM_BINS);
+    }
+
+    #[test]
+    fn test_spectrum_analyzer_nan_handling() {
+        let rb = HeapRb::<f32>::new(8192);
+        let (mut prod, cons) = rb.split();
+        let mut analyzer = SpectrumAnalyzer::new(cons);
+
+        // Push NaNs and Infinities
+        for i in 0..FFT_SIZE {
+            let val = if i % 2 == 0 { f32::NAN } else { f32::INFINITY };
+            prod.try_push(val).unwrap();
+        }
+
+        // The FFT library might return an error or skip it. We just verify it doesn't panic.
+        let result = analyzer.next_spectrum();
+        // It's acceptable for it to be None or Some with invalid floats, as long as it handles the failure gracefully.
+        // It actually returns None if FFT fails.
+        if let Some(data) = result {
+            assert_eq!(data.len(), NUM_BINS);
+        }
+    }
+}

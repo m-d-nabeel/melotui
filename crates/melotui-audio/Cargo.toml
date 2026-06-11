@@ -7,7 +7,7 @@ edition = "2024"
 
 [dependencies]
 melotui-core = { path = "../melotui-core" }
-melotui-ipc = { path = "../melotui-ipc" }
+melotui-bus = { path = "../melotui-bus" }
 rodio = { version = "0.21", default-features = false, features = [
   "symphonia-all",
   "playback",
@@ -17,3 +17,6 @@ spectrum-analyzer = "1.7"
 ringbuf = "0.4"
 anyhow = "1"
 fundsp = "0.20"
+
+[dev-dependencies]
+mockall = "0.14.0"

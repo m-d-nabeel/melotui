@@ -1,7 +1,7 @@
 use crate::{
     domain::{PlaylistMeta, TrackId, TrackMeta},
     library::projector,
-    library::snapshot::LibrarySnapshot,
+    library::snapshot::Library,
     navigation::{
         ids::SidebarNodeId,
         state::{LeftPanelMode, LibraryNavState},
@@ -20,7 +20,7 @@ pub struct AppState {
     pub app_name: String,
 
     // shared data (immutable)
-    pub library: LibrarySnapshot,
+    pub library: Library,
 
     // user session state
     pub(crate) session: SessionState,
@@ -41,7 +41,7 @@ pub struct AppState {
 
 // lifecycle
 impl AppState {
-    pub fn new(library: LibrarySnapshot) -> Self {
+    pub fn new(library: Library) -> Self {
         let config = crate::config::AppConfig::load();
         let mut session = SessionState::default();
 

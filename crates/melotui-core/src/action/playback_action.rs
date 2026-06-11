@@ -333,16 +333,25 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
         None => return vec![],
     };
 
+    // Extract all needed values before mutating state (borrow checker)
+    let title = meta.title.clone();
+    let file_path = meta.file_path.clone();
+    let has_cover = meta.has_cover;
+    let duration_ms = meta.duration_ms;
+
     state.session.playback.current = Some(id);
     state.session.playback.playing_from_queue = from_queue;
     state.session.playback.status = PlaybackStatus::Playing;
     state.session.playback.progress_ms = 0;
-    state.session.playback.duration_ms = Some(meta.duration_ms);
-
-    let title = meta.title.clone();
-    let file_path = meta.file_path.clone();
+    state.session.playback.duration_ms = Some(duration_ms);
 
     state.current_cover = None;
+
+    // Clear stale track_info cover — if the info panel is open, it should
+    // show the new track's art, not the previous track's.
+    if state.session.nav.show_track_info {
+        state.clear_track_info_cover();
+    }
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
@@ -354,12 +363,21 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
     })];
 
     // request async cover load
-    if meta.has_cover {
+    if has_cover {
         effects.push(AppMsg::Cover(CoverMsg::RequestLoad {
             id,
-            path: file_path,
+            path: file_path.clone(),
             context: CoverContext::Playback,
         }));
+
+        // Also load for track_info panel if it's visible
+        if state.session.nav.show_track_info {
+            effects.push(AppMsg::Cover(CoverMsg::RequestLoad {
+                id,
+                path: file_path,
+                context: CoverContext::Info,
+            }));
+        }
     }
 
     effects
@@ -411,5 +429,96 @@ fn update_active_node(state: &mut AppState, new_id: TrackId) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{domain::TrackMeta, library::snapshot::Library};
+    use std::collections::HashMap;
+
+    fn test_state_with_track() -> AppState {
+        let mut tracks = HashMap::new();
+        let track_id = crate::domain::ids::TrackId(1);
+        tracks.insert(
+            track_id,
+            TrackMeta {
+                id: track_id,
+                file_path: std::path::PathBuf::from("/tmp/test.mp3"),
+                title: "Test Track".into(),
+                artist: None,
+                album: None,
+                genre: None,
+                year: None,
+                is_favorite: false,
+                track_number: None,
+                duration_ms: 10000,
+                bitrate: None,
+                sample_rate: None,
+                format: "mp3".into(),
+                has_cover: false,
+                file_size_bytes: 1024,
+            },
+        );
+
+        let library = Library::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
+        let mut state = AppState::new(library);
+
+        state.session.playback.current = Some(track_id);
+        state.session.playback.duration_ms = Some(10000);
+        state
+    }
+
+    #[test]
+    fn test_toggle_play_pause_cycle() {
+        let mut state = test_state_with_track();
+        state.session.playback.status = PlaybackStatus::Playing;
+
+        // Playing -> Paused
+        let effects = handle_request_toggle_playback(&mut state);
+        assert_eq!(state.session.playback.status, PlaybackStatus::Paused);
+        assert!(matches!(
+            effects[0],
+            AppMsg::Playback(PlaybackMsg::DispatchPause)
+        ));
+
+        // Paused -> Playing
+        let effects = handle_request_toggle_playback(&mut state);
+        assert_eq!(state.session.playback.status, PlaybackStatus::Playing);
+        assert!(matches!(
+            effects[0],
+            AppMsg::Playback(PlaybackMsg::DispatchResume)
+        ));
+    }
+
+    #[test]
+    fn test_seek_clamps_to_duration() {
+        let mut state = test_state_with_track();
+        state.session.playback.status = PlaybackStatus::Playing;
+        state.session.playback.progress_ms = 5000;
+
+        // Seek forward by 10s (past the end of 10s track)
+        let _effects = handle_request_seek(&mut state, 10);
+        assert_eq!(state.session.playback.progress_ms, 10000);
+
+        // Seek backward by 20s (past the start)
+        let _effects = handle_request_seek(&mut state, -20);
+        assert_eq!(state.session.playback.progress_ms, 0);
+    }
+
+    #[test]
+    fn test_stop_resets_progress() {
+        let mut state = test_state_with_track();
+        state.session.playback.status = PlaybackStatus::Playing;
+        state.session.playback.progress_ms = 5000;
+
+        let effects = handle_request_stop(&mut state);
+        assert_eq!(state.session.playback.status, PlaybackStatus::Stopped);
+        assert_eq!(state.session.playback.progress_ms, 0);
+        assert!(matches!(
+            effects[0],
+            AppMsg::Playback(PlaybackMsg::DispatchStop)
+        ));
     }
 }

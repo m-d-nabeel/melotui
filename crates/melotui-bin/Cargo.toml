@@ -8,11 +8,8 @@ edition = "2024"
 [dependencies]
 melotui-core = { path = "../melotui-core" }
 melotui-tui = { path = "../melotui-tui" }
-melotui-audio = { path = "../melotui-audio" }
-melotui-ipc = { path = "../melotui-ipc" }
-melotui-download = { path = "../melotui-download" }
-melotui-db = { path = "../melotui-db" }
-melotui-cover = { path = "../melotui-cover" }
+melotui-bus = { path = "../melotui-bus" }
+melotui-engine = { path = "../melotui-engine" }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
