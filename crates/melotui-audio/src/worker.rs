@@ -182,7 +182,13 @@ impl AudioEngine {
 
     fn do_seek(&mut self, ms: u64, epoch: u64) {
         let dur = Duration::from_millis(ms);
-        if let Err(e) = self.sink.try_seek(dur) {
+        // rodio's Speed wrapper multiplies the seek duration by its speed factor,
+        // assuming the duration is in 'output time'. Since we track and provide
+        // absolute 'file time', we divide by the speed to counteract the multiplication.
+        let adjusted_dur =
+            Duration::from_secs_f64(dur.as_secs_f64() / (self.time_keeper.current_speed as f64));
+
+        if let Err(e) = self.sink.try_seek(adjusted_dur) {
             tracing::error!("Seek Error: {:?}", e);
         } else {
             self.time_keeper.seek(dur);
