@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn test_viewport_too_small() {
         let state = test_state();
-        let mut image_cache = ImageCache::new();
+        let mut image_cache = ImageCache::empty();
 
         // Terminal smaller than MIN_WIDTH (60)
         let backend = TestBackend::new(50, 20);
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn test_viewport_sufficient_size() {
         let state = test_state();
-        let mut image_cache = ImageCache::new();
+        let mut image_cache = ImageCache::empty();
 
         // Terminal larger than minimum (60x10)
         let backend = TestBackend::new(80, 24);

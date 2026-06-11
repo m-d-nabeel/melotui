@@ -105,6 +105,16 @@ impl ImageCache {
         }
     }
 
+    #[cfg(test)]
+    pub fn empty() -> Self {
+        Self {
+            picker: Picker::halfblocks(),
+            album_art: ImageState::new(),
+            track_info: ImageState::new(),
+            was_obscured: false,
+        }
+    }
+
     pub fn update(&mut self, state: &AppState) {
         let is_obscured = state.current_notification().is_some()
             || *state.ui_mode() == UIMode::Command
@@ -185,7 +195,7 @@ mod tests {
 
     #[test]
     fn test_image_cache_obscured_reset() {
-        let mut cache = ImageCache::new();
+        let mut cache = ImageCache::empty();
         let mut app_state = AppState::new(Library::new(
             PathBuf::from("/"),
             vec![],
