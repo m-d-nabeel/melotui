@@ -415,7 +415,7 @@ mod tests {
 
         handle_switch_to_tracks(&mut state);
 
-        assert_eq!(state.session.nav.show_track_info, false);
+        assert!(!state.session.nav.show_track_info);
     }
 
     #[test]

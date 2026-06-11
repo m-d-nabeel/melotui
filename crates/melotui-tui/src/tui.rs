@@ -65,13 +65,27 @@ impl Tui {
         state: &AppState,
         timeout: Duration,
     ) -> anyhow::Result<Option<AppMsg>> {
-        if event::poll(timeout)? {
-            match event::read()? {
-                Event::Key(key) => return Ok(InputHandler::handle(key, state)),
-                Event::Resize(w, h) => return Ok(Some(AppMsg::UI(UIMsg::Resize(w, h)))),
-                _ => {}
+        let start = std::time::Instant::now();
+        let mut current_timeout = timeout;
+
+        while event::poll(current_timeout)? {
+            let msg = match event::read()? {
+                Event::Key(key) => InputHandler::handle(key, state),
+                Event::Resize(w, h) => Some(AppMsg::UI(UIMsg::Resize(w, h))),
+                _ => None,
+            };
+
+            if msg.is_some() {
+                return Ok(msg);
             }
+
+            // We consumed an event but it resulted in no AppMsg (e.g. unmapped key,
+            // key release, or mouse event). We must keep polling so we don't falsely
+            // return Ok(None) and break the coalescing drain loop in runtime.rs.
+            let elapsed = start.elapsed();
+            current_timeout = timeout.saturating_sub(elapsed);
         }
+
         Ok(None)
     }
 }

@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Color, Style},
     widgets::{Block, Clear, Paragraph},
 };
 
@@ -110,8 +110,7 @@ fn draw_overlays(frame: &mut Frame, area: Rect, state: &AppState) {
 
     // Shared dim overlay — uses a dark background that works on all terminals
     // (Modifier::DIM is ignored by many terminal emulators)
-    let dim_block =
-        Block::default().style(Style::default().bg(ratatui::style::Color::Rgb(10, 10, 15)));
+    let dim_block = Block::default().style(Style::default().bg(Color::Rgb(10, 10, 15)));
 
     if *state.ui_mode() == UIMode::Command {
         frame.render_widget(dim_block.clone(), area);

@@ -1,4 +1,4 @@
-use ratatui::crossterm::event::{KeyCode, KeyEvent};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
 use std::sync::OnceLock;
 
 use melotui_core::{
@@ -64,6 +64,10 @@ impl InputHandler {
     }
 
     pub fn handle(key: KeyEvent, state: &AppState) -> Option<AppMsg> {
+        if key.kind == KeyEventKind::Release {
+            return None;
+        }
+
         let registry = Self::get_registry();
         let contexts = Self::get_active_contexts(state);
 

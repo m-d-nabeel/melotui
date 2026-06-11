@@ -5,12 +5,13 @@ use melotui_core::{
 };
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Alignment, Margin, Rect},
     style::{Color, Modifier, Style},
+    symbols,
     text::{Line, Span},
     widgets::{
-        Block, BorderType, Borders, List, ListItem, Paragraph, Scrollbar, ScrollbarOrientation,
-        ScrollbarState,
+        Block, BorderType, Borders, List, ListItem, ListState, Paragraph, Scrollbar,
+        ScrollbarOrientation, ScrollbarState,
     },
 };
 use std::collections::HashSet;
@@ -72,7 +73,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                     .add_modifier(Modifier::ITALIC),
             ),
         ]))
-        .alignment(ratatui::layout::Alignment::Center);
+        .alignment(Alignment::Center);
 
         let y_offset = inner_area.height / 2;
         let centered = Rect {
@@ -95,7 +96,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .map(|row| render_row(row, state, inner_area.width, is_active, &active_ancestors))
         .collect();
 
-    let mut list_state = ratatui::widgets::ListState::default();
+    let mut list_state = ListState::default();
 
     let selected_index = if let Some(sel_id) = state.get_library_selection() {
         rows.iter().position(|row| &row.id == sel_id)
@@ -110,7 +111,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     // lean scrollbar
     let scrollbar = Scrollbar::default()
         .orientation(ScrollbarOrientation::VerticalRight)
-        .symbols(ratatui::symbols::scrollbar::VERTICAL)
+        .symbols(symbols::scrollbar::VERTICAL)
         .begin_symbol(None)
         .end_symbol(None)
         .track_symbol(None)
@@ -121,7 +122,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     frame.render_stateful_widget(
         scrollbar,
-        area.inner(ratatui::layout::Margin {
+        area.inner(Margin {
             horizontal: 0,
             vertical: 1,
         }),

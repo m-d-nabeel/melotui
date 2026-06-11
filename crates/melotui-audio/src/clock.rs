@@ -110,7 +110,7 @@ mod tests {
         // At 2x speed, 50ms real time is ~100ms accumulated
         let pos = clock.get_position().as_millis();
         assert!(
-            pos >= 80 && pos <= 150,
+            (80..=150).contains(&pos),
             "Expected around 100ms, got {}ms",
             pos
         );

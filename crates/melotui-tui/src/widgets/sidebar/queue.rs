@@ -3,7 +3,7 @@ use melotui_core::AppState;
 use melotui_core::playback::state::QueueEntry;
 use ratatui::{
     Frame,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState},
@@ -113,7 +113,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     if queue.is_empty() {
         let empty_para = Paragraph::new("Empty")
-            .alignment(ratatui::layout::Alignment::Center)
+            .alignment(Alignment::Center)
             .style(Style::default().fg(t.fg_muted));
         frame.render_widget(empty_para, chunks[1]);
     } else {

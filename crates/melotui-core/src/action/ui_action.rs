@@ -9,6 +9,7 @@ use crate::{
         visualizer::{SpectrumStyle, is_cava_available},
     },
 };
+use ratatui::crossterm::event::{Event, KeyEvent};
 
 pub fn handle_open_help(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.show_help = true;
@@ -230,12 +231,9 @@ pub fn handle_exit_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
-pub fn handle_command_input(
-    state: &mut AppState,
-    key: ratatui::crossterm::event::KeyEvent,
-) -> Vec<AppMsg> {
+pub fn handle_command_input(state: &mut AppState, key: KeyEvent) -> Vec<AppMsg> {
     use tui_input::backend::crossterm::EventHandler;
-    let event = ratatui::crossterm::event::Event::Key(key);
+    let event = Event::Key(key);
     state.session.ui.command_buffer.handle_event(&event);
     vec![]
 }

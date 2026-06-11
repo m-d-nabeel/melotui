@@ -2,9 +2,9 @@ use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Padding, Paragraph, Wrap},
 };
 use ratatui_image::StatefulImage;
 
@@ -50,7 +50,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
                 .fg(t.accent_primary)
                 .add_modifier(Modifier::BOLD),
         )
-        .padding(ratatui::widgets::Padding::new(2, 2, 1, 1));
+        .padding(Padding::new(2, 2, 1, 1));
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
@@ -79,12 +79,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         let art_area = chunks[0];
         let placeholder = Paragraph::new("♪")
             .alignment(Alignment::Center)
-            .style(
-                Style::default()
-                    .fg(t.fg_muted)
-                    .add_modifier(Modifier::BOLD),
-            );
-        
+            .style(Style::default().fg(t.fg_muted).add_modifier(Modifier::BOLD));
+
         let y_offset = art_area.height.saturating_sub(1) / 2;
         let centered_rect = Rect {
             x: art_area.x,
@@ -92,7 +88,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             width: art_area.width,
             height: 1,
         };
-        
+
         frame.render_widget(placeholder, centered_rect);
     }
 
@@ -237,7 +233,7 @@ fn render_badges(
         format!(" {} ", format),
         Style::default()
             .bg(fmt_color)
-            .fg(ratatui::style::Color::Black)
+            .fg(Color::Black)
             .add_modifier(Modifier::BOLD),
     ));
 

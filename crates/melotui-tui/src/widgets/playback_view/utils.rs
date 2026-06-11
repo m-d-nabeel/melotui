@@ -1,5 +1,5 @@
 use melotui_core::playback::state::{PlaybackStatus, RepeatMode};
-use ratatui::style::{Modifier, Style};
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
 use crate::theme::Theme;
@@ -9,7 +9,7 @@ fn theme() -> &'static Theme {
     THEME.get_or_init(Theme::default)
 }
 
-pub fn get_status_icon(status: &PlaybackStatus) -> (&'static str, ratatui::style::Color) {
+pub fn get_status_icon(status: &PlaybackStatus) -> (&'static str, Color) {
     let t = theme();
     match status {
         PlaybackStatus::Playing => ("󰐊", t.status_playing),

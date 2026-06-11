@@ -1,10 +1,11 @@
 use crate::{AppMsg, state::ui::FocusMode};
+use ratatui::crossterm::event::KeyEvent;
 
 #[derive(Debug, Clone)]
 pub enum UIMsg {
     EnterCommandMode,
     ExitCommandMode,
-    CommandInput(ratatui::crossterm::event::KeyEvent),
+    CommandInput(KeyEvent),
     SubmitCommand(String),
     OpenHelp,
     CloseHelp,
