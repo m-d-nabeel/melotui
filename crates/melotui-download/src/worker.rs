@@ -32,7 +32,15 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
     let mut cancel_flag: Option<Arc<AtomicBool>> = None;
 
     loop {
-        if let Some(cmd) = worker.try_recv() {
+        // When no download is active, block until a command arrives.
+        // When a download IS active, use timeout so we can check progress events.
+        let cmd = if cancel_flag.is_some() {
+            worker.recv_timeout(Duration::from_millis(100))
+        } else {
+            worker.recv()
+        };
+
+        if let Some(cmd) = cmd {
             tracing::debug!("Worker received command: {:?}", cmd);
 
             match cmd {
@@ -77,7 +85,7 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
             }
         }
 
-        // check progress
+        // drain internal events from child process
         while let Ok(evt) = internal_rx.try_recv() {
             match evt {
                 InternalEvent::Progress(percent) => {
@@ -96,8 +104,6 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                 }
             }
         }
-
-        thread::sleep(Duration::from_millis(50));
     }
 
     tracing::info!("Download worker exited");

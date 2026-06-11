@@ -163,13 +163,13 @@ fn draw_too_small(frame: &mut Frame, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use melotui_core::library::snapshot::LibrarySnapshot;
+    use melotui_core::library::snapshot::Library;
     use ratatui::{Terminal, backend::TestBackend};
     use std::collections::HashMap;
 
     fn test_state() -> AppState {
         let root = std::path::PathBuf::from("/tmp");
-        let library = LibrarySnapshot::new(root, vec![], HashMap::new());
+        let library = Library::new(root, vec![], HashMap::new());
         AppState::new(library)
     }
 

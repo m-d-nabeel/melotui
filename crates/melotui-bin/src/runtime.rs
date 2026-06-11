@@ -1,16 +1,13 @@
 use anyhow::Result;
-use melotui_bus::{
-    command::{DatabaseCommand, IpcCommand},
-    event::IpcEvent,
-    spectrum_bridge,
-};
+use melotui_bus::{event::IpcEvent, spectrum_bridge};
 use melotui_core::{
     AppMsg, AppState,
-    library::LibrarySnapshot,
+    library::Library,
     message::ui::UIMsg,
     reducer,
     state::{NotificationKind, visualizer::update_visualizer_physics},
 };
+use melotui_engine::{Engine, EngineConfig, bridge};
 use melotui_tui::Tui;
 use std::{
     collections::{HashMap, VecDeque},
@@ -18,10 +15,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{
-    input_processor::InputProcessor,
-    ipc_bridge::{IpcRuntime, appmsg_to_ipc, ipc_to_appmsg},
-};
+use crate::input_processor::InputProcessor;
 
 pub fn run() -> Result<()> {
     tracing::info!("Starting melotui application");
@@ -29,24 +23,25 @@ pub fn run() -> Result<()> {
     let (db_path, music_root) = resolve_paths()?;
 
     // start empty library - data loads async
-    let library = LibrarySnapshot::new(music_root.clone(), vec![], HashMap::new());
+    let library = Library::new(music_root.clone(), vec![], HashMap::new());
 
     let mut state = AppState::new(library);
     let mut tui = Tui::new()?;
     let (producer, consumer) = spectrum_bridge::create_bridge();
     state.spectrum_source = Box::new(consumer);
 
-    let ipc = IpcRuntime::new(producer, db_path.clone());
+    let engine = Engine::new(EngineConfig {
+        db_path,
+        spectrum_producer: producer,
+    });
 
     // request async library load
-    ipc.dispatch(IpcCommand::Database(DatabaseCommand::LoadLibrary {
-        root: music_root.clone(),
-    }));
+    engine.load_library(music_root.clone());
     state.set_notification(NotificationKind::Info, "Loading library...");
 
     let mut runtime = RuntimeContext {
-        ipc,
-        ipc_alive: true,
+        engine,
+        engine_alive: true,
         running: true,
         effect_queue: VecDeque::new(),
         input_processor: InputProcessor::new(),
@@ -93,7 +88,7 @@ pub fn run() -> Result<()> {
             should_render = true;
         }
 
-        if runtime.ipc_alive && handle_ipc_events(&mut runtime, &mut state) {
+        if runtime.engine_alive && handle_ipc_events(&mut runtime, &mut state) {
             should_render = true;
         }
 
@@ -120,8 +115,8 @@ pub fn run() -> Result<()> {
 }
 
 struct RuntimeContext {
-    ipc: IpcRuntime,
-    ipc_alive: bool,
+    engine: Engine,
+    engine_alive: bool,
     running: bool,
     effect_queue: VecDeque<AppMsg>,
     input_processor: InputProcessor,
@@ -163,7 +158,7 @@ fn tick_state(state: &mut AppState, dt: f32) -> bool {
 
 fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
     let mut changed = false;
-    while let Ok(evt) = ctx.ipc.event_rx.try_recv() {
+    while let Ok(evt) = ctx.engine.event_rx.try_recv() {
         changed = true;
         match evt {
             IpcEvent::LibraryLoaded { snapshot } => {
@@ -173,13 +168,10 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
             }
             IpcEvent::LibraryRescanned => {
                 // reload after scan
-                ctx.ipc
-                    .dispatch(IpcCommand::Database(DatabaseCommand::LoadLibrary {
-                        root: ctx.music_root.clone(),
-                    }));
+                ctx.engine.load_library(ctx.music_root.clone());
                 state.set_notification(NotificationKind::Info, "Scan complete, reloading...");
             }
-            _ => ctx.effect_queue.push_back(ipc_to_appmsg(evt)),
+            _ => ctx.effect_queue.push_back(bridge::ipc_to_appmsg(evt)),
         }
     }
     changed
@@ -191,19 +183,19 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
         changed = true;
         // lifecycle
         if matches!(msg, AppMsg::RequestQuit) {
-            if ctx.ipc_alive {
-                ctx.ipc.dispatch(IpcCommand::Shutdown);
-                ctx.ipc_alive = false;
+            if ctx.engine_alive {
+                ctx.engine.shutdown();
+                ctx.engine_alive = false;
             }
             ctx.running = false;
             break;
         }
 
         // side effects
-        if ctx.ipc_alive
-            && let Some(cmd) = appmsg_to_ipc(&msg, state)
+        if ctx.engine_alive
+            && let Some(cmd) = bridge::appmsg_to_ipc(&msg, &state.library.root)
         {
-            ctx.ipc.dispatch(cmd);
+            ctx.engine.dispatch(cmd);
         }
 
         // state mutation

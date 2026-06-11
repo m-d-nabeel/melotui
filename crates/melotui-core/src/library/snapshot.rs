@@ -14,14 +14,34 @@ pub struct DirectoryNode {
     pub tracks: Vec<TrackId>,
 }
 
+/// In-memory representation of the music library.
+///
+/// Contains the canonical track data plus **materialized indices** (artists, albums,
+/// genres, years, folder tree, favorites) built at construction time for fast browsing.
+///
+/// # Mutation categories
+///
+/// Methods on `Library` fall into three categories:
+///
+/// 1. **Full Reconstruction** ([`Library::new`]): Builds the entire struct from raw data.
+///    Called after structural events (scan completed, library imported, DB reload).
+///    Rebuilds all indices from scratch.
+///
+/// 2. **Incremental Mutations** (`toggle_favorite`, `add_playlist`, etc.): Update only
+///    the affected indices in O(1) amortized time. Called optimistically from the reducer
+///    before DB confirmation. These do NOT rebuild the folder tree or artist/album/genre/year
+///    indices because those are unaffected by playlist or favorite changes.
+///
+/// 3. **Read-Only Queries** (`get_track`, `resolve_tracks_for_node`, etc.): Pure lookups
+///    against the current in-memory state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LibrarySnapshot {
+pub struct Library {
     pub root: PathBuf,
     pub playlists: HashMap<PlaylistId, PlaylistMeta>,
     pub tracks: HashMap<TrackId, TrackMeta>,
     pub playlist_order: Vec<PlaylistId>,
 
-    // browsing indices
+    // Materialized indices — rebuilt only during full reconstruction
     pub folder_tree: DirectoryNode,
     pub artists: std::collections::BTreeMap<String, Vec<TrackId>>,
     pub albums: std::collections::BTreeMap<String, Vec<TrackId>>,
@@ -30,7 +50,16 @@ pub struct LibrarySnapshot {
     pub favorites: Vec<TrackId>,
 }
 
-impl LibrarySnapshot {
+impl Library {
+    // =========================================================================
+    // Full Reconstruction — called after structural events (scan, import, reload)
+    // =========================================================================
+
+    /// Build a new Library from raw data, constructing all materialized indices.
+    ///
+    /// This is the **only** path that rebuilds folder_tree, artists, albums,
+    /// genres, and years. Use for structural events only (scan completed,
+    /// library imported, metadata refreshed).
     pub fn new(
         root: PathBuf,
         playlists_vec: Vec<PlaylistMeta>,
@@ -110,6 +139,14 @@ impl LibrarySnapshot {
         }
     }
 
+    // =========================================================================
+    // Incremental Mutations — O(1) amortized, only touch affected indices.
+    // Called optimistically from the reducer before DB confirmation.
+    // These NEVER rebuild folder_tree/artists/albums/genres/years.
+    // =========================================================================
+
+    /// Toggle a track's favorite status. Only updates `tracks[id].is_favorite`
+    /// and the `favorites` index. O(n) worst case due to sorted insert.
     pub fn toggle_favorite(&mut self, track_id: TrackId, is_favorite: bool) {
         if let Some(track) = self.tracks.get_mut(&track_id) {
             track.is_favorite = is_favorite;
@@ -131,6 +168,7 @@ impl LibrarySnapshot {
         }
     }
 
+    /// Add a playlist. Only touches `playlists` and `playlist_order`. O(1).
     pub fn add_playlist(&mut self, id: PlaylistId, name: String) {
         let meta = PlaylistMeta {
             id,
@@ -141,11 +179,13 @@ impl LibrarySnapshot {
         self.playlists.insert(id, meta);
     }
 
+    /// Remove a playlist. Only touches `playlists` and `playlist_order`. O(n).
     pub fn remove_playlist(&mut self, id: PlaylistId) {
         self.playlists.remove(&id);
         self.playlist_order.retain(|pid| *pid != id);
     }
 
+    /// Add a track to a playlist. Only touches `playlist.tracks`. O(n) duplicate check.
     pub fn add_track_to_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
         if let Some(p) = self
             .playlists
@@ -156,13 +196,18 @@ impl LibrarySnapshot {
         }
     }
 
+    /// Remove a track from a playlist. Only touches `playlist.tracks`. O(n).
     pub fn remove_track_from_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
         if let Some(p) = self.playlists.get_mut(&playlist_id) {
             p.tracks.retain(|tid| *tid != track_id);
         }
     }
 
-    /// Find playlist by name (case-insensitive)
+    // =========================================================================
+    // Read-Only Queries — pure lookups, no mutations
+    // =========================================================================
+
+    /// Find playlist by name (case-insensitive).
     pub fn find_playlist_by_name(&self, name: &str) -> Option<PlaylistId> {
         let lower = name.to_lowercase();
         self.playlists
@@ -244,14 +289,17 @@ impl LibrarySnapshot {
         }
     }
 
+    /// Look up a track by ID.
     pub fn get_track(&self, id: TrackId) -> Option<&TrackMeta> {
         self.tracks.get(&id)
     }
 
+    /// Look up a playlist by ID.
     pub fn get_playlist(&self, id: PlaylistId) -> Option<&PlaylistMeta> {
         self.playlists.get(&id)
     }
 
+    /// Resolve a sidebar node to its list of tracks (by reference).
     pub fn resolve_tracks_for_node(&self, node: &SidebarNodeId) -> Vec<&TrackMeta> {
         match node {
             SidebarNodeId::Playlist(pid) => {
@@ -412,7 +460,7 @@ mod tests {
         );
 
         let root = PathBuf::from("/library");
-        let snapshot = LibrarySnapshot::new(root, vec![], tracks);
+        let snapshot = Library::new(root, vec![], tracks);
 
         assert_eq!(snapshot.folder_tree.name, "Library");
         assert_eq!(snapshot.folder_tree.subdirs.len(), 2);
@@ -451,7 +499,7 @@ mod tests {
             create_mock_track(3, "/lib/Z.mp3", None, None, None, false),
         );
 
-        let mut snapshot = LibrarySnapshot::new(PathBuf::from("/lib"), vec![], tracks);
+        let mut snapshot = Library::new(PathBuf::from("/lib"), vec![], tracks);
 
         snapshot.toggle_favorite(TrackId(2), true);
         snapshot.toggle_favorite(TrackId(3), true);
@@ -490,7 +538,7 @@ mod tests {
             ),
         );
 
-        let snapshot = LibrarySnapshot::new(PathBuf::from("/lib"), vec![], tracks);
+        let snapshot = Library::new(PathBuf::from("/lib"), vec![], tracks);
 
         // Test Artist Node
         let artist_node = SidebarNodeId::Artist("ArtistA".into());
@@ -512,7 +560,7 @@ mod tests {
 
     #[test]
     fn test_playlist_management() {
-        let mut snapshot = LibrarySnapshot::new(PathBuf::from("/lib"), vec![], HashMap::new());
+        let mut snapshot = Library::new(PathBuf::from("/lib"), vec![], HashMap::new());
         let p_id = PlaylistId(10);
 
         snapshot.add_playlist(p_id, "Workout".into());

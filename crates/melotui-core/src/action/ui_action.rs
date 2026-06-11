@@ -431,12 +431,12 @@ pub fn handle_adjust_sidebar_width(state: &mut AppState, delta: i16) -> Vec<AppM
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::library::snapshot::LibrarySnapshot;
+    use crate::library::snapshot::Library;
     use std::collections::HashMap;
 
     fn test_state() -> AppState {
         let root = std::path::PathBuf::from("/tmp");
-        let library = LibrarySnapshot::new(root, vec![], HashMap::new());
+        let library = Library::new(root, vec![], HashMap::new());
         AppState::new(library)
     }
 

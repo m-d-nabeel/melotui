@@ -1461,12 +1461,9 @@ version = "0.2.0"
 dependencies = [
  "anyhow",
  "dirs",
- "melotui-audio",
  "melotui-bus",
  "melotui-core",
- "melotui-cover",
- "melotui-db",
- "melotui-download",
+ "melotui-engine",
  "melotui-tui",
  "tracing",
  "tracing-appender",
@@ -1536,6 +1533,19 @@ dependencies = [
  "melotui-bus",
  "melotui-core",
  "mockall",
+ "tracing",
+]
+
+[[package]]
+name = "melotui-engine"
+version = "0.2.0"
+dependencies = [
+ "melotui-audio",
+ "melotui-bus",
+ "melotui-core",
+ "melotui-cover",
+ "melotui-db",
+ "melotui-download",
  "tracing",
 ]
 

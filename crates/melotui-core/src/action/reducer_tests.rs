@@ -9,7 +9,7 @@ mod tests {
     fn test_state() -> AppState {
         use std::collections::HashMap;
         let root = std::path::PathBuf::from("/tmp");
-        let library = crate::library::snapshot::LibrarySnapshot::new(root, vec![], HashMap::new());
+        let library = crate::library::snapshot::Library::new(root, vec![], HashMap::new());
         AppState::new(library)
     }
 

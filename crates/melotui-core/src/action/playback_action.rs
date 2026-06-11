@@ -333,16 +333,25 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
         None => return vec![],
     };
 
+    // Extract all needed values before mutating state (borrow checker)
+    let title = meta.title.clone();
+    let file_path = meta.file_path.clone();
+    let has_cover = meta.has_cover;
+    let duration_ms = meta.duration_ms;
+
     state.session.playback.current = Some(id);
     state.session.playback.playing_from_queue = from_queue;
     state.session.playback.status = PlaybackStatus::Playing;
     state.session.playback.progress_ms = 0;
-    state.session.playback.duration_ms = Some(meta.duration_ms);
-
-    let title = meta.title.clone();
-    let file_path = meta.file_path.clone();
+    state.session.playback.duration_ms = Some(duration_ms);
 
     state.current_cover = None;
+
+    // Clear stale track_info cover — if the info panel is open, it should
+    // show the new track's art, not the previous track's.
+    if state.session.nav.show_track_info {
+        state.clear_track_info_cover();
+    }
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
@@ -354,12 +363,21 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
     })];
 
     // request async cover load
-    if meta.has_cover {
+    if has_cover {
         effects.push(AppMsg::Cover(CoverMsg::RequestLoad {
             id,
-            path: file_path,
+            path: file_path.clone(),
             context: CoverContext::Playback,
         }));
+
+        // Also load for track_info panel if it's visible
+        if state.session.nav.show_track_info {
+            effects.push(AppMsg::Cover(CoverMsg::RequestLoad {
+                id,
+                path: file_path,
+                context: CoverContext::Info,
+            }));
+        }
     }
 
     effects
@@ -417,7 +435,7 @@ fn update_active_node(state: &mut AppState, new_id: TrackId) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{domain::TrackMeta, library::snapshot::LibrarySnapshot};
+    use crate::{domain::TrackMeta, library::snapshot::Library};
     use std::collections::HashMap;
 
     fn test_state_with_track() -> AppState {
@@ -444,7 +462,7 @@ mod tests {
             },
         );
 
-        let library = LibrarySnapshot::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
+        let library = Library::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
         let mut state = AppState::new(library);
 
         state.session.playback.current = Some(track_id);

@@ -165,7 +165,7 @@ impl ImageCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use melotui_core::library::LibrarySnapshot;
+    use melotui_core::library::Library;
     use std::path::PathBuf;
 
     #[test]
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn test_image_cache_obscured_reset() {
         let mut cache = ImageCache::new();
-        let mut app_state = AppState::new(LibrarySnapshot::new(
+        let mut app_state = AppState::new(Library::new(
             PathBuf::from("/"),
             vec![],
             std::collections::HashMap::new(),

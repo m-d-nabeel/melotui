@@ -1,6 +1,6 @@
 use melotui_core::{
     domain::{PlaylistId, TrackId},
-    library::LibrarySnapshot,
+    library::Library,
     message::cover::CoverContext,
 };
 use std::sync::Arc;
@@ -40,7 +40,7 @@ pub enum IpcEvent {
 
     // database
     LibraryLoaded {
-        snapshot: Box<LibrarySnapshot>,
+        snapshot: Box<Library>,
     },
     LibraryRescanned,
     FavoriteToggled {

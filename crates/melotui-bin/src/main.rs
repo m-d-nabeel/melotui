@@ -1,5 +1,4 @@
 mod input_processor;
-mod ipc_bridge;
 mod logging;
 mod runtime;
 

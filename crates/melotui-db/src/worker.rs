@@ -6,7 +6,7 @@ use melotui_bus::event::IpcEvent;
 use melotui_bus::{channel::IpcWorker, command::DatabaseCommand};
 use melotui_core::{
     domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta},
-    library::LibrarySnapshot,
+    library::Library,
 };
 use rusqlite::params;
 use std::collections::HashMap;
@@ -23,153 +23,161 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
     run_migrations(&conn).expect("Failed to run migrations");
     info!("Database worker initialized");
 
-    loop {
-        match worker.try_recv() {
-            Some(DatabaseCommand::LoadLibrary { root }) => {
-                info!("Loading library from database for root: {:?}", root);
-                match load_library_snapshot(&conn, root) {
-                    Ok(snapshot) => {
-                        info!("Library loaded: {} tracks", snapshot.tracks.len());
-                        worker.send(IpcEvent::LibraryLoaded {
-                            snapshot: Box::new(snapshot),
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to load library: {:?}", e);
-                        worker.send(IpcEvent::Error {
-                            message: e.to_string(),
-                        });
-                    }
-                }
-            }
-            Some(DatabaseCommand::ScanLibrary { root }) => {
-                tracing::info!("Starting Library Scan at {:?}...", root);
-                if let Err(e) = handle_scan_library(&conn, &root) {
-                    tracing::error!("Failed to scan library: {:?}", e);
-                    worker.send(IpcEvent::Error {
-                        message: e.to_string(),
-                    });
-                } else {
-                    // auto-prune after scan
-                    let pruned = prune_library(&conn).unwrap_or(0);
-                    if pruned > 0 {
-                        tracing::info!("Pruned {} dead tracks", pruned);
-                    }
-                    tracing::info!("Library Scan Complete.");
-                    worker.send(IpcEvent::LibraryRescanned);
-                }
-            }
-            Some(DatabaseCommand::PruneLibrary) => {
-                info!("Manual prune requested");
-                match prune_library(&conn) {
-                    Ok(count) => {
-                        info!("Pruned {} dead tracks", count);
-                        worker.send(IpcEvent::LibraryRescanned);
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to prune: {:?}", e);
-                        worker.send(IpcEvent::Error {
-                            message: e.to_string(),
-                        });
-                    }
-                }
-            }
-            Some(DatabaseCommand::ToggleFavorite { track_id }) => {
-                match toggle_favorite(&conn, TrackId(track_id as u64)) {
-                    Ok(is_favorite) => {
-                        worker.send(IpcEvent::FavoriteToggled {
-                            track_id: TrackId(track_id as u64),
-                            is_favorite,
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to toggle favorite: {:?}", e);
-                        worker.send(IpcEvent::Error {
-                            message: format!("Failed to toggle favorite: {}", e),
-                        });
-                    }
-                }
-            }
-            Some(DatabaseCommand::Shutdown) => {
+    while let Some(cmd) = worker.recv() {
+        match cmd {
+            DatabaseCommand::Shutdown => {
                 info!("Database worker shutting down");
                 break;
             }
-            Some(DatabaseCommand::CreatePlaylist { name }) => match create_playlist(&conn, &name) {
-                Ok(id) => {
-                    info!("Created playlist '{}' with id {:?}", name, id);
-                    worker.send(IpcEvent::PlaylistCreated { id, name });
-                }
-                Err(e) => {
-                    tracing::error!("Failed to create playlist: {:?}", e);
-                    worker.send(IpcEvent::Error {
-                        message: format!("Failed to create playlist: {}", e),
+            cmd => handle_command(&conn, &worker, cmd),
+        }
+    }
+}
+
+fn handle_command(
+    conn: &rusqlite::Connection,
+    worker: &impl IpcWorker<DatabaseCommand>,
+    cmd: DatabaseCommand,
+) {
+    match cmd {
+        DatabaseCommand::LoadLibrary { root } => {
+            info!("Loading library from database for root: {:?}", root);
+            match load_library_snapshot(conn, root) {
+                Ok(snapshot) => {
+                    info!("Library loaded: {} tracks", snapshot.tracks.len());
+                    worker.send(IpcEvent::LibraryLoaded {
+                        snapshot: Box::new(snapshot),
                     });
                 }
-            },
-            Some(DatabaseCommand::DeletePlaylist { playlist_id }) => {
-                let pid = PlaylistId(playlist_id as u64);
-                match delete_playlist(&conn, pid) {
-                    Ok(()) => {
-                        info!("Deleted playlist {:?}", pid);
-                        worker.send(IpcEvent::PlaylistDeleted { id: pid });
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to delete playlist: {:?}", e);
-                        worker.send(IpcEvent::Error {
-                            message: format!("Failed to delete playlist: {}", e),
-                        });
-                    }
+                Err(e) => {
+                    tracing::error!("Failed to load library: {:?}", e);
+                    worker.send(IpcEvent::Error {
+                        message: e.to_string(),
+                    });
                 }
-            }
-            Some(DatabaseCommand::AddTrackToPlaylist {
-                playlist_id,
-                track_id,
-            }) => {
-                let pid = PlaylistId(playlist_id as u64);
-                let tid = TrackId(track_id as u64);
-                match add_to_playlist(&conn, pid, tid) {
-                    Ok(()) => {
-                        info!("Added track {:?} to playlist {:?}", tid, pid);
-                        worker.send(IpcEvent::PlaylistTrackAdded {
-                            playlist_id: pid,
-                            track_id: tid,
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to add to playlist: {:?}", e);
-                        worker.send(IpcEvent::Error {
-                            message: format!("Failed to add to playlist: {}", e),
-                        });
-                    }
-                }
-            }
-            Some(DatabaseCommand::RemoveTrackFromPlaylist {
-                playlist_id,
-                track_id,
-            }) => {
-                let pid = PlaylistId(playlist_id as u64);
-                let tid = TrackId(track_id as u64);
-                match remove_from_playlist(&conn, pid, tid) {
-                    Ok(()) => {
-                        info!("Removed track {:?} from playlist {:?}", tid, pid);
-                        worker.send(IpcEvent::PlaylistTrackRemoved {
-                            playlist_id: pid,
-                            track_id: tid,
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to remove from playlist: {:?}", e);
-                        worker.send(IpcEvent::Error {
-                            message: format!("Failed to remove from playlist: {}", e),
-                        });
-                    }
-                }
-            }
-            Some(_) => { /* unhandled commands */ }
-            None => {
-                std::thread::sleep(std::time::Duration::from_millis(10));
             }
         }
+        DatabaseCommand::ScanLibrary { root } => {
+            tracing::info!("Starting Library Scan at {:?}...", root);
+            if let Err(e) = handle_scan_library(conn, &root) {
+                tracing::error!("Failed to scan library: {:?}", e);
+                worker.send(IpcEvent::Error {
+                    message: e.to_string(),
+                });
+            } else {
+                // auto-prune after scan
+                let pruned = prune_library(conn).unwrap_or(0);
+                if pruned > 0 {
+                    tracing::info!("Pruned {} dead tracks", pruned);
+                }
+                tracing::info!("Library Scan Complete.");
+                worker.send(IpcEvent::LibraryRescanned);
+            }
+        }
+        DatabaseCommand::PruneLibrary => {
+            info!("Manual prune requested");
+            match prune_library(conn) {
+                Ok(count) => {
+                    info!("Pruned {} dead tracks", count);
+                    worker.send(IpcEvent::LibraryRescanned);
+                }
+                Err(e) => {
+                    tracing::error!("Failed to prune: {:?}", e);
+                    worker.send(IpcEvent::Error {
+                        message: e.to_string(),
+                    });
+                }
+            }
+        }
+        DatabaseCommand::ToggleFavorite { track_id } => {
+            match toggle_favorite(conn, TrackId(track_id as u64)) {
+                Ok(is_favorite) => {
+                    worker.send(IpcEvent::FavoriteToggled {
+                        track_id: TrackId(track_id as u64),
+                        is_favorite,
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to toggle favorite: {:?}", e);
+                    worker.send(IpcEvent::Error {
+                        message: format!("Failed to toggle favorite: {}", e),
+                    });
+                }
+            }
+        }
+        DatabaseCommand::CreatePlaylist { name } => match create_playlist(conn, &name) {
+            Ok(id) => {
+                info!("Created playlist '{}' with id {:?}", name, id);
+                worker.send(IpcEvent::PlaylistCreated { id, name });
+            }
+            Err(e) => {
+                tracing::error!("Failed to create playlist: {:?}", e);
+                worker.send(IpcEvent::Error {
+                    message: format!("Failed to create playlist: {}", e),
+                });
+            }
+        },
+        DatabaseCommand::DeletePlaylist { playlist_id } => {
+            let pid = PlaylistId(playlist_id as u64);
+            match delete_playlist(conn, pid) {
+                Ok(()) => {
+                    info!("Deleted playlist {:?}", pid);
+                    worker.send(IpcEvent::PlaylistDeleted { id: pid });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to delete playlist: {:?}", e);
+                    worker.send(IpcEvent::Error {
+                        message: format!("Failed to delete playlist: {}", e),
+                    });
+                }
+            }
+        }
+        DatabaseCommand::AddTrackToPlaylist {
+            playlist_id,
+            track_id,
+        } => {
+            let pid = PlaylistId(playlist_id as u64);
+            let tid = TrackId(track_id as u64);
+            match add_to_playlist(conn, pid, tid) {
+                Ok(()) => {
+                    info!("Added track {:?} to playlist {:?}", tid, pid);
+                    worker.send(IpcEvent::PlaylistTrackAdded {
+                        playlist_id: pid,
+                        track_id: tid,
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to add to playlist: {:?}", e);
+                    worker.send(IpcEvent::Error {
+                        message: format!("Failed to add to playlist: {}", e),
+                    });
+                }
+            }
+        }
+        DatabaseCommand::RemoveTrackFromPlaylist {
+            playlist_id,
+            track_id,
+        } => {
+            let pid = PlaylistId(playlist_id as u64);
+            let tid = TrackId(track_id as u64);
+            match remove_from_playlist(conn, pid, tid) {
+                Ok(()) => {
+                    info!("Removed track {:?} from playlist {:?}", tid, pid);
+                    worker.send(IpcEvent::PlaylistTrackRemoved {
+                        playlist_id: pid,
+                        track_id: tid,
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("Failed to remove from playlist: {:?}", e);
+                    worker.send(IpcEvent::Error {
+                        message: format!("Failed to remove from playlist: {}", e),
+                    });
+                }
+            }
+        }
+        DatabaseCommand::Shutdown => unreachable!("handled above"),
+        _ => { /* unhandled commands */ }
     }
 }
 
@@ -377,7 +385,7 @@ fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Res
 }
 
 /// load snapshot
-fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<LibrarySnapshot> {
+fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<Library> {
     let mut stmt = conn.prepare(
         "SELECT id, file_path, title, artist, album, genre, year, is_favorite,
                 track_number, bitrate_kbps, sample_rate_hz, format,
@@ -449,7 +457,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
         });
     }
 
-    Ok(LibrarySnapshot::new(root, playlists_vec, tracks_map))
+    Ok(Library::new(root, playlists_vec, tracks_map))
 }
 
 /// toggle favorite

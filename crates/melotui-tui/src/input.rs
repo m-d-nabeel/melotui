@@ -195,12 +195,12 @@ impl InputHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use melotui_core::{library::snapshot::LibrarySnapshot, reducer::reduce};
+    use melotui_core::{library::snapshot::Library, reducer::reduce};
     use ratatui::crossterm::event::KeyModifiers;
 
     fn test_state() -> AppState {
         let root = std::path::PathBuf::from("/tmp");
-        let library = LibrarySnapshot::new(root, vec![], std::collections::HashMap::new());
+        let library = Library::new(root, vec![], std::collections::HashMap::new());
         AppState::new(library)
     }
 
@@ -263,7 +263,7 @@ mod tests {
             },
         );
 
-        let library = LibrarySnapshot::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
+        let library = Library::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
         let mut state = AppState::new(library);
 
         // Ensure a track is selected using Search

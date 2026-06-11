@@ -440,7 +440,7 @@ fn navigate_to_current_match(state: &mut AppState) {
 }
 
 fn collect_matches(
-    snapshot: &crate::library::LibrarySnapshot,
+    snapshot: &crate::library::Library,
     field: &SearchField,
     query: &str,
 ) -> Vec<SidebarNodeId> {
@@ -497,7 +497,7 @@ fn collect_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{domain::TrackMeta, library::snapshot::LibrarySnapshot};
+    use crate::{domain::TrackMeta, library::snapshot::Library};
     use std::collections::HashMap;
 
     fn test_state() -> AppState {
@@ -524,7 +524,7 @@ mod tests {
             },
         );
 
-        let library = LibrarySnapshot::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
+        let library = Library::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
         AppState::new(library)
     }
 

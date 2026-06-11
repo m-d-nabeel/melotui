@@ -1,4 +1,5 @@
 use std::sync::mpsc;
+use std::time::Duration;
 
 use crate::{channel::IpcWorker, event::IpcEvent};
 
@@ -31,6 +32,10 @@ impl<C: Send> IpcWorker<C> for WorkerEndpoint<C> {
 
     fn try_recv(&self) -> Option<C> {
         self.cmd_rx.try_recv().ok()
+    }
+
+    fn recv_timeout(&self, timeout: Duration) -> Option<C> {
+        self.cmd_rx.recv_timeout(timeout).ok()
     }
 
     fn send(&self, evt: IpcEvent) {
