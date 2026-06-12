@@ -104,14 +104,20 @@ mod tests {
         let mut clock = TimeKeeper::new();
         clock.start();
         clock.set_speed(2.0);
+        let start_time = Instant::now();
         sleep(Duration::from_millis(50));
+        let elapsed = start_time.elapsed().as_millis();
         clock.pause();
 
-        // At 2x speed, 50ms real time is ~100ms accumulated
+        // At 2x speed, accumulated time should be roughly double the elapsed real time
         let pos = clock.get_position().as_millis();
+        let expected = elapsed * 2;
+        let margin = 20; // 20ms margin for execution time differences
+
         assert!(
-            (80..=150).contains(&pos),
-            "Expected around 100ms, got {}ms",
+            (expected.saturating_sub(margin)..=expected + margin).contains(&pos),
+            "Expected around {}ms, got {}ms",
+            expected,
             pos
         );
     }
