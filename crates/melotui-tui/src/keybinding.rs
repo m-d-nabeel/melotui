@@ -2,7 +2,7 @@ use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::{
+use melotui_core::{
     AppMsg,
     message::{
         audio::AudioMsg, library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg,

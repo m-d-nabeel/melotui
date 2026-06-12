@@ -1,9 +1,10 @@
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
 use std::sync::OnceLock;
+use tui_input::backend::crossterm::to_input_request;
 
+use crate::keybinding::{KeyAction, KeyContext, KeyRegistry};
 use melotui_core::{
     AppMsg, AppState,
-    keybinding::{KeyAction, KeyContext, KeyRegistry},
     message::{
         download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
         playback::PlaybackMsg, ui::UIMsg,
@@ -86,7 +87,11 @@ impl InputHandler {
         // command mode typing fallback
         let Some(act) = action else {
             if *state.ui_mode() == UIMode::Command {
-                return Some(AppMsg::UI(UIMsg::CommandInput(key)));
+                let evt = Event::Key(key);
+                if let Some(req) = to_input_request(&evt) {
+                    return Some(AppMsg::UI(UIMsg::CommandInput(req)));
+                }
+                return None;
             }
             if *state.ui_mode() == UIMode::PlaylistPicker
                 && let KeyCode::Char(c) = key.code

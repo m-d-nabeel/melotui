@@ -1,6 +1,6 @@
 use crate::input::InputHandler;
+use crate::keybinding::{KeyBinding, KeyContext};
 use crate::theme::Theme;
-use melotui_core::keybinding::{KeyBinding, KeyContext};
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -204,7 +204,7 @@ fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&
     frame.render_widget(paragraph, inner);
 }
 
-fn format_key(binding: &melotui_core::keybinding::KeyBinding) -> String {
+fn format_key(binding: &KeyBinding) -> String {
     use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
     let mut result = String::new();
