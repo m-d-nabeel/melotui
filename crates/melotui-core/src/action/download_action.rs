@@ -12,7 +12,19 @@ pub fn handle_request_download(state: &mut AppState, query: String) -> Vec<AppMs
 }
 
 fn enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
-    let root = &state.library.root;
+    let root = match state.library.roots.first() {
+        Some(r) => r,
+        None => {
+            state.session.notification.current = Some(
+                Notification::new(
+                    NotificationKind::Error,
+                    "No music directory configured for downloads",
+                )
+                .with_duration(4),
+            );
+            return vec![];
+        }
+    };
     let download_dir = root.join("Downloads");
 
     if !download_dir.exists()

@@ -41,13 +41,19 @@ pub struct AppState {
 
 // lifecycle
 impl AppState {
-    pub fn new(library: Library) -> Self {
-        let config = crate::config::AppConfig::load();
+    pub fn new(library: Library, config: &crate::config::AppConfig) -> Self {
         let mut session = SessionState::default();
 
         // Apply config to session
         session.ui.sidebar_width = config.ui.sidebar_width;
         session.ui.scrolloff = config.ui.scrolloff;
+
+        // Apply audio defaults from config
+        session.audio.speed = config.audio.default_speed;
+        session.audio.bass = config.audio.default_bass;
+        session.audio.treble = config.audio.default_treble;
+        session.audio.reverb = config.audio.default_reverb;
+        session.audio.echo = config.audio.default_echo;
 
         // select first item
         if let Some(first_node) = projector::get_node_at_index(&library, &session.nav.library, 0) {

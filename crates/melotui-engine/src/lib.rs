@@ -133,13 +133,13 @@ impl Engine {
     }
 
     /// Load the library from the database.
-    pub fn load_library(&self, root: PathBuf) {
-        self.dispatch(IpcCommand::Database(DatabaseCommand::LoadLibrary { root }));
+    pub fn load_library(&self, roots: Vec<PathBuf>) {
+        self.dispatch(IpcCommand::Database(DatabaseCommand::LoadLibrary { roots }));
     }
 
     /// Scan the filesystem and update the database.
-    pub fn scan_library(&self, root: PathBuf) {
-        self.dispatch(IpcCommand::Database(DatabaseCommand::ScanLibrary { root }));
+    pub fn scan_library(&self, roots: Vec<PathBuf>) {
+        self.dispatch(IpcCommand::Database(DatabaseCommand::ScanLibrary { roots }));
     }
 
     /// Shut down all workers gracefully.

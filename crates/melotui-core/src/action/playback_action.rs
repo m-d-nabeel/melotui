@@ -462,8 +462,8 @@ mod tests {
             },
         );
 
-        let library = Library::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
-        let mut state = AppState::new(library);
+        let library = Library::new(vec![std::path::PathBuf::from("/tmp")], vec![], tracks);
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
 
         state.session.playback.current = Some(track_id);
         state.session.playback.duration_ms = Some(10000);

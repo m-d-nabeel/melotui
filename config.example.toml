@@ -1,0 +1,33 @@
+# Melotui Configuration File
+# Save this file to ~/.config/melotui/config.toml
+
+[library]
+# List of directories to scan for music.
+# If empty, defaults to your OS audio directory (e.g. ~/Music).
+# music_directories = ["~/Music", "/mnt/data/audio"]
+
+# Custom database path. If omitted, defaults to ~/.local/share/melotui/library.db
+# db_path = "/custom/path/library.db"
+
+[ui]
+# Sidebar width in columns (28-80)
+sidebar_width = 28
+
+# Scroll offset — lines to keep visible above/below cursor (0-20)
+scrolloff = 8
+
+[audio]
+# Default playback speed (0.5 to 2.0)
+default_speed = 1.0
+
+# Default bass level (0.1 to 5.0)
+default_bass = 1.0
+
+# Default treble level (0.0 to 5.0)
+default_treble = 1.0
+
+# Default reverb level (0.0 to 1.0)
+default_reverb = 0.0
+
+# Default echo level (0.0 to 0.9)
+default_echo = 0.0

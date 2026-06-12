@@ -353,7 +353,7 @@ fn get_playing_ancestors(state: &AppState) -> HashSet<SidebarNodeId> {
     let mut ancestors = HashSet::new();
     if let Some(playing_node) = state.get_playing_node() {
         let mut current = playing_node.clone();
-        while let Some(parent) = current.parent(&state.library.root) {
+        while let Some(parent) = current.parent(&state.library.roots) {
             ancestors.insert(parent.clone());
             current = parent;
         }

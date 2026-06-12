@@ -168,8 +168,8 @@ mod tests {
 
     fn test_state() -> AppState {
         let root = std::path::PathBuf::from("/tmp");
-        let library = Library::new(root, vec![], HashMap::new());
-        AppState::new(library)
+        let library = Library::new(vec![root], vec![], HashMap::new());
+        AppState::new(library, &melotui_core::config::AppConfig::default())
     }
 
     #[test]

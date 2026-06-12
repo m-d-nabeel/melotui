@@ -196,11 +196,14 @@ mod tests {
     #[test]
     fn test_image_cache_obscured_reset() {
         let mut cache = ImageCache::empty();
-        let mut app_state = AppState::new(Library::new(
-            PathBuf::from("/"),
-            vec![],
-            std::collections::HashMap::new(),
-        ));
+        let mut app_state = AppState::new(
+            Library::new(
+                vec![PathBuf::from("/")],
+                vec![],
+                std::collections::HashMap::new(),
+            ),
+            &melotui_core::config::AppConfig::default(),
+        );
 
         // Setup some fake state
         cache.album_art.width = 50;

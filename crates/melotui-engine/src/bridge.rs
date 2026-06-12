@@ -4,7 +4,7 @@
 //! The `appmsg_to_ipc` function takes a `&Path` for the library root instead of
 //! `&AppState`, keeping this layer decoupled from UI state.
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use melotui_bus::{
     command::{AudioCommand, CoverCommand, DatabaseCommand, DownloadCommand, IpcCommand},
@@ -21,9 +21,9 @@ use melotui_core::{
 /// Translate an AppMsg into an IpcCommand to dispatch to a worker.
 ///
 /// Returns `None` if the message doesn't map to any worker command.
-/// `library_root` is needed for `RequestScanLibrary` — the caller passes
-/// `state.library.root` without leaking `&AppState` into this layer.
-pub fn appmsg_to_ipc(msg: &AppMsg, library_root: &Path) -> Option<IpcCommand> {
+/// `library_roots` is needed for `RequestScanLibrary` — the caller passes
+/// `&state.library.roots` without leaking `&AppState` into this layer.
+pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcCommand> {
     match msg {
         // --- Cover ---
         AppMsg::Cover(CoverMsg::RequestLoad { id, path, context }) => {
@@ -85,7 +85,7 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_root: &Path) -> Option<IpcCommand> {
         // --- Database Controls ---
         AppMsg::Library(LibraryMsg::RequestScanLibrary) => {
             Some(IpcCommand::Database(DatabaseCommand::ScanLibrary {
-                root: library_root.to_path_buf(),
+                roots: library_roots.to_vec(),
             }))
         }
         AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(track_id)) => {
@@ -218,11 +218,11 @@ mod tests {
 
     #[test]
     fn test_appmsg_to_ipc_translation() {
-        let root = PathBuf::from("/music");
+        let roots = vec![PathBuf::from("/music")];
 
         // Test UI Playback Stop command
         let msg = AppMsg::Playback(PlaybackMsg::DispatchStop);
-        let cmd = appmsg_to_ipc(&msg, &root).unwrap();
+        let cmd = appmsg_to_ipc(&msg, &roots).unwrap();
         match cmd {
             IpcCommand::Audio(AudioCommand::Stop) => {}
             _ => panic!("Expected Audio Stop command"),
@@ -232,7 +232,7 @@ mod tests {
         let msg = AppMsg::Database(
             melotui_core::message::database::DatabaseMsg::DispatchToggleFavorite(TrackId(42)),
         );
-        let cmd = appmsg_to_ipc(&msg, &root).unwrap();
+        let cmd = appmsg_to_ipc(&msg, &roots).unwrap();
         match cmd {
             IpcCommand::Database(DatabaseCommand::ToggleFavorite { track_id }) => {
                 assert_eq!(track_id, 42);
@@ -242,13 +242,13 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_library_uses_provided_root() {
-        let root = PathBuf::from("/my/music/library");
+    fn test_scan_library_uses_provided_roots() {
+        let roots = vec![PathBuf::from("/my/music/library")];
         let msg = AppMsg::Library(LibraryMsg::RequestScanLibrary);
-        let cmd = appmsg_to_ipc(&msg, &root).unwrap();
+        let cmd = appmsg_to_ipc(&msg, &roots).unwrap();
         match cmd {
-            IpcCommand::Database(DatabaseCommand::ScanLibrary { root: scan_root }) => {
-                assert_eq!(scan_root, PathBuf::from("/my/music/library"));
+            IpcCommand::Database(DatabaseCommand::ScanLibrary { roots: scan_roots }) => {
+                assert_eq!(scan_roots, vec![PathBuf::from("/my/music/library")]);
             }
             _ => panic!("Expected Database ScanLibrary command"),
         }

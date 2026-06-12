@@ -209,8 +209,8 @@ mod tests {
 
     fn test_state() -> AppState {
         let root = std::path::PathBuf::from("/tmp");
-        let library = Library::new(root, vec![], std::collections::HashMap::new());
-        AppState::new(library)
+        let library = Library::new(vec![root], vec![], std::collections::HashMap::new());
+        AppState::new(library, &melotui_core::config::AppConfig::default())
     }
 
     #[test]
@@ -272,8 +272,8 @@ mod tests {
             },
         );
 
-        let library = Library::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
-        let mut state = AppState::new(library);
+        let library = Library::new(vec![std::path::PathBuf::from("/tmp")], vec![], tracks);
+        let mut state = AppState::new(library, &melotui_core::config::AppConfig::default());
 
         // Ensure a track is selected using Search
         reduce(

@@ -40,9 +40,9 @@ fn handle_command(
     cmd: DatabaseCommand,
 ) {
     match cmd {
-        DatabaseCommand::LoadLibrary { root } => {
-            info!("Loading library from database for root: {:?}", root);
-            match load_library_snapshot(conn, root) {
+        DatabaseCommand::LoadLibrary { roots } => {
+            info!("Loading library from database for roots: {:?}", roots);
+            match load_library_snapshot(conn, roots) {
                 Ok(snapshot) => {
                     info!("Library loaded: {} tracks", snapshot.tracks.len());
                     worker.send(IpcEvent::LibraryLoaded {
@@ -57,14 +57,20 @@ fn handle_command(
                 }
             }
         }
-        DatabaseCommand::ScanLibrary { root } => {
-            tracing::info!("Starting Library Scan at {:?}...", root);
-            if let Err(e) = handle_scan_library(conn, &root) {
-                tracing::error!("Failed to scan library: {:?}", e);
-                worker.send(IpcEvent::Error {
-                    message: e.to_string(),
-                });
-            } else {
+        DatabaseCommand::ScanLibrary { roots } => {
+            tracing::info!("Starting Library Scan for {} directories...", roots.len());
+            let mut scan_failed = false;
+            for root in &roots {
+                tracing::info!("Scanning {:?}...", root);
+                if let Err(e) = handle_scan_library(conn, root) {
+                    tracing::error!("Failed to scan {:?}: {:?}", root, e);
+                    worker.send(IpcEvent::Error {
+                        message: format!("Failed to scan {:?}: {}", root, e),
+                    });
+                    scan_failed = true;
+                }
+            }
+            if !scan_failed {
                 // auto-prune after scan
                 let pruned = prune_library(conn).unwrap_or(0);
                 if pruned > 0 {
@@ -385,7 +391,7 @@ fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Res
 }
 
 /// load snapshot
-fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<Library> {
+fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Result<Library> {
     let mut stmt = conn.prepare(
         "SELECT id, file_path, title, artist, album, genre, year, is_favorite,
                 track_number, bitrate_kbps, sample_rate_hz, format,
@@ -457,7 +463,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, root: PathBuf) -> Result<L
         });
     }
 
-    Ok(Library::new(root, playlists_vec, tracks_map))
+    Ok(Library::new(roots, playlists_vec, tracks_map))
 }
 
 /// toggle favorite

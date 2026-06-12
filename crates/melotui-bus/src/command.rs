@@ -38,8 +38,8 @@ pub enum DownloadCommand {
 
 #[derive(Debug, Clone)]
 pub enum DatabaseCommand {
-    LoadLibrary { root: PathBuf },
-    ScanLibrary { root: PathBuf },
+    LoadLibrary { roots: Vec<PathBuf> },
+    ScanLibrary { roots: Vec<PathBuf> },
     PruneLibrary,
     GetAllTracks,
     SearchTracks { query: String },
