@@ -80,6 +80,7 @@ pub struct UIState {
     pub terminal_size: (u16, u16),
     pub sidebar_width: u16,
     pub focus_mode: FocusMode,
+    pub theme_overrides: std::collections::HashMap<String, String>,
 }
 
 impl Default for UIState {
@@ -95,6 +96,7 @@ impl Default for UIState {
             terminal_size: (0, 0),
             sidebar_width: 28,
             focus_mode: FocusMode::default(),
+            theme_overrides: std::collections::HashMap::new(),
         }
     }
 }

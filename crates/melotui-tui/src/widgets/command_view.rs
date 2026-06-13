@@ -6,16 +6,10 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Paragraph},
 };
 
-use crate::theme::Theme;
 use melotui_core::AppState;
 
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
-
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let t = theme();
+    let t = crate::theme::get_theme(state);
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)

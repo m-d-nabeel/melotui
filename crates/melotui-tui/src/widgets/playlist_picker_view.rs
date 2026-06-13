@@ -6,18 +6,12 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
-use crate::theme::Theme;
 use melotui_core::{AppState, domain::PlaylistMeta};
-
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
 
 const MAX_VISIBLE: usize = 10;
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let t = theme();
+    let t = crate::theme::get_theme(state);
     let picker = state.playlist_picker();
 
     let query = picker.query.trim().to_lowercase();

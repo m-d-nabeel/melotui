@@ -47,6 +47,7 @@ impl AppState {
         // Apply config to session
         session.ui.sidebar_width = config.ui.sidebar_width;
         session.ui.scrolloff = config.ui.scrolloff;
+        session.ui.theme_overrides = config.theme_overrides.clone();
 
         // Apply audio defaults from config
         session.audio.speed = config.audio.default_speed;
@@ -98,6 +99,10 @@ impl AppState {
     }
     pub fn echo(&self) -> f32 {
         self.session.audio.echo
+    }
+
+    pub fn theme_overrides(&self) -> &std::collections::HashMap<String, String> {
+        &self.session.ui.theme_overrides
     }
 }
 

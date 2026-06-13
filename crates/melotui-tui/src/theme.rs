@@ -4,7 +4,16 @@ use ratatui::style::Color;
 ///
 /// Every widget references this instead of defining inline colors.
 /// The theme lives in `AppState` so it can be changed at runtime
-/// (e.g. via `:theme dracula`).
+/// (e.g. via config.toml `theme = "dracula"`).
+pub fn get_theme(state: &melotui_core::AppState) -> &'static Theme {
+    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
+
+    THEME.get_or_init(|| {
+        let mut t = Theme::default();
+        t.apply_overrides(state.theme_overrides());
+        t
+    })
+}
 #[derive(Debug, Clone)]
 pub struct Theme {
     // ── Panel chrome ──────────────────────────────────────
@@ -20,6 +29,12 @@ pub struct Theme {
     pub fg_primary: Color,
     pub fg_secondary: Color,
     pub fg_muted: Color,
+
+    // ── Tree depth hierarchy ──────────────────────────────
+    pub fg_tree_root: Color,
+    pub fg_tree_folder: Color,
+    pub fg_tree_subfolder: Color,
+    pub fg_tree_file: Color,
 
     // ── Semantic accents ──────────────────────────────────
     pub accent_primary: Color,
@@ -69,6 +84,58 @@ impl Default for Theme {
 }
 
 impl Theme {
+    /// Applies arbitrary user overrides from the config map.
+    pub fn apply_overrides(&mut self, overrides: &std::collections::HashMap<String, String>) {
+        use std::str::FromStr;
+        for (key, val) in overrides {
+            if let Ok(color) = Color::from_str(val) {
+                match key.as_str() {
+                    "border_active" => self.border_active = color,
+                    "border_inactive" => self.border_inactive = color,
+                    "bg_selected" => self.bg_selected = color,
+                    "bg_overlay" => self.bg_overlay = color,
+                    "bg_input" => self.bg_input = color,
+                    "fg_primary" => self.fg_primary = color,
+                    "fg_secondary" => self.fg_secondary = color,
+                    "fg_muted" => self.fg_muted = color,
+                    "fg_tree_root" => self.fg_tree_root = color,
+                    "fg_tree_folder" => self.fg_tree_folder = color,
+                    "fg_tree_subfolder" => self.fg_tree_subfolder = color,
+                    "fg_tree_file" => self.fg_tree_file = color,
+                    "accent_primary" => self.accent_primary = color,
+                    "accent_playing" => self.accent_playing = color,
+                    "accent_ancestor" => self.accent_ancestor = color,
+                    "accent_info" => self.accent_info = color,
+                    "accent_warning" => self.accent_warning = color,
+                    "accent_error" => self.accent_error = color,
+                    "status_playing" => self.status_playing = color,
+                    "status_paused" => self.status_paused = color,
+                    "status_stopped" => self.status_stopped = color,
+                    "icon_folder" => self.icon_folder = color,
+                    "icon_playlist" => self.icon_playlist = color,
+                    "icon_category" => self.icon_category = color,
+                    "slider_volume" => self.slider_volume = color,
+                    "slider_speed" => self.slider_speed = color,
+                    "slider_bass" => self.slider_bass = color,
+                    "slider_treble" => self.slider_treble = color,
+                    "slider_reverb" => self.slider_reverb = color,
+                    "slider_echo" => self.slider_echo = color,
+                    "slider_track" => self.slider_track = color,
+                    "help_key" => self.help_key = color,
+                    "help_header" => self.help_header = color,
+                    "help_text" => self.help_text = color,
+                    "help_subtext" => self.help_subtext = color,
+                    "help_overlay_bg" => self.help_overlay_bg = color,
+                    "help_border" => self.help_border = color,
+                    "badge_lossless" => self.badge_lossless = color,
+                    "badge_lossy" => self.badge_lossy = color,
+                    "badge_detail_bg" => self.badge_detail_bg = color,
+                    _ => {}
+                }
+            }
+        }
+    }
+
     /// Catppuccin Mocha — the default theme.
     ///
     /// Derived from existing colors already used in tree.rs and help_view.rs.
@@ -87,6 +154,12 @@ impl Theme {
             fg_primary: Color::Rgb(205, 214, 244),   // Text
             fg_secondary: Color::Rgb(186, 194, 222), // Subtext1
             fg_muted: Color::Rgb(108, 112, 134),     // Overlay0
+
+            // Tree depth hierarchy
+            fg_tree_root: Color::Rgb(205, 214, 244),   // Text
+            fg_tree_folder: Color::Rgb(186, 194, 222), // Subtext1
+            fg_tree_subfolder: Color::Rgb(166, 173, 200), // Subtext0
+            fg_tree_file: Color::Rgb(147, 153, 178),   // Overlay2
 
             // Semantic accents
             accent_primary: Color::Rgb(137, 180, 250), // Blue

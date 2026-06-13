@@ -6,13 +6,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph},
 };
 
-use crate::theme::Theme;
 use melotui_core::AppState;
-
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let dialog = match state.confirm_dialog() {
@@ -20,7 +14,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         None => return,
     };
 
-    let t = theme();
+    let t = crate::theme::get_theme(state);
 
     // Center a bordered dialog box
     let popup_width = (dialog.message.len() as u16 + 16).min(area.width.saturating_sub(4));

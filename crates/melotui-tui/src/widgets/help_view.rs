@@ -9,19 +9,14 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
 };
 
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
-
-pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
+pub fn draw(frame: &mut Frame, area: Rect, state: &melotui_core::AppState) {
     // help screen area
     let help_area = centered_rect(90, 90, area);
 
     // clear bg
     frame.render_widget(Clear, help_area);
 
-    let t = theme();
+    let t = crate::theme::get_theme(state);
 
     // main block
     let block = Block::default()
@@ -71,6 +66,7 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
             sections[col],
             " Global ",
             registry.bindings.get(&KeyContext::Global),
+            t,
         );
         col += 1;
     }
@@ -80,6 +76,7 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
             sections[col],
             " Library ",
             registry.bindings.get(&KeyContext::Library),
+            t,
         );
         col += 1;
     }
@@ -89,16 +86,16 @@ pub fn draw(frame: &mut Frame, area: Rect, _state: &melotui_core::AppState) {
             sections[col],
             " Queue ",
             registry.bindings.get(&KeyContext::Queue),
+            t,
         );
         col += 1;
     }
     if col < col_count {
-        render_command_section(frame, sections[col], " Commands ");
+        render_command_section(frame, sections[col], " Commands ", t);
     }
 }
 
-fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
-    let t = theme();
+fn render_command_section(frame: &mut Frame, area: Rect, title: &str, t: &Theme) {
     let block = Block::default()
         .title(
             Line::from(Span::styled(
@@ -147,8 +144,13 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str) {
     frame.render_widget(paragraph, inner);
 }
 
-fn render_section(frame: &mut Frame, area: Rect, title: &str, bindings: Option<&Vec<KeyBinding>>) {
-    let t = theme();
+fn render_section(
+    frame: &mut Frame,
+    area: Rect,
+    title: &str,
+    bindings: Option<&Vec<KeyBinding>>,
+    t: &Theme,
+) {
     let block = Block::default()
         .title(
             Line::from(Span::styled(

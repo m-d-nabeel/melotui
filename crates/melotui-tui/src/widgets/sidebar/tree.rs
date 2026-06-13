@@ -17,20 +17,14 @@ use ratatui::{
 use std::collections::HashSet;
 use unicode_width::UnicodeWidthStr;
 
-use crate::theme::Theme;
 use crate::widgets::sidebar::generate_marquee_delayed;
-
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let nav = state.library_nav();
     let total_rows = get_row_count(&state.library, nav);
     let is_active = state.is_library_focused();
 
-    let t = theme();
+    let t = crate::theme::get_theme(state);
     let border_style = if is_active {
         Style::default().fg(t.border_active)
     } else {
@@ -149,7 +143,18 @@ fn render_row(
 
     let is_ancestor = active_ancestors.contains(&row.id);
 
-    let t = theme();
+    let t = crate::theme::get_theme(state);
+
+    // Semantic depth mapping for normal unselected rows
+    let base_color = if matches!(row.id, SidebarNodeId::Track { .. }) {
+        t.fg_tree_file
+    } else {
+        match row.level {
+            0 => t.fg_tree_root,
+            1 => t.fg_tree_folder,
+            _ => t.fg_tree_subfolder,
+        }
+    };
 
     // color logic
     let row_color = if is_playing_track {
@@ -159,7 +164,7 @@ fn render_row(
     } else if is_selected {
         t.fg_primary
     } else {
-        t.fg_secondary
+        base_color
     };
 
     // icon styles
@@ -174,6 +179,7 @@ fn render_row(
             | SidebarNodeId::Album(_)
             | SidebarNodeId::Genre(_)
             | SidebarNodeId::Year(_) => Style::default().fg(t.icon_category),
+            SidebarNodeId::Track { .. } => Style::default().fg(base_color),
             _ => Style::default().fg(t.fg_secondary),
         }
     } else {
@@ -193,7 +199,7 @@ fn render_row(
 
     // text styles
     let mut text_style = Style::default().fg(row_color);
-    if is_playing_track || is_selected {
+    if is_playing_track || is_selected || row.level == 0 {
         text_style = text_style.add_modifier(Modifier::BOLD);
     }
 

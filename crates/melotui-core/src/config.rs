@@ -24,6 +24,8 @@ pub struct AppConfig {
     pub ui: UiConfig,
     pub library: LibraryConfig,
     pub audio: AudioConfig,
+    #[serde(skip)]
+    pub theme_overrides: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -33,6 +35,8 @@ pub struct UiConfig {
     pub sidebar_width: u16,
     /// Scroll offset — lines to keep visible above/below cursor
     pub scrolloff: usize,
+    /// Color theme ID (e.g. "catppuccin_mocha", "dracula")
+    pub theme: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -64,6 +68,7 @@ impl Default for UiConfig {
         Self {
             sidebar_width: 28,
             scrolloff: 8,
+            theme: "catppuccin_mocha".to_string(),
         }
     }
 }
@@ -91,8 +96,10 @@ impl AppConfig {
 
         match std::fs::read_to_string(&path) {
             Ok(contents) => match toml::from_str::<AppConfig>(&contents) {
-                Ok(config) => {
+                Ok(mut config) => {
                     tracing::info!("Loaded config from {:?}", path);
+                    // Attempt to load external theme
+                    config.load_external_theme();
                     config.validated()
                 }
                 Err(e) => {
@@ -107,7 +114,31 @@ impl AppConfig {
         }
     }
 
-    /// Validate and clamp config values to valid ranges.
+    fn load_external_theme(&mut self) {
+        let theme_name = &self.ui.theme;
+        if theme_name == "default" || theme_name == "catppuccin_mocha" {
+            return; // Use embedded default
+        }
+
+        if let Some(mut theme_path) = dirs::config_dir() {
+            theme_path.push("melotui");
+            theme_path.push("themes");
+            theme_path.push(format!("{}.toml", theme_name));
+
+            if let Ok(contents) = std::fs::read_to_string(&theme_path) {
+                if let Ok(overrides) = toml::from_str(&contents) {
+                    self.theme_overrides = overrides;
+                    tracing::info!("Loaded theme overrides from {:?}", theme_path);
+                } else {
+                    tracing::warn!("Failed to parse theme file {:?}", theme_path);
+                }
+            } else {
+                tracing::warn!("Theme file not found: {:?}", theme_path);
+            }
+        }
+    }
+
+    /// Run simple validation, capping or normalizing values. to valid ranges.
     fn validated(mut self) -> Self {
         self.ui.sidebar_width = self.ui.sidebar_width.clamp(28, 80);
         self.ui.scrolloff = self.ui.scrolloff.clamp(0, 20);
