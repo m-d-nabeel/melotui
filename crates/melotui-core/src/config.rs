@@ -26,6 +26,9 @@ pub struct AppConfig {
     pub audio: AudioConfig,
     #[serde(skip)]
     pub theme_overrides: std::collections::HashMap<String, String>,
+    #[serde(skip)]
+    pub keymap_overrides:
+        std::collections::HashMap<String, std::collections::HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -100,6 +103,7 @@ impl AppConfig {
                     tracing::info!("Loaded config from {:?}", path);
                     // Attempt to load external theme
                     config.load_external_theme();
+                    config.load_external_keymaps();
                     config.validated()
                 }
                 Err(e) => {
@@ -134,6 +138,22 @@ impl AppConfig {
                 }
             } else {
                 tracing::warn!("Theme file not found: {:?}", theme_path);
+            }
+        }
+    }
+
+    fn load_external_keymaps(&mut self) {
+        if let Some(mut keymaps_path) = dirs::config_dir() {
+            keymaps_path.push("melotui");
+            keymaps_path.push("keymaps.toml");
+
+            if let Ok(contents) = std::fs::read_to_string(&keymaps_path) {
+                if let Ok(overrides) = toml::from_str(&contents) {
+                    self.keymap_overrides = overrides;
+                    tracing::info!("Loaded keymap overrides from {:?}", keymaps_path);
+                } else {
+                    tracing::warn!("Failed to parse keymaps file {:?}", keymaps_path);
+                }
             }
         }
     }

@@ -1,6 +1,7 @@
 pub mod art_converter;
 mod image_cache;
 mod input;
+pub mod key_parser;
 pub mod keybinding;
 pub mod theme;
 mod tui;

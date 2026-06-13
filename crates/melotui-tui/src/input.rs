@@ -1,5 +1,4 @@
 use ratatui::crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
-use std::sync::OnceLock;
 use tui_input::backend::crossterm::to_input_request;
 
 use crate::keybinding::{KeyAction, KeyContext, KeyRegistry};
@@ -13,15 +12,9 @@ use melotui_core::{
     state::UIMode,
 };
 
-static REGISTRY: OnceLock<KeyRegistry> = OnceLock::new();
-
 pub struct InputHandler;
 
 impl InputHandler {
-    pub fn get_registry() -> &'static KeyRegistry {
-        REGISTRY.get_or_init(KeyRegistry::default)
-    }
-
     fn get_active_contexts(state: &AppState) -> Vec<KeyContext> {
         let mut contexts = Vec::with_capacity(3);
 
@@ -64,12 +57,11 @@ impl InputHandler {
         contexts
     }
 
-    pub fn handle(key: KeyEvent, state: &AppState) -> Option<AppMsg> {
+    pub fn handle(key: KeyEvent, state: &AppState, registry: &KeyRegistry) -> Option<AppMsg> {
         if key.kind == KeyEventKind::Release {
             return None;
         }
 
-        let registry = Self::get_registry();
         let contexts = Self::get_active_contexts(state);
 
         let mut action = None;
@@ -103,7 +95,7 @@ impl InputHandler {
 
         match act {
             // play selected or toggle expand
-            KeyAction::ToggleTreeExpand => {
+            KeyAction::Interact => {
                 if state.is_library_focused() {
                     if state.get_selected_track_id_in_sidebar().is_some() {
                         Some(AppMsg::Playback(PlaybackMsg::RequestPlaySelected))
@@ -221,7 +213,8 @@ mod tests {
 
         // When help is shown, escape or 'q' closes it
         let esc_key = KeyEvent::new(KeyCode::Esc, KeyModifiers::empty());
-        let msg = InputHandler::handle(esc_key, &state);
+        let registry = crate::keybinding::KeyRegistry::default();
+        let msg = InputHandler::handle(esc_key, &state, &registry);
 
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::CloseHelp))));
     }
@@ -232,14 +225,16 @@ mod tests {
         reduce(&mut state, AppMsg::UI(UIMsg::EnterCommandMode));
 
         let char_key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::empty());
-        let msg = InputHandler::handle(char_key, &state);
+        let registry = crate::keybinding::KeyRegistry::default();
+        let msg = InputHandler::handle(char_key, &state, &registry);
 
         // Should dispatch as CommandInput
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::CommandInput(_)))));
 
         // Submit command on Enter
         let enter_key = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
-        let msg = InputHandler::handle(enter_key, &state);
+        let registry = crate::keybinding::KeyRegistry::default();
+        let msg = InputHandler::handle(enter_key, &state, &registry);
 
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::SubmitCommand(_)))));
     }
@@ -289,7 +284,8 @@ mod tests {
 
         // Typing updates query
         let char_key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::empty());
-        let msg = InputHandler::handle(char_key, &state);
+        let registry = crate::keybinding::KeyRegistry::default();
+        let msg = InputHandler::handle(char_key, &state, &registry);
 
         assert!(matches!(
             msg,
@@ -298,7 +294,8 @@ mod tests {
 
         // Enter submits picker
         let enter_key = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
-        let msg = InputHandler::handle(enter_key, &state);
+        let registry = crate::keybinding::KeyRegistry::default();
+        let msg = InputHandler::handle(enter_key, &state, &registry);
 
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::SubmitPlaylistPicker))));
     }
@@ -308,7 +305,8 @@ mod tests {
         let state = test_state();
 
         let space_key = KeyEvent::new(KeyCode::Char(' '), KeyModifiers::empty());
-        let msg = InputHandler::handle(space_key, &state);
+        let registry = crate::keybinding::KeyRegistry::default();
+        let msg = InputHandler::handle(space_key, &state, &registry);
 
         assert!(matches!(
             msg,

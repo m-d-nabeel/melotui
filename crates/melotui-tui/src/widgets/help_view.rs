@@ -1,4 +1,3 @@
-use crate::input::InputHandler;
 use crate::keybinding::{KeyBinding, KeyContext};
 use crate::theme::Theme;
 use ratatui::{
@@ -9,7 +8,12 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
 };
 
-pub fn draw(frame: &mut Frame, area: Rect, state: &melotui_core::AppState) {
+pub fn draw(
+    frame: &mut Frame,
+    area: Rect,
+    state: &melotui_core::AppState,
+    registry: &crate::keybinding::KeyRegistry,
+) {
     // help screen area
     let help_area = centered_rect(90, 90, area);
 
@@ -43,7 +47,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &melotui_core::AppState) {
     frame.render_widget(block, help_area);
 
     // Responsive column count based on width
-    let registry = InputHandler::get_registry();
     let col_count = if inner.width < 100 {
         2
     } else if inner.width < 160 {

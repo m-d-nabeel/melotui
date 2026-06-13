@@ -19,7 +19,12 @@ use crate::{
 const MIN_WIDTH: u16 = 60;
 const MIN_HEIGHT: u16 = 10;
 
-pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
+pub fn draw(
+    frame: &mut Frame,
+    state: &AppState,
+    image_cache: &mut ImageCache,
+    registry: &crate::keybinding::KeyRegistry,
+) {
     let area = frame.area();
 
     // Minimum terminal size guard
@@ -37,7 +42,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
     }
 
     // Overlays render on top regardless of focus mode
-    draw_overlays(frame, area, state);
+    draw_overlays(frame, area, state, registry);
 }
 
 /// Full layout: sidebar + visualizer + mixer + playback
@@ -105,7 +110,12 @@ fn draw_viz_playback(
 }
 
 /// Overlays: command bar, playlist picker, confirm dialog, help, notifications
-fn draw_overlays(frame: &mut Frame, area: Rect, state: &AppState) {
+fn draw_overlays(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    registry: &crate::keybinding::KeyRegistry,
+) {
     notification_popup::draw(frame, frame.area(), state);
 
     // Shared dim overlay — uses a dark background that works on all terminals
@@ -134,7 +144,7 @@ fn draw_overlays(frame: &mut Frame, area: Rect, state: &AppState) {
 
     if state.ui_show_help() {
         frame.render_widget(dim_block, area);
-        help_view::draw(frame, area, state);
+        help_view::draw(frame, area, state, registry);
     }
 }
 
@@ -183,7 +193,8 @@ mod tests {
 
         terminal
             .draw(|f| {
-                draw(f, &state, &mut image_cache);
+                let registry = crate::keybinding::KeyRegistry::default();
+                draw(f, &state, &mut image_cache, &registry);
             })
             .unwrap();
 
@@ -212,7 +223,8 @@ mod tests {
 
         terminal
             .draw(|f| {
-                draw(f, &state, &mut image_cache);
+                let registry = crate::keybinding::KeyRegistry::default();
+                draw(f, &state, &mut image_cache, &registry);
             })
             .unwrap();
 

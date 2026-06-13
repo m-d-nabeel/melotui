@@ -22,10 +22,11 @@ pub enum UIEvent {
 pub struct Tui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     pub image_cache: ImageCache,
+    pub key_registry: crate::keybinding::KeyRegistry,
 }
 
 impl Tui {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new(config: &melotui_core::config::AppConfig) -> anyhow::Result<Self> {
         enable_raw_mode()?;
         execute!(stdout(), EnterAlternateScreen, cursor::Hide)?;
         let backend = CrosstermBackend::new(stdout());
@@ -33,16 +34,20 @@ impl Tui {
 
         tracing::info!("TUI initialized");
 
+        let mut key_registry = crate::keybinding::KeyRegistry::default();
+        key_registry.apply_overrides(&config.keymap_overrides);
+
         Ok(Self {
             terminal,
             image_cache: ImageCache::new(),
+            key_registry,
         })
     }
 
     pub fn draw(&mut self, state: &AppState) -> anyhow::Result<()> {
         self.terminal.draw(|frame| {
             self.image_cache.update(state);
-            view::draw(frame, state, &mut self.image_cache);
+            view::draw(frame, state, &mut self.image_cache, &self.key_registry);
         })?;
         Ok(())
     }
@@ -70,7 +75,7 @@ impl Tui {
 
         while event::poll(current_timeout)? {
             let msg = match event::read()? {
-                Event::Key(key) => InputHandler::handle(key, state),
+                Event::Key(key) => InputHandler::handle(key, state, &self.key_registry),
                 Event::Resize(w, h) => Some(AppMsg::UI(UIMsg::Resize(w, h))),
                 _ => None,
             };

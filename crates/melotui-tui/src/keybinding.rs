@@ -37,7 +37,8 @@ pub enum KeyAction {
     ToggleVisualizer,
     MoveUp,
     MoveDown,
-    ToggleTreeExpand,
+    Interact,
+    ToggleFolderExpand,
     ShowTrackInfo,
     HideTrackInfo,
 
@@ -117,9 +118,10 @@ impl KeyAction {
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
             KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
             KeyAction::ToggleVisualizer => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
-            KeyAction::ToggleTreeExpand => {
+            KeyAction::ToggleFolderExpand => {
                 Some(AppMsg::Navigation(NavigationMsg::ToggleTreeExpand))
             }
+            KeyAction::Interact => None, // handled in input.rs
             KeyAction::ShowTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
             KeyAction::HideTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
 
@@ -203,9 +205,72 @@ impl KeyBinding {
 }
 
 // key binding registry
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct KeyRegistry {
     pub bindings: HashMap<KeyContext, Vec<KeyBinding>>,
+}
+
+impl KeyRegistry {
+    pub fn apply_overrides(&mut self, overrides: &HashMap<String, HashMap<String, String>>) {
+        use crate::key_parser::parse_key;
+
+        for (ctx_str, maps) in overrides {
+            let ctx = match ctx_str.to_lowercase().as_str() {
+                "help" => KeyContext::Help,
+                "command" => KeyContext::CommandMode,
+                "library" => KeyContext::Library,
+                "queue" => KeyContext::Queue,
+                "trackinfo" => KeyContext::TrackInfo,
+                "playlist" | "playlistpicker" => KeyContext::PlaylistPicker,
+                "confirm" => KeyContext::Confirm,
+                "global" => KeyContext::Global,
+                _ => {
+                    tracing::warn!("Unknown keymap context: {}", ctx_str);
+                    continue;
+                }
+            };
+
+            // Remove any existing bindings that map to the overridden keys
+            // to allow silent overrides.
+            for (key_str, action_str) in maps {
+                if let Ok((code, mods)) = parse_key(key_str) {
+                    let toml_doc = format!("action = \"{}\"", action_str);
+                    if let Ok(mut wrapper) =
+                        toml::from_str::<std::collections::HashMap<String, KeyAction>>(&toml_doc)
+                    {
+                        if let Some(action) = wrapper.remove("action") {
+                            // Remove default bindings with the exact same key to avoid double-trigger
+                            if let Some(ctx_bindings) = self.bindings.get_mut(&ctx) {
+                                ctx_bindings.retain(|b| !(b.key == code && b.modifiers == mods));
+                                ctx_bindings.push(KeyBinding {
+                                    key: code,
+                                    modifiers: mods,
+                                    action,
+                                    desc: "User Custom",
+                                });
+                            } else {
+                                self.bindings.insert(
+                                    ctx,
+                                    vec![KeyBinding {
+                                        key: code,
+                                        modifiers: mods,
+                                        action,
+                                        desc: "User Custom",
+                                    }],
+                                );
+                            }
+                        } else {
+                            tracing::error!("Unknown action '{}'", action_str);
+                        }
+                    } else {
+                        tracing::error!("Failed to parse action '{}'", action_str);
+                    }
+                } else {
+                    tracing::error!("Invalid key sequence '{}'", key_str);
+                }
+            }
+        }
+    }
 }
 
 impl Default for KeyRegistry {
@@ -255,7 +320,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Enter, KeyAction::ToggleTreeExpand, "Expand"),
+                KeyBinding::new(KeyCode::Enter, KeyAction::Interact, "Expand"),
                 KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
                 KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
                 KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue, "Add Queue"),
@@ -320,7 +385,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Enter, KeyAction::ToggleTreeExpand, "Expand"),
+                KeyBinding::new(KeyCode::Enter, KeyAction::Interact, "Expand"),
                 KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
                 KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::RemoveFromQueue, "Remove"),
@@ -385,5 +450,73 @@ impl Default for KeyRegistry {
         );
 
         Self { bindings }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_apply_overrides_conflict_resolution() {
+        let mut registry = KeyRegistry::default();
+
+        // Validate the default state: <Space> maps to PlayPause in Global
+        let global_bindings = registry.bindings.get(&KeyContext::Global).unwrap();
+        let space_binding = global_bindings
+            .iter()
+            .find(|b| b.key == KeyCode::Char(' '))
+            .unwrap();
+        assert_eq!(space_binding.action, KeyAction::PlayPause);
+
+        // Simulate reading ~/.config/melotui/keymaps.toml
+        // [global]
+        // "<Space>" = "ToggleVisualizer"
+        // "x" = "Quit"
+        let mut global_map = HashMap::new();
+        global_map.insert("<Space>".to_string(), "ToggleVisualizer".to_string());
+        global_map.insert("x".to_string(), "Quit".to_string());
+
+        let mut overrides = HashMap::new();
+        overrides.insert("global".to_string(), global_map);
+
+        // Apply overrides
+        registry.apply_overrides(&overrides);
+
+        // Validate the new state
+        let new_global = registry.bindings.get(&KeyContext::Global).unwrap();
+
+        // 1. Ensure <Space> now maps to ToggleVisualizer, and the old PlayPause mapping on Space is DEAD.
+        let space_bindings: Vec<_> = new_global
+            .iter()
+            .filter(|b| b.key == KeyCode::Char(' '))
+            .collect();
+        assert_eq!(
+            space_bindings.len(),
+            1,
+            "There should only be one action bound to space to prevent double triggers"
+        );
+        assert_eq!(space_bindings[0].action, KeyAction::ToggleVisualizer);
+
+        // 2. Ensure 'x' now maps to Quit.
+        // Wait, 'x' was mapped to Stop by default! The default Stop on 'x' should be erased.
+        let x_bindings: Vec<_> = new_global
+            .iter()
+            .filter(|b| b.key == KeyCode::Char('x'))
+            .collect();
+        assert_eq!(
+            x_bindings.len(),
+            1,
+            "The default 'x' binding should be wiped out"
+        );
+        assert_eq!(x_bindings[0].action, KeyAction::Quit);
+
+        // 3. Ensure an unaffected binding like 'c' (CycleRepeat) is still intact
+        let c_binding = new_global
+            .iter()
+            .find(|b| b.key == KeyCode::Char('c'))
+            .unwrap();
+        assert_eq!(c_binding.action, KeyAction::CycleRepeat);
     }
 }

@@ -27,7 +27,7 @@ pub fn run() -> Result<()> {
     let library = Library::new(music_roots.clone(), vec![], HashMap::new());
 
     let mut state = AppState::new(library, &config);
-    let mut tui = Tui::new()?;
+    let mut tui = Tui::new(&config)?;
     let (producer, consumer) = spectrum_bridge::create_bridge();
     state.spectrum_source = Box::new(consumer);
 
