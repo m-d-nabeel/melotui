@@ -365,7 +365,25 @@ impl AppState {
     }
 
     pub fn set_notification(&mut self, kind: NotificationKind, message: impl Into<String>) {
+        if let Some(current) = &self.session.notification.current
+            && kind.priority() < current.kind.priority() {
+                return; // Do not overwrite higher priority notifications
+            }
         self.session.notification.current = Some(Notification::new(kind, message));
+    }
+
+    pub fn set_notification_with_duration(
+        &mut self,
+        kind: NotificationKind,
+        message: impl Into<String>,
+        duration_secs: u64,
+    ) {
+        if let Some(current) = &self.session.notification.current
+            && kind.priority() < current.kind.priority() {
+                return; // Do not overwrite higher priority notifications
+            }
+        self.session.notification.current =
+            Some(Notification::new(kind, message).with_duration(duration_secs));
     }
 
     pub fn clear_current_notification(&mut self) {

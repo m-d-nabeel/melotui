@@ -29,6 +29,8 @@ pub struct AppConfig {
     #[serde(skip)]
     pub keymap_overrides:
         std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    #[serde(skip)]
+    pub startup_errors: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,12 +110,19 @@ impl AppConfig {
                 }
                 Err(e) => {
                     tracing::warn!("Failed to parse config {:?}: {}", path, e);
-                    Self::default()
+                    let mut config = Self::default();
+                    config.startup_errors.push(format!("Config Error: {}", e));
+                    config.load_external_theme();
+                    config.load_external_keymaps();
+                    config.validated()
                 }
             },
             Err(_) => {
                 tracing::debug!("No config file at {:?}, using defaults", path);
-                Self::default()
+                let mut config = Self::default();
+                config.load_external_theme();
+                config.load_external_keymaps();
+                config.validated()
             }
         }
     }
@@ -133,8 +142,12 @@ impl AppConfig {
                 if let Ok(overrides) = toml::from_str(&contents) {
                     self.theme_overrides = overrides;
                     tracing::info!("Loaded theme overrides from {:?}", theme_path);
-                } else {
-                    tracing::warn!("Failed to parse theme file {:?}", theme_path);
+                } else if let Err(e) =
+                    toml::from_str::<std::collections::HashMap<String, String>>(&contents)
+                {
+                    let err_msg = format!("Failed to parse theme file {:?}: {}", theme_path, e);
+                    tracing::warn!("{}", err_msg);
+                    self.startup_errors.push(err_msg);
                 }
             } else {
                 tracing::warn!("Theme file not found: {:?}", theme_path);
@@ -151,8 +164,13 @@ impl AppConfig {
                 if let Ok(overrides) = toml::from_str(&contents) {
                     self.keymap_overrides = overrides;
                     tracing::info!("Loaded keymap overrides from {:?}", keymaps_path);
-                } else {
-                    tracing::warn!("Failed to parse keymaps file {:?}", keymaps_path);
+                } else if let Err(e) = toml::from_str::<
+                    std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+                >(&contents)
+                {
+                    let err_msg = format!("Failed to parse keymaps file {:?}: {}", keymaps_path, e);
+                    tracing::warn!("{}", err_msg);
+                    self.startup_errors.push(err_msg);
                 }
             }
         }

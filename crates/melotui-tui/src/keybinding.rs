@@ -211,7 +211,11 @@ pub struct KeyRegistry {
 }
 
 impl KeyRegistry {
-    pub fn apply_overrides(&mut self, overrides: &HashMap<String, HashMap<String, String>>) {
+    pub fn apply_overrides(
+        &mut self,
+        overrides: &HashMap<String, HashMap<String, String>>,
+    ) -> Vec<String> {
+        let mut errors = Vec::new();
         use crate::key_parser::parse_key;
 
         for (ctx_str, maps) in overrides {
@@ -225,7 +229,9 @@ impl KeyRegistry {
                 "confirm" => KeyContext::Confirm,
                 "global" => KeyContext::Global,
                 _ => {
-                    tracing::warn!("Unknown keymap context: {}", ctx_str);
+                    let err = format!("Unknown keymap context: {}", ctx_str);
+                    tracing::warn!("{}", err);
+                    errors.push(err);
                     continue;
                 }
             };
@@ -260,16 +266,23 @@ impl KeyRegistry {
                                 );
                             }
                         } else {
-                            tracing::error!("Unknown action '{}'", action_str);
+                            let err = format!("Unknown action '{}'", action_str);
+                            tracing::error!("{}", err);
+                            errors.push(err);
                         }
                     } else {
-                        tracing::error!("Failed to parse action '{}'", action_str);
+                        let err = format!("Failed to parse action '{}'", action_str);
+                        tracing::error!("{}", err);
+                        errors.push(err);
                     }
                 } else {
-                    tracing::error!("Invalid key sequence '{}'", key_str);
+                    let err = format!("Invalid key sequence '{}'", key_str);
+                    tracing::error!("{}", err);
+                    errors.push(err);
                 }
             }
         }
+        errors
     }
 }
 
@@ -324,11 +337,11 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
                 KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
                 KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue, "Add Queue"),
-                KeyBinding::new(KeyCode::Char('A'), KeyAction::QueuePlayNext, "Play Next")
+                KeyBinding::new(KeyCode::Char('a'), KeyAction::QueuePlayNext, "Play Next")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('f'), KeyAction::ToggleFavorite, "Favorite"),
                 KeyBinding::new(KeyCode::Char('n'), KeyAction::SearchNext, "Next Match"),
-                KeyBinding::new(KeyCode::Char('N'), KeyAction::SearchPrev, "Prev Match")
+                KeyBinding::new(KeyCode::Char('n'), KeyAction::SearchPrev, "Prev Match")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(
                     KeyCode::Char('p'),
@@ -336,13 +349,13 @@ impl Default for KeyRegistry {
                     "Add to Playlist",
                 ),
                 KeyBinding::new(
-                    KeyCode::Char('P'),
+                    KeyCode::Char('p'),
                     KeyAction::RemoveFromPlaylist,
                     "Remove from Playlist",
                 )
                 .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(
-                    KeyCode::Char('D'),
+                    KeyCode::Char('d'),
                     KeyAction::DeletePlaylist,
                     "Delete Playlist",
                 )
@@ -390,7 +403,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::RemoveFromQueue, "Remove"),
                 KeyBinding::new(KeyCode::Delete, KeyAction::RemoveFromQueue, "Remove"),
-                KeyBinding::new(KeyCode::Char('D'), KeyAction::ClearQueue, "Clear All")
+                KeyBinding::new(KeyCode::Char('d'), KeyAction::ClearQueue, "Clear All")
                     .with_mod(KeyModifiers::SHIFT),
             ],
         );
@@ -413,33 +426,30 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer, "Visualizer")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward, "Seek -5s"),
-                KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward, "Seek -5s")
-                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward, "Seek -5s"),
                 KeyBinding::new(KeyCode::Char('.'), KeyAction::SeekForward, "Seek +5s"),
-                KeyBinding::new(KeyCode::Char('>'), KeyAction::SeekForward, "Seek +5s")
-                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('>'), KeyAction::SeekForward, "Seek +5s"),
                 KeyBinding::new(KeyCode::Esc, KeyAction::CancelDownload, "Cancel DL"),
                 KeyBinding::new(KeyCode::Char('+'), KeyAction::VolUp, "Vol+"),
                 KeyBinding::new(KeyCode::Char('='), KeyAction::VolUp, "Vol+"),
                 KeyBinding::new(KeyCode::Char('-'), KeyAction::VolDown, "Vol-"),
-                KeyBinding::new(KeyCode::Char('_'), KeyAction::VolDown, "Vol-")
-                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('_'), KeyAction::VolDown, "Vol-"),
                 KeyBinding::new(KeyCode::Char('z'), KeyAction::ToggleShuffle, "Shuffle"),
                 KeyBinding::new(KeyCode::Char('c'), KeyAction::CycleRepeat, "Repeat"),
                 KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedUp, "Speed+"),
-                KeyBinding::new(KeyCode::Char('S'), KeyAction::SpeedDown, "Speed-")
+                KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedDown, "Speed-")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('b'), KeyAction::BassUp, "Bass+"),
-                KeyBinding::new(KeyCode::Char('B'), KeyAction::BassDown, "Bass-")
+                KeyBinding::new(KeyCode::Char('b'), KeyAction::BassDown, "Bass-")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('t'), KeyAction::TrebleUp, "Treble+"),
-                KeyBinding::new(KeyCode::Char('T'), KeyAction::TrebleDown, "Treble-")
+                KeyBinding::new(KeyCode::Char('t'), KeyAction::TrebleDown, "Treble-")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::ReverbUp, "Reverb+"),
-                KeyBinding::new(KeyCode::Char('R'), KeyAction::ReverbDown, "Reverb-")
+                KeyBinding::new(KeyCode::Char('r'), KeyAction::ReverbDown, "Reverb-")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoUp, "Echo+"),
-                KeyBinding::new(KeyCode::Char('E'), KeyAction::EchoDown, "Echo-")
+                KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoDown, "Echo-")
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::F(1), KeyAction::CycleFocusMode, "Focus Mode"),
                 KeyBinding::new(KeyCode::Char('h'), KeyAction::ShrinkSidebar, "Sidebar-")
@@ -518,5 +528,52 @@ mod tests {
             .find(|b| b.key == KeyCode::Char('c'))
             .unwrap();
         assert_eq!(c_binding.action, KeyAction::CycleRepeat);
+    }
+
+    #[test]
+    fn test_apply_overrides_shifted_symbols() {
+        let mut registry = KeyRegistry::default();
+
+        let mut global_map = HashMap::new();
+        global_map.insert("<S-.>".to_string(), "SeekForward".to_string());
+        global_map.insert("<S-,>".to_string(), "SeekBackward".to_string());
+        global_map.insert(".".to_string(), "SeekForward".to_string());
+        global_map.insert(",".to_string(), "SeekBackward".to_string());
+
+        let mut overrides = HashMap::new();
+        overrides.insert("global".to_string(), global_map);
+
+        registry.apply_overrides(&overrides);
+        let new_global = registry.bindings.get(&KeyContext::Global).unwrap();
+
+        // Check if raw `.` and `,` are successfully mapped to SeekForward / SeekBackward
+        let dot_bindings: Vec<_> = new_global
+            .iter()
+            .filter(|b| b.key == KeyCode::Char('.') && b.modifiers.is_empty())
+            .collect();
+        assert_eq!(dot_bindings.len(), 1);
+        assert_eq!(dot_bindings[0].action, KeyAction::SeekForward);
+
+        let comma_bindings: Vec<_> = new_global
+            .iter()
+            .filter(|b| b.key == KeyCode::Char(',') && b.modifiers.is_empty())
+            .collect();
+        assert_eq!(comma_bindings.len(), 1);
+        assert_eq!(comma_bindings[0].action, KeyAction::SeekBackward);
+
+        // Check if shifted `<S-.>` and `<S-,>` are successfully mapped
+        let s_dot_bindings: Vec<_> = new_global
+            .iter()
+            .filter(|b| b.key == KeyCode::Char('.') && b.modifiers.contains(KeyModifiers::SHIFT))
+            .collect();
+        assert_eq!(s_dot_bindings.len(), 1);
+        assert_eq!(s_dot_bindings[0].action, KeyAction::SeekForward);
+
+        let s_comma_bindings: Vec<_> = new_global
+            .iter()
+            .filter(|b| b.key == KeyCode::Char(',') && b.modifiers.contains(KeyModifiers::SHIFT))
+            .collect();
+        assert_eq!(s_comma_bindings.len(), 1);
+        assert_eq!(s_comma_bindings[0].action, KeyAction::SeekBackward);
     }
 }

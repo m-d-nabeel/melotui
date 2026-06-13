@@ -26,7 +26,7 @@ pub struct Tui {
 }
 
 impl Tui {
-    pub fn new(config: &melotui_core::config::AppConfig) -> anyhow::Result<Self> {
+    pub fn new(config: &melotui_core::config::AppConfig) -> anyhow::Result<(Self, Vec<String>)> {
         enable_raw_mode()?;
         execute!(stdout(), EnterAlternateScreen, cursor::Hide)?;
         let backend = CrosstermBackend::new(stdout());
@@ -35,13 +35,16 @@ impl Tui {
         tracing::info!("TUI initialized");
 
         let mut key_registry = crate::keybinding::KeyRegistry::default();
-        key_registry.apply_overrides(&config.keymap_overrides);
+        let errors = key_registry.apply_overrides(&config.keymap_overrides);
 
-        Ok(Self {
-            terminal,
-            image_cache: ImageCache::new(),
-            key_registry,
-        })
+        Ok((
+            Self {
+                terminal,
+                image_cache: ImageCache::new(),
+                key_registry,
+            },
+            errors,
+        ))
     }
 
     pub fn draw(&mut self, state: &AppState) -> anyhow::Result<()> {

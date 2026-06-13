@@ -27,7 +27,7 @@ pub fn run() -> Result<()> {
     let library = Library::new(music_roots.clone(), vec![], HashMap::new());
 
     let mut state = AppState::new(library, &config);
-    let mut tui = Tui::new(&config)?;
+    let (mut tui, keymap_errors) = Tui::new(&config)?;
     let (producer, consumer) = spectrum_bridge::create_bridge();
     state.spectrum_source = Box::new(consumer);
 
@@ -38,7 +38,21 @@ pub fn run() -> Result<()> {
 
     // request async library load
     engine.load_library(music_roots.clone());
-    state.set_notification(NotificationKind::Info, "Loading library...");
+
+    // Aggregate startup errors
+    let mut startup_errors = config.startup_errors.clone();
+    startup_errors.extend(keymap_errors);
+
+    if !startup_errors.is_empty() {
+        let msg = format!(
+            "Config Errors ({}). Check logs for details: {}",
+            startup_errors.len(),
+            startup_errors[0]
+        );
+        state.set_notification_with_duration(NotificationKind::Error, msg, 7);
+    } else {
+        state.set_notification(NotificationKind::Info, "Loading library...");
+    }
 
     let mut runtime = RuntimeContext {
         engine,

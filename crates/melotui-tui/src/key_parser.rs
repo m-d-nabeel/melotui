@@ -27,21 +27,37 @@ pub fn parse_key(s: &str) -> Result<(KeyCode, KeyModifiers), String> {
     if s.starts_with('<') && s.ends_with('>') {
         let inner = &s[1..s.len() - 1];
         let mut modifiers = KeyModifiers::empty();
-        let mut parts: Vec<&str> = inner.split('-').collect();
 
-        let key_part = parts.pop().ok_or("Empty key brackets")?;
+        let key_part;
+        let mods_part;
 
-        for modifier in parts {
-            match modifier.to_lowercase().as_str() {
-                "c" | "ctrl" => modifiers.insert(KeyModifiers::CONTROL),
-                "s" | "shift" => modifiers.insert(KeyModifiers::SHIFT),
-                "a" | "alt" | "m" | "meta" => modifiers.insert(KeyModifiers::ALT),
-                _ => return Err(format!("Unknown modifier: {}", modifier)),
+        // Correctly isolate the keycode from the modifiers right-to-left
+        if inner.ends_with('-') && inner.len() > 1 {
+            // E.g. "C--" -> key is "-", modifiers are "C"
+            key_part = "-";
+            mods_part = &inner[..inner.len() - 2];
+        } else if let Some(last_hyphen) = inner.rfind('-') {
+            key_part = &inner[last_hyphen + 1..];
+            mods_part = &inner[..last_hyphen];
+        } else {
+            key_part = inner;
+            mods_part = "";
+        }
+
+        if !mods_part.is_empty() {
+            for modifier in mods_part.split('-') {
+                match modifier.to_lowercase().as_str() {
+                    "c" | "ctrl" => modifiers.insert(KeyModifiers::CONTROL),
+                    "s" | "shift" => modifiers.insert(KeyModifiers::SHIFT),
+                    "a" | "alt" | "m" | "meta" => modifiers.insert(KeyModifiers::ALT),
+                    _ => return Err(format!("Unknown modifier: {}", modifier)),
+                }
             }
         }
 
         let code = parse_keycode(key_part)?;
-        // Auto apply shift for capital letters
+
+        // Auto apply shift conversions strictly for ASCII letters
         if let KeyCode::Char(c) = code
             && c.is_ascii_uppercase()
         {
@@ -87,5 +103,72 @@ fn parse_keycode(s: &str) -> Result<KeyCode, String> {
                 Err(format!("Unknown key code: {}", s))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_key() {
+        // Basic letters
+        assert_eq!(
+            parse_key("j"),
+            Ok((KeyCode::Char('j'), KeyModifiers::empty()))
+        );
+        assert_eq!(
+            parse_key("J"),
+            Ok((KeyCode::Char('j'), KeyModifiers::SHIFT))
+        );
+
+        // Modifiers with letters
+        assert_eq!(
+            parse_key("<C-c>"),
+            Ok((KeyCode::Char('c'), KeyModifiers::CONTROL))
+        );
+        assert_eq!(
+            parse_key("<A-Enter>"),
+            Ok((KeyCode::Enter, KeyModifiers::ALT))
+        );
+        assert_eq!(parse_key("<S-Up>"), Ok((KeyCode::Up, KeyModifiers::SHIFT)));
+        assert_eq!(
+            parse_key("<C-Left>"),
+            Ok((KeyCode::Left, KeyModifiers::CONTROL))
+        );
+        assert_eq!(
+            parse_key("<C-S-A-Up>"),
+            Ok((
+                KeyCode::Up,
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT | KeyModifiers::ALT
+            ))
+        );
+
+        // Symbols (Layout agnostic - parses raw values without attempting translation)
+        assert_eq!(
+            parse_key("<S-.>"),
+            Ok((KeyCode::Char('.'), KeyModifiers::SHIFT))
+        );
+        assert_eq!(
+            parse_key("<S-,>"),
+            Ok((KeyCode::Char(','), KeyModifiers::SHIFT))
+        );
+
+        // The minus sign edge case
+        assert_eq!(
+            parse_key("<S-->"),
+            Ok((KeyCode::Char('-'), KeyModifiers::SHIFT))
+        );
+        assert_eq!(
+            parse_key("<C-->"),
+            Ok((KeyCode::Char('-'), KeyModifiers::CONTROL))
+        );
+        assert_eq!(
+            parse_key("<C-S-->"),
+            Ok((
+                KeyCode::Char('-'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT
+            ))
+        );
     }
 }
