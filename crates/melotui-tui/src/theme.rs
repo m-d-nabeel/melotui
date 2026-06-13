@@ -203,3 +203,23 @@ impl Theme {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_apply_overrides() {
+        let mut theme = Theme::default();
+        let mut overrides = HashMap::new();
+        overrides.insert("fg_tree_root".to_string(), "#ff0000".to_string());
+        overrides.insert("bg_selected".to_string(), "#00ff00".to_string());
+        overrides.insert("invalid_color".to_string(), "not_a_color".to_string());
+
+        theme.apply_overrides(&overrides);
+
+        assert_eq!(theme.fg_tree_root, Color::Rgb(255, 0, 0));
+        assert_eq!(theme.bg_selected, Color::Rgb(0, 255, 0));
+    }
+}
