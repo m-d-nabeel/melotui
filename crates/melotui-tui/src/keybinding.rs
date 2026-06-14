@@ -19,6 +19,7 @@ pub enum KeyContext {
     TrackInfo,
     PlaylistPicker,
     Confirm,
+    LyricsSelector,
     Global,
 }
 
@@ -39,6 +40,7 @@ pub enum KeyAction {
     // navigation
     TogglePanel,
     ToggleVisualizer,
+    ToggleLyrics,
     MoveUp,
     MoveDown,
     Interact,
@@ -90,6 +92,14 @@ pub enum KeyAction {
     PlaylistPickerMoveDown,
     PlaylistPickerBackspace,
 
+    // lyrics selector
+    LyricsSelectorUp,
+    LyricsSelectorDown,
+    LyricsSelectorLeft,
+    LyricsSelectorRight,
+    LyricsSelectorSubmit,
+    LyricsSelectorCancel,
+
     // playlist management
     DeletePlaylist,
     RemoveFromPlaylist,
@@ -121,6 +131,7 @@ impl KeyAction {
             KeyAction::CommandHistoryNext => "History Next",
             KeyAction::TogglePanel => "Switch Panel",
             KeyAction::ToggleVisualizer => "Visualizer",
+            KeyAction::ToggleLyrics => "Lyrics",
             KeyAction::MoveUp => "Up",
             KeyAction::MoveDown => "Down",
             KeyAction::Interact => "Play/Open",
@@ -163,6 +174,12 @@ impl KeyAction {
             KeyAction::PlaylistPickerMoveUp => "Up",
             KeyAction::PlaylistPickerMoveDown => "Down",
             KeyAction::PlaylistPickerBackspace => "Backspace",
+            KeyAction::LyricsSelectorUp => "Up",
+            KeyAction::LyricsSelectorDown => "Down",
+            KeyAction::LyricsSelectorLeft => "Left",
+            KeyAction::LyricsSelectorRight => "Right",
+            KeyAction::LyricsSelectorSubmit => "Select",
+            KeyAction::LyricsSelectorCancel => "Cancel",
             KeyAction::DeletePlaylist => "Delete Playlist",
             KeyAction::RemoveFromPlaylist => "Rm from Playlist",
             KeyAction::ConfirmYes => "Confirm",
@@ -188,9 +205,16 @@ impl KeyAction {
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
             KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
             KeyAction::ToggleVisualizer => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
+            KeyAction::ToggleLyrics => Some(AppMsg::UI(UIMsg::ToggleLyrics)),
             KeyAction::ToggleFolderExpand => {
                 Some(AppMsg::Navigation(NavigationMsg::ToggleTreeExpand))
             }
+            KeyAction::LyricsSelectorUp => Some(AppMsg::UI(UIMsg::LyricsSelectorMoveUp)),
+            KeyAction::LyricsSelectorDown => Some(AppMsg::UI(UIMsg::LyricsSelectorMoveDown)),
+            KeyAction::LyricsSelectorLeft => Some(AppMsg::UI(UIMsg::LyricsSelectorMoveLeft)),
+            KeyAction::LyricsSelectorRight => Some(AppMsg::UI(UIMsg::LyricsSelectorMoveRight)),
+            KeyAction::LyricsSelectorSubmit => Some(AppMsg::UI(UIMsg::LyricsSelectorSubmit)),
+            KeyAction::LyricsSelectorCancel => Some(AppMsg::UI(UIMsg::LyricsSelectorCancel)),
             KeyAction::Interact => None, // handled in input.rs
             KeyAction::ShowTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
             KeyAction::HideTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
@@ -468,6 +492,23 @@ impl Default for KeyRegistry {
             ],
         );
 
+        // lyrics selector context
+        bindings.insert(
+            KeyContext::LyricsSelector,
+            vec![
+                KeyBinding::new(KeyCode::Up, KeyAction::LyricsSelectorUp),
+                KeyBinding::new(KeyCode::Char('k'), KeyAction::LyricsSelectorUp),
+                KeyBinding::new(KeyCode::Down, KeyAction::LyricsSelectorDown),
+                KeyBinding::new(KeyCode::Char('j'), KeyAction::LyricsSelectorDown),
+                KeyBinding::new(KeyCode::Left, KeyAction::LyricsSelectorLeft),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::LyricsSelectorLeft),
+                KeyBinding::new(KeyCode::Right, KeyAction::LyricsSelectorRight),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::LyricsSelectorRight),
+                KeyBinding::new(KeyCode::Enter, KeyAction::LyricsSelectorSubmit),
+                KeyBinding::new(KeyCode::Esc, KeyAction::LyricsSelectorCancel),
+            ],
+        );
+
         // global context
         bindings.insert(
             KeyContext::Global,
@@ -484,6 +525,9 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('x'), KeyAction::Stop),
                 KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary),
                 KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer)
+                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::ToggleLyrics),
+                KeyBinding::new(KeyCode::Char('L'), KeyAction::ToggleLyrics)
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward),
                 KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward),

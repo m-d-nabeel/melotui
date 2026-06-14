@@ -80,6 +80,7 @@ pub struct UIState {
     pub confirm_dialog: Option<ConfirmDialog>,
 
     pub show_help: bool,
+    pub show_lyrics: bool,
     pub scrolloff: usize,
     pub terminal_size: (u16, u16),
     pub sidebar_width: u16,
@@ -100,6 +101,7 @@ impl Default for UIState {
             pending_add_track: None,
             confirm_dialog: None,
             show_help: false,
+            show_lyrics: false,
             scrolloff: 8,
             terminal_size: (0, 0),
             sidebar_width: 28,

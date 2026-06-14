@@ -308,6 +308,10 @@ impl AppState {
 
 // visualizer access
 impl AppState {
+    pub fn visualizer_mode(&self) -> &VisualizerMode {
+        &self.session.visualizer_mode
+    }
+
     pub fn should_draw_spectrum(&self) -> bool {
         self.session.visualizer_mode == VisualizerMode::Spectrum
     }
@@ -356,6 +360,22 @@ impl AppState {
 
     pub fn ui_show_help(&self) -> bool {
         self.session.ui.show_help
+    }
+
+    pub fn ui_show_lyrics(&self) -> bool {
+        self.session.ui.show_lyrics
+    }
+
+    pub fn lyrics_data(&self) -> &crate::state::LyricsData {
+        &self.session.lyrics.data
+    }
+
+    pub fn lyrics_search_state(&self) -> Option<&crate::state::lyrics::LyricsSearchState> {
+        self.session.lyrics.search_state.as_ref()
+    }
+
+    pub fn active_lyrics_line_index(&self) -> Option<usize> {
+        self.session.lyrics.active_line_index
     }
 
     pub fn ui_command_buffer(&self) -> &tui_input::Input {

@@ -19,6 +19,16 @@ pub enum IpcEvent {
     DownloadFailed {
         error: String,
     },
+    LyricsFetched {
+        save_path: std::path::PathBuf,
+    },
+    LyricsFetchFailed {
+        error: String,
+    },
+    LyricsSearchResults {
+        lrclib_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,
+        ovh_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,
+    },
 
     // playback
     PlaybackStarted {

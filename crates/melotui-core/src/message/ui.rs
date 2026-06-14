@@ -13,6 +13,7 @@ pub enum UIMsg {
     CommandHistoryNext,
     OpenHelp,
     CloseHelp,
+    ToggleLyrics,
     Resize(u16, u16),
     EnterPlaylistPicker,
     ExitPlaylistPicker,
@@ -34,4 +35,11 @@ pub enum UIMsg {
     // Sidebar width
     SetSidebarWidth(u16),
     AdjustSidebarWidth(i16),
+    // Lyrics selector
+    LyricsSelectorMoveUp,
+    LyricsSelectorMoveDown,
+    LyricsSelectorMoveLeft,
+    LyricsSelectorMoveRight,
+    LyricsSelectorSubmit,
+    LyricsSelectorCancel,
 }

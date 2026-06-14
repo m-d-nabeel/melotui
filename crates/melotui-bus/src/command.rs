@@ -32,6 +32,16 @@ pub enum DownloadCommand {
         query: String,
         download_path: PathBuf,
     },
+    FetchLyrics {
+        track_name: String,
+        artist_name: String,
+        save_path: PathBuf,
+        provider: Option<String>,
+        provider_id: Option<String>,
+    },
+    SearchLyrics {
+        query: String,
+    },
     Cancel,
     Shutdown,
 }

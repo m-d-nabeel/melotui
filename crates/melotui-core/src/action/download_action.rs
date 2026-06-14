@@ -107,10 +107,90 @@ pub fn handle_request_cancel_download(state: &mut AppState) -> Vec<AppMsg> {
     }
 }
 
+pub fn handle_request_search_lyrics(state: &mut AppState, query: String) -> Vec<AppMsg> {
+    tracing::info!("RequestSearchLyrics called with: {:?}", query);
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Searching lyrics for: {}", query),
+    ));
+
+    // Auto switch to Lyrics View tab (which acts as the selector)
+    state.session.ui.show_lyrics = true;
+
+    vec![AppMsg::Download(DownloadMsg::DispatchSearchLyrics {
+        query,
+    })]
+}
+
+pub fn handle_lyrics_search_results(
+    state: &mut AppState,
+    lrclib_results: Vec<crate::state::lyrics::LyricsCandidate>,
+    ovh_results: Vec<crate::state::lyrics::LyricsCandidate>,
+) -> Vec<AppMsg> {
+    tracing::info!(
+        "Received lyrics search results: {} lrclib, {} ovh",
+        lrclib_results.len(),
+        ovh_results.len()
+    );
+
+    if lrclib_results.is_empty() && ovh_results.is_empty() {
+        state.session.notification.current = Some(
+            Notification::new(NotificationKind::Warning, "No lyrics found for your search")
+                .with_duration(4),
+        );
+        state.session.lyrics.search_state = None;
+    } else {
+        state.session.lyrics.search_state = Some(crate::state::lyrics::LyricsSearchState {
+            lrclib_results,
+            ovh_results,
+            selected_column: 0,
+            selected_row: 0,
+        });
+        state.session.notification.current = Some(
+            Notification::new(
+                NotificationKind::Info,
+                "Search complete. Select lyrics using arrow keys.",
+            )
+            .with_duration(3),
+        );
+    }
+
+    vec![]
+}
+
 pub fn handle_dispatch_download(
     _state: &mut AppState,
     _query: String,
     _download_path: std::path::PathBuf,
 ) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_lyrics_fetched(state: &mut AppState, _save_path: std::path::PathBuf) -> Vec<AppMsg> {
+    state.session.notification.current = Some(
+        Notification::new(NotificationKind::Info, "Lyrics downloaded successfully!")
+            .with_duration(3),
+    );
+
+    // Re-trigger audio started logic to load the newly downloaded lyrics file without
+    // actually stopping/restarting playback
+    if let Some(track) = state.get_playing_track() {
+        crate::action::playback_action::handle_audio_started(
+            state,
+            track.file_path.clone().to_string_lossy().to_string(),
+        );
+    }
+
+    vec![]
+}
+
+pub fn handle_lyrics_fetch_failed(state: &mut AppState, error: String) -> Vec<AppMsg> {
+    state.session.notification.current = Some(
+        Notification::new(
+            NotificationKind::Error,
+            format!("Lyrics fetch failed: {}", error),
+        )
+        .with_duration(5),
+    );
     vec![]
 }

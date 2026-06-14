@@ -16,6 +16,101 @@ pub fn handle_open_help(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+pub fn handle_lyrics_selector_move_up(state: &mut AppState) -> Vec<AppMsg> {
+    if let Some(ref mut search_state) = state.session.lyrics.search_state {
+        search_state.selected_row = search_state.selected_row.saturating_sub(1);
+    }
+    vec![]
+}
+
+pub fn handle_lyrics_selector_move_down(state: &mut AppState) -> Vec<AppMsg> {
+    if let Some(ref mut search_state) = state.session.lyrics.search_state {
+        let max_rows = if search_state.selected_column == 0 {
+            search_state.lrclib_results.len()
+        } else {
+            search_state.ovh_results.len()
+        };
+        if max_rows > 0 && search_state.selected_row < max_rows - 1 {
+            search_state.selected_row += 1;
+        }
+    }
+    vec![]
+}
+
+pub fn handle_lyrics_selector_move_left(state: &mut AppState) -> Vec<AppMsg> {
+    if let Some(ref mut search_state) = state.session.lyrics.search_state {
+        search_state.selected_column = 0;
+        let max_rows = search_state.lrclib_results.len();
+        if max_rows > 0 && search_state.selected_row >= max_rows {
+            search_state.selected_row = max_rows - 1;
+        } else if max_rows == 0 {
+            search_state.selected_row = 0;
+        }
+    }
+    vec![]
+}
+
+pub fn handle_lyrics_selector_move_right(state: &mut AppState) -> Vec<AppMsg> {
+    if let Some(ref mut search_state) = state.session.lyrics.search_state {
+        search_state.selected_column = 1;
+        let max_rows = search_state.ovh_results.len();
+        if max_rows > 0 && search_state.selected_row >= max_rows {
+            search_state.selected_row = max_rows - 1;
+        } else if max_rows == 0 {
+            search_state.selected_row = 0;
+        }
+    }
+    vec![]
+}
+
+pub fn handle_lyrics_selector_submit(state: &mut AppState) -> Vec<AppMsg> {
+    if let Some(search_state) = state.session.lyrics.search_state.take() {
+        let candidate = if search_state.selected_column == 0 {
+            search_state
+                .lrclib_results
+                .get(search_state.selected_row)
+                .cloned()
+        } else {
+            search_state
+                .ovh_results
+                .get(search_state.selected_row)
+                .cloned()
+        };
+
+        if let Some(c) = candidate {
+            // We dispatch FetchLyrics using the candidate's exact artist/track,
+            // relying on our existing FetchLyrics logic which queries LRCLIB and OVH in order.
+            // Wait, we need to guarantee it fetches the *exact* one.
+            // Since we use the exact `track_name` and `artist_name`, both APIs will find it properly.
+            if let Some(track) = state.get_playing_track() {
+                let mut save_path = track.file_path.clone();
+                save_path.set_extension("lrc");
+
+                let provider = match c.api {
+                    crate::state::lyrics::LyricsApi::Lrclib => "lrclib".to_string(),
+                    crate::state::lyrics::LyricsApi::Ovh => "ovh".to_string(),
+                };
+
+                return vec![AppMsg::Download(
+                    crate::message::download::DownloadMsg::RequestFetchLyrics {
+                        track_name: c.track_name,
+                        artist_name: c.artist_name,
+                        save_path,
+                        provider: Some(provider),
+                        provider_id: c.provider_id,
+                    },
+                )];
+            }
+        }
+    }
+    vec![]
+}
+
+pub fn handle_lyrics_selector_cancel(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.lyrics.search_state = None;
+    vec![]
+}
+
 pub fn handle_show_confirm(
     state: &mut AppState,
     message: String,
@@ -216,6 +311,11 @@ pub fn handle_resize(state: &mut AppState, w: u16, h: u16) -> Vec<AppMsg> {
     vec![]
 }
 
+pub fn handle_toggle_lyrics(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.show_lyrics = !state.session.ui.show_lyrics;
+    vec![]
+}
+
 pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     tracing::debug!("Enter Command Mode");
     state.session.ui.mode = UIMode::Command;
@@ -279,6 +379,53 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             ));
             vec![AppMsg::Download(DownloadMsg::RequestDownload { query })]
         }
+        Command::FetchLyrics { query } => {
+            if let Some(track) = state.get_playing_track() {
+                let (track_name, artist_name) = if let Some(q) = query {
+                    if let Some((a, t)) = q.split_once('-') {
+                        (t.trim().to_string(), a.trim().to_string())
+                    } else {
+                        (q, String::new())
+                    }
+                } else {
+                    let t = track.title.clone();
+                    let a = match track.artist.clone() {
+                        Some(ar) if !ar.is_empty() => ar,
+                        _ => String::new(),
+                    };
+                    (t, a)
+                };
+
+                if track_name.is_empty() {
+                    state.session.notification.current = Some(Notification::new(
+                        NotificationKind::Warning,
+                        "Cannot fetch lyrics: missing track name",
+                    ));
+                    return vec![];
+                }
+
+                let mut save_path = track.file_path.clone();
+                save_path.set_extension("lrc");
+
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Info,
+                    format!("Fetching lyrics for {}...", track_name),
+                ));
+                vec![AppMsg::Download(DownloadMsg::RequestFetchLyrics {
+                    track_name,
+                    artist_name,
+                    save_path,
+                    provider: None,
+                    provider_id: None,
+                })]
+            } else {
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Warning,
+                    "No track is currently playing",
+                ));
+                vec![]
+            }
+        }
         Command::ChangeVisualizer { arg } => {
             if arg == SpectrumStyle::Cava && !is_cava_available() {
                 state.session.notification.current = Some(
@@ -296,6 +443,9 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                     spectrum_style: Some(arg),
                 })]
             }
+        }
+        Command::SearchLyrics { query } => {
+            vec![AppMsg::Download(DownloadMsg::RequestSearchLyrics { query })]
         }
         Command::Search { field, query } => {
             vec![AppMsg::Library(LibraryMsg::Search { field, query })]

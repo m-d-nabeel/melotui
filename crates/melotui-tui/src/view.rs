@@ -65,7 +65,13 @@ fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut 
 
     sidebar::draw(frame, horizontal[0], state, image_cache);
     visualizer_view::draw(frame, right_vertical[0], state, image_cache);
-    sound_control_view::draw(frame, control_chunks[0], state);
+
+    if state.ui_show_lyrics() {
+        crate::widgets::lyrics_view::draw(frame, control_chunks[0], state);
+    } else {
+        sound_control_view::draw(frame, control_chunks[0], state);
+    }
+
     playback_view::draw(frame, control_chunks[1], state);
 }
 
@@ -143,7 +149,7 @@ fn draw_overlays(
     }
 
     if state.ui_show_help() {
-        frame.render_widget(dim_block, area);
+        frame.render_widget(dim_block.clone(), area);
         help_view::draw(frame, area, state, registry);
     }
 }

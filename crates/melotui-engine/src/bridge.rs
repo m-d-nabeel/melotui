@@ -46,6 +46,24 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             DownloadMsg::RequestCancelDownload => {
                 Some(IpcCommand::Download(DownloadCommand::Cancel))
             }
+            DownloadMsg::RequestFetchLyrics {
+                track_name,
+                artist_name,
+                save_path,
+                provider,
+                provider_id,
+            } => Some(IpcCommand::Download(DownloadCommand::FetchLyrics {
+                track_name: track_name.clone(),
+                artist_name: artist_name.clone(),
+                save_path: save_path.clone(),
+                provider: provider.clone(),
+                provider_id: provider_id.clone(),
+            })),
+            DownloadMsg::RequestSearchLyrics { query } => {
+                Some(IpcCommand::Download(DownloadCommand::SearchLyrics {
+                    query: query.clone(),
+                }))
+            }
             _ => None,
         },
 
@@ -138,6 +156,19 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::DownloadFailed { error } => {
             AppMsg::Download(DownloadMsg::DownloadFailed { error })
         }
+        IpcEvent::LyricsFetched { save_path } => {
+            AppMsg::Download(DownloadMsg::LyricsFetched { save_path })
+        }
+        IpcEvent::LyricsFetchFailed { error } => {
+            AppMsg::Download(DownloadMsg::LyricsFetchFailed { error })
+        }
+        IpcEvent::LyricsSearchResults {
+            lrclib_results,
+            ovh_results,
+        } => AppMsg::Download(DownloadMsg::LyricsSearchResults {
+            lrclib_results,
+            ovh_results,
+        }),
         IpcEvent::PlaybackStarted { path } => AppMsg::Playback(PlaybackMsg::AudioStarted { path }),
         IpcEvent::PlaybackProgress { position_ms, epoch } => {
             AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms, epoch })
@@ -238,6 +269,30 @@ mod tests {
                 assert_eq!(track_id, 42);
             }
             _ => panic!("Expected Database ToggleFavorite command"),
+        }
+
+        // Test FetchLyrics command translation
+        let msg = AppMsg::Download(DownloadMsg::RequestFetchLyrics {
+            track_name: "Test Title".to_string(),
+            artist_name: "Test Artist".to_string(),
+            save_path: std::path::PathBuf::from("/path/to/lyrics.lrc"),
+            provider: None,
+            provider_id: None,
+        });
+        let cmd = appmsg_to_ipc(&msg, &roots).unwrap();
+        match cmd {
+            IpcCommand::Download(melotui_bus::command::DownloadCommand::FetchLyrics {
+                track_name,
+                artist_name,
+                save_path,
+                provider: _,
+                provider_id: _,
+            }) => {
+                assert_eq!(track_name, "Test Title");
+                assert_eq!(artist_name, "Test Artist");
+                assert_eq!(save_path, std::path::PathBuf::from("/path/to/lyrics.lrc"));
+            }
+            _ => panic!("Expected FetchLyrics command"),
         }
     }
 

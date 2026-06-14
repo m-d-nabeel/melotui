@@ -45,6 +45,11 @@ impl InputHandler {
             return contexts;
         }
 
+        if state.lyrics_search_state().is_some() {
+            contexts.push(KeyContext::LyricsSelector);
+            return contexts; // modal, blocks other inputs
+        }
+
         // panel contexts
         if state.is_library_focused() {
             contexts.push(KeyContext::Library);

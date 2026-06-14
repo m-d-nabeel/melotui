@@ -287,6 +287,11 @@ pub fn handle_request_seek_absolute(state: &mut AppState, position_seconds: u64)
 pub fn handle_audio_progress(state: &mut AppState, position_ms: u64, epoch: u64) -> Vec<AppMsg> {
     if state.is_playing() && epoch >= state.session.seek_epoch {
         state.session.playback.progress_ms = position_ms;
+
+        if let crate::state::lyrics::LyricsData::Synced(lyrics) = &state.session.lyrics.data {
+            state.session.lyrics.active_line_index =
+                lyrics.find_timed_line_index(position_ms as i64);
+        }
     }
     vec![]
 }
@@ -305,6 +310,7 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
         VisualizerMode::Spectrum => VisualizerMode::AlbumArt,
         VisualizerMode::AlbumArt => VisualizerMode::Spectrum,
     };
+
     let active = state.should_draw_spectrum();
     let style = state.session.spectrum_style.clone();
     vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
@@ -327,7 +333,21 @@ pub fn handle_dispatch_stop(_: &mut AppState) -> Vec<AppMsg> {
 pub fn handle_dispatch_seek(_: &mut AppState, _: u64, _: u64) -> Vec<AppMsg> {
     vec![]
 }
-pub fn handle_audio_started(_: &mut AppState, _: String) -> Vec<AppMsg> {
+pub fn handle_audio_started(state: &mut AppState, path: String) -> Vec<AppMsg> {
+    state.session.lyrics.data = crate::state::lyrics::LyricsData::None;
+    state.session.lyrics.active_line_index = None;
+
+    let audio_path = std::path::PathBuf::from(&path);
+    let lrc_path = audio_path.with_extension("lrc");
+
+    if let Ok(content) = std::fs::read_to_string(lrc_path) {
+        if let Ok(parsed) = content.parse::<lrc::Lyrics>() {
+            state.session.lyrics.data = crate::state::lyrics::LyricsData::Synced(parsed);
+        } else {
+            state.session.lyrics.data = crate::state::lyrics::LyricsData::Unsynced(content);
+        }
+    }
+
     vec![]
 }
 pub fn handle_audio_paused(_: &mut AppState) -> Vec<AppMsg> {

@@ -43,6 +43,8 @@ pub enum Command {
     Quit,
     Rescan,
     Download { query: String },
+    FetchLyrics { query: Option<String> },
+    SearchLyrics { query: String },
     Search { field: SearchField, query: String },
     ChangeVisualizer { arg: SpectrumStyle },
     ClearSearch,
@@ -63,7 +65,15 @@ impl fmt::Display for Command {
             Command::Quit => write!(f, "quit"),
             Command::Rescan => write!(f, "rescan"),
             Command::Download { query } => write!(f, "download {}", query),
-            Command::Search { field, query } => write!(f, "{} {}", field, query),
+            Command::FetchLyrics { query } => {
+                if let Some(q) = query {
+                    write!(f, "lyrics fetch {}", q)
+                } else {
+                    write!(f, "lyrics fetch")
+                }
+            }
+            Command::SearchLyrics { query } => write!(f, "lyrics search {}", query),
+            Command::Search { field, query } => write!(f, "search {:?} {}", field, query),
             Command::ChangeVisualizer { arg } => write!(f, "visualizer {:?}", arg),
             Command::ClearSearch => write!(f, "noh"),
             Command::CreatePlaylist { name } => write!(f, "pl create {}", name),
@@ -138,6 +148,33 @@ impl FromStr for Command {
                     Ok(Command::Unknown("download requires a query".into()))
                 } else {
                     Ok(Command::Download { query })
+                }
+            }
+
+            "lyrics" => {
+                let mut tokens_iter = tokens.iter();
+                let sub = tokens_iter.next().map(|s| s.as_str()).unwrap_or("");
+                match sub {
+                    "fetch" => {
+                        let query = tokens_iter.cloned().collect::<Vec<_>>().join(" ");
+                        if query.is_empty() {
+                            Ok(Command::FetchLyrics { query: None })
+                        } else {
+                            Ok(Command::FetchLyrics { query: Some(query) })
+                        }
+                    }
+                    "search" => {
+                        let query = tokens_iter.cloned().collect::<Vec<_>>().join(" ");
+                        if query.is_empty() {
+                            Ok(Command::Unknown("lyrics search requires a query".into()))
+                        } else {
+                            Ok(Command::SearchLyrics { query })
+                        }
+                    }
+                    _ => Ok(Command::Unknown(format!(
+                        "lyrics: unknown subcommand '{}'",
+                        sub
+                    ))),
                 }
             }
 
@@ -279,6 +316,7 @@ impl Command {
             (":q | :quit | :exit ", "Quit App"),
             (":r | :rescan       ", "Rescan Lib"),
             (":dl | :download <q>", "Download"),
+            (":lyrics fetch      ", "Fetch Lyrics"),
             (":v | :vis <style>  ", "Visualizer"),
             (":noh               ", "Clear Search"),
             (":focus <mode>      ", "Focus Mode"),

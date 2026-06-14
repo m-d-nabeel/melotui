@@ -20,6 +20,12 @@ enum InternalEvent {
     ItemFinished,
     Finished,
     Failed(String),
+    LyricsFetched(PathBuf),
+    LyricsFailed(String),
+    LyricsSearchResults {
+        lrclib_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,
+        ovh_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,
+    },
 }
 
 pub fn run(worker: impl IpcWorker<DownloadCommand>) {
@@ -32,13 +38,8 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
     let mut cancel_flag: Option<Arc<AtomicBool>> = None;
 
     loop {
-        // When no download is active, block until a command arrives.
-        // When a download IS active, use timeout so we can check progress events.
-        let cmd = if cancel_flag.is_some() {
-            worker.recv_timeout(Duration::from_millis(100))
-        } else {
-            worker.recv()
-        };
+        // Always use timeout so we can periodically check internal_rx for background task events
+        let cmd = worker.recv_timeout(Duration::from_millis(100));
 
         if let Some(cmd) = cmd {
             tracing::debug!("Worker received command: {:?}", cmd);
@@ -65,6 +66,32 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
 
                     thread::spawn(move || {
                         download_task(query, download_path, tx, flag);
+                    });
+                }
+
+                DownloadCommand::FetchLyrics {
+                    track_name,
+                    artist_name,
+                    save_path,
+                    provider,
+                    provider_id,
+                } => {
+                    tracing::info!(
+                        "Starting lyrics fetch for: {} - {}",
+                        artist_name,
+                        track_name
+                    );
+                    let tx_clone = internal_tx.clone();
+                    thread::spawn(move || {
+                        fetch_lyrics_task(track_name, artist_name, save_path, provider, provider_id, tx_clone);
+                    });
+                }
+
+                DownloadCommand::SearchLyrics { query } => {
+                    tracing::info!("Starting lyrics search for: {}", query);
+                    let tx = internal_tx.clone();
+                    thread::spawn(move || {
+                        search_lyrics_task(query, tx);
                     });
                 }
 
@@ -101,6 +128,21 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                 InternalEvent::Failed(error) => {
                     worker.send(IpcEvent::DownloadFailed { error });
                     cancel_flag = None;
+                }
+                InternalEvent::LyricsFetched(save_path) => {
+                    worker.send(IpcEvent::LyricsFetched { save_path });
+                }
+                InternalEvent::LyricsFailed(error) => {
+                    worker.send(IpcEvent::LyricsFetchFailed { error });
+                }
+                InternalEvent::LyricsSearchResults {
+                    lrclib_results,
+                    ovh_results,
+                } => {
+                    worker.send(IpcEvent::LyricsSearchResults {
+                        lrclib_results,
+                        ovh_results,
+                    });
                 }
             }
         }
@@ -224,4 +266,240 @@ fn download_task(
             }
         }
     }
+}
+
+fn fetch_lyrics_task(
+    track_name: String,
+    artist_name: String,
+    save_path: PathBuf,
+    provider: Option<String>,
+    provider_id: Option<String>,
+    tx: mpsc::Sender<InternalEvent>,
+) {
+    tracing::debug!(
+        "Fetching lyrics for: {} - {} (provider: {:?}, id: {:?})",
+        artist_name,
+        track_name,
+        provider,
+        provider_id
+    );
+
+    let mut json_opt = None;
+
+    let try_lrclib = provider.as_deref() == Some("lrclib") || provider.is_none();
+    let try_ovh = provider.as_deref() == Some("ovh") || provider.is_none();
+
+    if try_lrclib {
+        if let Some(id) = &provider_id {
+            // We have an exact ID, fetch directly!
+            let req = ureq::get(&format!("https://lrclib.net/api/get/{}", id))
+                .timeout(std::time::Duration::from_secs(5));
+            if let Ok(response) = req.call()
+                && response.status() == 200 {
+                    json_opt = response.into_json::<serde_json::Value>().ok();
+                }
+        } else if !artist_name.is_empty() {
+            let req = ureq::get("https://lrclib.net/api/get")
+                .query("track_name", &track_name)
+                .query("artist_name", &artist_name)
+                .timeout(std::time::Duration::from_secs(5));
+
+            if let Ok(response) = req.call()
+                && response.status() == 200 {
+                    json_opt = response.into_json::<serde_json::Value>().ok();
+                }
+        }
+
+        if json_opt.is_none() {
+            tracing::debug!("Exact match failed or artist empty, trying search fallback...");
+            let query = if artist_name.is_empty() {
+                track_name.clone()
+            } else {
+                format!("{} {}", artist_name, track_name)
+            };
+
+            let req = ureq::get("https://lrclib.net/api/search")
+                .query("q", &query)
+                .timeout(std::time::Duration::from_secs(5));
+
+            if let Ok(response) = req.call()
+                && response.status() == 200
+                    && let Ok(mut arr) = response.into_json::<Vec<serde_json::Value>>()
+                        && !arr.is_empty() {
+                            json_opt = Some(arr.remove(0));
+                        }
+        }
+
+        if let Some(json) = json_opt {
+            let mut lyrics = None;
+            if let Some(synced) = json.get("syncedLyrics").and_then(|v| v.as_str())
+                && !synced.trim().is_empty() {
+                    lyrics = Some(synced.to_string());
+                }
+            if lyrics.is_none() {
+                if let Some(plain) = json.get("plainLyrics").and_then(|v| v.as_str())
+                    && !plain.trim().is_empty() {
+                        lyrics = Some(plain.to_string());
+                    }
+            }
+
+            if let Some(l) = lyrics {
+                if let Err(e) = std::fs::write(&save_path, l.as_bytes()) {
+                    tracing::error!("Failed to write lyrics to file: {}", e);
+                    let _ = tx.send(InternalEvent::LyricsFailed(format!(
+                        "Failed to write lyrics file: {}",
+                        e
+                    )));
+                } else {
+                    tracing::info!("Lyrics successfully saved to {:?}", save_path);
+                    let _ = tx.send(InternalEvent::LyricsFetched(save_path));
+                }
+                return;
+            }
+        }
+    }
+
+    // Fallback: OVH Lyrics API (Plain lyrics only)
+    if try_ovh && !artist_name.is_empty() {
+        tracing::debug!("LRCLIB failed or skipped, falling back to api.lyrics.ovh...");
+
+        let ovh_artist = artist_name
+            .bytes()
+            .map(|b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    (b as char).to_string()
+                }
+                _ => format!("%{:02X}", b),
+            })
+            .collect::<String>();
+
+        let ovh_track = track_name
+            .bytes()
+            .map(|b| match b {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                    (b as char).to_string()
+                }
+                _ => format!("%{:02X}", b),
+            })
+            .collect::<String>();
+
+        let ovh_url = format!("https://api.lyrics.ovh/v1/{}/{}", ovh_artist, ovh_track);
+        let req = ureq::get(&ovh_url).timeout(std::time::Duration::from_secs(5));
+
+        if let Ok(response) = req.call()
+            && response.status() == 200
+                && let Ok(json) = response.into_json::<serde_json::Value>()
+                    && let Some(lyrics) = json.get("lyrics").and_then(|v| v.as_str())
+                        && !lyrics.trim().is_empty() {
+                            if let Err(e) = std::fs::write(&save_path, lyrics) {
+                                tracing::error!("Failed to write lyrics to file: {}", e);
+                                let _ = tx.send(InternalEvent::LyricsFailed(format!(
+                                    "Failed to write lyrics file: {}",
+                                    e
+                                )));
+                            } else {
+                                tracing::info!("Lyrics successfully saved to {:?}", save_path);
+                                let _ = tx.send(InternalEvent::LyricsFetched(save_path));
+                            }
+                            return;
+                        }
+    }
+
+    tracing::error!("No lyrics found on LRCLIB or OVH API for the given query.");
+    let _ = tx.send(InternalEvent::LyricsFailed(
+        "No lyrics found or API error".to_string(),
+    ));
+}
+
+fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
+    tracing::debug!("Searching lyrics for query: {}", query);
+
+    let mut lrclib_results = Vec::new();
+    let mut ovh_results = Vec::new();
+
+    // 1. LRCLIB Search
+    let lrclib_req = ureq::get("https://lrclib.net/api/search")
+        .query("q", &query)
+        .timeout(std::time::Duration::from_secs(5));
+
+    if let Ok(res) = lrclib_req.call()
+        && res.status() == 200
+            && let Ok(json_arr) = res.into_json::<Vec<serde_json::Value>>() {
+                for item in json_arr.into_iter().take(5) {
+                    let id = item
+                        .get("id")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v.to_string());
+                    let track_name = item
+                        .get("trackName")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    let artist_name = item
+                        .get("artistName")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+                    let synced = item
+                        .get("syncedLyrics")
+                        .and_then(|v| v.as_str())
+                        .map(|s| !s.trim().is_empty())
+                        .unwrap_or(false);
+
+                    lrclib_results.push(melotui_core::state::lyrics::LyricsCandidate {
+                        api: melotui_core::state::lyrics::LyricsApi::Lrclib,
+                        track_name,
+                        artist_name,
+                        is_synced: synced,
+                        provider_id: id,
+                    });
+                }
+            }
+
+    // 2. OVH Suggest
+    let ovh_query = query
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            b' ' => "+".to_string(),
+            _ => format!("%{:02X}", b),
+        })
+        .collect::<String>();
+
+    let ovh_req = ureq::get(&format!("https://api.lyrics.ovh/suggest/{}", ovh_query))
+        .timeout(std::time::Duration::from_secs(5));
+
+    if let Ok(res) = ovh_req.call()
+        && res.status() == 200
+            && let Ok(json) = res.into_json::<serde_json::Value>()
+                && let Some(data) = json.get("data").and_then(|v| v.as_array()) {
+                    for item in data.iter().take(5) {
+                        let track_name = item
+                            .get("title")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown")
+                            .to_string();
+                        let artist_name = item
+                            .get("artist")
+                            .and_then(|a| a.get("name"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Unknown")
+                            .to_string();
+
+                        ovh_results.push(melotui_core::state::lyrics::LyricsCandidate {
+                            api: melotui_core::state::lyrics::LyricsApi::Ovh,
+                            track_name,
+                            artist_name,
+                            is_synced: false,
+                            provider_id: None,
+                        });
+                    }
+                }
+
+    let _ = tx.send(InternalEvent::LyricsSearchResults {
+        lrclib_results,
+        ovh_results,
+    });
 }

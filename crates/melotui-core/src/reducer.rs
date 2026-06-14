@@ -109,6 +109,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::CommandHistoryNext => ui_action::handle_command_history_next(state),
         UIMsg::OpenHelp => ui_action::handle_open_help(state),
         UIMsg::CloseHelp => ui_action::handle_close_help(state),
+        UIMsg::ToggleLyrics => ui_action::handle_toggle_lyrics(state),
         UIMsg::Resize(w, h) => ui_action::handle_resize(state, w, h),
         UIMsg::EnterPlaylistPicker => ui_action::handle_enter_playlist_picker(state),
         UIMsg::ExitPlaylistPicker => ui_action::handle_exit_playlist_picker(state),
@@ -130,6 +131,12 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::SetFocusMode(mode) => ui_action::handle_set_focus_mode(state, mode),
         UIMsg::SetSidebarWidth(width) => ui_action::handle_set_sidebar_width(state, width),
         UIMsg::AdjustSidebarWidth(delta) => ui_action::handle_adjust_sidebar_width(state, delta),
+        UIMsg::LyricsSelectorMoveUp => ui_action::handle_lyrics_selector_move_up(state),
+        UIMsg::LyricsSelectorMoveDown => ui_action::handle_lyrics_selector_move_down(state),
+        UIMsg::LyricsSelectorMoveLeft => ui_action::handle_lyrics_selector_move_left(state),
+        UIMsg::LyricsSelectorMoveRight => ui_action::handle_lyrics_selector_move_right(state),
+        UIMsg::LyricsSelectorSubmit => ui_action::handle_lyrics_selector_submit(state),
+        UIMsg::LyricsSelectorCancel => ui_action::handle_lyrics_selector_cancel(state),
     }
 }
 
@@ -199,6 +206,25 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         DownloadMsg::RequestCancelDownload => {
             download_action::handle_request_cancel_download(state)
         }
+        DownloadMsg::RequestFetchLyrics { .. } | DownloadMsg::DispatchFetchLyrics { .. } => {
+            vec![]
+        }
+        DownloadMsg::LyricsFetched { save_path } => {
+            download_action::handle_lyrics_fetched(state, save_path)
+        }
+        DownloadMsg::LyricsFetchFailed { error } => {
+            download_action::handle_lyrics_fetch_failed(state, error)
+        }
+        DownloadMsg::RequestSearchLyrics { query } => {
+            download_action::handle_request_search_lyrics(state, query)
+        }
+        DownloadMsg::DispatchSearchLyrics { .. } => {
+            vec![]
+        }
+        DownloadMsg::LyricsSearchResults {
+            lrclib_results,
+            ovh_results,
+        } => download_action::handle_lyrics_search_results(state, lrclib_results, ovh_results),
     }
 }
 
