@@ -13,6 +13,8 @@ use melotui_bus::{
 pub struct EngineConfig {
     pub db_path: PathBuf,
     pub spectrum_producer: SpectrumProducer,
+    pub fft_size: usize,
+    pub max_cover_resolution: u32,
 }
 
 /// Frontend-agnostic engine that owns all worker threads and the event bus.
@@ -45,8 +47,9 @@ impl Engine {
         // spawn audio worker
         let (audio_tx, audio_worker) = inprocess::join_worker::<AudioCommand>(bus_tx.clone());
         let spectrum_producer = config.spectrum_producer;
+        let fft_size = config.fft_size;
         thread::spawn(move || {
-            melotui_audio::run(audio_worker, spectrum_producer);
+            melotui_audio::run(audio_worker, spectrum_producer, fft_size);
             tracing::info!("Audio worker exited");
         });
 
@@ -60,8 +63,9 @@ impl Engine {
 
         // spawn cover worker
         let (cover_tx, cover_worker) = inprocess::join_worker::<CoverCommand>(bus_tx.clone());
+        let max_cover_resolution = config.max_cover_resolution;
         thread::spawn(move || {
-            melotui_cover::run(cover_worker);
+            melotui_cover::run(cover_worker, max_cover_resolution);
             tracing::info!("Cover worker exited");
         });
 

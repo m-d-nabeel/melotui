@@ -9,9 +9,8 @@ pub enum PlaybackMsg {
     RequestStop,
     RequestPlayNext,
     RequestPlayPrev,
-    RequestSeek {
-        offset_seconds: i64,
-    },
+    RequestSeekRelative(i64),
+    RequestSeekAbsolute(u64),
 
     DispatchPlay {
         path: PathBuf,

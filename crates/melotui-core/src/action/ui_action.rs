@@ -93,8 +93,6 @@ pub fn handle_exit_playlist_picker(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
-const PICKER_VIEWPORT: usize = 10;
-
 pub fn handle_playlist_picker_move_up(state: &mut AppState) -> Vec<AppMsg> {
     let picker = &mut state.session.ui.playlist_picker;
     picker.selection = picker.selection.saturating_sub(1);
@@ -110,8 +108,9 @@ pub fn handle_playlist_picker_move_down(state: &mut AppState) -> Vec<AppMsg> {
     if picker.selection < max_idx {
         picker.selection += 1;
     }
-    if picker.selection >= picker.scroll_offset + PICKER_VIEWPORT {
-        picker.scroll_offset = picker.selection + 1 - PICKER_VIEWPORT;
+    let viewport = state.config.ui.playlist_picker_max_visible;
+    if picker.selection >= picker.scroll_offset + viewport {
+        picker.scroll_offset = picker.selection + 1 - viewport;
     }
     vec![]
 }
@@ -251,6 +250,12 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
     }
 
     match Command::parse(input) {
+        Command::SeekRelative(offset) => {
+            vec![AppMsg::Playback(PlaybackMsg::RequestSeekRelative(offset))]
+        }
+        Command::SeekAbsolute(pos) => {
+            vec![AppMsg::Playback(PlaybackMsg::RequestSeekAbsolute(pos))]
+        }
         Command::Quit => {
             vec![AppMsg::RequestQuit]
         }

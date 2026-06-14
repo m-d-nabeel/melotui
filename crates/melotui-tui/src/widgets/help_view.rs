@@ -4,8 +4,8 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
-    text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, Padding, Paragraph, Wrap},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, Padding},
 };
 
 pub fn draw(
@@ -41,60 +41,60 @@ pub fn draw(
         )
         .borders(Borders::ALL)
         .border_style(Style::default().fg(t.help_border))
+        .style(Style::default().bg(t.help_overlay_bg))
         .padding(Padding::uniform(1));
 
     let inner = block.inner(help_area);
     frame.render_widget(block, help_area);
 
-    // Responsive column count based on width
-    let col_count = if inner.width < 100 {
-        2
-    } else if inner.width < 160 {
-        3
-    } else {
-        4
-    };
+    let (cols, rows) = if inner.width < 120 { (2, 2) } else { (4, 1) };
 
-    let constraints: Vec<Constraint> = (0..col_count).map(|_| Constraint::Fill(1)).collect();
-    let sections = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
+    let row_constraints: Vec<Constraint> = (0..rows).map(|_| Constraint::Fill(1)).collect();
+    let row_layouts = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(row_constraints)
         .split(inner);
 
-    // Render sections based on available columns
-    let mut col = 0;
-    if col < col_count {
+    let mut sections = Vec::new();
+    for row_area in row_layouts.iter() {
+        let col_constraints: Vec<Constraint> = (0..cols).map(|_| Constraint::Fill(1)).collect();
+        let col_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(col_constraints)
+            .split(*row_area);
+        sections.extend(col_layout.iter().copied());
+    }
+
+    // Render sections safely into the available slots
+    if !sections.is_empty() {
         render_section(
             frame,
-            sections[col],
+            sections[0],
             " Global ",
             registry.bindings.get(&KeyContext::Global),
             t,
         );
-        col += 1;
     }
-    if col < col_count {
+    if sections.len() >= 2 {
         render_section(
             frame,
-            sections[col],
+            sections[1],
             " Library ",
             registry.bindings.get(&KeyContext::Library),
             t,
         );
-        col += 1;
     }
-    if col < col_count {
+    if sections.len() >= 3 {
         render_section(
             frame,
-            sections[col],
+            sections[2],
             " Queue ",
             registry.bindings.get(&KeyContext::Queue),
             t,
         );
-        col += 1;
     }
-    if col < col_count {
-        render_command_section(frame, sections[col], " Commands ", t);
+    if sections.len() >= 4 {
+        render_command_section(frame, sections[3], " Commands ", t);
     }
 }
 
@@ -110,41 +110,24 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str, t: &Theme)
             .alignment(Alignment::Center),
         )
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(t.help_overlay_bg))
+        .border_style(Style::default().fg(t.help_border))
+        .style(Style::default().bg(t.help_overlay_bg))
         .padding(Padding::horizontal(1));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    const COMMANDS: [(&str, &str); 14] = [
-        (":q | :quit     ", "Quit App"),
-        (":r | :rescan   ", "Rescan Lib"),
-        (":dl <query>    ", "Download"),
-        (":v <style>     ", "Visualizer"),
-        (":noh           ", "Clear Search"),
-        (":focus <mode>  ", "Focus Mode"),
-        (":sidebar <n>   ", "Sidebar Width"),
-        (":pl create <n> ", "New Playlist"),
-        (":pl del <n>    ", "Del Playlist"),
-        (":pl add <n>    ", "Add to Pl"),
-        (":pl rm <n>     ", "Rem from Pl"),
-        (":artist <q>    ", "Search Artist"),
-        (":song <q>      ", "Search Song"),
-        (":album <q>     ", "Search Album"),
-    ];
-
-    let mut lines = Vec::with_capacity(COMMANDS.len());
-    for (syntax, desc) in COMMANDS {
-        let line = Line::from(vec![
-            Span::styled(syntax, Style::default().fg(t.help_key)),
-            Span::raw(" "),
-            Span::styled(desc, Style::default().fg(t.help_text)),
+    let mut rows = Vec::with_capacity(melotui_core::Command::help_entries().len());
+    for (syntax, desc) in melotui_core::Command::help_entries() {
+        let row = ratatui::widgets::Row::new(vec![
+            ratatui::widgets::Cell::from(Span::styled(*syntax, Style::default().fg(t.help_key))),
+            ratatui::widgets::Cell::from(Span::styled(*desc, Style::default().fg(t.help_text))),
         ]);
-        lines.push(line);
+        rows.push(row);
     }
 
-    let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true });
-    frame.render_widget(paragraph, inner);
+    let table = ratatui::widgets::Table::new(rows, [Constraint::Length(15), Constraint::Min(10)]);
+    frame.render_widget(table, inner);
 }
 
 fn render_section(
@@ -165,7 +148,8 @@ fn render_section(
             .alignment(Alignment::Center),
         )
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(t.help_overlay_bg))
+        .border_style(Style::default().fg(t.help_border))
+        .style(Style::default().bg(t.help_overlay_bg))
         .padding(Padding::horizontal(1));
 
     let inner = block.inner(area);
@@ -178,35 +162,31 @@ fn render_section(
     if let Some(bindings) = bindings {
         for binding in bindings {
             let key_str = format_key(binding);
-            grouped.entry(binding.desc).or_default().push(key_str);
+            grouped
+                .entry(binding.action.description())
+                .or_default()
+                .push(key_str);
         }
     }
-
-    // build lines
-    let mut lines: Vec<Line> = vec![];
-
-    // sort entries
     let mut entries: Vec<_> = grouped.into_iter().collect();
     entries.sort_by(|a, b| a.0.cmp(b.0));
 
-    for (desc, keys) in entries {
-        // join multiple keys
-        let key_display = keys.join("  ");
+    let rows: Vec<ratatui::widgets::Row> = entries
+        .into_iter()
+        .map(|(desc, keys)| {
+            let key_display = keys.join(" | ");
+            ratatui::widgets::Row::new(vec![
+                ratatui::widgets::Cell::from(Span::styled(
+                    key_display,
+                    Style::default().fg(t.help_key),
+                )),
+                ratatui::widgets::Cell::from(Span::styled(desc, Style::default().fg(t.help_text))),
+            ])
+        })
+        .collect();
 
-        let line = Line::from(vec![
-            Span::styled(
-                format!("{:12}", key_display),
-                Style::default().fg(t.help_key),
-            ),
-            Span::raw(" "),
-            Span::styled(desc, Style::default().fg(t.help_text)),
-        ]);
-        lines.push(line);
-    }
-
-    let paragraph = Paragraph::new(Text::from(lines)).wrap(Wrap { trim: true });
-
-    frame.render_widget(paragraph, inner);
+    let table = ratatui::widgets::Table::new(rows, [Constraint::Length(15), Constraint::Min(10)]);
+    frame.render_widget(table, inner);
 }
 
 fn format_key(binding: &KeyBinding) -> String {
@@ -226,6 +206,9 @@ fn format_key(binding: &KeyBinding) -> String {
         match binding.key {
             KeyCode::Char(c) if c.is_ascii_lowercase() => {
                 // Will show uppercase below, no prefix needed
+            }
+            KeyCode::BackTab => {
+                // BackTab inherently implies Shift in terminal, no prefix needed
             }
             _ => result.push_str("Shift+"),
         }

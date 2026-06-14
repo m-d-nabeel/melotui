@@ -102,10 +102,72 @@ pub enum KeyAction {
     GrowSidebar,
 }
 
-const OFFSET_SECONDS: i64 = 5;
+impl KeyAction {
+    pub fn description(&self) -> &'static str {
+        match self {
+            KeyAction::Quit => "Quit",
+            KeyAction::OpenHelp => "Help",
+            KeyAction::CloseHelp => "Close",
+            KeyAction::EnterCommandMode => "Command",
+            KeyAction::ExitCommandMode => "Close",
+            KeyAction::SubmitCommand => "Submit",
+            KeyAction::TogglePanel => "Switch Panel",
+            KeyAction::ToggleVisualizer => "Visualizer",
+            KeyAction::MoveUp => "Up",
+            KeyAction::MoveDown => "Down",
+            KeyAction::Interact => "Play/Open",
+            KeyAction::ToggleFolderExpand => "Expand",
+            KeyAction::ShowTrackInfo => "Track Info",
+            KeyAction::HideTrackInfo => "Close",
+            KeyAction::PlaySelected => "Play",
+            KeyAction::PlayNextTrack => "Next Track",
+            KeyAction::PlayPrevTrack => "Prev Track",
+            KeyAction::PlayPause => "Play/Pause",
+            KeyAction::Stop => "Stop",
+            KeyAction::SeekForward => "Seek Fwd",
+            KeyAction::SeekBackward => "Seek Bwd",
+            KeyAction::ToggleShuffle => "Shuffle",
+            KeyAction::CycleRepeat => "Repeat",
+            KeyAction::AddToQueue => "Add Queue",
+            KeyAction::QueuePlayNext => "Play Next",
+            KeyAction::RemoveFromQueue => "Remove",
+            KeyAction::ClearQueue => "Clear All",
+            KeyAction::ScanLibrary => "Scan",
+            KeyAction::CancelDownload => "Cancel",
+            KeyAction::ToggleFavorite => "Favorite",
+            KeyAction::SearchNext => "Next Match",
+            KeyAction::SearchPrev => "Prev Match",
+            KeyAction::VolUp => "Vol+",
+            KeyAction::VolDown => "Vol-",
+            KeyAction::SpeedUp => "Speed+",
+            KeyAction::SpeedDown => "Speed-",
+            KeyAction::BassUp => "Bass+",
+            KeyAction::BassDown => "Bass-",
+            KeyAction::TrebleUp => "Treble+",
+            KeyAction::TrebleDown => "Treble-",
+            KeyAction::ReverbUp => "Reverb+",
+            KeyAction::ReverbDown => "Reverb-",
+            KeyAction::EchoUp => "Echo+",
+            KeyAction::EchoDown => "Echo-",
+            KeyAction::EnterPlaylistPicker => "Playlist",
+            KeyAction::ExitPlaylistPicker => "Close",
+            KeyAction::SubmitPlaylistPicker => "Submit",
+            KeyAction::PlaylistPickerMoveUp => "Up",
+            KeyAction::PlaylistPickerMoveDown => "Down",
+            KeyAction::PlaylistPickerBackspace => "Backspace",
+            KeyAction::DeletePlaylist => "Delete Playlist",
+            KeyAction::RemoveFromPlaylist => "Remove",
+            KeyAction::ConfirmYes => "Confirm",
+            KeyAction::ConfirmNo => "Cancel",
+            KeyAction::CycleFocusMode => "Focus Mode",
+            KeyAction::ShrinkSidebar => "Sidebar-",
+            KeyAction::GrowSidebar => "Sidebar+",
+        }
+    }
+}
 
 impl KeyAction {
-    pub fn to_msg(&self) -> Option<AppMsg> {
+    pub fn to_msg(&self, config: &melotui_core::config::AppConfig) -> Option<AppMsg> {
         match self {
             KeyAction::Quit => Some(AppMsg::RequestQuit),
             KeyAction::OpenHelp => Some(AppMsg::UI(UIMsg::OpenHelp)),
@@ -130,12 +192,12 @@ impl KeyAction {
             KeyAction::PlayPrevTrack => Some(AppMsg::Playback(PlaybackMsg::RequestPlayPrev)),
             KeyAction::PlayPause => Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)),
             KeyAction::Stop => Some(AppMsg::Playback(PlaybackMsg::RequestStop)),
-            KeyAction::SeekForward => Some(AppMsg::Playback(PlaybackMsg::RequestSeek {
-                offset_seconds: OFFSET_SECONDS,
-            })),
-            KeyAction::SeekBackward => Some(AppMsg::Playback(PlaybackMsg::RequestSeek {
-                offset_seconds: -OFFSET_SECONDS,
-            })),
+            KeyAction::SeekForward => Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(
+                config.audio.seek_step,
+            ))),
+            KeyAction::SeekBackward => Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(
+                -config.audio.seek_step,
+            ))),
 
             KeyAction::ToggleShuffle => Some(AppMsg::Library(LibraryMsg::ToggleShuffle)),
             KeyAction::CycleRepeat => Some(AppMsg::Library(LibraryMsg::ToggleRepeatMode)),
@@ -150,10 +212,18 @@ impl KeyAction {
             KeyAction::AddToQueue => None,     // id resolved in input.rs
             KeyAction::QueuePlayNext => None,  // id resolved in input.rs
             KeyAction::SubmitCommand => None,  // uses command buffer
-            KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(0.05))),
-            KeyAction::VolDown => Some(AppMsg::Audio(AudioMsg::AdjustVolume(-0.05))),
-            KeyAction::SpeedUp => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(0.1))),
-            KeyAction::SpeedDown => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(-0.1))),
+            KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(
+                config.audio.volume_step,
+            ))),
+            KeyAction::VolDown => Some(AppMsg::Audio(AudioMsg::AdjustVolume(
+                -config.audio.volume_step,
+            ))),
+            KeyAction::SpeedUp => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(
+                config.audio.speed_step,
+            ))),
+            KeyAction::SpeedDown => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(
+                -config.audio.speed_step,
+            ))),
             KeyAction::BassUp => Some(AppMsg::Audio(AudioMsg::AdjustBass(0.1))),
             KeyAction::BassDown => Some(AppMsg::Audio(AudioMsg::AdjustBass(-0.1))),
             KeyAction::TrebleUp => Some(AppMsg::Audio(AudioMsg::AdjustTreble(0.1))),
@@ -185,16 +255,14 @@ pub struct KeyBinding {
     pub key: KeyCode,
     pub modifiers: KeyModifiers,
     pub action: KeyAction,
-    pub desc: &'static str,
 }
 
 impl KeyBinding {
-    pub fn new(code: KeyCode, action: KeyAction, desc: &'static str) -> Self {
+    pub fn new(code: KeyCode, action: KeyAction) -> Self {
         Self {
             key: code,
             modifiers: KeyModifiers::empty(),
             action,
-            desc,
         }
     }
 
@@ -245,6 +313,7 @@ impl KeyRegistry {
                         toml::from_str::<std::collections::HashMap<String, KeyAction>>(&toml_doc)
                     {
                         if let Some(action) = wrapper.remove("action") {
+                            // Inherit description from defaults to avoid breaking Help UI grouping
                             // Remove default bindings with the exact same key to avoid double-trigger
                             if let Some(ctx_bindings) = self.bindings.get_mut(&ctx) {
                                 ctx_bindings.retain(|b| !(b.key == code && b.modifiers == mods));
@@ -252,7 +321,6 @@ impl KeyRegistry {
                                     key: code,
                                     modifiers: mods,
                                     action,
-                                    desc: "User Custom",
                                 });
                             } else {
                                 self.bindings.insert(
@@ -261,7 +329,6 @@ impl KeyRegistry {
                                         key: code,
                                         modifiers: mods,
                                         action,
-                                        desc: "User Custom",
                                     }],
                                 );
                             }
@@ -294,24 +361,16 @@ impl Default for KeyRegistry {
         bindings.insert(
             KeyContext::Help,
             vec![
-                KeyBinding::new(KeyCode::Esc, KeyAction::CloseHelp, "Close"),
-                KeyBinding::new(KeyCode::Char('q'), KeyAction::CloseHelp, "Close"),
+                KeyBinding::new(KeyCode::Esc, KeyAction::CloseHelp),
+                KeyBinding::new(KeyCode::Char('q'), KeyAction::CloseHelp),
             ],
         );
 
         bindings.insert(
             KeyContext::TrackInfo,
             vec![
-                KeyBinding::new(
-                    KeyCode::Char('['),
-                    KeyAction::HideTrackInfo,
-                    "Show/Hide track info",
-                ),
-                KeyBinding::new(
-                    KeyCode::Char(']'),
-                    KeyAction::ShowTrackInfo,
-                    "Show/Hide track info",
-                ),
+                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo),
+                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo),
             ],
         );
 
@@ -319,8 +378,8 @@ impl Default for KeyRegistry {
         bindings.insert(
             KeyContext::CommandMode,
             vec![
-                KeyBinding::new(KeyCode::Esc, KeyAction::ExitCommandMode, "Exit"),
-                KeyBinding::new(KeyCode::Enter, KeyAction::SubmitCommand, "Execute"),
+                KeyBinding::new(KeyCode::Esc, KeyAction::ExitCommandMode),
+                KeyBinding::new(KeyCode::Enter, KeyAction::SubmitCommand),
             ],
         );
 
@@ -328,38 +387,26 @@ impl Default for KeyRegistry {
         bindings.insert(
             KeyContext::Library,
             vec![
-                KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel, "Switch Panel"),
-                KeyBinding::new(KeyCode::Char('j'), KeyAction::MoveDown, "Down"),
-                KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
-                KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Up, KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Enter, KeyAction::Interact, "Expand"),
-                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
-                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
-                KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue, "Add Queue"),
-                KeyBinding::new(KeyCode::Char('a'), KeyAction::QueuePlayNext, "Play Next")
+                KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel),
+                KeyBinding::new(KeyCode::Char('j'), KeyAction::MoveDown),
+                KeyBinding::new(KeyCode::Down, KeyAction::MoveDown),
+                KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp),
+                KeyBinding::new(KeyCode::Up, KeyAction::MoveUp),
+                KeyBinding::new(KeyCode::Enter, KeyAction::Interact),
+                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo),
+                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo),
+                KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue),
+                KeyBinding::new(KeyCode::Char('a'), KeyAction::QueuePlayNext)
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('f'), KeyAction::ToggleFavorite, "Favorite"),
-                KeyBinding::new(KeyCode::Char('n'), KeyAction::SearchNext, "Next Match"),
-                KeyBinding::new(KeyCode::Char('n'), KeyAction::SearchPrev, "Prev Match")
+                KeyBinding::new(KeyCode::Char('f'), KeyAction::ToggleFavorite),
+                KeyBinding::new(KeyCode::Char('n'), KeyAction::SearchNext),
+                KeyBinding::new(KeyCode::Char('n'), KeyAction::SearchPrev)
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(
-                    KeyCode::Char('p'),
-                    KeyAction::EnterPlaylistPicker,
-                    "Add to Playlist",
-                ),
-                KeyBinding::new(
-                    KeyCode::Char('p'),
-                    KeyAction::RemoveFromPlaylist,
-                    "Remove from Playlist",
-                )
-                .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(
-                    KeyCode::Char('d'),
-                    KeyAction::DeletePlaylist,
-                    "Delete Playlist",
-                )
-                .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('p'), KeyAction::EnterPlaylistPicker),
+                KeyBinding::new(KeyCode::Char('p'), KeyAction::RemoveFromPlaylist)
+                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('d'), KeyAction::DeletePlaylist)
+                    .with_mod(KeyModifiers::SHIFT),
             ],
         );
 
@@ -367,15 +414,11 @@ impl Default for KeyRegistry {
         bindings.insert(
             KeyContext::PlaylistPicker,
             vec![
-                KeyBinding::new(KeyCode::Esc, KeyAction::ExitPlaylistPicker, "Back"),
-                KeyBinding::new(KeyCode::Enter, KeyAction::SubmitPlaylistPicker, "Select"),
-                KeyBinding::new(KeyCode::Down, KeyAction::PlaylistPickerMoveDown, "Down"),
-                KeyBinding::new(KeyCode::Up, KeyAction::PlaylistPickerMoveUp, "Up"),
-                KeyBinding::new(
-                    KeyCode::Backspace,
-                    KeyAction::PlaylistPickerBackspace,
-                    "Delete",
-                ),
+                KeyBinding::new(KeyCode::Esc, KeyAction::ExitPlaylistPicker),
+                KeyBinding::new(KeyCode::Enter, KeyAction::SubmitPlaylistPicker),
+                KeyBinding::new(KeyCode::Down, KeyAction::PlaylistPickerMoveDown),
+                KeyBinding::new(KeyCode::Up, KeyAction::PlaylistPickerMoveUp),
+                KeyBinding::new(KeyCode::Backspace, KeyAction::PlaylistPickerBackspace),
             ],
         );
 
@@ -383,9 +426,9 @@ impl Default for KeyRegistry {
         bindings.insert(
             KeyContext::Confirm,
             vec![
-                KeyBinding::new(KeyCode::Char('y'), KeyAction::ConfirmYes, "Yes"),
-                KeyBinding::new(KeyCode::Char('n'), KeyAction::ConfirmNo, "No"),
-                KeyBinding::new(KeyCode::Esc, KeyAction::ConfirmNo, "Cancel"),
+                KeyBinding::new(KeyCode::Char('y'), KeyAction::ConfirmYes),
+                KeyBinding::new(KeyCode::Char('n'), KeyAction::ConfirmNo),
+                KeyBinding::new(KeyCode::Esc, KeyAction::ConfirmNo),
             ],
         );
 
@@ -393,17 +436,17 @@ impl Default for KeyRegistry {
         bindings.insert(
             KeyContext::Queue,
             vec![
-                KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel, "Switch Panel"),
-                KeyBinding::new(KeyCode::Char('j'), KeyAction::MoveDown, "Down"),
-                KeyBinding::new(KeyCode::Down, KeyAction::MoveDown, "Down"),
-                KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Up, KeyAction::MoveUp, "Up"),
-                KeyBinding::new(KeyCode::Enter, KeyAction::Interact, "Expand"),
-                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo, "Back"),
-                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo, "Track Info"),
-                KeyBinding::new(KeyCode::Char('d'), KeyAction::RemoveFromQueue, "Remove"),
-                KeyBinding::new(KeyCode::Delete, KeyAction::RemoveFromQueue, "Remove"),
-                KeyBinding::new(KeyCode::Char('d'), KeyAction::ClearQueue, "Clear All")
+                KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel),
+                KeyBinding::new(KeyCode::Char('j'), KeyAction::MoveDown),
+                KeyBinding::new(KeyCode::Down, KeyAction::MoveDown),
+                KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp),
+                KeyBinding::new(KeyCode::Up, KeyAction::MoveUp),
+                KeyBinding::new(KeyCode::Enter, KeyAction::Interact),
+                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo),
+                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo),
+                KeyBinding::new(KeyCode::Char('d'), KeyAction::RemoveFromQueue),
+                KeyBinding::new(KeyCode::Delete, KeyAction::RemoveFromQueue),
+                KeyBinding::new(KeyCode::Char('d'), KeyAction::ClearQueue)
                     .with_mod(KeyModifiers::SHIFT),
             ],
         );
@@ -412,49 +455,49 @@ impl Default for KeyRegistry {
         bindings.insert(
             KeyContext::Global,
             vec![
-                KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit, "Quit"),
-                KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp, "Help"),
-                KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode, "Command"),
-                KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause, "Play/Pause"),
-                KeyBinding::new(KeyCode::Enter, KeyAction::PlaySelected, "Play"),
-                KeyBinding::new(KeyCode::Left, KeyAction::PlayPrevTrack, "Prev Track")
+                KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit),
+                KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp),
+                KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode),
+                KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause),
+                KeyBinding::new(KeyCode::Enter, KeyAction::PlaySelected),
+                KeyBinding::new(KeyCode::Left, KeyAction::PlayPrevTrack)
                     .with_mod(KeyModifiers::CONTROL),
-                KeyBinding::new(KeyCode::Right, KeyAction::PlayNextTrack, "Next Track")
+                KeyBinding::new(KeyCode::Right, KeyAction::PlayNextTrack)
                     .with_mod(KeyModifiers::CONTROL),
-                KeyBinding::new(KeyCode::Char('x'), KeyAction::Stop, "Stop"),
-                KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary, "Scan"),
-                KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer, "Visualizer")
+                KeyBinding::new(KeyCode::Char('x'), KeyAction::Stop),
+                KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary),
+                KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer)
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward, "Seek -5s"),
-                KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward, "Seek -5s"),
-                KeyBinding::new(KeyCode::Char('.'), KeyAction::SeekForward, "Seek +5s"),
-                KeyBinding::new(KeyCode::Char('>'), KeyAction::SeekForward, "Seek +5s"),
-                KeyBinding::new(KeyCode::Esc, KeyAction::CancelDownload, "Cancel DL"),
-                KeyBinding::new(KeyCode::Char('+'), KeyAction::VolUp, "Vol+"),
-                KeyBinding::new(KeyCode::Char('='), KeyAction::VolUp, "Vol+"),
-                KeyBinding::new(KeyCode::Char('-'), KeyAction::VolDown, "Vol-"),
-                KeyBinding::new(KeyCode::Char('_'), KeyAction::VolDown, "Vol-"),
-                KeyBinding::new(KeyCode::Char('z'), KeyAction::ToggleShuffle, "Shuffle"),
-                KeyBinding::new(KeyCode::Char('c'), KeyAction::CycleRepeat, "Repeat"),
-                KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedUp, "Speed+"),
-                KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedDown, "Speed-")
+                KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward),
+                KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward),
+                KeyBinding::new(KeyCode::Char('.'), KeyAction::SeekForward),
+                KeyBinding::new(KeyCode::Char('>'), KeyAction::SeekForward),
+                KeyBinding::new(KeyCode::Esc, KeyAction::CancelDownload),
+                KeyBinding::new(KeyCode::Char('+'), KeyAction::VolUp),
+                KeyBinding::new(KeyCode::Char('='), KeyAction::VolUp),
+                KeyBinding::new(KeyCode::Char('-'), KeyAction::VolDown),
+                KeyBinding::new(KeyCode::Char('_'), KeyAction::VolDown),
+                KeyBinding::new(KeyCode::Char('z'), KeyAction::ToggleShuffle),
+                KeyBinding::new(KeyCode::Char('c'), KeyAction::CycleRepeat),
+                KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedUp),
+                KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedDown)
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('b'), KeyAction::BassUp, "Bass+"),
-                KeyBinding::new(KeyCode::Char('b'), KeyAction::BassDown, "Bass-")
+                KeyBinding::new(KeyCode::Char('b'), KeyAction::BassUp),
+                KeyBinding::new(KeyCode::Char('b'), KeyAction::BassDown)
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('t'), KeyAction::TrebleUp, "Treble+"),
-                KeyBinding::new(KeyCode::Char('t'), KeyAction::TrebleDown, "Treble-")
+                KeyBinding::new(KeyCode::Char('t'), KeyAction::TrebleUp),
+                KeyBinding::new(KeyCode::Char('t'), KeyAction::TrebleDown)
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('r'), KeyAction::ReverbUp, "Reverb+"),
-                KeyBinding::new(KeyCode::Char('r'), KeyAction::ReverbDown, "Reverb-")
+                KeyBinding::new(KeyCode::Char('r'), KeyAction::ReverbUp),
+                KeyBinding::new(KeyCode::Char('r'), KeyAction::ReverbDown)
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoUp, "Echo+"),
-                KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoDown, "Echo-")
+                KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoUp),
+                KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoDown)
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::F(1), KeyAction::CycleFocusMode, "Focus Mode"),
-                KeyBinding::new(KeyCode::Char('h'), KeyAction::ShrinkSidebar, "Sidebar-")
+                KeyBinding::new(KeyCode::F(1), KeyAction::CycleFocusMode),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::ShrinkSidebar)
                     .with_mod(KeyModifiers::CONTROL),
-                KeyBinding::new(KeyCode::Char('l'), KeyAction::GrowSidebar, "Sidebar+")
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::GrowSidebar)
                     .with_mod(KeyModifiers::CONTROL),
             ],
         );

@@ -45,8 +45,11 @@ fn handle_playback_message(state: &mut AppState, msg: PlaybackMsg) -> Vec<AppMsg
             playback_action::handle_request_toggle_playback(state)
         }
         PlaybackMsg::RequestStop => playback_action::handle_request_stop(state),
-        PlaybackMsg::RequestSeek { offset_seconds } => {
-            playback_action::handle_request_seek(state, offset_seconds)
+        PlaybackMsg::RequestSeekRelative(offset) => {
+            playback_action::handle_request_seek_relative(state, offset)
+        }
+        PlaybackMsg::RequestSeekAbsolute(pos) => {
+            playback_action::handle_request_seek_absolute(state, pos)
         }
         PlaybackMsg::DispatchPlay { path } => playback_action::handle_dispatch_play(state, path),
         PlaybackMsg::DispatchPause => playback_action::handle_dispatch_pause(state),

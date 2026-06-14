@@ -4,7 +4,6 @@ use spectrum_analyzer::{
 };
 use std::collections::BTreeMap;
 
-const FFT_SIZE: usize = 4096;
 const NUM_BINS: usize = 512;
 const MIN_FREQ: f32 = 30.0; // catch sub-bass
 const MAX_FREQ: f32 = 18_000.0;
@@ -15,16 +14,18 @@ where
 {
     consumer: C,
     buffer: Vec<f32>,
+    fft_size: usize,
 }
 
 impl<C> SpectrumAnalyzer<C>
 where
     C: Consumer<Item = f32>,
 {
-    pub fn new(consumer: C) -> Self {
+    pub fn new(consumer: C, fft_size: usize) -> Self {
         Self {
             consumer,
-            buffer: Vec::with_capacity(FFT_SIZE),
+            buffer: Vec::with_capacity(fft_size),
+            fft_size,
         }
     }
 
@@ -34,13 +35,13 @@ where
 
     pub fn next_spectrum(&mut self) -> Option<Vec<f32>> {
         while let Some(sample) = self.consumer.try_pop() {
-            if self.buffer.len() < FFT_SIZE {
+            if self.buffer.len() < self.fft_size {
                 self.buffer.push(sample);
             }
         }
 
         // wait for full buffer
-        if self.buffer.len() < FFT_SIZE {
+        if self.buffer.len() < self.fft_size {
             return None;
         }
 
@@ -53,7 +54,7 @@ where
         );
 
         // shift buffer for next frame (75% overlap)
-        let drain_amt = FFT_SIZE - 1024;
+        let drain_amt = self.fft_size - 1024;
         if drain_amt < self.buffer.len() {
             self.buffer.drain(0..drain_amt);
         } else {
@@ -131,7 +132,7 @@ mod tests {
     fn test_spectrum_analyzer_incomplete_frame() {
         let rb = HeapRb::<f32>::new(8192);
         let (mut prod, cons) = rb.split();
-        let mut analyzer = SpectrumAnalyzer::new(cons);
+        let mut analyzer = SpectrumAnalyzer::new(cons, 4096);
 
         // Push fewer than FFT_SIZE samples
         for _ in 0..1024 {
@@ -146,10 +147,10 @@ mod tests {
     fn test_spectrum_analyzer_full_frame() {
         let rb = HeapRb::<f32>::new(8192);
         let (mut prod, cons) = rb.split();
-        let mut analyzer = SpectrumAnalyzer::new(cons);
+        let mut analyzer = SpectrumAnalyzer::new(cons, 4096);
 
         // Push enough for a full frame
-        for _ in 0..FFT_SIZE {
+        for _ in 0..4096 {
             prod.try_push(0.5).unwrap();
         }
 
@@ -163,10 +164,10 @@ mod tests {
     fn test_spectrum_analyzer_nan_handling() {
         let rb = HeapRb::<f32>::new(8192);
         let (mut prod, cons) = rb.split();
-        let mut analyzer = SpectrumAnalyzer::new(cons);
+        let mut analyzer = SpectrumAnalyzer::new(cons, 4096);
 
         // Push NaNs and Infinities
-        for i in 0..FFT_SIZE {
+        for i in 0..4096 {
             let val = if i % 2 == 0 { f32::NAN } else { f32::INFINITY };
             prod.try_push(val).unwrap();
         }

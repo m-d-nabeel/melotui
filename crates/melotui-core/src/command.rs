@@ -52,6 +52,8 @@ pub enum Command {
     RemoveFromPlaylist { name: String },
     Focus { mode: FocusMode },
     Sidebar { width: u16 },
+    SeekRelative(i64),
+    SeekAbsolute(u64),
     Unknown(String),
 }
 
@@ -70,6 +72,8 @@ impl fmt::Display for Command {
             Command::RemoveFromPlaylist { name } => write!(f, "pl rm {}", name),
             Command::Focus { mode } => write!(f, "focus {:?}", mode),
             Command::Sidebar { width } => write!(f, "sidebar {}", width),
+            Command::SeekRelative(offset) => write!(f, "seek {:+}", offset),
+            Command::SeekAbsolute(pos) => write!(f, "seek {}", pos),
             Command::Unknown(s) => write!(f, "unknown: {}", s),
         }
     }
@@ -195,6 +199,32 @@ impl FromStr for Command {
                 }
             }
 
+            // seeking
+            "seek" => {
+                let arg = parts.next().unwrap_or("");
+                if arg.is_empty() {
+                    return Ok(Command::Unknown(
+                        "seek requires an offset (e.g. +10, -5, or 60)".into(),
+                    ));
+                }
+
+                if arg.starts_with('+') || arg.starts_with('-') {
+                    match arg.parse::<i64>() {
+                        Ok(offset) => Ok(Command::SeekRelative(offset)),
+                        Err(_) => Ok(Command::Unknown(
+                            "seek relative requires a valid number".into(),
+                        )),
+                    }
+                } else {
+                    match arg.parse::<u64>() {
+                        Ok(pos) => Ok(Command::SeekAbsolute(pos)),
+                        Err(_) => Ok(Command::Unknown(
+                            "seek absolute requires a valid positive number".into(),
+                        )),
+                    }
+                }
+            }
+
             _ => Ok(Command::Unknown(cmd.to_string())),
         }
     }
@@ -203,6 +233,26 @@ impl FromStr for Command {
 impl Command {
     pub fn parse(input: &str) -> Self {
         Self::from_str(input).unwrap_or(Command::Unknown("parse error".into()))
+    }
+
+    pub fn help_entries() -> &'static [(&'static str, &'static str)] {
+        &[
+            (":q | :quit     ", "Quit App"),
+            (":r | :rescan   ", "Rescan Lib"),
+            (":dl <query>    ", "Download"),
+            (":v <style>     ", "Visualizer"),
+            (":noh           ", "Clear Search"),
+            (":focus <mode>  ", "Focus Mode"),
+            (":sidebar <n>   ", "Sidebar Width"),
+            (":pl create <n> ", "New Playlist"),
+            (":pl del <n>    ", "Del Playlist"),
+            (":pl add <n>    ", "Add to Pl"),
+            (":pl rm <n>     ", "Rem from Pl"),
+            (":artist <q>    ", "Search Artist"),
+            (":song <q>      ", "Search Song"),
+            (":album <q>     ", "Search Album"),
+            (":seek <+/->n   ", "Seek offset"),
+        ]
     }
 }
 
@@ -305,6 +355,31 @@ mod tests {
         assert_eq!(
             Command::parse("   "),
             Command::Unknown("empty command".into())
+        );
+    }
+
+    #[test]
+    fn test_parse_seek() {
+        assert_eq!(Command::parse("seek 10"), Command::SeekAbsolute(10));
+        assert_eq!(Command::parse("seek 0"), Command::SeekAbsolute(0));
+        assert_eq!(Command::parse("seek +15"), Command::SeekRelative(15));
+        assert_eq!(Command::parse("seek -5"), Command::SeekRelative(-5));
+
+        assert_eq!(
+            Command::parse("seek"),
+            Command::Unknown("seek requires an offset (e.g. +10, -5, or 60)".into())
+        );
+        assert_eq!(
+            Command::parse("seek abc"),
+            Command::Unknown("seek absolute requires a valid positive number".into())
+        );
+        assert_eq!(
+            Command::parse("seek +abc"),
+            Command::Unknown("seek relative requires a valid number".into())
+        );
+        assert_eq!(
+            Command::parse("seek +"),
+            Command::Unknown("seek relative requires a valid number".into())
         );
     }
 }

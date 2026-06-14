@@ -37,6 +37,7 @@ pub struct AppState {
     pub current_cover: Option<Arc<image::DynamicImage>>,
     pub track_info_cover: Option<Arc<image::DynamicImage>>,
     pub track_info_cover_id: Option<TrackId>,
+    pub config: crate::config::AppConfig,
 }
 
 // lifecycle
@@ -76,6 +77,7 @@ impl AppState {
             current_cover: None,
             track_info_cover: None,
             track_info_cover_id: None,
+            config: config.clone(),
         }
     }
 }
@@ -366,10 +368,13 @@ impl AppState {
 
     pub fn set_notification(&mut self, kind: NotificationKind, message: impl Into<String>) {
         if let Some(current) = &self.session.notification.current
-            && kind.priority() < current.kind.priority() {
-                return; // Do not overwrite higher priority notifications
-            }
-        self.session.notification.current = Some(Notification::new(kind, message));
+            && kind.priority() < current.kind.priority()
+        {
+            return; // Do not overwrite higher priority notifications
+        }
+        let duration = self.config.ui.notification_duration_secs;
+        self.session.notification.current =
+            Some(Notification::new(kind, message).with_duration(duration));
     }
 
     pub fn set_notification_with_duration(
@@ -379,9 +384,10 @@ impl AppState {
         duration_secs: u64,
     ) {
         if let Some(current) = &self.session.notification.current
-            && kind.priority() < current.kind.priority() {
-                return; // Do not overwrite higher priority notifications
-            }
+            && kind.priority() < current.kind.priority()
+        {
+            return; // Do not overwrite higher priority notifications
+        }
         self.session.notification.current =
             Some(Notification::new(kind, message).with_duration(duration_secs));
     }

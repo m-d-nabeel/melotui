@@ -34,6 +34,8 @@ pub fn run() -> Result<()> {
     let engine = Engine::new(EngineConfig {
         db_path,
         spectrum_producer: producer,
+        fft_size: config.audio.fft_size,
+        max_cover_resolution: config.library.max_cover_resolution,
     });
 
     // request async library load
@@ -74,7 +76,8 @@ pub fn run() -> Result<()> {
 
     while runtime.running {
         let timeout = if state.should_draw_spectrum() {
-            Duration::from_millis(16)
+            let limit = state.config.ui.fps_limit.max(1); // prevent division by zero
+            Duration::from_millis(1000 / limit)
         } else {
             Duration::from_millis(100)
         };
@@ -98,7 +101,8 @@ pub fn run() -> Result<()> {
         }
 
         if !events.is_empty() {
-            let processed = runtime.input_processor.coalesce(events);
+            let debounce = state.config.ui.search_debounce_ms;
+            let processed = runtime.input_processor.coalesce(events, debounce);
             runtime.effect_queue.extend(processed);
             should_render = true;
         }

@@ -42,15 +42,29 @@ pub struct UiConfig {
     pub scrolloff: usize,
     /// Color theme ID (e.g. "catppuccin_mocha", "dracula")
     pub theme: String,
+    /// Notification duration in seconds
+    pub notification_duration_secs: u64,
+    /// Maximum cover art height percentage in sidebar (e.g. 40 means 40%)
+    pub art_max_height_percent: u16,
+    /// Debounce time in ms before search triggers
+    pub search_debounce_ms: u64,
+    /// Target frames per second for rendering
+    pub fps_limit: u64,
+    /// Max visible items in playlist picker
+    pub playlist_picker_max_visible: usize,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct LibraryConfig {
     /// Directories to scan for music. If empty, falls back to `dirs::audio_dir()`.
     pub music_directories: Vec<String>,
     /// Custom database path. If None, falls back to `dirs::data_dir()/melotui/library.db`.
     pub db_path: Option<String>,
+    /// Max resolution for cover art downscaling
+    pub max_cover_resolution: u32,
+    /// Max visible items in the playlist picker viewport
+    pub picker_viewport_size: usize,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -66,6 +80,14 @@ pub struct AudioConfig {
     pub default_reverb: f32,
     /// Default echo level (0.0–0.9)
     pub default_echo: f32,
+    /// Seek step in seconds for arrow keys
+    pub seek_step: i64,
+    /// Volume step amount (0.0 - 1.0)
+    pub volume_step: f32,
+    /// Speed step amount (0.0 - 2.0)
+    pub speed_step: f32,
+    /// FFT size for the audio visualizer
+    pub fft_size: usize,
 }
 
 impl Default for UiConfig {
@@ -73,7 +95,23 @@ impl Default for UiConfig {
         Self {
             sidebar_width: 28,
             scrolloff: 8,
-            theme: "catppuccin_mocha".to_string(),
+            theme: "default".into(),
+            notification_duration_secs: 2,
+            art_max_height_percent: 40,
+            search_debounce_ms: 500,
+            fps_limit: 60,
+            playlist_picker_max_visible: 10,
+        }
+    }
+}
+
+impl Default for LibraryConfig {
+    fn default() -> Self {
+        Self {
+            music_directories: Vec::new(),
+            db_path: None,
+            max_cover_resolution: 512,
+            picker_viewport_size: 20,
         }
     }
 }
@@ -86,6 +124,10 @@ impl Default for AudioConfig {
             default_treble: 1.0,
             default_reverb: 0.0,
             default_echo: 0.0,
+            seek_step: 5,
+            volume_step: 0.05,
+            speed_step: 0.1,
+            fft_size: 4096,
         }
     }
 }
@@ -345,6 +387,7 @@ mod tests {
                     "/mnt/data/audio".to_string(),
                 ],
                 db_path: None,
+                ..Default::default()
             },
             ..Default::default()
         };

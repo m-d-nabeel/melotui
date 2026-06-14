@@ -188,7 +188,7 @@ impl InputHandler {
             ))),
 
             // direct mapping
-            _ => act.to_msg(),
+            _ => act.to_msg(&state.config),
         }
     }
 }
