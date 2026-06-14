@@ -316,6 +316,11 @@ pub fn handle_toggle_lyrics(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+pub fn handle_toggle_playback_panel(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.show_playback = !state.session.ui.show_playback;
+    vec![]
+}
+
 pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     tracing::debug!("Enter Command Mode");
     state.session.ui.mode = UIMode::Command;

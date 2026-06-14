@@ -41,6 +41,7 @@ pub enum KeyAction {
     TogglePanel,
     ToggleVisualizer,
     ToggleLyrics,
+    TogglePlaybackPanel,
     MoveUp,
     MoveDown,
     Interact,
@@ -132,6 +133,7 @@ impl KeyAction {
             KeyAction::TogglePanel => "Switch Panel",
             KeyAction::ToggleVisualizer => "Visualizer",
             KeyAction::ToggleLyrics => "Lyrics",
+            KeyAction::TogglePlaybackPanel => "Playback Panel",
             KeyAction::MoveUp => "Up",
             KeyAction::MoveDown => "Down",
             KeyAction::Interact => "Play/Open",
@@ -206,6 +208,7 @@ impl KeyAction {
             KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
             KeyAction::ToggleVisualizer => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
             KeyAction::ToggleLyrics => Some(AppMsg::UI(UIMsg::ToggleLyrics)),
+            KeyAction::TogglePlaybackPanel => Some(AppMsg::UI(UIMsg::TogglePlaybackPanel)),
             KeyAction::ToggleFolderExpand => {
                 Some(AppMsg::Navigation(NavigationMsg::ToggleTreeExpand))
             }
@@ -528,6 +531,9 @@ impl Default for KeyRegistry {
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('l'), KeyAction::ToggleLyrics),
                 KeyBinding::new(KeyCode::Char('L'), KeyAction::ToggleLyrics)
+                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('v'), KeyAction::TogglePlaybackPanel),
+                KeyBinding::new(KeyCode::Char('V'), KeyAction::TogglePlaybackPanel)
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward),
                 KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward),

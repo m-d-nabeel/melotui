@@ -110,6 +110,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::OpenHelp => ui_action::handle_open_help(state),
         UIMsg::CloseHelp => ui_action::handle_close_help(state),
         UIMsg::ToggleLyrics => ui_action::handle_toggle_lyrics(state),
+        UIMsg::TogglePlaybackPanel => ui_action::handle_toggle_playback_panel(state),
         UIMsg::Resize(w, h) => ui_action::handle_resize(state, w, h),
         UIMsg::EnterPlaylistPicker => ui_action::handle_enter_playlist_picker(state),
         UIMsg::ExitPlaylistPicker => ui_action::handle_exit_playlist_picker(state),

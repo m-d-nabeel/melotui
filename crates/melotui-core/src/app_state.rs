@@ -366,6 +366,10 @@ impl AppState {
         self.session.ui.show_lyrics
     }
 
+    pub fn ui_show_playback(&self) -> bool {
+        self.session.ui.show_playback
+    }
+
     pub fn lyrics_data(&self) -> &crate::state::LyricsData {
         &self.session.lyrics.data
     }

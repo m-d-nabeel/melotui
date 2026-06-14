@@ -14,6 +14,7 @@ pub enum UIMsg {
     OpenHelp,
     CloseHelp,
     ToggleLyrics,
+    TogglePlaybackPanel,
     Resize(u16, u16),
     EnterPlaylistPicker,
     ExitPlaylistPicker,

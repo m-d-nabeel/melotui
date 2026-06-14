@@ -40,14 +40,12 @@ pub struct LyricsState {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_lrc() {
         let l = "[00:12.00] Line\n[00:14.00] Line 2"
             .parse::<lrc::Lyrics>()
             .unwrap();
         let lyrics = l.get_timed_lines();
-        let t = lyrics[0].0.get_timestamp();
+        let _t = lyrics[0].0.get_timestamp();
     }
 }
