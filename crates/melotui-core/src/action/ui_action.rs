@@ -602,12 +602,42 @@ mod tests {
     #[test]
     fn test_handle_autocomplete_cycle() {
         let mut state = test_state();
-        state.session.ui.command_buffer = tui_input::Input::new("".to_string());
 
+        // Initial input "pl" has matches: "pl add", "pl create", "pl del", "pl rm", "playlist add", "playlist create", "playlist del", "playlist rm"
+        state.session.ui.command_buffer = tui_input::Input::new("pl".to_string());
+
+        // Forward 1: cycle 0 -> 1. Should show "pl add "
         handle_autocomplete(&mut state);
         assert_eq!(state.session.ui.autocomplete_cycle, 1);
+        assert_eq!(state.session.ui.autocomplete_prefix.as_deref(), Some("pl"));
         let val1 = state.session.ui.command_buffer.value().to_string();
-        assert!(!val1.is_empty());
+        assert_eq!(val1, "pl add ");
+
+        // Forward 2: cycle 1 -> 2. Should show "pl create "
+        handle_autocomplete(&mut state);
+        assert_eq!(state.session.ui.autocomplete_cycle, 2);
+        assert_eq!(state.session.ui.autocomplete_prefix.as_deref(), Some("pl"));
+        let val2 = state.session.ui.command_buffer.value().to_string();
+        assert_eq!(val2, "pl create ");
+
+        // Reverse 1: cycle 2 -> 1. Should show "pl add " again
+        handle_autocomplete_reverse(&mut state);
+        assert_eq!(state.session.ui.autocomplete_cycle, 1);
+        assert_eq!(state.session.ui.autocomplete_prefix.as_deref(), Some("pl"));
+        let val3 = state.session.ui.command_buffer.value().to_string();
+        assert_eq!(val3, "pl add ");
+
+        // Reverse 2: cycle 1 -> 0. Should wrap around backwards to the LAST element, "playlist rm "
+        handle_autocomplete_reverse(&mut state);
+        assert_eq!(state.session.ui.autocomplete_cycle, 0); // 0 or whatever the last element's cycle is... actually wait! If length is 8, reverse from 1 goes to 0 (which shows the last element). Wait! If cycle is 0, the next is 0. We should test that it returns the last element.
+        let val4 = state.session.ui.command_buffer.value().to_string();
+        assert_eq!(val4, "playlist rm ");
+
+        // Clear prefix explicitly
+        use tui_input::InputRequest;
+        crate::action::ui_action::handle_command_input(&mut state, InputRequest::InsertChar('x'));
+        assert_eq!(state.session.ui.autocomplete_cycle, 0);
+        assert_eq!(state.session.ui.autocomplete_prefix, None);
     }
 
     #[test]

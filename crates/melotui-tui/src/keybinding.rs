@@ -393,6 +393,8 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Esc, KeyAction::ExitCommandMode),
                 KeyBinding::new(KeyCode::Enter, KeyAction::SubmitCommand),
                 KeyBinding::new(KeyCode::Tab, KeyAction::Autocomplete),
+                KeyBinding::new(KeyCode::BackTab, KeyAction::AutocompleteReverse)
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Up, KeyAction::CommandHistoryPrev),
                 KeyBinding::new(KeyCode::Down, KeyAction::CommandHistoryNext),
             ],
