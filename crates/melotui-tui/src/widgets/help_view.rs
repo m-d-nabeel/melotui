@@ -217,7 +217,13 @@ fn format_key(binding: &KeyBinding) -> String {
     // add the key
     let key_str = match binding.key {
         KeyCode::Char(' ') => "Space".to_string(),
-        KeyCode::Char(c) => format!("{}", c.to_uppercase()),
+        KeyCode::Char(c) => {
+            if binding.modifiers.contains(KeyModifiers::SHIFT) {
+                format!("{}", c.to_uppercase())
+            } else {
+                format!("{}", c.to_lowercase())
+            }
+        }
         KeyCode::Up => "↑".to_string(),
         KeyCode::Down => "↓".to_string(),
         KeyCode::Left => "←".to_string(),

@@ -64,11 +64,21 @@ impl InputHandler {
 
         let contexts = Self::get_active_contexts(state);
 
+        let mut normalized_code = key.code;
+        if let KeyCode::Char(c) = normalized_code
+            && key
+                .modifiers
+                .contains(ratatui::crossterm::event::KeyModifiers::SHIFT)
+            && c.is_ascii_uppercase()
+        {
+            normalized_code = KeyCode::Char(c.to_ascii_lowercase());
+        }
+
         let mut action = None;
         'ctx_loop: for ctx in contexts {
             if let Some(bindings) = registry.bindings.get(&ctx) {
                 for binding in bindings {
-                    if binding.key == key.code && binding.modifiers == key.modifiers {
+                    if binding.key == normalized_code && binding.modifiers == key.modifiers {
                         action = Some(binding.action);
                         break 'ctx_loop;
                     }
