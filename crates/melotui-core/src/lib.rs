@@ -1,8 +1,10 @@
 pub mod action;
 pub mod app_state;
+pub mod autocomplete;
 pub mod command;
 pub mod config;
 pub mod domain;
+pub mod history;
 pub mod library;
 pub mod message;
 pub mod navigation;

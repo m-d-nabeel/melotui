@@ -70,6 +70,10 @@ pub struct ConfirmDialog {
 pub struct UIState {
     pub mode: UIMode,
     pub command_buffer: tui_input::Input,
+    pub autocomplete_cycle: usize,
+    pub autocomplete_prefix: Option<String>,
+    pub command_history: crate::history::CommandHistory,
+    pub history_index: Option<usize>,
     pub playlist_picker: PlaylistPickerState,
     /// track waiting to be added after async playlist creation
     pub pending_add_track: Option<TrackId>,
@@ -88,6 +92,10 @@ impl Default for UIState {
         Self {
             mode: UIMode::default(),
             command_buffer: tui_input::Input::default(),
+            autocomplete_cycle: 0,
+            autocomplete_prefix: None,
+            command_history: crate::history::CommandHistory::new(),
+            history_index: None,
             playlist_picker: PlaylistPickerState::default(),
             pending_add_track: None,
             confirm_dialog: None,

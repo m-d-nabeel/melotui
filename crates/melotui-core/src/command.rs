@@ -79,26 +79,61 @@ impl fmt::Display for Command {
     }
 }
 
+pub fn shlex(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current_arg = String::new();
+    let mut in_quotes = false;
+    let mut quote_char = '\0';
+    let mut escaped = false;
+
+    for c in input.chars() {
+        if escaped {
+            current_arg.push(c);
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if in_quotes {
+            if c == quote_char {
+                in_quotes = false;
+            } else {
+                current_arg.push(c);
+            }
+        } else if c == '"' || c == '\'' {
+            in_quotes = true;
+            quote_char = c;
+        } else if c.is_whitespace() {
+            if !current_arg.is_empty() {
+                args.push(current_arg.clone());
+                current_arg.clear();
+            }
+        } else {
+            current_arg.push(c);
+        }
+    }
+    if !current_arg.is_empty() {
+        args.push(current_arg);
+    }
+    args
+}
+
 impl FromStr for Command {
     type Err = ();
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let trimmed = input.trim();
-
-        if trimmed.is_empty() {
+        let mut tokens = shlex(input);
+        if tokens.is_empty() {
             return Ok(Command::Unknown("empty command".into()));
         }
 
-        let mut parts = trimmed.split_whitespace();
-        let cmd = parts.next().unwrap_or("");
+        let cmd = tokens.remove(0);
 
-        match cmd {
+        match cmd.as_str() {
             "q" | "quit" | "exit" => Ok(Command::Quit),
             "r" | "rescan" | "scan" => Ok(Command::Rescan),
             "noh" | "nohlsearch" | "clear" => Ok(Command::ClearSearch),
 
             "download" | "dl" => {
-                let query = parts.collect::<Vec<_>>().join(" ");
+                let query = tokens.join(" ");
                 if query.is_empty() {
                     Ok(Command::Unknown("download requires a query".into()))
                 } else {
@@ -107,7 +142,7 @@ impl FromStr for Command {
             }
 
             "v" | "vis" => {
-                let arg = parts.collect::<Vec<_>>().join(" ");
+                let arg = tokens.join(" ");
                 if arg.is_empty() {
                     Ok(Command::Unknown("Visualizer requires an argument".into()))
                 } else if let Ok(style) = SpectrumStyle::from_str(&arg) {
@@ -120,8 +155,12 @@ impl FromStr for Command {
             }
 
             "pl" | "playlist" => {
-                let sub = parts.next().unwrap_or("");
-                let name = parts.collect::<Vec<_>>().join(" ");
+                let sub = tokens.first().map(|s| s.as_str()).unwrap_or("");
+                let name = if tokens.len() > 1 {
+                    tokens[1..].join(" ")
+                } else {
+                    String::new()
+                };
                 match sub {
                     "create" | "new" => {
                         if name.is_empty() {
@@ -159,9 +198,9 @@ impl FromStr for Command {
             }
 
             // search by field: "artist adele", "song hello", etc.
-            _ if SearchField::from_str(cmd).is_ok() => {
-                let field = SearchField::from_str(cmd).unwrap();
-                let query = parts.collect::<Vec<_>>().join(" ");
+            _ if SearchField::from_str(&cmd).is_ok() => {
+                let field = SearchField::from_str(&cmd).unwrap();
+                let query = tokens.join(" ");
                 if query.is_empty() {
                     Ok(Command::Unknown(format!("{} requires a query", field)))
                 } else {
@@ -171,7 +210,7 @@ impl FromStr for Command {
 
             // focus mode
             "focus" | "zen" => {
-                let arg = parts.next().unwrap_or("");
+                let arg = tokens.first().map(|s| s.as_str()).unwrap_or("");
                 if arg.is_empty() {
                     Ok(Command::Unknown(
                         "focus requires a mode: full, viz, play, vp".into(),
@@ -188,7 +227,7 @@ impl FromStr for Command {
 
             // sidebar width
             "sidebar" | "sb" => {
-                let arg = parts.next().unwrap_or("");
+                let arg = tokens.first().map(|s| s.as_str()).unwrap_or("");
                 match arg.parse::<u16>() {
                     Ok(w) if (28..=80).contains(&w) => Ok(Command::Sidebar { width: w }),
                     Ok(w) => Ok(Command::Unknown(format!(
@@ -201,7 +240,7 @@ impl FromStr for Command {
 
             // seeking
             "seek" => {
-                let arg = parts.next().unwrap_or("");
+                let arg = tokens.first().map(|s| s.as_str()).unwrap_or("");
                 if arg.is_empty() {
                     return Ok(Command::Unknown(
                         "seek requires an offset (e.g. +10, -5, or 60)".into(),
@@ -225,7 +264,7 @@ impl FromStr for Command {
                 }
             }
 
-            _ => Ok(Command::Unknown(cmd.to_string())),
+            _ => Ok(Command::Unknown(cmd)),
         }
     }
 }
@@ -237,21 +276,21 @@ impl Command {
 
     pub fn help_entries() -> &'static [(&'static str, &'static str)] {
         &[
-            (":q | :quit     ", "Quit App"),
-            (":r | :rescan   ", "Rescan Lib"),
-            (":dl <query>    ", "Download"),
-            (":v <style>     ", "Visualizer"),
-            (":noh           ", "Clear Search"),
-            (":focus <mode>  ", "Focus Mode"),
-            (":sidebar <n>   ", "Sidebar Width"),
-            (":pl create <n> ", "New Playlist"),
-            (":pl del <n>    ", "Del Playlist"),
-            (":pl add <n>    ", "Add to Pl"),
-            (":pl rm <n>     ", "Rem from Pl"),
-            (":artist <q>    ", "Search Artist"),
-            (":song <q>      ", "Search Song"),
-            (":album <q>     ", "Search Album"),
-            (":seek <+/->n   ", "Seek offset"),
+            (":q | :quit | :exit ", "Quit App"),
+            (":r | :rescan       ", "Rescan Lib"),
+            (":dl | :download <q>", "Download"),
+            (":v | :vis <style>  ", "Visualizer"),
+            (":noh               ", "Clear Search"),
+            (":focus <mode>      ", "Focus Mode"),
+            (":sidebar <n>       ", "Sidebar Width"),
+            (":pl | :playlist create <n>", "New Playlist"),
+            (":pl | :playlist del <n>   ", "Del Playlist"),
+            (":pl | :playlist add <n>   ", "Add to Pl"),
+            (":pl | :playlist rm <n>    ", "Rem from Pl"),
+            (":artist <q>        ", "Search Artist"),
+            (":song <q>          ", "Search Song"),
+            (":album <q>         ", "Search Album"),
+            (":seek <+/->n       ", "Seek offset"),
         ]
     }
 }
@@ -380,6 +419,45 @@ mod tests {
         assert_eq!(
             Command::parse("seek +"),
             Command::Unknown("seek relative requires a valid number".into())
+        );
+    }
+
+    #[test]
+    fn test_shlex() {
+        assert_eq!(
+            super::shlex("pl create My Playlist"),
+            vec!["pl", "create", "My", "Playlist"]
+        );
+        assert_eq!(
+            super::shlex("pl create \"My Playlist\""),
+            vec!["pl", "create", "My Playlist"]
+        );
+        assert_eq!(
+            super::shlex("search artist \"The Beatles\" song \"Let It Be\""),
+            vec!["search", "artist", "The Beatles", "song", "Let It Be"]
+        );
+    }
+
+    #[test]
+    fn test_parse_quotes() {
+        assert_eq!(
+            Command::parse("pl create \"My Playlist\""),
+            Command::CreatePlaylist {
+                name: "My Playlist".into()
+            }
+        );
+        assert_eq!(
+            Command::parse("pl add \"My Playlist\""),
+            Command::AddToPlaylist {
+                name: "My Playlist".into()
+            }
+        );
+        assert_eq!(
+            Command::parse("artist \"The Beatles\""),
+            Command::Search {
+                field: SearchField::Artist,
+                query: "The Beatles".into()
+            }
         );
     }
 }

@@ -224,19 +224,29 @@ pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_exit_command_mode(state: &mut AppState) -> Vec<AppMsg> {
-    tracing::debug!("Exit Command Mode");
     state.session.ui.mode = UIMode::Normal;
     state.session.ui.command_buffer.reset();
+    state.session.ui.history_index = None;
     vec![]
 }
 
 pub fn handle_command_input(state: &mut AppState, req: InputRequest) -> Vec<AppMsg> {
+    state.session.ui.autocomplete_cycle = 0;
+    state.session.ui.autocomplete_prefix = None;
+    state.session.ui.history_index = None;
     state.session.ui.command_buffer.handle(req);
     vec![]
 }
 
 pub fn handle_submit_command(state: &mut AppState, input: String) -> Vec<AppMsg> {
     tracing::info!("SubmitCommand called with :{:?}", input);
+
+    // Save to history if it's not empty
+    if !input.trim().is_empty() {
+        state.session.ui.command_history.push(input.clone());
+    }
+    state.session.ui.history_index = None;
+
     process_command_input(state, input)
 }
 
@@ -429,6 +439,99 @@ pub fn handle_adjust_sidebar_width(state: &mut AppState, delta: i16) -> Vec<AppM
     vec![]
 }
 
+pub fn handle_autocomplete(state: &mut AppState) -> Vec<AppMsg> {
+    if state.session.ui.autocomplete_prefix.is_none() {
+        state.session.ui.autocomplete_prefix =
+            Some(state.session.ui.command_buffer.value().to_string());
+    }
+
+    let prefix = state.session.ui.autocomplete_prefix.as_ref().unwrap();
+
+    let (suggestion, _) = crate::autocomplete::suggest(prefix, state.session.ui.autocomplete_cycle);
+    if let Some(suggestion) = suggestion {
+        state.session.ui.command_buffer =
+            tui_input::Input::new(suggestion.clone()).with_cursor(suggestion.len());
+        state.session.ui.autocomplete_cycle += 1;
+    }
+    vec![]
+}
+
+pub fn handle_autocomplete_reverse(state: &mut AppState) -> Vec<AppMsg> {
+    if state.session.ui.autocomplete_prefix.is_none() {
+        state.session.ui.autocomplete_prefix =
+            Some(state.session.ui.command_buffer.value().to_string());
+    }
+
+    let prefix = state.session.ui.autocomplete_prefix.as_ref().unwrap();
+
+    let (_, count) = crate::autocomplete::suggest(prefix, 0);
+    if count > 0 {
+        let current_cycle = state.session.ui.autocomplete_cycle;
+
+        let prev_index = if count == 1 {
+            0
+        } else if (current_cycle % count) < 2 {
+            (current_cycle % count) + count - 2
+        } else {
+            (current_cycle % count) - 2
+        };
+
+        let new_cycle = if count == 1 {
+            0
+        } else if (current_cycle % count) < 1 {
+            (current_cycle % count) + count - 1
+        } else {
+            (current_cycle % count) - 1
+        };
+
+        state.session.ui.autocomplete_cycle = new_cycle;
+
+        let (suggestion, _) = crate::autocomplete::suggest(prefix, prev_index);
+        if let Some(suggestion) = suggestion {
+            state.session.ui.command_buffer =
+                tui_input::Input::new(suggestion.clone()).with_cursor(suggestion.len());
+        }
+    }
+    vec![]
+}
+
+pub fn handle_command_history_prev(state: &mut AppState) -> Vec<AppMsg> {
+    let entries = state.session.ui.command_history.entries();
+    if entries.is_empty() {
+        return vec![];
+    }
+
+    let mut idx = state.session.ui.history_index.unwrap_or(entries.len());
+    if idx > 0 {
+        idx -= 1;
+        state.session.ui.history_index = Some(idx);
+        let cmd = entries[idx].clone();
+        state.session.ui.command_buffer = tui_input::Input::new(cmd.clone()).with_cursor(cmd.len());
+    }
+    vec![]
+}
+
+pub fn handle_command_history_next(state: &mut AppState) -> Vec<AppMsg> {
+    let entries = state.session.ui.command_history.entries();
+    if entries.is_empty() {
+        return vec![];
+    }
+
+    if let Some(mut idx) = state.session.ui.history_index {
+        if idx + 1 < entries.len() {
+            idx += 1;
+            state.session.ui.history_index = Some(idx);
+            let cmd = entries[idx].clone();
+            state.session.ui.command_buffer =
+                tui_input::Input::new(cmd.clone()).with_cursor(cmd.len());
+        } else {
+            state.session.ui.history_index = None;
+            state.session.ui.command_buffer = tui_input::Input::new("".to_string());
+        }
+    }
+    vec![]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,5 +597,43 @@ mod tests {
             state.current_notification().unwrap().kind,
             NotificationKind::Error
         ));
+    }
+
+    #[test]
+    fn test_handle_autocomplete_cycle() {
+        let mut state = test_state();
+        state.session.ui.command_buffer = tui_input::Input::new("".to_string());
+
+        handle_autocomplete(&mut state);
+        assert_eq!(state.session.ui.autocomplete_cycle, 1);
+        let val1 = state.session.ui.command_buffer.value().to_string();
+        assert!(!val1.is_empty());
+    }
+
+    #[test]
+    fn test_handle_command_history_integration() {
+        let mut state = test_state();
+        state.session.ui.command_history = crate::history::CommandHistory::default();
+
+        handle_submit_command(&mut state, "pl create A".into());
+        handle_submit_command(&mut state, "pl create B".into());
+
+        assert_eq!(state.session.ui.history_index, None);
+
+        handle_command_history_prev(&mut state);
+        assert_eq!(state.session.ui.history_index, Some(1));
+        assert_eq!(state.session.ui.command_buffer.value(), "pl create B");
+
+        handle_command_history_prev(&mut state);
+        assert_eq!(state.session.ui.history_index, Some(0));
+        assert_eq!(state.session.ui.command_buffer.value(), "pl create A");
+
+        handle_command_history_next(&mut state);
+        assert_eq!(state.session.ui.history_index, Some(1));
+        assert_eq!(state.session.ui.command_buffer.value(), "pl create B");
+
+        handle_command_history_next(&mut state);
+        assert_eq!(state.session.ui.history_index, None);
+        assert_eq!(state.session.ui.command_buffer.value(), "");
     }
 }

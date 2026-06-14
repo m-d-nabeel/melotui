@@ -31,6 +31,10 @@ pub enum KeyAction {
     EnterCommandMode,
     ExitCommandMode,
     SubmitCommand,
+    Autocomplete,
+    AutocompleteReverse,
+    CommandHistoryPrev,
+    CommandHistoryNext,
 
     // navigation
     TogglePanel,
@@ -111,6 +115,10 @@ impl KeyAction {
             KeyAction::EnterCommandMode => "Command",
             KeyAction::ExitCommandMode => "Close",
             KeyAction::SubmitCommand => "Submit",
+            KeyAction::Autocomplete => "Autocomplete",
+            KeyAction::AutocompleteReverse => "Autocomplete Reverse",
+            KeyAction::CommandHistoryPrev => "History Prev",
+            KeyAction::CommandHistoryNext => "History Next",
             KeyAction::TogglePanel => "Switch Panel",
             KeyAction::ToggleVisualizer => "Visualizer",
             KeyAction::MoveUp => "Up",
@@ -212,6 +220,10 @@ impl KeyAction {
             KeyAction::AddToQueue => None,     // id resolved in input.rs
             KeyAction::QueuePlayNext => None,  // id resolved in input.rs
             KeyAction::SubmitCommand => None,  // uses command buffer
+            KeyAction::Autocomplete => Some(AppMsg::UI(UIMsg::Autocomplete)),
+            KeyAction::AutocompleteReverse => Some(AppMsg::UI(UIMsg::AutocompleteReverse)),
+            KeyAction::CommandHistoryPrev => Some(AppMsg::UI(UIMsg::CommandHistoryPrev)),
+            KeyAction::CommandHistoryNext => Some(AppMsg::UI(UIMsg::CommandHistoryNext)),
             KeyAction::VolUp => Some(AppMsg::Audio(AudioMsg::AdjustVolume(
                 config.audio.volume_step,
             ))),
@@ -380,6 +392,9 @@ impl Default for KeyRegistry {
             vec![
                 KeyBinding::new(KeyCode::Esc, KeyAction::ExitCommandMode),
                 KeyBinding::new(KeyCode::Enter, KeyAction::SubmitCommand),
+                KeyBinding::new(KeyCode::Tab, KeyAction::Autocomplete),
+                KeyBinding::new(KeyCode::Up, KeyAction::CommandHistoryPrev),
+                KeyBinding::new(KeyCode::Down, KeyAction::CommandHistoryNext),
             ],
         );
 
