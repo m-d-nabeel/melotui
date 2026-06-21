@@ -16,6 +16,7 @@ pub enum FocusMode {
     Visualizer,         // visualizer fills entire screen
     Playback,           // minimal now-playing strip centered
     VisualizerPlayback, // visualizer + playback, no sidebar/mixer
+    LyricsPlayback,     // lyrics + playback
 }
 
 impl FocusMode {
@@ -24,7 +25,8 @@ impl FocusMode {
             FocusMode::Full => FocusMode::Visualizer,
             FocusMode::Visualizer => FocusMode::Playback,
             FocusMode::Playback => FocusMode::VisualizerPlayback,
-            FocusMode::VisualizerPlayback => FocusMode::Full,
+            FocusMode::VisualizerPlayback => FocusMode::LyricsPlayback,
+            FocusMode::LyricsPlayback => FocusMode::Full,
         }
     }
 
@@ -34,6 +36,7 @@ impl FocusMode {
             FocusMode::Visualizer => "Visualizer",
             FocusMode::Playback => "Playback",
             FocusMode::VisualizerPlayback => "Viz+Play",
+            FocusMode::LyricsPlayback => "Lyrics+Play",
         }
     }
 }
@@ -47,6 +50,7 @@ impl std::str::FromStr for FocusMode {
             "viz" | "v" | "visualizer" => Ok(FocusMode::Visualizer),
             "play" | "p" | "playback" => Ok(FocusMode::Playback),
             "vp" | "vizplay" => Ok(FocusMode::VisualizerPlayback),
+            "lp" | "lyricsplay" => Ok(FocusMode::LyricsPlayback),
             _ => Err(()),
         }
     }
@@ -70,16 +74,23 @@ pub struct ConfirmDialog {
 pub struct UIState {
     pub mode: UIMode,
     pub command_buffer: tui_input::Input,
+    pub autocomplete_cycle: usize,
+    pub autocomplete_prefix: Option<String>,
+    pub command_history: crate::history::CommandHistory,
+    pub history_index: Option<usize>,
     pub playlist_picker: PlaylistPickerState,
     /// track waiting to be added after async playlist creation
     pub pending_add_track: Option<TrackId>,
     pub confirm_dialog: Option<ConfirmDialog>,
 
     pub show_help: bool,
+    pub show_lyrics: bool,
+    pub show_playback: bool,
     pub scrolloff: usize,
     pub terminal_size: (u16, u16),
     pub sidebar_width: u16,
     pub focus_mode: FocusMode,
+    pub theme_overrides: std::collections::HashMap<String, String>,
 }
 
 impl Default for UIState {
@@ -87,14 +98,21 @@ impl Default for UIState {
         Self {
             mode: UIMode::default(),
             command_buffer: tui_input::Input::default(),
+            autocomplete_cycle: 0,
+            autocomplete_prefix: None,
+            command_history: crate::history::CommandHistory::new(),
+            history_index: None,
             playlist_picker: PlaylistPickerState::default(),
             pending_add_track: None,
             confirm_dialog: None,
             show_help: false,
+            show_lyrics: false,
+            show_playback: true,
             scrolloff: 8,
             terminal_size: (0, 0),
             sidebar_width: 28,
             focus_mode: FocusMode::default(),
+            theme_overrides: std::collections::HashMap::new(),
         }
     }
 }

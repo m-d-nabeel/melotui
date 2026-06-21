@@ -6,11 +6,6 @@ use ratatui::{
 
 use crate::theme::Theme;
 
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
-
 #[derive(Clone, Copy)]
 #[allow(unused)]
 pub enum ProgressBarTheme {
@@ -26,8 +21,7 @@ pub struct ProgressBarConfig {
     pub ratio: f64, // 0.0 to 1.0
 }
 
-pub fn render_progress_bar(config: ProgressBarConfig) -> Paragraph<'static> {
-    let t = theme();
+pub fn render_progress_bar(config: ProgressBarConfig, t: &Theme) -> Paragraph<'static> {
     let width = config.width;
     if width == 0 {
         return Paragraph::new(Line::default());

@@ -1,9 +1,10 @@
 pub mod action;
 pub mod app_state;
+pub mod autocomplete;
 pub mod command;
 pub mod config;
 pub mod domain;
-pub mod keybinding;
+pub mod history;
 pub mod library;
 pub mod message;
 pub mod navigation;
@@ -16,4 +17,4 @@ pub use app_state::AppState;
 pub use command::Command;
 pub use message::AppMsg;
 pub use state::{SessionState, UIMode};
-pub use utils::{NoOpSpectrum, SizeMode, SpectrumSource, bytes_to_ascii};
+pub use utils::{NoOpSpectrum, SpectrumSource};

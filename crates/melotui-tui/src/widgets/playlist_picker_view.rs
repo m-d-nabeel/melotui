@@ -6,18 +6,10 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
-use crate::theme::Theme;
 use melotui_core::{AppState, domain::PlaylistMeta};
 
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
-
-const MAX_VISIBLE: usize = 10;
-
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let t = theme();
+    let t = crate::theme::get_theme(state);
     let picker = state.playlist_picker();
 
     let query = picker.query.trim().to_lowercase();
@@ -42,7 +34,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let total = filtered.len();
     let scroll = picker.scroll_offset.min(total.saturating_sub(1));
-    let visible_count = total.saturating_sub(scroll).min(MAX_VISIBLE);
+    let visible_count = total
+        .saturating_sub(scroll)
+        .min(state.config.ui.playlist_picker_max_visible);
     // +1 for the top border
     let list_height = if visible_count == 0 {
         0

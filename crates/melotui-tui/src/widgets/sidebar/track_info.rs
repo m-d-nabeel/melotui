@@ -10,12 +10,6 @@ use ratatui_image::StatefulImage;
 
 use crate::{format_duration, image_cache::ImageCache, theme::Theme};
 
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
-
-const MAX_ART_HEIGHT_PERCENT: u16 = 40;
 const MIN_ART_HEIGHT: u16 = 15;
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache) {
@@ -38,7 +32,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         None => return,
     };
 
-    let t = theme();
+    let t = crate::theme::get_theme(state);
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -58,7 +52,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     // Art + info split - Always allocate space for art to prevent layout jumping
     let art_height = std::cmp::max(
         MIN_ART_HEIGHT,
-        inner_area.height * MAX_ART_HEIGHT_PERCENT / 100,
+        inner_area.height * state.config.ui.art_max_height_percent / 100,
     );
 
     let chunks = Layout::default()

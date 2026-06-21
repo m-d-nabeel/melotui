@@ -27,10 +27,11 @@ pub struct VisualizerManager {
     cava_scratch: Vec<f32>,
     enabled: bool,
     style: SpectrumStyle,
+    fft_size: usize,
 }
 
 impl VisualizerManager {
-    pub fn new() -> Self {
+    pub fn new(fft_size: usize) -> Self {
         let available = Cava::is_available();
         if available {
             tracing::info!("CAVA detected.");
@@ -50,6 +51,7 @@ impl VisualizerManager {
             } else {
                 SpectrumStyle::Default
             },
+            fft_size,
         }
     }
 
@@ -130,7 +132,8 @@ impl VisualizerManager {
                     tracing::info!("Switching Visualizer to Internal");
                     self.take_active_to_idle();
                     if let Some(cons) = self.idle_internal.take() {
-                        self.backend = Backend::Internal(SpectrumAnalyzer::new(cons));
+                        self.backend =
+                            Backend::Internal(SpectrumAnalyzer::new(cons, self.fft_size));
                     } else {
                         self.backend = Backend::None;
                     }
@@ -163,7 +166,8 @@ impl VisualizerManager {
                     tracing::error!("Failed to start Cava: {}", e);
                     // fallback to internal
                     if let Some(cons) = self.idle_internal.take() {
-                        self.backend = Backend::Internal(SpectrumAnalyzer::new(cons));
+                        self.backend =
+                            Backend::Internal(SpectrumAnalyzer::new(cons, self.fft_size));
                     }
                 }
             }

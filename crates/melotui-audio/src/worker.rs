@@ -15,11 +15,19 @@ use crate::{
     visualizer::VisualizerManager,
 };
 
-pub fn run(mut worker: impl IpcWorker<AudioCommand>, spectrum_producer: SpectrumProducer) {
+pub fn run(
+    mut worker: impl IpcWorker<AudioCommand>,
+    spectrum_producer: SpectrumProducer,
+    fft_size: usize,
+) {
     let stream_handle =
         rodio::OutputStreamBuilder::open_default_stream().expect("open default audio stream");
 
-    let mut engine = AudioEngine::new(Sink::connect_new(stream_handle.mixer()), spectrum_producer);
+    let mut engine = AudioEngine::new(
+        Sink::connect_new(stream_handle.mixer()),
+        spectrum_producer,
+        fft_size,
+    );
 
     loop {
         let commands = fetch_and_coalesce_commands(&mut worker);
@@ -79,12 +87,12 @@ struct AudioEngine {
 }
 
 impl AudioEngine {
-    fn new(sink: Sink, producer: SpectrumProducer) -> Self {
+    pub fn new(sink: Sink, spectrum_producer: SpectrumProducer, fft_size: usize) -> Self {
         Self {
             sink,
-            producer,
+            producer: spectrum_producer,
             time_keeper: TimeKeeper::new(),
-            vis_manager: VisualizerManager::new(),
+            vis_manager: VisualizerManager::new(fft_size),
             dsp_params: AudioParams::new(),
             seek_epoch: 0,
         }

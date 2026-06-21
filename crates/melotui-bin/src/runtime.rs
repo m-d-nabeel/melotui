@@ -20,24 +20,41 @@ use crate::input_processor::InputProcessor;
 pub fn run() -> Result<()> {
     tracing::info!("Starting melotui application");
 
-    let (db_path, music_root) = resolve_paths()?;
+    let config = melotui_core::config::AppConfig::load();
+    let (db_path, music_roots) = resolve_paths(&config)?;
 
     // start empty library - data loads async
-    let library = Library::new(music_root.clone(), vec![], HashMap::new());
+    let library = Library::new(music_roots.clone(), vec![], HashMap::new());
 
-    let mut state = AppState::new(library);
-    let mut tui = Tui::new()?;
+    let mut state = AppState::new(library, &config);
+    let (mut tui, keymap_errors) = Tui::new(&config)?;
     let (producer, consumer) = spectrum_bridge::create_bridge();
     state.spectrum_source = Box::new(consumer);
 
     let engine = Engine::new(EngineConfig {
         db_path,
         spectrum_producer: producer,
+        fft_size: config.audio.fft_size,
+        max_cover_resolution: config.library.max_cover_resolution,
     });
 
     // request async library load
-    engine.load_library(music_root.clone());
-    state.set_notification(NotificationKind::Info, "Loading library...");
+    engine.load_library(music_roots.clone());
+
+    // Aggregate startup errors
+    let mut startup_errors = config.startup_errors.clone();
+    startup_errors.extend(keymap_errors);
+
+    if !startup_errors.is_empty() {
+        let msg = format!(
+            "Config Errors ({}). Check logs for details: {}",
+            startup_errors.len(),
+            startup_errors[0]
+        );
+        state.set_notification_with_duration(NotificationKind::Error, msg, 7);
+    } else {
+        state.set_notification(NotificationKind::Info, "Loading library...");
+    }
 
     let mut runtime = RuntimeContext {
         engine,
@@ -45,7 +62,7 @@ pub fn run() -> Result<()> {
         running: true,
         effect_queue: VecDeque::new(),
         input_processor: InputProcessor::new(),
-        music_root,
+        music_roots,
     };
 
     if let Ok((w, h)) = tui.size() {
@@ -59,7 +76,8 @@ pub fn run() -> Result<()> {
 
     while runtime.running {
         let timeout = if state.should_draw_spectrum() {
-            Duration::from_millis(16)
+            let limit = state.config.ui.fps_limit.max(1); // prevent division by zero
+            Duration::from_millis(1000 / limit)
         } else {
             Duration::from_millis(100)
         };
@@ -83,7 +101,8 @@ pub fn run() -> Result<()> {
         }
 
         if !events.is_empty() {
-            let processed = runtime.input_processor.coalesce(events);
+            let debounce = state.config.ui.search_debounce_ms;
+            let processed = runtime.input_processor.coalesce(events, debounce);
             runtime.effect_queue.extend(processed);
             should_render = true;
         }
@@ -120,21 +139,21 @@ struct RuntimeContext {
     running: bool,
     effect_queue: VecDeque<AppMsg>,
     input_processor: InputProcessor,
-    music_root: PathBuf,
+    music_roots: Vec<PathBuf>,
 }
 
-fn resolve_paths() -> Result<(PathBuf, PathBuf)> {
-    let db_root = dirs::data_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?
-        .join("melotui");
+fn resolve_paths(config: &melotui_core::config::AppConfig) -> Result<(PathBuf, Vec<PathBuf>)> {
+    let db_path = config.resolve_db_path()?;
+    let music_roots = config.resolve_music_dirs();
 
-    std::fs::create_dir_all(&db_root)?;
-    let db_path = db_root.join("library.db");
+    if music_roots.is_empty() {
+        return Err(anyhow::anyhow!(
+            "No music directories configured and OS audio directory not found. \
+             Set music_directories in ~/.config/melotui/config.toml"
+        ));
+    }
 
-    let music_root =
-        dirs::audio_dir().ok_or_else(|| anyhow::anyhow!("Music directory not found"))?;
-
-    Ok((db_path, music_root))
+    Ok((db_path, music_roots))
 }
 
 fn tick_state(state: &mut AppState, dt: f32) -> bool {
@@ -168,7 +187,7 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
             }
             IpcEvent::LibraryRescanned => {
                 // reload after scan
-                ctx.engine.load_library(ctx.music_root.clone());
+                ctx.engine.load_library(ctx.music_roots.clone());
                 state.set_notification(NotificationKind::Info, "Scan complete, reloading...");
             }
             _ => ctx.effect_queue.push_back(bridge::ipc_to_appmsg(evt)),
@@ -193,7 +212,7 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
 
         // side effects
         if ctx.engine_alive
-            && let Some(cmd) = bridge::appmsg_to_ipc(&msg, &state.library.root)
+            && let Some(cmd) = bridge::appmsg_to_ipc(&msg, &state.library.roots)
         {
             ctx.engine.dispatch(cmd);
         }

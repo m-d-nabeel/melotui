@@ -19,7 +19,12 @@ use crate::{
 const MIN_WIDTH: u16 = 60;
 const MIN_HEIGHT: u16 = 10;
 
-pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
+pub fn draw(
+    frame: &mut Frame,
+    state: &AppState,
+    image_cache: &mut ImageCache,
+    registry: &crate::keybinding::KeyRegistry,
+) {
     let area = frame.area();
 
     // Minimum terminal size guard
@@ -34,10 +39,11 @@ pub fn draw(frame: &mut Frame, state: &AppState, image_cache: &mut ImageCache) {
         FocusMode::Visualizer => draw_visualizer_only(frame, area, state, image_cache),
         FocusMode::Playback => draw_playback_only(frame, area, state),
         FocusMode::VisualizerPlayback => draw_viz_playback(frame, area, state, image_cache),
+        FocusMode::LyricsPlayback => draw_lyrics_playback(frame, area, state),
     }
 
     // Overlays render on top regardless of focus mode
-    draw_overlays(frame, area, state);
+    draw_overlays(frame, area, state, registry);
 }
 
 /// Full layout: sidebar + visualizer + mixer + playback
@@ -53,15 +59,25 @@ fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut 
         .constraints([Constraint::Fill(1), Constraint::Length(14)])
         .split(horizontal[1]);
 
+    let playback_height = if state.ui_show_playback() { 7 } else { 0 };
+
     let control_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Fill(1), Constraint::Length(7)])
+        .constraints([Constraint::Fill(1), Constraint::Length(playback_height)])
         .split(right_vertical[1]);
 
     sidebar::draw(frame, horizontal[0], state, image_cache);
     visualizer_view::draw(frame, right_vertical[0], state, image_cache);
-    sound_control_view::draw(frame, control_chunks[0], state);
-    playback_view::draw(frame, control_chunks[1], state);
+
+    if state.ui_show_lyrics() {
+        crate::widgets::lyrics_view::draw(frame, control_chunks[0], state);
+    } else {
+        sound_control_view::draw(frame, control_chunks[0], state);
+    }
+
+    if state.ui_show_playback() {
+        playback_view::draw(frame, control_chunks[1], state);
+    }
 }
 
 /// Visualizer fills entire area
@@ -76,6 +92,10 @@ fn draw_visualizer_only(
 
 /// Minimal playback strip centered vertically
 fn draw_playback_only(frame: &mut Frame, area: Rect, state: &AppState) {
+    if !state.ui_show_playback() {
+        return; // Nothing to draw
+    }
+
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -95,17 +115,39 @@ fn draw_viz_playback(
     state: &AppState,
     image_cache: &mut ImageCache,
 ) {
+    let playback_height = if state.ui_show_playback() { 7 } else { 0 };
     let layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Fill(1), Constraint::Length(7)])
+        .constraints([Constraint::Fill(1), Constraint::Length(playback_height)])
         .split(area);
 
     visualizer_view::draw(frame, layout[0], state, image_cache);
-    playback_view::draw(frame, layout[1], state);
+    if state.ui_show_playback() {
+        playback_view::draw(frame, layout[1], state);
+    }
+}
+
+/// Lyrics top + playback bottom, no sidebar or mixer
+fn draw_lyrics_playback(frame: &mut Frame, area: Rect, state: &AppState) {
+    let playback_height = if state.ui_show_playback() { 7 } else { 0 };
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Fill(1), Constraint::Length(playback_height)])
+        .split(area);
+
+    crate::widgets::lyrics_view::draw(frame, layout[0], state);
+    if state.ui_show_playback() {
+        playback_view::draw(frame, layout[1], state);
+    }
 }
 
 /// Overlays: command bar, playlist picker, confirm dialog, help, notifications
-fn draw_overlays(frame: &mut Frame, area: Rect, state: &AppState) {
+fn draw_overlays(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    registry: &crate::keybinding::KeyRegistry,
+) {
     notification_popup::draw(frame, frame.area(), state);
 
     // Shared dim overlay — uses a dark background that works on all terminals
@@ -133,8 +175,8 @@ fn draw_overlays(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     if state.ui_show_help() {
-        frame.render_widget(dim_block, area);
-        help_view::draw(frame, area, state);
+        frame.render_widget(dim_block.clone(), area);
+        help_view::draw(frame, area, state, registry);
     }
 }
 
@@ -168,8 +210,8 @@ mod tests {
 
     fn test_state() -> AppState {
         let root = std::path::PathBuf::from("/tmp");
-        let library = Library::new(root, vec![], HashMap::new());
-        AppState::new(library)
+        let library = Library::new(vec![root], vec![], HashMap::new());
+        AppState::new(library, &melotui_core::config::AppConfig::default())
     }
 
     #[test]
@@ -183,7 +225,8 @@ mod tests {
 
         terminal
             .draw(|f| {
-                draw(f, &state, &mut image_cache);
+                let registry = crate::keybinding::KeyRegistry::default();
+                draw(f, &state, &mut image_cache, &registry);
             })
             .unwrap();
 
@@ -212,7 +255,8 @@ mod tests {
 
         terminal
             .draw(|f| {
-                draw(f, &state, &mut image_cache);
+                let registry = crate::keybinding::KeyRegistry::default();
+                draw(f, &state, &mut image_cache, &registry);
             })
             .unwrap();
 

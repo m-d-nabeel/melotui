@@ -1,5 +1,5 @@
 use crate::domain::ids::{PlaylistId, TrackId};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 // UI concepts
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -40,7 +40,7 @@ pub enum SidebarNodeId {
 
 impl SidebarNodeId {
     /// Resolves the parent of this node for tree traversal.
-    pub fn parent(&self, library_root: &Path) -> Option<Self> {
+    pub fn parent(&self, library_roots: &[PathBuf]) -> Option<Self> {
         match self {
             SidebarNodeId::Root => None,
 
@@ -55,24 +55,21 @@ impl SidebarNodeId {
 
             // Folders -> parent folder or folder category
             SidebarNodeId::Folder(path) => {
-                if path == library_root {
-                    Some(SidebarNodeId::Category(CategoryId::Folders))
-                } else {
-                    match path.parent() {
-                        Some(p) => {
-                            if p == library_root {
-                                // Direct child of root -> folders category
-                                Some(SidebarNodeId::Category(CategoryId::Folders))
-                            } else if p.starts_with(library_root) {
-                                // Subfolder -> parent folder
-                                Some(SidebarNodeId::Folder(p.to_path_buf()))
-                            } else {
-                                None
-                            }
+                for library_root in library_roots {
+                    if path == library_root {
+                        return Some(SidebarNodeId::Category(CategoryId::Folders));
+                    }
+                    if let Some(p) = path.parent() {
+                        if p == library_root {
+                            // Direct child of a root -> folders category
+                            return Some(SidebarNodeId::Category(CategoryId::Folders));
+                        } else if p.starts_with(library_root) {
+                            // Subfolder -> parent folder
+                            return Some(SidebarNodeId::Folder(p.to_path_buf()));
                         }
-                        None => None,
                     }
                 }
+                None
             }
 
             // Metadata Groupings -> Respective Categories

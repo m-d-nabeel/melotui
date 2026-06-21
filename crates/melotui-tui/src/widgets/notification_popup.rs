@@ -5,21 +5,15 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Gauge, Paragraph, Wrap},
 };
 
-use crate::theme::Theme;
 use melotui_core::AppState;
 use melotui_core::state::NotificationKind;
-
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let Some(notification) = state.current_notification() else {
         return;
     };
 
-    let t = theme();
+    let t = crate::theme::get_theme(state);
     let width = 35;
     let height = 4;
     let popup_area = top_right_rect(width, height, area, 1);

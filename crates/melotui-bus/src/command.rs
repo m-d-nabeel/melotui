@@ -32,14 +32,24 @@ pub enum DownloadCommand {
         query: String,
         download_path: PathBuf,
     },
+    FetchLyrics {
+        track_name: String,
+        artist_name: String,
+        save_path: PathBuf,
+        provider: Option<String>,
+        provider_id: Option<String>,
+    },
+    SearchLyrics {
+        query: String,
+    },
     Cancel,
     Shutdown,
 }
 
 #[derive(Debug, Clone)]
 pub enum DatabaseCommand {
-    LoadLibrary { root: PathBuf },
-    ScanLibrary { root: PathBuf },
+    LoadLibrary { roots: Vec<PathBuf> },
+    ScanLibrary { roots: Vec<PathBuf> },
     PruneLibrary,
     GetAllTracks,
     SearchTracks { query: String },

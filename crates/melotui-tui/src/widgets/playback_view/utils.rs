@@ -4,13 +4,7 @@ use ratatui::text::Span;
 
 use crate::theme::Theme;
 
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
-
-pub fn get_status_icon(status: &PlaybackStatus) -> (&'static str, Color) {
-    let t = theme();
+pub fn get_status_icon(status: &PlaybackStatus, t: &Theme) -> (&'static str, Color) {
     match status {
         PlaybackStatus::Playing => ("󰐊", t.status_playing),
         PlaybackStatus::Paused => ("󰏤", t.status_paused),
@@ -18,8 +12,7 @@ pub fn get_status_icon(status: &PlaybackStatus) -> (&'static str, Color) {
     }
 }
 
-pub fn get_repeat_icon(mode: &RepeatMode) -> Span<'static> {
-    let t = theme();
+pub fn get_repeat_icon(mode: &RepeatMode, t: &Theme) -> Span<'static> {
     match mode {
         RepeatMode::Off => Span::styled(
             "󰑗 ",
@@ -31,8 +24,7 @@ pub fn get_repeat_icon(mode: &RepeatMode) -> Span<'static> {
     }
 }
 
-pub fn get_shuffle_icon(active: bool) -> Span<'static> {
-    let t = theme();
+pub fn get_shuffle_icon(active: bool, t: &Theme) -> Span<'static> {
     if active {
         Span::styled("󰒟 ", Style::default().fg(t.accent_playing))
     } else {

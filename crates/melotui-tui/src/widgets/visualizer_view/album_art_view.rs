@@ -7,12 +7,7 @@ use ratatui::{
 };
 use ratatui_image::StatefulImage;
 
-use crate::{image_cache::ImageCache, theme::Theme};
-
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
+use crate::image_cache::ImageCache;
 
 const BRANDING_ART_WIDE: &str = r#"
 ░▒▓██████████████▓▒░░▒▓████████▓▒░▒▓█▓▒░      ░▒▓██████▓▒░▒▓████████▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
@@ -35,7 +30,7 @@ const DESCRIPTION: &str = "The Terminal Music Player";
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache) {
     let _ = state;
-    let t = theme();
+    let t = crate::theme::get_theme(state);
     let art_state = &mut cache.album_art;
 
     let block = Block::default()

@@ -8,23 +8,19 @@ use std::{
     time::SystemTime,
 };
 
-/// Maximum dimension for cached covers.
-/// 600px is sufficient for most terminal display sizes while keeping
-/// memory usage reasonable (~1.4 MB RGBA per image).
-const MAX_COVER_DIM: u32 = 600;
-
 pub struct CoverCache {
     cache_dir: PathBuf,
+    max_cover_dim: u32,
 }
 
 impl Default for CoverCache {
     fn default() -> Self {
-        Self::new()
+        Self::new(600)
     }
 }
 
 impl CoverCache {
-    pub fn new() -> Self {
+    pub fn new(max_cover_dim: u32) -> Self {
         let cache_dir = dirs::cache_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("melotui")
@@ -34,7 +30,10 @@ impl CoverCache {
             tracing::error!("Failed to create cache dir: {}", e);
         }
 
-        Self { cache_dir }
+        Self {
+            cache_dir,
+            max_cover_dim,
+        }
     }
 
     /// Retrieve cover from cache, or extract from source if missing.
@@ -99,10 +98,10 @@ impl CoverCache {
         drop(picture_data); // Free compressed bytes before resize
 
         // Stage 4: Resize if needed — then immediately drop the original
-        let result = if img.width() > MAX_COVER_DIM || img.height() > MAX_COVER_DIM {
+        let result = if img.width() > self.max_cover_dim || img.height() > self.max_cover_dim {
             let resized = img.resize(
-                MAX_COVER_DIM,
-                MAX_COVER_DIM,
+                self.max_cover_dim,
+                self.max_cover_dim,
                 image::imageops::FilterType::Triangle,
             );
             drop(img); // Explicitly drop the large decoded image ASAP
@@ -191,7 +190,7 @@ mod tests {
         let mut file = File::create(&file_path).unwrap();
         file.write_all(b"fake mp3 data").unwrap();
 
-        let mut cache = CoverCache::new();
+        let mut cache = CoverCache::new(600);
         // Override cache dir for testing
         cache.cache_dir = dir.path().join("covers");
 

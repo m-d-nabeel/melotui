@@ -37,17 +37,25 @@ pub struct AppState {
     pub current_cover: Option<Arc<image::DynamicImage>>,
     pub track_info_cover: Option<Arc<image::DynamicImage>>,
     pub track_info_cover_id: Option<TrackId>,
+    pub config: crate::config::AppConfig,
 }
 
 // lifecycle
 impl AppState {
-    pub fn new(library: Library) -> Self {
-        let config = crate::config::AppConfig::load();
+    pub fn new(library: Library, config: &crate::config::AppConfig) -> Self {
         let mut session = SessionState::default();
 
         // Apply config to session
         session.ui.sidebar_width = config.ui.sidebar_width;
         session.ui.scrolloff = config.ui.scrolloff;
+        session.ui.theme_overrides = config.theme_overrides.clone();
+
+        // Apply audio defaults from config
+        session.audio.speed = config.audio.default_speed;
+        session.audio.bass = config.audio.default_bass;
+        session.audio.treble = config.audio.default_treble;
+        session.audio.reverb = config.audio.default_reverb;
+        session.audio.echo = config.audio.default_echo;
 
         // select first item
         if let Some(first_node) = projector::get_node_at_index(&library, &session.nav.library, 0) {
@@ -69,6 +77,7 @@ impl AppState {
             current_cover: None,
             track_info_cover: None,
             track_info_cover_id: None,
+            config: config.clone(),
         }
     }
 }
@@ -92,6 +101,10 @@ impl AppState {
     }
     pub fn echo(&self) -> f32 {
         self.session.audio.echo
+    }
+
+    pub fn theme_overrides(&self) -> &std::collections::HashMap<String, String> {
+        &self.session.ui.theme_overrides
     }
 }
 
@@ -295,6 +308,10 @@ impl AppState {
 
 // visualizer access
 impl AppState {
+    pub fn visualizer_mode(&self) -> &VisualizerMode {
+        &self.session.visualizer_mode
+    }
+
     pub fn should_draw_spectrum(&self) -> bool {
         self.session.visualizer_mode == VisualizerMode::Spectrum
     }
@@ -345,6 +362,26 @@ impl AppState {
         self.session.ui.show_help
     }
 
+    pub fn ui_show_lyrics(&self) -> bool {
+        self.session.ui.show_lyrics
+    }
+
+    pub fn ui_show_playback(&self) -> bool {
+        self.session.ui.show_playback
+    }
+
+    pub fn lyrics_data(&self) -> &crate::state::LyricsData {
+        &self.session.lyrics.data
+    }
+
+    pub fn lyrics_search_state(&self) -> Option<&crate::state::lyrics::LyricsSearchState> {
+        self.session.lyrics.search_state.as_ref()
+    }
+
+    pub fn active_lyrics_line_index(&self) -> Option<usize> {
+        self.session.lyrics.active_line_index
+    }
+
     pub fn ui_command_buffer(&self) -> &tui_input::Input {
         &self.session.ui.command_buffer
     }
@@ -354,7 +391,29 @@ impl AppState {
     }
 
     pub fn set_notification(&mut self, kind: NotificationKind, message: impl Into<String>) {
-        self.session.notification.current = Some(Notification::new(kind, message));
+        if let Some(current) = &self.session.notification.current
+            && kind.priority() < current.kind.priority()
+        {
+            return; // Do not overwrite higher priority notifications
+        }
+        let duration = self.config.ui.notification_duration_secs;
+        self.session.notification.current =
+            Some(Notification::new(kind, message).with_duration(duration));
+    }
+
+    pub fn set_notification_with_duration(
+        &mut self,
+        kind: NotificationKind,
+        message: impl Into<String>,
+        duration_secs: u64,
+    ) {
+        if let Some(current) = &self.session.notification.current
+            && kind.priority() < current.kind.priority()
+        {
+            return; // Do not overwrite higher priority notifications
+        }
+        self.session.notification.current =
+            Some(Notification::new(kind, message).with_duration(duration_secs));
     }
 
     pub fn clear_current_notification(&mut self) {

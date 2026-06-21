@@ -8,6 +8,17 @@ pub enum NotificationKind {
     Error,
 }
 
+impl NotificationKind {
+    pub fn priority(&self) -> u8 {
+        match self {
+            Self::Error => 100,
+            Self::Warning => 75,
+            Self::Info => 50,
+            Self::Progress => 25,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Notification {
     pub kind: NotificationKind,

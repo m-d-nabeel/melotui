@@ -77,11 +77,11 @@ impl ImageState {
             self.width = target_w;
             self.height = target_h;
 
-            // Drop source after successful protocol creation to free memory.
-            // The protocol contains everything needed for rendering.
-            // If the terminal resizes, we'll need to re-fetch from the disk cache,
-            // but that's a 5ms disk read vs holding ~1.4MB permanently.
-            self.source = None;
+            // Do not set self.source = None here!
+            // It's just an Arc pointer, so dropping it doesn't free the 1.4MB image
+            // (AppState still holds it). If we set it to None, update_state() will
+            // think the source changed, delete the protocol, and force a re-resize
+            // on every single frame, causing severe UI stutter!
         }
     }
 }
@@ -196,11 +196,14 @@ mod tests {
     #[test]
     fn test_image_cache_obscured_reset() {
         let mut cache = ImageCache::empty();
-        let mut app_state = AppState::new(Library::new(
-            PathBuf::from("/"),
-            vec![],
-            std::collections::HashMap::new(),
-        ));
+        let mut app_state = AppState::new(
+            Library::new(
+                vec![PathBuf::from("/")],
+                vec![],
+                std::collections::HashMap::new(),
+            ),
+            &melotui_core::config::AppConfig::default(),
+        );
 
         // Setup some fake state
         cache.album_art.width = 50;

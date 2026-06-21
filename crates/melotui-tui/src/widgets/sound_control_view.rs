@@ -8,11 +8,6 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Padding, Paragraph},
 };
 
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
-
 /// How to format the slider value display.
 /// Using an enum instead of string-matching the label name.
 #[derive(Clone, Copy)]
@@ -40,7 +35,7 @@ impl SliderConfig<'_> {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
-    let t = theme();
+    let t = crate::theme::get_theme(state);
     let block = Block::default()
         .title(" Mixer ")
         .title_style(Style::default().add_modifier(Modifier::BOLD))
@@ -87,6 +82,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     render_sleek_slider(
         frame,
         c1[0],
+        t,
         &SliderConfig {
             label: "Volume",
             val: state.volume(),
@@ -99,6 +95,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     render_sleek_slider(
         frame,
         c1[2],
+        t,
         &SliderConfig {
             label: "Speed",
             val: state.speed(),
@@ -113,6 +110,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     render_sleek_slider(
         frame,
         c2[0],
+        t,
         &SliderConfig {
             label: "Bass",
             val: state.bass(),
@@ -125,6 +123,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     render_sleek_slider(
         frame,
         c2[2],
+        t,
         &SliderConfig {
             label: "Treble",
             val: state.treble(),
@@ -139,6 +138,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     render_sleek_slider(
         frame,
         c3[0],
+        t,
         &SliderConfig {
             label: "Reverb",
             val: state.reverb(),
@@ -151,6 +151,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     render_sleek_slider(
         frame,
         c3[2],
+        t,
         &SliderConfig {
             label: "Echo",
             val: state.echo(),
@@ -162,8 +163,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     );
 }
 
-fn render_sleek_slider(frame: &mut Frame, area: Rect, config: &SliderConfig) {
-    let t = theme();
+fn render_sleek_slider(frame: &mut Frame, area: Rect, t: &Theme, config: &SliderConfig) {
     let ratio = ((config.val - config.min) / (config.max - config.min)).clamp(0.0, 1.0);
 
     let layout = Layout::default()

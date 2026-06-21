@@ -6,9 +6,9 @@ use melotui_bus::{
 use melotui_core::message::cover::CoverContext;
 use std::time::Instant;
 
-pub fn run(worker: WorkerEndpoint<CoverCommand>) {
+pub fn run(worker: WorkerEndpoint<CoverCommand>, max_cover_resolution: u32) {
     tracing::info!("Cover worker started");
-    let cache = crate::cache::CoverCache::new();
+    let cache = crate::cache::CoverCache::new(max_cover_resolution);
 
     let mut pending_playback: Option<CoverCommand> = None;
     let mut pending_info: Option<CoverCommand> = None;

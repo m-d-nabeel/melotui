@@ -9,16 +9,11 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Cell, Paragraph, Row, Table, TableState},
 };
 
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
-
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let queue = state.queue();
     let is_active = state.is_queue_focused();
 
-    let t = theme();
+    let t = crate::theme::get_theme(state);
     let border_style = if is_active {
         Style::default().fg(t.border_active)
     } else {
@@ -122,7 +117,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             .and_then(|id| queue.iter().position(|e| e.id == id))
             .unwrap_or(0);
 
-        draw_queue_table(frame, chunks[1], state, queue, selected_idx, is_active);
+        draw_queue_table(frame, chunks[1], state, t, queue, selected_idx, is_active);
     }
 }
 
@@ -130,11 +125,11 @@ fn draw_queue_table(
     frame: &mut Frame,
     area: Rect,
     state: &AppState,
+    t: &Theme,
     tracks: &std::collections::VecDeque<QueueEntry>,
     selected_idx: usize,
     is_active: bool,
 ) {
-    let t = theme();
     let playing_id = state.get_playing_track_id();
     let is_playing_queue = state.is_playing_from_queue();
 

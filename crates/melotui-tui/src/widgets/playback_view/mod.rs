@@ -2,7 +2,6 @@ mod progress_bar_view;
 mod utils;
 use crate::{
     format_duration,
-    theme::Theme,
     widgets::playback_view::progress_bar_view::{ProgressBarConfig, ProgressBarTheme},
 };
 use melotui_core::{AppState, playback::state::RepeatMode};
@@ -13,11 +12,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Padding, Paragraph},
 };
-
-fn theme() -> &'static Theme {
-    static THEME: std::sync::OnceLock<Theme> = std::sync::OnceLock::new();
-    THEME.get_or_init(Theme::default)
-}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     // Container block
@@ -48,8 +42,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     // Prepare data
     let current_track = state.get_playing_track();
     let next_song_name = state.predict_next_song();
-    let (status_icon, status_color) = utils::get_status_icon(state.playback_status());
-    let t = theme();
+    let t = crate::theme::get_theme(state);
+    let (status_icon, status_color) = utils::get_status_icon(state.playback_status(), t);
     let (source_icon, source_color) = if state.is_playing_from_queue() {
         ("Q", t.accent_warning)
     } else {
@@ -93,9 +87,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         let controls_line = Line::from(vec![
             Span::styled(source_icon, Style::default().fg(source_color).bold()),
             Span::raw(" "),
-            utils::get_shuffle_icon(state.shuffle_active()),
+            utils::get_shuffle_icon(state.shuffle_active(), t),
             Span::raw(" "),
-            utils::get_repeat_icon(state.repeat_mode()),
+            utils::get_repeat_icon(state.repeat_mode(), t),
         ]);
         frame.render_widget(
             Paragraph::new(controls_line).alignment(Alignment::Right),
@@ -132,7 +126,10 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             width: h_chunks[1].width as usize,
             ratio,
         };
-        frame.render_widget(progress_bar_view::render_progress_bar(pb_cfg), h_chunks[1]);
+        frame.render_widget(
+            progress_bar_view::render_progress_bar(pb_cfg, t),
+            h_chunks[1],
+        );
 
         // Render time right
         let total_str = if duration_ms > 0 {

@@ -36,7 +36,7 @@ pub struct DirectoryNode {
 ///    against the current in-memory state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Library {
-    pub root: PathBuf,
+    pub roots: Vec<PathBuf>,
     pub playlists: HashMap<PlaylistId, PlaylistMeta>,
     pub tracks: HashMap<TrackId, TrackMeta>,
     pub playlist_order: Vec<PlaylistId>,
@@ -61,7 +61,7 @@ impl Library {
     /// genres, and years. Use for structural events only (scan completed,
     /// library imported, metadata refreshed).
     pub fn new(
-        root: PathBuf,
+        roots: Vec<PathBuf>,
         playlists_vec: Vec<PlaylistMeta>,
         tracks: HashMap<TrackId, TrackMeta>,
     ) -> Self {
@@ -122,11 +122,11 @@ impl Library {
             title_a.cmp(title_b)
         });
 
-        // build folder tree
-        let folder_tree = Self::build_folder_tree(&root, &tracks);
+        // build folder tree from multiple roots
+        let folder_tree = Self::build_multi_root_folder_tree(&roots, &tracks);
 
         Self {
-            root,
+            roots,
             playlists,
             playlist_order,
             tracks,
@@ -216,9 +216,37 @@ impl Library {
             .map(|p| p.id)
     }
 
-    fn build_folder_tree(root: &Path, tracks: &HashMap<TrackId, TrackMeta>) -> DirectoryNode {
-        let mut root_node = DirectoryNode {
+    /// Build a folder tree that mounts each root as a child of a virtual "Library" node.
+    fn build_multi_root_folder_tree(
+        roots: &[PathBuf],
+        tracks: &HashMap<TrackId, TrackMeta>,
+    ) -> DirectoryNode {
+        let mut library_node = DirectoryNode {
             name: "Library".to_string(),
+            path: PathBuf::from("/"),
+            subdirs: Vec::new(),
+            tracks: Vec::new(),
+        };
+
+        for root in roots {
+            let subtree = Self::build_folder_tree(root, tracks);
+            library_node.subdirs.push(subtree);
+        }
+
+        // Sort top-level root entries
+        library_node.subdirs.sort_by(|a, b| a.name.cmp(&b.name));
+
+        library_node
+    }
+
+    fn build_folder_tree(root: &Path, tracks: &HashMap<TrackId, TrackMeta>) -> DirectoryNode {
+        let name = root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "Library".to_string());
+
+        let mut root_node = DirectoryNode {
+            name,
             path: root.to_path_buf(),
             subdirs: Vec::new(),
             tracks: Vec::new(),
@@ -382,24 +410,25 @@ impl Library {
     }
 
     fn find_directory_node(&self, path: &Path) -> Option<&DirectoryNode> {
-        if path == self.root {
-            return Some(&self.folder_tree);
-        }
-
-        if let Ok(relative) = path.strip_prefix(&self.root) {
-            let mut current = &self.folder_tree;
-            for component in relative.components() {
-                let name = component.as_os_str().to_string_lossy();
-                if let Some(child) = current.subdirs.iter().find(|d| d.name == name) {
-                    current = child;
-                } else {
-                    return None;
-                }
+        // Check each root
+        for (i, root) in self.roots.iter().enumerate() {
+            if path == root {
+                return self.folder_tree.subdirs.get(i);
             }
-            Some(current)
-        } else {
-            None
+            if let Ok(relative) = path.strip_prefix(root) {
+                let mut current = self.folder_tree.subdirs.get(i)?;
+                for component in relative.components() {
+                    let name = component.as_os_str().to_string_lossy();
+                    if let Some(child) = current.subdirs.iter().find(|d| d.name == name) {
+                        current = child;
+                    } else {
+                        return None;
+                    }
+                }
+                return Some(current);
+            }
         }
+        None
     }
 
     pub fn get_album_art(path: &Path) -> Option<(Vec<u8>, String)> {
@@ -460,26 +489,21 @@ mod tests {
         );
 
         let root = PathBuf::from("/library");
-        let snapshot = Library::new(root, vec![], tracks);
+        let snapshot = Library::new(vec![root], vec![], tracks);
 
+        // Virtual root "Library" contains one mounted root
         assert_eq!(snapshot.folder_tree.name, "Library");
-        assert_eq!(snapshot.folder_tree.subdirs.len(), 2);
+        assert_eq!(snapshot.folder_tree.subdirs.len(), 1);
 
-        let jazz_node = snapshot
-            .folder_tree
-            .subdirs
-            .iter()
-            .find(|d| d.name == "jazz")
-            .unwrap();
+        // The mounted root "/library" contains jazz + rock
+        let root_node = &snapshot.folder_tree.subdirs[0];
+        assert_eq!(root_node.subdirs.len(), 2);
+
+        let jazz_node = root_node.subdirs.iter().find(|d| d.name == "jazz").unwrap();
         assert_eq!(jazz_node.tracks.len(), 1);
         assert_eq!(jazz_node.tracks[0], TrackId(3));
 
-        let rock_node = snapshot
-            .folder_tree
-            .subdirs
-            .iter()
-            .find(|d| d.name == "rock")
-            .unwrap();
+        let rock_node = root_node.subdirs.iter().find(|d| d.name == "rock").unwrap();
         assert_eq!(rock_node.tracks.len(), 2);
     }
 
@@ -499,7 +523,7 @@ mod tests {
             create_mock_track(3, "/lib/Z.mp3", None, None, None, false),
         );
 
-        let mut snapshot = Library::new(PathBuf::from("/lib"), vec![], tracks);
+        let mut snapshot = Library::new(vec![PathBuf::from("/lib")], vec![], tracks);
 
         snapshot.toggle_favorite(TrackId(2), true);
         snapshot.toggle_favorite(TrackId(3), true);
@@ -538,7 +562,7 @@ mod tests {
             ),
         );
 
-        let snapshot = Library::new(PathBuf::from("/lib"), vec![], tracks);
+        let snapshot = Library::new(vec![PathBuf::from("/lib")], vec![], tracks);
 
         // Test Artist Node
         let artist_node = SidebarNodeId::Artist("ArtistA".into());
@@ -560,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_playlist_management() {
-        let mut snapshot = Library::new(PathBuf::from("/lib"), vec![], HashMap::new());
+        let mut snapshot = Library::new(vec![PathBuf::from("/lib")], vec![], HashMap::new());
         let p_id = PlaylistId(10);
 
         snapshot.add_playlist(p_id, "Workout".into());

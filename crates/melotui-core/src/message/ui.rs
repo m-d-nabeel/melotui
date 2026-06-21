@@ -1,14 +1,20 @@
 use crate::{AppMsg, state::ui::FocusMode};
-use ratatui::crossterm::event::KeyEvent;
+use tui_input::InputRequest;
 
 #[derive(Debug, Clone)]
 pub enum UIMsg {
     EnterCommandMode,
     ExitCommandMode,
-    CommandInput(KeyEvent),
+    CommandInput(InputRequest),
     SubmitCommand(String),
+    Autocomplete,
+    AutocompleteReverse,
+    CommandHistoryPrev,
+    CommandHistoryNext,
     OpenHelp,
     CloseHelp,
+    ToggleLyrics,
+    TogglePlaybackPanel,
     Resize(u16, u16),
     EnterPlaylistPicker,
     ExitPlaylistPicker,
@@ -30,4 +36,11 @@ pub enum UIMsg {
     // Sidebar width
     SetSidebarWidth(u16),
     AdjustSidebarWidth(i16),
+    // Lyrics selector
+    LyricsSelectorMoveUp,
+    LyricsSelectorMoveDown,
+    LyricsSelectorMoveLeft,
+    LyricsSelectorMoveRight,
+    LyricsSelectorSubmit,
+    LyricsSelectorCancel,
 }

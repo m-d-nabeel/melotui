@@ -134,7 +134,7 @@ pub fn handle_request_next(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_request_prev(state: &mut AppState) -> Vec<AppMsg> {
     if state.session.playback.progress_ms > 3000 {
-        return handle_request_seek(state, -(state.total_duration_ms() as i64));
+        return handle_request_seek_absolute(state, 0);
     }
 
     if let Some(new_id) = state.get_prev_context_id() {
@@ -244,14 +244,19 @@ pub fn handle_request_stop(state: &mut AppState) -> Vec<AppMsg> {
     vec![AppMsg::Playback(PlaybackMsg::DispatchStop)]
 }
 
-pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<AppMsg> {
+pub fn handle_request_seek_relative(state: &mut AppState, offset_seconds: i64) -> Vec<AppMsg> {
     if !state.is_playing() && !state.is_paused() {
         return vec![];
     }
 
     let cur = state.progress_ms() as i64;
     let dur = state.total_duration_ms() as i64;
-    let new_ms = (cur + offset_seconds * 1000).clamp(0, dur);
+
+    // if duration is 0 (e.g. unknown or stream), we just allow seeking from current progress,
+    // though realistically a stream shouldn't be seekable. We clamp at 0.
+    let max_dur = if dur == 0 { i64::MAX } else { dur };
+
+    let new_ms = (cur + offset_seconds * 1000).clamp(0, max_dur);
 
     state.session.seek_epoch += 1;
     state.session.playback.progress_ms = new_ms as u64;
@@ -261,9 +266,32 @@ pub fn handle_request_seek(state: &mut AppState, offset_seconds: i64) -> Vec<App
     })]
 }
 
+pub fn handle_request_seek_absolute(state: &mut AppState, position_seconds: u64) -> Vec<AppMsg> {
+    if !state.is_playing() && !state.is_paused() {
+        return vec![];
+    }
+
+    let dur = state.total_duration_ms();
+    let max_dur = if dur == 0 { u64::MAX } else { dur };
+
+    let new_ms = (position_seconds * 1000).clamp(0, max_dur);
+
+    state.session.seek_epoch += 1;
+    state.session.playback.progress_ms = new_ms;
+    vec![AppMsg::Playback(PlaybackMsg::DispatchSeek {
+        position_ms: new_ms,
+        epoch: state.session.seek_epoch,
+    })]
+}
+
 pub fn handle_audio_progress(state: &mut AppState, position_ms: u64, epoch: u64) -> Vec<AppMsg> {
     if state.is_playing() && epoch >= state.session.seek_epoch {
         state.session.playback.progress_ms = position_ms;
+
+        if let crate::state::lyrics::LyricsData::Synced(lyrics) = &state.session.lyrics.data {
+            state.session.lyrics.active_line_index =
+                lyrics.find_timed_line_index(position_ms as i64);
+        }
     }
     vec![]
 }
@@ -282,6 +310,7 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
         VisualizerMode::Spectrum => VisualizerMode::AlbumArt,
         VisualizerMode::AlbumArt => VisualizerMode::Spectrum,
     };
+
     let active = state.should_draw_spectrum();
     let style = state.session.spectrum_style.clone();
     vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
@@ -304,7 +333,21 @@ pub fn handle_dispatch_stop(_: &mut AppState) -> Vec<AppMsg> {
 pub fn handle_dispatch_seek(_: &mut AppState, _: u64, _: u64) -> Vec<AppMsg> {
     vec![]
 }
-pub fn handle_audio_started(_: &mut AppState, _: String) -> Vec<AppMsg> {
+pub fn handle_audio_started(state: &mut AppState, path: String) -> Vec<AppMsg> {
+    state.session.lyrics.data = crate::state::lyrics::LyricsData::None;
+    state.session.lyrics.active_line_index = None;
+
+    let audio_path = std::path::PathBuf::from(&path);
+    let lrc_path = audio_path.with_extension("lrc");
+
+    if let Ok(content) = std::fs::read_to_string(lrc_path) {
+        if let Ok(parsed) = content.parse::<lrc::Lyrics>() {
+            state.session.lyrics.data = crate::state::lyrics::LyricsData::Synced(parsed);
+        } else {
+            state.session.lyrics.data = crate::state::lyrics::LyricsData::Unsynced(content);
+        }
+    }
+
     vec![]
 }
 pub fn handle_audio_paused(_: &mut AppState) -> Vec<AppMsg> {
@@ -462,8 +505,8 @@ mod tests {
             },
         );
 
-        let library = Library::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
-        let mut state = AppState::new(library);
+        let library = Library::new(vec![std::path::PathBuf::from("/tmp")], vec![], tracks);
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
 
         state.session.playback.current = Some(track_id);
         state.session.playback.duration_ms = Some(10000);
@@ -493,18 +536,74 @@ mod tests {
     }
 
     #[test]
-    fn test_seek_clamps_to_duration() {
+    fn test_seek_absolute_clamps_to_duration() {
         let mut state = test_state_with_track();
         state.session.playback.status = PlaybackStatus::Playing;
+        state.session.playback.duration_ms = Some(10000);
         state.session.playback.progress_ms = 5000;
 
-        // Seek forward by 10s (past the end of 10s track)
-        let _effects = handle_request_seek(&mut state, 10);
-        assert_eq!(state.session.playback.progress_ms, 10000);
+        let effects = handle_request_seek_absolute(&mut state, 20); // Absolute 20s (20000ms) > 10000ms
 
-        // Seek backward by 20s (past the start)
-        let _effects = handle_request_seek(&mut state, -20);
+        assert_eq!(state.session.playback.progress_ms, 10000);
+        match effects.first().unwrap() {
+            AppMsg::Playback(PlaybackMsg::DispatchSeek { position_ms, .. }) => {
+                assert_eq!(*position_ms, 10000);
+            }
+            _ => panic!("Expected DispatchSeek"),
+        }
+    }
+
+    #[test]
+    fn test_seek_relative_clamps_to_duration() {
+        let mut state = test_state_with_track();
+        state.session.playback.status = PlaybackStatus::Playing;
+        state.session.playback.duration_ms = Some(10000);
+        state.session.playback.progress_ms = 5000;
+
+        let effects = handle_request_seek_relative(&mut state, 15); // +15s -> 20000ms > 10000ms
+
+        assert_eq!(state.session.playback.progress_ms, 10000);
+        match effects.first().unwrap() {
+            AppMsg::Playback(PlaybackMsg::DispatchSeek { position_ms, .. }) => {
+                assert_eq!(*position_ms, 10000);
+            }
+            _ => panic!("Expected DispatchSeek"),
+        }
+    }
+
+    #[test]
+    fn test_seek_relative_clamps_to_zero() {
+        let mut state = test_state_with_track();
+        state.session.playback.status = PlaybackStatus::Playing;
+        state.session.playback.duration_ms = Some(10000);
+        state.session.playback.progress_ms = 5000;
+
+        let effects = handle_request_seek_relative(&mut state, -10); // -10s -> -5000ms < 0
+
         assert_eq!(state.session.playback.progress_ms, 0);
+        match effects.first().unwrap() {
+            AppMsg::Playback(PlaybackMsg::DispatchSeek { position_ms, .. }) => {
+                assert_eq!(*position_ms, 0);
+            }
+            _ => panic!("Expected DispatchSeek"),
+        }
+    }
+
+    #[test]
+    fn test_seek_ignored_when_stopped() {
+        let mut state = test_state_with_track();
+        state.session.playback.status = PlaybackStatus::Stopped;
+        state.session.playback.duration_ms = Some(10000);
+        state.session.playback.progress_ms = 0;
+
+        let effects = handle_request_seek_relative(&mut state, 5);
+        assert!(effects.is_empty(), "Seek should be ignored when stopped");
+
+        let effects_abs = handle_request_seek_absolute(&mut state, 5);
+        assert!(
+            effects_abs.is_empty(),
+            "Absolute seek should be ignored when stopped"
+        );
     }
 
     #[test]

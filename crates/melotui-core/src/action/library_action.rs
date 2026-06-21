@@ -412,9 +412,8 @@ fn navigate_to_current_match(state: &mut AppState) {
     let query = search.query.clone();
 
     // expand all ancestors
-    let root = state.library.root.clone();
     let mut cur = node.clone();
-    while let Some(parent) = cur.parent(&root) {
+    while let Some(parent) = cur.parent(&state.library.roots) {
         state
             .session
             .nav
@@ -524,8 +523,8 @@ mod tests {
             },
         );
 
-        let library = Library::new(std::path::PathBuf::from("/tmp"), vec![], tracks);
-        AppState::new(library)
+        let library = Library::new(vec![std::path::PathBuf::from("/tmp")], vec![], tracks);
+        AppState::new(library, &crate::config::AppConfig::default())
     }
 
     #[test]

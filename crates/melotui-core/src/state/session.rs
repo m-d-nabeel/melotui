@@ -6,6 +6,7 @@ use crate::{
 use super::{
     audio::AudioState,
     download::DownloadState,
+    lyrics::LyricsState,
     notification::NotificationState,
     ui::UIState,
     visualizer::{SpectrumStyle, VisualizerMode},
@@ -21,6 +22,7 @@ pub struct SessionState {
 
     pub audio: AudioState,
     pub download: DownloadState,
+    pub lyrics: LyricsState,
     pub notification: NotificationState,
 
     pub repeat_mode: RepeatMode,
@@ -43,6 +45,7 @@ impl Default for SessionState {
 
             audio: AudioState::default(),
             download: DownloadState::default(),
+            lyrics: LyricsState::default(),
             notification: NotificationState::default(),
 
             repeat_mode: RepeatMode::Off,
