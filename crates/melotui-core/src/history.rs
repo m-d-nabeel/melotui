@@ -43,7 +43,7 @@ impl CommandHistory {
         {
             let mut path = std::env::temp_dir();
             path.push(format!("melotui_test_{}", std::process::id()));
-            return Some(path.join("command_history"));
+            Some(path.join("command_history"))
         }
 
         #[cfg(not(test))]

@@ -349,10 +349,10 @@ fn fetch_lyrics_task(
             }
             if lyrics.is_none()
                 && let Some(plain) = json.get("plainLyrics").and_then(|v| v.as_str())
-                    && !plain.trim().is_empty()
-                {
-                    lyrics = Some(plain.to_string());
-                }
+                && !plain.trim().is_empty()
+            {
+                lyrics = Some(plain.to_string());
+            }
 
             if let Some(l) = lyrics {
                 if let Err(e) = std::fs::write(&save_path, l.as_bytes()) {
