@@ -23,6 +23,10 @@ pub enum AudioCommand {
     SetTreble(f32),
     SetReverb(f32),
     SetEcho(f32),
+    SetPan(f32),
+    SetLowpass(f32),
+    SetHighpass(f32),
+    SetEqBand { band: usize, gain: f32 },
     Shutdown,
 }
 

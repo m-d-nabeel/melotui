@@ -88,6 +88,12 @@ pub struct AudioConfig {
     pub speed_step: f32,
     /// FFT size for the audio visualizer
     pub fft_size: usize,
+    /// Default pan position (-1.0 left to 1.0 right)
+    pub default_pan: f32,
+    /// Default low-pass filter cutoff in Hz (200–20000)
+    pub default_lowpass: f32,
+    /// Default high-pass filter cutoff in Hz (20–5000)
+    pub default_highpass: f32,
 }
 
 impl Default for UiConfig {
@@ -128,6 +134,9 @@ impl Default for AudioConfig {
             volume_step: 0.05,
             speed_step: 0.1,
             fft_size: 4096,
+            default_pan: 0.0,
+            default_lowpass: 20000.0,
+            default_highpass: 20.0,
         }
     }
 }
@@ -227,6 +236,9 @@ impl AppConfig {
         self.audio.default_treble = self.audio.default_treble.clamp(0.0, 5.0);
         self.audio.default_reverb = self.audio.default_reverb.clamp(0.0, 1.0);
         self.audio.default_echo = self.audio.default_echo.clamp(0.0, 0.9);
+        self.audio.default_pan = self.audio.default_pan.clamp(-1.0, 1.0);
+        self.audio.default_lowpass = self.audio.default_lowpass.clamp(200.0, 20000.0);
+        self.audio.default_highpass = self.audio.default_highpass.clamp(20.0, 5000.0);
         self
     }
 

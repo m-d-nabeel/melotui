@@ -82,6 +82,12 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::AdjustTreble(delta) => audio_action::handle_adjust_treble(state, delta),
         AudioMsg::AdjustReverb(delta) => audio_action::handle_adjust_reverb(state, delta),
         AudioMsg::AdjustEcho(delta) => audio_action::handle_adjust_echo(state, delta),
+        AudioMsg::AdjustPan(delta) => audio_action::handle_adjust_pan(state, delta),
+        AudioMsg::AdjustLowpass(delta) => audio_action::handle_adjust_lowpass(state, delta),
+        AudioMsg::AdjustHighpass(delta) => audio_action::handle_adjust_highpass(state, delta),
+        AudioMsg::AdjustEqBand { band, delta } => {
+            audio_action::handle_adjust_eq_band(state, band, delta)
+        }
         AudioMsg::DispatchSetVolume(volume) => {
             audio_action::handle_dispatch_set_volume(state, volume)
         }
@@ -94,6 +100,12 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
             audio_action::handle_dispatch_set_reverb(state, reverb)
         }
         AudioMsg::DispatchSetEcho(echo) => audio_action::handle_dispatch_set_echo(state, echo),
+        AudioMsg::DispatchSetPan(pan) => audio_action::handle_dispatch_set_pan(state, pan),
+        AudioMsg::DispatchSetLowpass(lp) => audio_action::handle_dispatch_set_lowpass(state, lp),
+        AudioMsg::DispatchSetHighpass(hp) => audio_action::handle_dispatch_set_highpass(state, hp),
+        AudioMsg::DispatchSetEqBand { band, gain } => {
+            audio_action::handle_dispatch_set_eq_band(state, band, gain)
+        }
     }
 }
 
@@ -138,9 +150,14 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::LyricsSelectorMoveRight => ui_action::handle_lyrics_selector_move_right(state),
         UIMsg::LyricsSelectorSubmit => ui_action::handle_lyrics_selector_submit(state),
         UIMsg::LyricsSelectorCancel => ui_action::handle_lyrics_selector_cancel(state),
+        UIMsg::ToggleDspStudio => ui_action::handle_toggle_dsp_studio(state),
+        UIMsg::DspSelectNext => ui_action::handle_dsp_select_next(state),
+        UIMsg::DspSelectPrev => ui_action::handle_dsp_select_prev(state),
+        UIMsg::DspAdjustUp => ui_action::handle_dsp_adjust_up(state),
+        UIMsg::DspAdjustDown => ui_action::handle_dsp_adjust_down(state),
+        UIMsg::DspResetControl => ui_action::handle_dsp_reset_control(state),
     }
 }
-
 fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> {
     match msg {
         LibraryMsg::AddToQueue(track) => library_action::handle_add_to_queue(state, track),

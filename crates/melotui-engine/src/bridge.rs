@@ -97,6 +97,19 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             AudioMsg::DispatchSetTreble(v) => Some(IpcCommand::Audio(AudioCommand::SetTreble(*v))),
             AudioMsg::DispatchSetReverb(v) => Some(IpcCommand::Audio(AudioCommand::SetReverb(*v))),
             AudioMsg::DispatchSetEcho(v) => Some(IpcCommand::Audio(AudioCommand::SetEcho(*v))),
+            AudioMsg::DispatchSetPan(v) => Some(IpcCommand::Audio(AudioCommand::SetPan(*v))),
+            AudioMsg::DispatchSetLowpass(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetLowpass(*v)))
+            }
+            AudioMsg::DispatchSetHighpass(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetHighpass(*v)))
+            }
+            AudioMsg::DispatchSetEqBand { band, gain } => {
+                Some(IpcCommand::Audio(AudioCommand::SetEqBand {
+                    band: *band,
+                    gain: *gain,
+                }))
+            }
             _ => None,
         },
 

@@ -36,7 +36,35 @@ pub fn handle_adjust_echo(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(new_echo))]
 }
 
-// Dispatch handlers (no-op in reducer)
+pub fn handle_adjust_pan(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
+    let new_pan = (state.pan() + delta).clamp(-1.0, 1.0);
+    state.session.audio.pan = new_pan;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetPan(new_pan))]
+}
+
+pub fn handle_adjust_lowpass(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
+    let new_lp = (state.lowpass() + delta).clamp(200.0, 20000.0);
+    state.session.audio.lowpass = new_lp;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetLowpass(new_lp))]
+}
+
+pub fn handle_adjust_highpass(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
+    let new_hp = (state.highpass() + delta).clamp(20.0, 5000.0);
+    state.session.audio.highpass = new_hp;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetHighpass(new_hp))]
+}
+
+pub fn handle_adjust_eq_band(state: &mut AppState, band: usize, delta: f32) -> Vec<AppMsg> {
+    let band = band.min(9);
+    let new_gain = (state.eq_band(band) + delta).clamp(-12.0, 12.0);
+    state.session.audio.eq_bands[band] = new_gain;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetEqBand {
+        band,
+        gain: new_gain,
+    })]
+}
+
+// Dispatch handlers (no-op in reducer, intercepted by engine bridge)
 pub fn handle_dispatch_set_volume(_state: &mut AppState, _volume: f32) -> Vec<AppMsg> {
     vec![]
 }
@@ -60,3 +88,24 @@ pub fn handle_dispatch_set_reverb(_state: &mut AppState, _reverb: f32) -> Vec<Ap
 pub fn handle_dispatch_set_echo(_state: &mut AppState, _echo: f32) -> Vec<AppMsg> {
     vec![]
 }
+
+pub fn handle_dispatch_set_pan(_state: &mut AppState, _pan: f32) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_set_lowpass(_state: &mut AppState, _lp: f32) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_set_highpass(_state: &mut AppState, _hp: f32) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_set_eq_band(
+    _state: &mut AppState,
+    _band: usize,
+    _gain: f32,
+) -> Vec<AppMsg> {
+    vec![]
+}
+

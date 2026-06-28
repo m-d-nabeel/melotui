@@ -122,6 +122,14 @@ impl AudioEngine {
             AudioCommand::SetTreble(v) => self.dsp_params.treble.set_value(v),
             AudioCommand::SetReverb(v) => self.dsp_params.reverb.set_value(v),
             AudioCommand::SetEcho(v) => self.dsp_params.echo.set_value(v),
+            AudioCommand::SetPan(v) => self.dsp_params.pan.set_value(v),
+            AudioCommand::SetLowpass(v) => self.dsp_params.lowpass.set_value(v),
+            AudioCommand::SetHighpass(v) => self.dsp_params.highpass.set_value(v),
+            AudioCommand::SetEqBand { band, gain } => {
+                if band < 10 {
+                    self.dsp_params.eq_bands[band].set_value(gain);
+                }
+            }
             AudioCommand::Shutdown => return false,
         }
         true
@@ -241,6 +249,10 @@ impl AudioCommandExt for AudioCommand {
                 | AudioCommand::SetTreble(_)
                 | AudioCommand::SetReverb(_)
                 | AudioCommand::SetEcho(_)
+                | AudioCommand::SetPan(_)
+                | AudioCommand::SetLowpass(_)
+                | AudioCommand::SetHighpass(_)
+                | AudioCommand::SetEqBand { .. }
                 | AudioCommand::SetVisualizer { .. }
         )
     }

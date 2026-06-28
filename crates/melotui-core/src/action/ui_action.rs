@@ -687,6 +687,81 @@ pub fn handle_command_history_next(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+// ── DSP Studio ──────────────────────────────────────────
+
+pub fn handle_toggle_dsp_studio(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.show_dsp_studio = !state.session.ui.show_dsp_studio;
+    vec![]
+}
+
+pub fn handle_dsp_select_next(state: &mut AppState) -> Vec<AppMsg> {
+    let max = crate::state::audio::DSP_CONTROL_COUNT - 1;
+    state.session.ui.dsp_selected_control = (state.session.ui.dsp_selected_control + 1).min(max);
+    vec![]
+}
+
+pub fn handle_dsp_select_prev(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.dsp_selected_control = state.session.ui.dsp_selected_control.saturating_sub(1);
+    vec![]
+}
+
+pub fn handle_dsp_adjust_up(state: &mut AppState) -> Vec<AppMsg> {
+    use crate::action::audio_action;
+    let idx = state.session.ui.dsp_selected_control;
+    match idx {
+        0..=9 => audio_action::handle_adjust_eq_band(state, idx, 1.0),
+        10 => audio_action::handle_adjust_volume(state, 0.05),
+        11 => audio_action::handle_adjust_speed(state, 0.1),
+        12 => audio_action::handle_adjust_pan(state, 0.1),
+        13 => audio_action::handle_adjust_bass(state, 0.1),
+        14 => audio_action::handle_adjust_treble(state, 0.1),
+        15 => audio_action::handle_adjust_reverb(state, 0.05),
+        16 => audio_action::handle_adjust_echo(state, 0.05),
+        17 => audio_action::handle_adjust_lowpass(state, 500.0),
+        18 => audio_action::handle_adjust_highpass(state, 50.0),
+        _ => vec![],
+    }
+}
+
+pub fn handle_dsp_adjust_down(state: &mut AppState) -> Vec<AppMsg> {
+    use crate::action::audio_action;
+    let idx = state.session.ui.dsp_selected_control;
+    match idx {
+        0..=9 => audio_action::handle_adjust_eq_band(state, idx, -1.0),
+        10 => audio_action::handle_adjust_volume(state, -0.05),
+        11 => audio_action::handle_adjust_speed(state, -0.1),
+        12 => audio_action::handle_adjust_pan(state, -0.1),
+        13 => audio_action::handle_adjust_bass(state, -0.1),
+        14 => audio_action::handle_adjust_treble(state, -0.1),
+        15 => audio_action::handle_adjust_reverb(state, -0.05),
+        16 => audio_action::handle_adjust_echo(state, -0.05),
+        17 => audio_action::handle_adjust_lowpass(state, -500.0),
+        18 => audio_action::handle_adjust_highpass(state, -50.0),
+        _ => vec![],
+    }
+}
+
+pub fn handle_dsp_reset_control(state: &mut AppState) -> Vec<AppMsg> {
+    use crate::message::audio::AudioMsg;
+    let idx = state.session.ui.dsp_selected_control;
+    match idx {
+        0..=9 => {
+            state.session.audio.eq_bands[idx] = 0.0;
+            vec![AppMsg::Audio(AudioMsg::DispatchSetEqBand { band: idx, gain: 0.0 })]
+        }
+        10 => { state.session.audio.volume = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetVolume(1.0))] }
+        11 => { state.session.audio.speed = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetSpeed(1.0))] }
+        12 => { state.session.audio.pan = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetPan(0.0))] }
+        13 => { state.session.audio.bass = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetBass(1.0))] }
+        14 => { state.session.audio.treble = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(1.0))] }
+        15 => { state.session.audio.reverb = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetReverb(0.0))] }
+        16 => { state.session.audio.echo = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(0.0))] }
+        17 => { state.session.audio.lowpass = 20000.0; vec![AppMsg::Audio(AudioMsg::DispatchSetLowpass(20000.0))] }
+        18 => { state.session.audio.highpass = 20.0; vec![AppMsg::Audio(AudioMsg::DispatchSetHighpass(20.0))] }
+        _ => vec![],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

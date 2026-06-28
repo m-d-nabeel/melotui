@@ -56,6 +56,9 @@ impl AppState {
         session.audio.treble = config.audio.default_treble;
         session.audio.reverb = config.audio.default_reverb;
         session.audio.echo = config.audio.default_echo;
+        session.audio.pan = config.audio.default_pan;
+        session.audio.lowpass = config.audio.default_lowpass;
+        session.audio.highpass = config.audio.default_highpass;
 
         // select first item
         if let Some(first_node) = projector::get_node_at_index(&library, &session.nav.library, 0) {
@@ -101,6 +104,21 @@ impl AppState {
     }
     pub fn echo(&self) -> f32 {
         self.session.audio.echo
+    }
+    pub fn pan(&self) -> f32 {
+        self.session.audio.pan
+    }
+    pub fn lowpass(&self) -> f32 {
+        self.session.audio.lowpass
+    }
+    pub fn highpass(&self) -> f32 {
+        self.session.audio.highpass
+    }
+    pub fn eq_bands(&self) -> &[f32; 10] {
+        &self.session.audio.eq_bands
+    }
+    pub fn eq_band(&self, idx: usize) -> f32 {
+        self.session.audio.eq_bands[idx.min(9)]
     }
 
     pub fn theme_overrides(&self) -> &std::collections::HashMap<String, String> {
@@ -448,6 +466,14 @@ impl AppState {
 
     pub fn focus_mode(&self) -> crate::state::ui::FocusMode {
         self.session.ui.focus_mode
+    }
+
+    pub fn ui_show_dsp_studio(&self) -> bool {
+        self.session.ui.show_dsp_studio
+    }
+
+    pub fn dsp_selected_control(&self) -> usize {
+        self.session.ui.dsp_selected_control
     }
 }
 

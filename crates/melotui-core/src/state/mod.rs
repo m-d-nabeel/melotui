@@ -7,7 +7,7 @@ pub mod ui;
 pub mod visualizer;
 
 // re-exports
-pub use audio::AudioState;
+pub use audio::{AudioState, DSP_CONTROL_COUNT, EQ_BAND_FREQS, EQ_BAND_LABELS};
 pub use download::{DownloadJob, DownloadState, DownloadStatus};
 pub use lyrics::{LyricsData, LyricsState};
 pub use notification::{Notification, NotificationKind, NotificationState};
