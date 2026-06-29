@@ -2,7 +2,9 @@
 
 `melotui` is a fast, responsive, and feature-rich terminal-based music player written in Rust. It features real-time audio visualization, DSP effects (like Nightcore and Slowed+Reverb), integrated YouTube downloading, and system media controls.
 
-*(Insert screenshots here: `![Melotui Screenshot](assets/screenshot_1.png)`)*
+![Screenshot 1](assets/screenshot_1.png)
+![Screenshot 2](assets/screenshot_2.png)
+![Screenshot 3](assets/screenshot_3.png)
 
 ## Core Features
 
