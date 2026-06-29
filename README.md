@@ -1,109 +1,76 @@
 # melotui
 
-melotui is a terminal-based music player written in Rust, featuring audio visualization, library management, and a modular architecture for extensibility.
+`melotui` is a fast, responsive, and feature-rich terminal-based music player written in Rust. It features real-time audio visualization, DSP effects (like Nightcore and Slowed+Reverb), integrated YouTube downloading, and system media controls.
 
-## Features
+*(Insert screenshot here: `![Melotui Screenshot](assets/screenshot.png)`)*
 
-- **Audio Playback**: Play music files from your local library with support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
-- **Spectrum Visualizer**: Real-time audio spectrum visualization with multiple styles (CAVA, Default, Bar, Particle).
-- **DSP Effects**: Real-time audio processing including Speed, Bass, Treble, Reverb, and Echo control.
-- **Library Management**: Automatic scanning and organization of music files into directory-based playlists.
-- **Terminal UI**: Responsive text-based interface built with Ratatui.
-- **IPC Architecture**: Robust separation of concerns using Inter-Process Communication between the UI, Audio Engine, and Downloader.
-- **Download Support**: Integrated YouTube download support via `yt-dlp`.
-- **Queue Management**: Full queue control (add, remove, play next, clear).
-- **Album Art**: Display embedded album art in the visualizer pane.
+## Core Features
+- **Local Library & Playlists**: Automatic scanning and organization of your music files.
+- **Audio Playback**: Support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
+- **Spectrum Visualizer**: Real-time audio spectrum visualization (supports CAVA).
+- **DSP Studio**: Real-time audio processing (Speed, Bass, Treble, Reverb, Echo) with a symmetric 8-band EQ.
+- **System Integration**: Syncs with Linux/macOS desktop media widgets and supports hardware media keys.
+- **Download Support**: Integrated YouTube downloads via `yt-dlp`.
 
-## Architecture
-
-melotui is built as a workspace with multiple crates:
-
-- `melotui-core`: Core application logic, state management, and reducers.
-- `melotui-tui`: Terminal user interface components and rendering.
-- `melotui-audio`: Audio analysis, DSP graph (Fundsp), and playback engine (Rodio).
-- `melotui-ipc`: Inter-process communication layer utilizing threaded workers.
-- `melotui-download`: Background worker for managing downloads.
-- `melotui-bin`: Main executable binary and runtime entry point.
+---
 
 ## Installation
 
-### Prerequisites
+> [!IMPORTANT]
+> **Dependencies are required!** 
+> Since `melotui` interfaces directly with your system's audio devices and DBUS for media controls, you **must** install the native development libraries before building.
 
-- **Rust**: 1.70 or later
-- **Linux Audio**: `libasound2-dev` (e.g., `sudo apt install libasound2-dev` on Ubuntu/Debian)
-- **Downloader**: `yt-dlp` (required for download functionality)
+### 1. Install System Dependencies
 
-### Building from Source
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/m-d-nabeel/melotui.git
-   cd melotui
-    ```
-
-2. Build the project:
+**Ubuntu / Debian:**
 ```bash
+sudo apt-get update
+sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
+```
+
+**Fedora / RHEL:**
+```bash
+sudo dnf install alsa-lib-devel dbus-devel pkgconf-pkg-config
+```
+
+**macOS:**
+*(macOS handles audio and media controls natively via CoreAudio/CoreMedia, so no additional system libraries are required for compilation!)*
+
+### 2. Install yt-dlp (Optional but Recommended)
+To use the in-app YouTube download feature (`:dl <query>`), you must have `yt-dlp` installed and available in your system's PATH.
+- [yt-dlp installation guide](https://github.com/yt-dlp/yt-dlp/wiki/Installation)
+
+### 3. Build and Run
+
+Make sure you have [Rust installed](https://rustup.rs/). Then, clone the repository and build in release mode:
+
+```bash
+git clone https://github.com/m-d-nabeel/melotui.git
+cd melotui
 cargo build --release
+```
 
-````
+The compiled binary will be available at `./target/release/melotui-bin`.
 
-3. The binary will be located at `target/release/melotui-bin`.
+---
 
 ## Usage
 
-### Running
-
+Start the player:
 ```bash
 ./target/release/melotui-bin
-
 ```
 
-### Controls
+> [!TIP]
+> **Need help?**
+> Once inside the app, simply press `?` to open the Help Overlay and see a complete list of all available keybindings and commands!
 
-| Category       | Key                         | Action                                           |
-| -------------- | --------------------------- | ------------------------------------------------ |
-| **General**    | `q`                         | Quit Application                                 |
-|                | `?`                         | Toggle Help Overlay                              |
-|                | `:`                         | Enter Command Mode                               |
-| **Navigation** | `h`/`j`/`k`/`l` or `Arrows` | Navigate Lists                                   |
-|                | `Tab`                       | Toggle between Library and Queue panels          |
-|                | `Shift`+`Tab`               | Toggle between Spectrum and Album Art            |
-| **Playback**   | `Space`                     | Play / Pause                                     |
-|                | `Enter`                     | Play Selected Track                              |
-|                | `x`                         | Stop                                             |
-|                | `,` / `.`                   | Seek -5s / +5s                                   |
-|                | `z`                         | Toggle Shuffle                                   |
-|                | `c`                         | Cycle Repeat Mode (Off, Single, Track, Playlist) |
-| **Queue**      | `a`                         | Add selection to Queue                           |
-|                | `Shift`+`A`                 | Play Next (Add to front of Queue)                |
-|                | `d`                         | Remove from Queue (when in Queue panel)          |
-|                | `D`                         | Clear Queue                                      |
-| **Audio FX**   | `+` / `-`                   | Master Volume                                    |
-|                | `s` / `S`                   | Speed (Pitch/Tempo) Up / Down                    |
-|                | `b` / `B`                   | Bass Boost Up / Down                             |
-|                | `t` / `T`                   | Treble Up / Down                                 |
-|                | `r` / `R`                   | Reverb Mix Up / Down                             |
-|                | `e` / `E`                   | Echo Mix Up / Down                               |
-
-### Command Mode
-
-Press `:` to enter the command bar at the bottom.
-
-- **`:q` / `:quit**`: Exit the application.
-- **`:scan` / `:rescan**`: Rescan the library directory.
-- **`:dl <query>`**: Search and download a song from YouTube (e.g., `:dl lofi hip hop`).
-- **`:v <style>`**: Change visualizer style.
-- Options: `cava`, `default`, `bar`, `particle`
-- Example: `:v particle`
-
-## Configuration
-
-melotui automatically scans your system's default audio directory (e.g., `~/Music` on Linux/macOS or `%USERPROFILE%\Music` on Windows).
-
-If you have **CAVA** installed on your system, melotui can detect it and use it as the backend for the spectrum visualizer. If not, it falls back to its internal FFT analyzer.
+### Basic Navigation
+- Use `h`/`j`/`k`/`l` or the `Arrow Keys` to navigate.
+- Press `Tab` to switch between panels.
+- Press `:` to enter the command bar (e.g., `:dl lofi hip hop` or `:quit`).
 
 ## License
-
 Licensed under either of
 
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
@@ -114,11 +81,3 @@ at your option.
 ### Contribution
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
-
-## Acknowledgments
-
-- **UI**: [Ratatui](https://github.com/ratatui-org/ratatui)
-- **Audio**: [Rodio](https://github.com/RustAudio/rodio) & [Symphonia](https://github.com/pdeljanov/Symphonia)
-- **DSP**: [Fundsp](https://github.com/SamiPerttu/fundsp)
-- **Metadata**: [Lofty](https://github.com/Serial-ATA/lofty-rs)
-- **Image**: [Image-rs](https://github.com/image-rs/image)
