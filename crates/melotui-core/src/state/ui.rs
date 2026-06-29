@@ -86,6 +86,8 @@ pub struct UIState {
     pub show_help: bool,
     pub show_lyrics: bool,
     pub show_playback: bool,
+    pub show_dsp_studio: bool,
+    pub dsp_selected_control: usize, // 0..18 (10 EQ bands + 9 sliders)
     pub scrolloff: usize,
     pub terminal_size: (u16, u16),
     pub sidebar_width: u16,
@@ -108,6 +110,8 @@ impl Default for UIState {
             show_help: false,
             show_lyrics: false,
             show_playback: true,
+            show_dsp_studio: false,
+            dsp_selected_control: 0,
             scrolloff: 8,
             terminal_size: (0, 0),
             sidebar_width: 28,

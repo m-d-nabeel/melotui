@@ -122,6 +122,23 @@ impl AudioEngine {
             AudioCommand::SetTreble(v) => self.dsp_params.treble.set_value(v),
             AudioCommand::SetReverb(v) => self.dsp_params.reverb.set_value(v),
             AudioCommand::SetEcho(v) => self.dsp_params.echo.set_value(v),
+            AudioCommand::SetPan(v) => self.dsp_params.pan.set_value(v),
+            AudioCommand::SetLowpass(v) => self.dsp_params.lowpass.set_value(v),
+            AudioCommand::SetHighpass(v) => self.dsp_params.highpass.set_value(v),
+            AudioCommand::SetEqBand { band, gain } => {
+                if band < 10 {
+                    self.dsp_params.eq_bands[band].set_value(gain);
+                }
+            }
+            AudioCommand::SetAutoPanRate(v) => self.dsp_params.auto_pan_rate.set_value(v),
+            AudioCommand::SetAutoPanDepth(v) => self.dsp_params.auto_pan_depth.set_value(v),
+            AudioCommand::SetWobble(v) => self.dsp_params.wobble.set_value(v),
+            AudioCommand::SetKaraoke(v) => self.dsp_params.karaoke.set_value(v),
+            AudioCommand::SetWidth(v) => self.dsp_params.width.set_value(v),
+            AudioCommand::SetBitcrush(v) => self.dsp_params.bitcrush.set_value(v),
+            AudioCommand::SetExciter(v) => self.dsp_params.exciter.set_value(v),
+            AudioCommand::SetPingPong(v) => self.dsp_params.ping_pong.set_value(v),
+            AudioCommand::SetPhaser(v) => self.dsp_params.phaser.set_value(v),
             AudioCommand::Shutdown => return false,
         }
         true
@@ -241,6 +258,19 @@ impl AudioCommandExt for AudioCommand {
                 | AudioCommand::SetTreble(_)
                 | AudioCommand::SetReverb(_)
                 | AudioCommand::SetEcho(_)
+                | AudioCommand::SetPan(_)
+                | AudioCommand::SetLowpass(_)
+                | AudioCommand::SetHighpass(_)
+                | AudioCommand::SetEqBand { .. }
+                | AudioCommand::SetAutoPanRate(_)
+                | AudioCommand::SetAutoPanDepth(_)
+                | AudioCommand::SetWobble(_)
+                | AudioCommand::SetKaraoke(_)
+                | AudioCommand::SetWidth(_)
+                | AudioCommand::SetBitcrush(_)
+                | AudioCommand::SetExciter(_)
+                | AudioCommand::SetPingPong(_)
+                | AudioCommand::SetPhaser(_)
                 | AudioCommand::SetVisualizer { .. }
         )
     }

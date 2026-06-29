@@ -43,4 +43,17 @@ pub enum UIMsg {
     LyricsSelectorMoveRight,
     LyricsSelectorSubmit,
     LyricsSelectorCancel,
+    // DSP Studio
+    ToggleDspStudio,
+    DspSelectUp,
+    DspSelectDown,
+    DspSelectLeft,
+    DspSelectRight,
+    DspAdjustUp,
+    DspAdjustDown,
+    DspResetControl,
+    DspMacroSlowedReverb,
+    DspMacroNightcore,
+    DspMacroSpatial,
+    DspMacroResetAll,
 }

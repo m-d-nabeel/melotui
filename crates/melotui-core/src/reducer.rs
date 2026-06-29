@@ -82,6 +82,25 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::AdjustTreble(delta) => audio_action::handle_adjust_treble(state, delta),
         AudioMsg::AdjustReverb(delta) => audio_action::handle_adjust_reverb(state, delta),
         AudioMsg::AdjustEcho(delta) => audio_action::handle_adjust_echo(state, delta),
+        AudioMsg::AdjustPan(delta) => audio_action::handle_adjust_pan(state, delta),
+        AudioMsg::AdjustLowpass(delta) => audio_action::handle_adjust_lowpass(state, delta),
+        AudioMsg::AdjustHighpass(delta) => audio_action::handle_adjust_highpass(state, delta),
+        AudioMsg::AdjustEqBand { band, delta } => {
+            audio_action::handle_adjust_eq_band(state, band, delta)
+        }
+        AudioMsg::AdjustAutoPanRate(delta) => {
+            audio_action::handle_adjust_auto_pan_rate(state, delta)
+        }
+        AudioMsg::AdjustAutoPanDepth(delta) => {
+            audio_action::handle_adjust_auto_pan_depth(state, delta)
+        }
+        AudioMsg::AdjustWobble(delta) => audio_action::handle_adjust_wobble(state, delta),
+        AudioMsg::AdjustKaraoke(delta) => audio_action::handle_adjust_karaoke(state, delta),
+        AudioMsg::AdjustWidth(delta) => audio_action::handle_adjust_width(state, delta),
+        AudioMsg::AdjustBitcrush(delta) => audio_action::handle_adjust_bitcrush(state, delta),
+        AudioMsg::AdjustExciter(delta) => audio_action::handle_adjust_exciter(state, delta),
+        AudioMsg::AdjustPingPong(delta) => audio_action::handle_adjust_ping_pong(state, delta),
+        AudioMsg::AdjustPhaser(delta) => audio_action::handle_adjust_phaser(state, delta),
         AudioMsg::DispatchSetVolume(volume) => {
             audio_action::handle_dispatch_set_volume(state, volume)
         }
@@ -94,6 +113,29 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
             audio_action::handle_dispatch_set_reverb(state, reverb)
         }
         AudioMsg::DispatchSetEcho(echo) => audio_action::handle_dispatch_set_echo(state, echo),
+        AudioMsg::DispatchSetPan(pan) => audio_action::handle_dispatch_set_pan(state, pan),
+        AudioMsg::DispatchSetLowpass(lp) => audio_action::handle_dispatch_set_lowpass(state, lp),
+        AudioMsg::DispatchSetHighpass(hp) => audio_action::handle_dispatch_set_highpass(state, hp),
+        AudioMsg::DispatchSetEqBand { band, gain } => {
+            audio_action::handle_dispatch_set_eq_band(state, band, gain)
+        }
+        AudioMsg::DispatchSetAutoPanRate(rate) => {
+            audio_action::handle_dispatch_set_auto_pan_rate(state, rate)
+        }
+        AudioMsg::DispatchSetAutoPanDepth(depth) => {
+            audio_action::handle_dispatch_set_auto_pan_depth(state, depth)
+        }
+        AudioMsg::DispatchSetWobble(val) => audio_action::handle_dispatch_set_wobble(state, val),
+        AudioMsg::DispatchSetKaraoke(val) => audio_action::handle_dispatch_set_karaoke(state, val),
+        AudioMsg::DispatchSetWidth(val) => audio_action::handle_dispatch_set_width(state, val),
+        AudioMsg::DispatchSetBitcrush(val) => {
+            audio_action::handle_dispatch_set_bitcrush(state, val)
+        }
+        AudioMsg::DispatchSetExciter(val) => audio_action::handle_dispatch_set_exciter(state, val),
+        AudioMsg::DispatchSetPingPong(val) => {
+            audio_action::handle_dispatch_set_ping_pong(state, val)
+        }
+        AudioMsg::DispatchSetPhaser(val) => audio_action::handle_dispatch_set_phaser(state, val),
     }
 }
 
@@ -130,7 +172,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::ConfirmNo => ui_action::handle_confirm_no(state),
         UIMsg::CycleFocusMode => ui_action::handle_cycle_focus_mode(state),
         UIMsg::SetFocusMode(mode) => ui_action::handle_set_focus_mode(state, mode),
-        UIMsg::SetSidebarWidth(width) => ui_action::handle_set_sidebar_width(state, width),
+        UIMsg::SetSidebarWidth(w) => ui_action::handle_set_sidebar_width(state, w),
         UIMsg::AdjustSidebarWidth(delta) => ui_action::handle_adjust_sidebar_width(state, delta),
         UIMsg::LyricsSelectorMoveUp => ui_action::handle_lyrics_selector_move_up(state),
         UIMsg::LyricsSelectorMoveDown => ui_action::handle_lyrics_selector_move_down(state),
@@ -138,9 +180,20 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::LyricsSelectorMoveRight => ui_action::handle_lyrics_selector_move_right(state),
         UIMsg::LyricsSelectorSubmit => ui_action::handle_lyrics_selector_submit(state),
         UIMsg::LyricsSelectorCancel => ui_action::handle_lyrics_selector_cancel(state),
+        UIMsg::ToggleDspStudio => ui_action::handle_toggle_dsp_studio(state),
+        UIMsg::DspSelectUp => ui_action::handle_dsp_select_up(state),
+        UIMsg::DspSelectDown => ui_action::handle_dsp_select_down(state),
+        UIMsg::DspSelectLeft => ui_action::handle_dsp_select_left(state),
+        UIMsg::DspSelectRight => ui_action::handle_dsp_select_right(state),
+        UIMsg::DspAdjustUp => ui_action::handle_dsp_adjust_up(state),
+        UIMsg::DspAdjustDown => ui_action::handle_dsp_adjust_down(state),
+        UIMsg::DspResetControl => ui_action::handle_dsp_reset_control(state),
+        UIMsg::DspMacroSlowedReverb => audio_action::handle_macro_slowed_reverb(state),
+        UIMsg::DspMacroNightcore => audio_action::handle_macro_nightcore(state),
+        UIMsg::DspMacroSpatial => audio_action::handle_macro_spatial(state),
+        UIMsg::DspMacroResetAll => audio_action::handle_macro_reset_all(state),
     }
 }
-
 fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> {
     match msg {
         LibraryMsg::AddToQueue(track) => library_action::handle_add_to_queue(state, track),

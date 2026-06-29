@@ -20,6 +20,7 @@ pub enum KeyContext {
     PlaylistPicker,
     Confirm,
     LyricsSelector,
+    DspStudio,
     Global,
 }
 
@@ -115,6 +116,20 @@ pub enum KeyAction {
     // panel resize
     ShrinkSidebar,
     GrowSidebar,
+
+    // DSP Studio
+    ToggleDspStudio,
+    DspSelectUp,
+    DspSelectDown,
+    DspSelectLeft,
+    DspSelectRight,
+    DspAdjustUp,
+    DspAdjustDown,
+    DspResetControl,
+    DspMacroSlowedReverb,
+    DspMacroNightcore,
+    DspMacroSpatial,
+    DspMacroResetAll,
 }
 
 impl KeyAction {
@@ -189,6 +204,18 @@ impl KeyAction {
             KeyAction::CycleFocusMode => "Focus Mode",
             KeyAction::ShrinkSidebar => "Sidebar-",
             KeyAction::GrowSidebar => "Sidebar+",
+            KeyAction::ToggleDspStudio => "DSP Studio",
+            KeyAction::DspSelectUp => "DSP Up",
+            KeyAction::DspSelectDown => "DSP Down",
+            KeyAction::DspSelectLeft => "DSP Left",
+            KeyAction::DspSelectRight => "DSP Right",
+            KeyAction::DspAdjustUp => "DSP Increase",
+            KeyAction::DspAdjustDown => "DSP Decrease",
+            KeyAction::DspResetControl => "DSP Reset",
+            KeyAction::DspMacroSlowedReverb => "Slowed+Reverb",
+            KeyAction::DspMacroNightcore => "Nightcore",
+            KeyAction::DspMacroSpatial => "3D Spatial",
+            KeyAction::DspMacroResetAll => "Reset All DSP",
         }
     }
 }
@@ -285,6 +312,18 @@ impl KeyAction {
             KeyAction::CycleFocusMode => Some(AppMsg::UI(UIMsg::CycleFocusMode)),
             KeyAction::ShrinkSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(-2))),
             KeyAction::GrowSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(2))),
+            KeyAction::ToggleDspStudio => Some(AppMsg::UI(UIMsg::ToggleDspStudio)),
+            KeyAction::DspSelectUp => Some(AppMsg::UI(UIMsg::DspSelectUp)),
+            KeyAction::DspSelectDown => Some(AppMsg::UI(UIMsg::DspSelectDown)),
+            KeyAction::DspSelectLeft => Some(AppMsg::UI(UIMsg::DspSelectLeft)),
+            KeyAction::DspSelectRight => Some(AppMsg::UI(UIMsg::DspSelectRight)),
+            KeyAction::DspAdjustUp => Some(AppMsg::UI(UIMsg::DspAdjustUp)),
+            KeyAction::DspAdjustDown => Some(AppMsg::UI(UIMsg::DspAdjustDown)),
+            KeyAction::DspResetControl => Some(AppMsg::UI(UIMsg::DspResetControl)),
+            KeyAction::DspMacroSlowedReverb => Some(AppMsg::UI(UIMsg::DspMacroSlowedReverb)),
+            KeyAction::DspMacroNightcore => Some(AppMsg::UI(UIMsg::DspMacroNightcore)),
+            KeyAction::DspMacroSpatial => Some(AppMsg::UI(UIMsg::DspMacroSpatial)),
+            KeyAction::DspMacroResetAll => Some(AppMsg::UI(UIMsg::DspMacroResetAll)),
         }
     }
 }
@@ -334,6 +373,7 @@ impl KeyRegistry {
                 "trackinfo" => KeyContext::TrackInfo,
                 "playlist" | "playlistpicker" => KeyContext::PlaylistPicker,
                 "confirm" => KeyContext::Confirm,
+                "dspstudio" | "dsp" => KeyContext::DspStudio,
                 "global" => KeyContext::Global,
                 _ => {
                     let err = format!("Unknown keymap context: {}", ctx_str);
@@ -566,6 +606,35 @@ impl Default for KeyRegistry {
                     .with_mod(KeyModifiers::CONTROL),
                 KeyBinding::new(KeyCode::Char('l'), KeyAction::GrowSidebar)
                     .with_mod(KeyModifiers::CONTROL),
+                KeyBinding::new(KeyCode::F(2), KeyAction::ToggleDspStudio),
+            ],
+        );
+
+        // DSP Studio context
+        bindings.insert(
+            KeyContext::DspStudio,
+            vec![
+                KeyBinding::new(KeyCode::F(2), KeyAction::ToggleDspStudio),
+                KeyBinding::new(KeyCode::Esc, KeyAction::ToggleDspStudio),
+                // Navigation (Arrows + Vim spatial)
+                KeyBinding::new(KeyCode::Up, KeyAction::DspSelectUp),
+                KeyBinding::new(KeyCode::Char('k'), KeyAction::DspSelectUp),
+                KeyBinding::new(KeyCode::Down, KeyAction::DspSelectDown),
+                KeyBinding::new(KeyCode::Char('j'), KeyAction::DspSelectDown),
+                KeyBinding::new(KeyCode::Left, KeyAction::DspSelectLeft),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::DspSelectLeft),
+                KeyBinding::new(KeyCode::Right, KeyAction::DspSelectRight),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::DspSelectRight),
+                // Value adjust (+/-)
+                KeyBinding::new(KeyCode::Char('+'), KeyAction::DspAdjustUp),
+                KeyBinding::new(KeyCode::Char('='), KeyAction::DspAdjustUp),
+                KeyBinding::new(KeyCode::Char('-'), KeyAction::DspAdjustDown),
+                KeyBinding::new(KeyCode::Char('_'), KeyAction::DspAdjustDown),
+                KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
+                KeyBinding::new(KeyCode::Char('1'), KeyAction::DspMacroSlowedReverb),
+                KeyBinding::new(KeyCode::Char('2'), KeyAction::DspMacroNightcore),
+                KeyBinding::new(KeyCode::Char('3'), KeyAction::DspMacroSpatial),
+                KeyBinding::new(KeyCode::Char('0'), KeyAction::DspMacroResetAll),
             ],
         );
 

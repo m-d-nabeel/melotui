@@ -169,3 +169,120 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         );
     }
 }
+
+/// Compact 3-line playback bar for DSP Studio mode.
+/// Line 1: ▶ Title • Artist           🔀 🔁
+/// Line 2: 00:00  ━━━━━●─────────  03:45
+/// Line 3: (empty / padding)
+pub fn draw_compact(frame: &mut Frame, area: Rect, state: &AppState) {
+    let t = crate::theme::get_theme(state);
+    let (status_icon, status_color) = utils::get_status_icon(state.playback_status(), t);
+    let current_track = state.get_playing_track();
+
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1), // Title row
+            Constraint::Length(1), // Progress row
+            Constraint::Length(1), // Padding
+        ])
+        .split(area);
+
+    // Row 1: title + controls
+    {
+        let row_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Fill(1), Constraint::Min(10)])
+            .split(layout[0]);
+
+        let title_line = if let Some(track) = current_track {
+            let artist = track.artist.as_deref().unwrap_or("Unknown");
+            Line::from(vec![
+                Span::styled(
+                    format!(" {} ", status_icon),
+                    Style::default().fg(status_color),
+                ),
+                Span::styled(
+                    &track.title,
+                    Style::default()
+                        .fg(t.fg_primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(" • ", Style::default().fg(t.fg_muted)),
+                Span::styled(artist, Style::default().fg(t.fg_secondary)),
+            ])
+        } else {
+            Line::from(vec![
+                Span::styled(
+                    format!(" {} ", status_icon),
+                    Style::default().fg(status_color),
+                ),
+                Span::styled("No Track", Style::default().fg(t.fg_muted)),
+            ])
+        };
+        frame.render_widget(Paragraph::new(title_line), row_layout[0]);
+
+        let (source_icon, source_color) = if state.is_playing_from_queue() {
+            ("Q", t.accent_warning)
+        } else {
+            ("♪", t.accent_info)
+        };
+        let controls_line = Line::from(vec![
+            Span::styled(source_icon, Style::default().fg(source_color).bold()),
+            Span::raw(" "),
+            utils::get_shuffle_icon(state.shuffle_active(), t),
+            Span::raw(" "),
+            utils::get_repeat_icon(state.repeat_mode(), t),
+            Span::raw(" "),
+        ]);
+        frame.render_widget(
+            Paragraph::new(controls_line).alignment(Alignment::Right),
+            row_layout[1],
+        );
+    }
+
+    // Row 2: progress bar
+    {
+        let h_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(7),
+                Constraint::Min(10),
+                Constraint::Length(7),
+            ])
+            .split(layout[1]);
+
+        let current_ms = state.progress_ms();
+        let duration_ms = state.total_duration_ms();
+        let ratio = state.progress_ratio();
+
+        frame.render_widget(
+            Paragraph::new(format!(" {}", format_duration(current_ms)))
+                .style(Style::default().fg(t.fg_muted)),
+            h_chunks[0],
+        );
+
+        let pb_cfg = ProgressBarConfig {
+            theme: ProgressBarTheme::Capsule,
+            color: status_color,
+            width: h_chunks[1].width as usize,
+            ratio,
+        };
+        frame.render_widget(
+            progress_bar_view::render_progress_bar(pb_cfg, t),
+            h_chunks[1],
+        );
+
+        let total_str = if duration_ms > 0 {
+            format_duration(duration_ms)
+        } else {
+            "--:--".to_string()
+        };
+        frame.render_widget(
+            Paragraph::new(format!("{} ", total_str))
+                .alignment(Alignment::Right)
+                .style(Style::default().fg(t.fg_muted)),
+            h_chunks[2],
+        );
+    }
+}

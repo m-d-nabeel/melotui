@@ -97,6 +97,40 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             AudioMsg::DispatchSetTreble(v) => Some(IpcCommand::Audio(AudioCommand::SetTreble(*v))),
             AudioMsg::DispatchSetReverb(v) => Some(IpcCommand::Audio(AudioCommand::SetReverb(*v))),
             AudioMsg::DispatchSetEcho(v) => Some(IpcCommand::Audio(AudioCommand::SetEcho(*v))),
+            AudioMsg::DispatchSetPan(v) => Some(IpcCommand::Audio(AudioCommand::SetPan(*v))),
+            AudioMsg::DispatchSetLowpass(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetLowpass(*v)))
+            }
+            AudioMsg::DispatchSetHighpass(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetHighpass(*v)))
+            }
+            AudioMsg::DispatchSetEqBand { band, gain } => {
+                Some(IpcCommand::Audio(AudioCommand::SetEqBand {
+                    band: *band,
+                    gain: *gain,
+                }))
+            }
+            AudioMsg::DispatchSetAutoPanRate(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetAutoPanRate(*v)))
+            }
+            AudioMsg::DispatchSetAutoPanDepth(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetAutoPanDepth(*v)))
+            }
+            AudioMsg::DispatchSetWobble(v) => Some(IpcCommand::Audio(AudioCommand::SetWobble(*v))),
+            AudioMsg::DispatchSetKaraoke(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetKaraoke(*v)))
+            }
+            AudioMsg::DispatchSetWidth(v) => Some(IpcCommand::Audio(AudioCommand::SetWidth(*v))),
+            AudioMsg::DispatchSetBitcrush(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetBitcrush(*v)))
+            }
+            AudioMsg::DispatchSetExciter(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetExciter(*v)))
+            }
+            AudioMsg::DispatchSetPingPong(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetPingPong(*v)))
+            }
+            AudioMsg::DispatchSetPhaser(v) => Some(IpcCommand::Audio(AudioCommand::SetPhaser(*v))),
             _ => None,
         },
 

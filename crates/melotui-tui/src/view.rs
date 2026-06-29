@@ -11,7 +11,7 @@ use crate::{
     image_cache::ImageCache,
     theme::Theme,
     widgets::{
-        command_view, confirm_view, help_view, notification_popup, playback_view,
+        command_view, confirm_view, dsp_studio_view, help_view, notification_popup, playback_view,
         playlist_picker_view, sidebar, sound_control_view, visualizer_view,
     },
 };
@@ -33,13 +33,24 @@ pub fn draw(
         return;
     }
 
-    // Dispatch to focus mode layout
-    match state.focus_mode() {
-        FocusMode::Full => draw_full(frame, area, state, image_cache),
-        FocusMode::Visualizer => draw_visualizer_only(frame, area, state, image_cache),
-        FocusMode::Playback => draw_playback_only(frame, area, state),
-        FocusMode::VisualizerPlayback => draw_viz_playback(frame, area, state, image_cache),
-        FocusMode::LyricsPlayback => draw_lyrics_playback(frame, area, state),
+    if state.ui_show_dsp_studio() {
+        let playback_height: u16 = 3;
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Fill(1), Constraint::Length(playback_height)])
+            .split(area);
+
+        dsp_studio_view::draw(frame, layout[0], state, image_cache);
+        playback_view::draw_compact(frame, layout[1], state);
+    } else {
+        // Dispatch to focus mode layout
+        match state.focus_mode() {
+            FocusMode::Full => draw_full(frame, area, state, image_cache),
+            FocusMode::Visualizer => draw_visualizer_only(frame, area, state, image_cache),
+            FocusMode::Playback => draw_playback_only(frame, area, state),
+            FocusMode::VisualizerPlayback => draw_viz_playback(frame, area, state, image_cache),
+            FocusMode::LyricsPlayback => draw_lyrics_playback(frame, area, state),
+        }
     }
 
     // Overlays render on top regardless of focus mode

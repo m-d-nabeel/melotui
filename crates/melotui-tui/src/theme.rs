@@ -62,6 +62,17 @@ pub struct Theme {
     pub slider_reverb: Color,
     pub slider_echo: Color,
     pub slider_track: Color,
+    pub slider_pan: Color,
+    pub slider_lowpass: Color,
+    pub slider_highpass: Color,
+
+    // ── DSP Studio ────────────────────────────────────────
+    pub dsp_section_border: Color,
+    pub dsp_selected_bg: Color,
+    pub eq_bar_fill: Color,
+    pub eq_bar_empty: Color,
+    pub eq_bar_selected: Color,
+    pub eq_zero_line: Color,
 
     // ── Help view ─────────────────────────────────────────
     pub help_key: Color,
@@ -121,6 +132,15 @@ impl Theme {
                     "slider_reverb" => self.slider_reverb = color,
                     "slider_echo" => self.slider_echo = color,
                     "slider_track" => self.slider_track = color,
+                    "slider_pan" => self.slider_pan = color,
+                    "slider_lowpass" => self.slider_lowpass = color,
+                    "slider_highpass" => self.slider_highpass = color,
+                    "dsp_section_border" => self.dsp_section_border = color,
+                    "dsp_selected_bg" => self.dsp_selected_bg = color,
+                    "eq_bar_fill" => self.eq_bar_fill = color,
+                    "eq_bar_empty" => self.eq_bar_empty = color,
+                    "eq_bar_selected" => self.eq_bar_selected = color,
+                    "eq_zero_line" => self.eq_zero_line = color,
                     "help_key" => self.help_key = color,
                     "help_header" => self.help_header = color,
                     "help_text" => self.help_text = color,
@@ -187,6 +207,17 @@ impl Theme {
             slider_reverb: Color::Rgb(203, 166, 247), // Mauve
             slider_echo: Color::Rgb(243, 139, 168),   // Red
             slider_track: Color::Rgb(69, 71, 90),     // Surface1
+            slider_pan: Color::Rgb(245, 194, 231),    // Pink
+            slider_lowpass: Color::Rgb(180, 190, 254), // Lavender
+            slider_highpass: Color::Rgb(250, 179, 135), // Peach
+
+            // DSP Studio
+            dsp_section_border: Color::Rgb(130, 145, 205), // Muted Indigo
+            dsp_selected_bg: Color::Rgb(49, 50, 68),       // Surface0
+            eq_bar_fill: Color::Rgb(166, 227, 161),        // Green
+            eq_bar_empty: Color::Rgb(49, 50, 68),          // Surface0
+            eq_bar_selected: Color::Rgb(137, 180, 250),    // Blue
+            eq_zero_line: Color::Rgb(69, 71, 90),          // Surface1
 
             // Help view
             help_key: Color::Rgb(243, 139, 168),     // Pink
