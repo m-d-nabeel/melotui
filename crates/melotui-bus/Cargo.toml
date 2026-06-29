@@ -1,6 +1,6 @@
 [package]
 name = "melotui-bus"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["m-d-nabeel"]
 repository = "https://github.com/m-d-nabeel/melotui"
 edition = "2024"
