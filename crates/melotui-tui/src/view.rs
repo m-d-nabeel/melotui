@@ -49,18 +49,15 @@ pub fn draw(
 /// Full layout: sidebar + visualizer + mixer + playback
 fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut ImageCache) {
     if state.ui_show_dsp_studio() {
-        // DSP Studio: full width, no sidebar
-        let playback_height = if state.ui_show_playback() { 7 } else { 0 };
+        // DSP Studio: full width, no sidebar, compact playback
+        let playback_height: u16 = 3;
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Fill(1), Constraint::Length(playback_height)])
             .split(area);
 
         dsp_studio_view::draw(frame, layout[0], state, image_cache);
-
-        if state.ui_show_playback() {
-            playback_view::draw(frame, layout[1], state);
-        }
+        playback_view::draw_compact(frame, layout[1], state);
         return;
     }
 

@@ -20,9 +20,9 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Min(6),           // Mini spectrum visualizer
+            Constraint::Fill(1),           // Spectrum visualizer (gets remaining space)
             Constraint::Length(12),        // Horizontal EQ (10 bands + borders)
-            Constraint::Fill(1),          // Controls grid
+            Constraint::Min(10),           // Controls grid (3 columns, ~4-5 items each)
         ])
         .split(area);
 

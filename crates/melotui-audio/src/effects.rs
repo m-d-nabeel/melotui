@@ -120,22 +120,28 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
     // Combined pan position: static pan + LFO modulation
     // LFO: sine oscillator at auto_pan_rate Hz, scaled by auto_pan_depth
     // Total pan is clamped to [-1, 1] then mapped through equal-power law:
-    //   left  = cos((pan+1) * π/4)
-    //   right = sin((pan+1) * π/4)
+    //   left  = cos((pan+1) × π/4)
+    //   right = sin((pan+1) × π/4)
     // This guarantees cos²(θ)+sin²(θ)=1, so total power is locked at 0 dB.
+    //
+    // CRITICAL: We use ^ (branch) NOT .clone() to fan out the signal.
+    // Cloning would create two independent sine oscillators with drifting phase,
+    // causing the L/R gains to desynchronize.
     let pan_static = var(&params.pan);
     let lfo = (var(&params.auto_pan_rate) >> sine()) * var(&params.auto_pan_depth);
     let combined_pan = (pan_static + lfo) >> map(|p: &Frame<f32, U1>| p[0].clamp(-1.0, 1.0));
 
-    let pan_left = combined_pan.clone() >> map(|p: &Frame<f32, U1>| {
+    let cos_map = map(|p: &Frame<f32, U1>| {
         let angle = (p[0] + 1.0) * std::f32::consts::FRAC_PI_4;
         angle.cos()
     });
-    let pan_right = combined_pan >> map(|p: &Frame<f32, U1>| {
+    let sin_map = map(|p: &Frame<f32, U1>| {
         let angle = (p[0] + 1.0) * std::f32::consts::FRAC_PI_4;
         angle.sin()
     });
-    let pan_stereo = pan_left | pan_right;
+
+    // Branch: feed same pan value to both cos (left) and sin (right)
+    let pan_stereo = combined_pan >> (cos_map ^ sin_map);
 
     // ── Limiter ──────────────────────────────────────────
     let limiter_stereo = limiter(0.001, 0.1) | limiter(0.001, 0.1);

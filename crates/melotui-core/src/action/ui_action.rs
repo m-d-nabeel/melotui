@@ -691,8 +691,9 @@ pub fn handle_command_history_next(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_toggle_dsp_studio(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.show_dsp_studio = !state.session.ui.show_dsp_studio;
-    // Dispatch SetVisualizer to activate spectrum when entering DSP Studio
     if state.session.ui.show_dsp_studio {
+        // Switch to spectrum mode so the mini visualizer renders
+        state.session.visualizer_mode = VisualizerMode::Spectrum;
         vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
             spectrum_style: Some(crate::state::SpectrumStyle::Bar),
         })]

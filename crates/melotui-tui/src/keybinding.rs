@@ -604,20 +604,33 @@ impl Default for KeyRegistry {
             vec![
                 KeyBinding::new(KeyCode::F(2), KeyAction::ToggleDspStudio),
                 KeyBinding::new(KeyCode::Esc, KeyAction::ToggleDspStudio),
+                // Navigation
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::DspSelectUp),
                 KeyBinding::new(KeyCode::Up, KeyAction::DspSelectUp),
                 KeyBinding::new(KeyCode::Char('j'), KeyAction::DspSelectDown),
                 KeyBinding::new(KeyCode::Down, KeyAction::DspSelectDown),
                 KeyBinding::new(KeyCode::Left, KeyAction::DspSelectLeft),
                 KeyBinding::new(KeyCode::Right, KeyAction::DspSelectRight),
+                // Value adjust
                 KeyBinding::new(KeyCode::Char('l'), KeyAction::DspAdjustUp),
                 KeyBinding::new(KeyCode::Char('h'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
+                // Volume
                 KeyBinding::new(KeyCode::Char('+'), KeyAction::VolUp),
                 KeyBinding::new(KeyCode::Char('='), KeyAction::VolUp),
                 KeyBinding::new(KeyCode::Char('-'), KeyAction::VolDown),
                 KeyBinding::new(KeyCode::Char('_'), KeyAction::VolDown),
+                // Playback
                 KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause),
+                KeyBinding::new(KeyCode::Char('n'), KeyAction::PlayNextTrack),
+                KeyBinding::new(KeyCode::Char('p'), KeyAction::PlayPrevTrack),
+                KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward),
+                KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward),
+                KeyBinding::new(KeyCode::Char('.'), KeyAction::SeekForward),
+                KeyBinding::new(KeyCode::Char('>'), KeyAction::SeekForward),
+                KeyBinding::new(KeyCode::Char('z'), KeyAction::ToggleShuffle),
+                KeyBinding::new(KeyCode::Char('c'), KeyAction::CycleRepeat),
+                // System
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit),
                 KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode),
                 KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp),
