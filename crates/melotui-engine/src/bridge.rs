@@ -116,15 +116,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             AudioMsg::DispatchSetAutoPanDepth(v) => {
                 Some(IpcCommand::Audio(AudioCommand::SetAutoPanDepth(*v)))
             }
-            AudioMsg::DispatchSetWobble(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetWobble(*v)))
-            }
+            AudioMsg::DispatchSetWobble(v) => Some(IpcCommand::Audio(AudioCommand::SetWobble(*v))),
             AudioMsg::DispatchSetKaraoke(v) => {
                 Some(IpcCommand::Audio(AudioCommand::SetKaraoke(*v)))
             }
-            AudioMsg::DispatchSetWidth(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetWidth(*v)))
-            }
+            AudioMsg::DispatchSetWidth(v) => Some(IpcCommand::Audio(AudioCommand::SetWidth(*v))),
             AudioMsg::DispatchSetBitcrush(v) => {
                 Some(IpcCommand::Audio(AudioCommand::SetBitcrush(*v)))
             }
@@ -134,9 +130,7 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             AudioMsg::DispatchSetPingPong(v) => {
                 Some(IpcCommand::Audio(AudioCommand::SetPingPong(*v)))
             }
-            AudioMsg::DispatchSetPhaser(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetPhaser(*v)))
-            }
+            AudioMsg::DispatchSetPhaser(v) => Some(IpcCommand::Audio(AudioCommand::SetPhaser(*v))),
             _ => None,
         },
 

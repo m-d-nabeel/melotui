@@ -235,8 +235,13 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
     // ── Ping-Pong Stereo Delay ───────────────────────────
     let make_ping_pong_mixer = || {
         let pp_gain = var(&params.ping_pong);
-        let left_wet = Net::wrap(Box::new((pass() * pp_gain.clone()) >> ((delay(0.25) * constant(0.7)) & (delay(0.75) * constant(0.3)))));
-        let right_wet = Net::wrap(Box::new((pass() * pp_gain) >> ((delay(0.50) * constant(0.5)) & (delay(1.00) * constant(0.15)))));
+        let left_wet = Net::wrap(Box::new(
+            (pass() * pp_gain.clone())
+                >> ((delay(0.25) * constant(0.7)) & (delay(0.75) * constant(0.3))),
+        ));
+        let right_wet = Net::wrap(Box::new(
+            (pass() * pp_gain) >> ((delay(0.50) * constant(0.5)) & (delay(1.00) * constant(0.15))),
+        ));
         let wet_path = left_wet | right_wet;
 
         let dry_gain = constant(1.0) - var(&params.ping_pong);

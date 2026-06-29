@@ -128,9 +128,13 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::DispatchSetWobble(val) => audio_action::handle_dispatch_set_wobble(state, val),
         AudioMsg::DispatchSetKaraoke(val) => audio_action::handle_dispatch_set_karaoke(state, val),
         AudioMsg::DispatchSetWidth(val) => audio_action::handle_dispatch_set_width(state, val),
-        AudioMsg::DispatchSetBitcrush(val) => audio_action::handle_dispatch_set_bitcrush(state, val),
+        AudioMsg::DispatchSetBitcrush(val) => {
+            audio_action::handle_dispatch_set_bitcrush(state, val)
+        }
         AudioMsg::DispatchSetExciter(val) => audio_action::handle_dispatch_set_exciter(state, val),
-        AudioMsg::DispatchSetPingPong(val) => audio_action::handle_dispatch_set_ping_pong(state, val),
+        AudioMsg::DispatchSetPingPong(val) => {
+            audio_action::handle_dispatch_set_ping_pong(state, val)
+        }
         AudioMsg::DispatchSetPhaser(val) => audio_action::handle_dispatch_set_phaser(state, val),
     }
 }

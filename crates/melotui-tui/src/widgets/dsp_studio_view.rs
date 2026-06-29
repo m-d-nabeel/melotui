@@ -33,13 +33,33 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
 
     let muted = Style::default().fg(t.fg_muted);
     let legend = Paragraph::new(Line::from(vec![
-        Span::styled("[1] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[1] ",
+            Style::default()
+                .fg(t.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("Slowed+Reverb   ", muted),
-        Span::styled("[2] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[2] ",
+            Style::default()
+                .fg(t.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("Nightcore   ", muted),
-        Span::styled("[3] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[3] ",
+            Style::default()
+                .fg(t.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("3D Spatial   ", muted),
-        Span::styled("[0] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "[0] ",
+            Style::default()
+                .fg(t.accent_primary)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled("Reset All", muted),
     ]))
     .alignment(Alignment::Center);
@@ -54,7 +74,13 @@ fn draw_mini_spectrum(frame: &mut Frame, area: Rect, state: &AppState, cache: &m
 
 // ── Horizontal EQ ────────────────────────────────────────
 
-fn draw_horizontal_eq(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme, border_color: ratatui::style::Color) {
+fn draw_horizontal_eq(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    t: &Theme,
+    border_color: ratatui::style::Color,
+) {
     let block = Block::default()
         .title(" ◆ Equalizer ")
         .borders(Borders::ALL)
@@ -151,7 +177,7 @@ fn render_eq_slider(
     // Bipolar slider bar (center = zero)
     let (min, max) = range;
     let ratio = ((value - min) / (max - min)).clamp(0.0, 1.0);
-    render_bipolar_bar(frame, cols[1], ratio, accent, bg, t);
+    render_bipolar_bar(frame, cols[1], ratio, accent, bg, t, true);
 
     // Value
     frame.render_widget(
@@ -169,6 +195,7 @@ fn render_bipolar_bar(
     accent: ratatui::style::Color,
     bg: ratatui::style::Color,
     t: &Theme,
+    show_ticks: bool,
 ) {
     if area.width < 3 {
         return;
@@ -176,19 +203,40 @@ fn render_bipolar_bar(
 
     let width = area.width as usize;
     let center = width / 2;
+    let step = (center / 4).max(1);
+
+    let t1 = center.saturating_sub(step * 3);
+    let t2 = center.saturating_sub(step * 2);
+    let t3 = center.saturating_sub(step);
+    let t4 = center;
+    let t5 = center + step;
+    let t6 = center + step * 2;
+    let t7 = center + step * 3;
+
     let max_idx = width.saturating_sub(1);
     let pos = ((ratio * max_idx as f32).round() as usize).min(max_idx);
 
     let mut spans = Vec::with_capacity(width);
     for i in 0..width {
+        let is_interval = show_ticks
+            && i > 0
+            && i < max_idx
+            && (i == t1 || i == t2 || i == t3 || i == t4 || i == t5 || i == t6 || i == t7);
+
         let (ch, color) = if i == pos {
             ("●", accent)
         } else if i < pos {
-            ("━", accent)
-        } else if i == center {
-            ("│", t.eq_zero_line)
+            if is_interval {
+                ("┿", accent)
+            } else {
+                ("━", accent)
+            }
         } else {
-            ("─", t.slider_track)
+            if is_interval {
+                ("┼", t.eq_zero_line)
+            } else {
+                ("─", t.slider_track)
+            }
         };
         spans.push(Span::styled(ch, Style::default().fg(color).bg(bg)));
     }
@@ -448,7 +496,8 @@ fn draw_control_column(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let row_constraints: Vec<Constraint> = (0..items.len()).map(|_| Constraint::Length(1)).collect();
+    let row_constraints: Vec<Constraint> =
+        (0..items.len()).map(|_| Constraint::Length(1)).collect();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints(row_constraints)
@@ -475,7 +524,7 @@ fn render_inline_control(
     }
 
     let label_width = 11u16; // e.g. "▸ Bitcrush "
-    let value_width = 7u16;  // e.g. "  20.0k" or "   100%"
+    let value_width = 7u16; // e.g. "  20.0k" or "   100%"
     let bar_width = area.width.saturating_sub(label_width + value_width);
 
     let cols = Layout::default()
@@ -522,7 +571,7 @@ fn render_inline_control(
     let ratio = ((item.value - item.min) / (item.max - item.min)).clamp(0.0, 1.0);
     if item.id == 14 {
         // Pan is bipolar (-1.0 to 1.0)
-        render_bipolar_bar(frame, cols[1], ratio, accent, bg, t);
+        render_bipolar_bar(frame, cols[1], ratio, accent, bg, t, false);
     } else {
         render_unipolar_bar(frame, cols[1], ratio, accent, bg, t);
     }

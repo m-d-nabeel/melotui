@@ -276,8 +276,10 @@ pub fn handle_macro_reset_all(state: &mut AppState) -> Vec<AppMsg> {
         AppMsg::Audio(AudioMsg::DispatchSetPhaser(def.phaser)),
     ];
     for i in 0..10 {
-        msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand { band: i, gain: 0.0 }));
+        msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand {
+            band: i,
+            gain: 0.0,
+        }));
     }
     msgs
 }
-
