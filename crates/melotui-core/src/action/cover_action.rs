@@ -10,7 +10,12 @@ pub fn handle_cover_message(
         CoverMsg::RequestLoad { .. } => {
             vec![]
         }
-        CoverMsg::Loaded { id, cover, context } => {
+        CoverMsg::Loaded {
+            id,
+            cover,
+            context,
+            cache_path,
+        } => {
             match context {
                 CoverContext::Playback => {
                     // TODO: Review - ensure cover matches playing track to avoid race conditions
@@ -18,6 +23,7 @@ pub fn handle_cover_message(
                         && current_id == id
                     {
                         state.current_cover = cover;
+                        state.current_cover_path = cache_path;
                     }
                 }
                 CoverContext::Info => {

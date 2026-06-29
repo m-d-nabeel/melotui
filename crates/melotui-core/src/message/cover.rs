@@ -20,5 +20,6 @@ pub enum CoverMsg {
         id: TrackId,
         cover: Option<Arc<DynamicImage>>,
         context: CoverContext,
+        cache_path: Option<PathBuf>,
     },
 }

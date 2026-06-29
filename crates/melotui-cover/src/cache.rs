@@ -131,6 +131,14 @@ impl CoverCache {
         Some(hex::encode(hasher.finalize()))
     }
 
+    /// Return the on-disk cache path for a track's cover art, if the key can be computed.
+    /// Does NOT load or extract the image — just resolves the path.
+    pub fn resolve_cache_path(&self, track_path: &Path) -> Option<PathBuf> {
+        let key = self.compute_cache_key(track_path)?;
+        let path = self.get_cache_path(&key);
+        if path.exists() { Some(path) } else { None }
+    }
+
     fn get_cache_path(&self, key: &str) -> PathBuf {
         // Sharding: covers/ab/ab1234...
         let shard = &key[0..2];

@@ -179,9 +179,17 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
 /// Translate an IpcEvent from a worker into an AppMsg for the reducer.
 pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
     match evt {
-        IpcEvent::CoverLoaded { id, cover, context } => {
-            AppMsg::Cover(CoverMsg::Loaded { id, cover, context })
-        }
+        IpcEvent::CoverLoaded {
+            id,
+            cover,
+            context,
+            cache_path,
+        } => AppMsg::Cover(CoverMsg::Loaded {
+            id,
+            cover,
+            context,
+            cache_path,
+        }),
         IpcEvent::DownloadProgress { percent } => {
             AppMsg::Download(DownloadMsg::DownloadProgress { percent })
         }

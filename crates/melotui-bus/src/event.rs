@@ -80,5 +80,6 @@ pub enum IpcEvent {
         id: TrackId,
         cover: Option<Arc<image::DynamicImage>>,
         context: CoverContext,
+        cache_path: Option<std::path::PathBuf>,
     },
 }

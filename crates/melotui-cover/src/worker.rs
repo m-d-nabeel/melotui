@@ -65,6 +65,7 @@ fn process_load(
 
         match load_result {
             Some(img) => {
+                let cache_path = cache.resolve_cache_path(&path);
                 tracing::debug!(
                     "Loaded cover for {:?} in {:?} ({:?})",
                     id,
@@ -75,6 +76,7 @@ fn process_load(
                     id,
                     cover: Some(img),
                     context,
+                    cache_path,
                 });
             }
             None => {
@@ -83,6 +85,7 @@ fn process_load(
                     id,
                     cover: None,
                     context,
+                    cache_path: None,
                 });
             }
         }
