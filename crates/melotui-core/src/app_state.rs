@@ -126,6 +126,21 @@ impl AppState {
     pub fn eq_band(&self, idx: usize) -> f32 {
         self.session.audio.eq_bands[idx.min(9)]
     }
+    pub fn wobble(&self) -> f32 {
+        self.session.audio.wobble
+    }
+    pub fn karaoke(&self) -> f32 {
+        self.session.audio.karaoke
+    }
+    pub fn width(&self) -> f32 {
+        self.session.audio.width
+    }
+    pub fn bitcrush(&self) -> f32 {
+        self.session.audio.bitcrush
+    }
+    pub fn exciter(&self) -> f32 {
+        self.session.audio.exciter
+    }
 
     pub fn theme_overrides(&self) -> &std::collections::HashMap<String, String> {
         &self.session.ui.theme_overrides

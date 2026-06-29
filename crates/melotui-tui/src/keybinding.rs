@@ -126,6 +126,9 @@ pub enum KeyAction {
     DspAdjustUp,
     DspAdjustDown,
     DspResetControl,
+    DspMacroSlowedReverb,
+    DspMacroNightcore,
+    DspMacroResetAll,
 }
 
 impl KeyAction {
@@ -208,6 +211,9 @@ impl KeyAction {
             KeyAction::DspAdjustUp => "DSP Increase",
             KeyAction::DspAdjustDown => "DSP Decrease",
             KeyAction::DspResetControl => "DSP Reset",
+            KeyAction::DspMacroSlowedReverb => "Slowed+Reverb",
+            KeyAction::DspMacroNightcore => "Nightcore",
+            KeyAction::DspMacroResetAll => "Reset All DSP",
         }
     }
 }
@@ -312,6 +318,9 @@ impl KeyAction {
             KeyAction::DspAdjustUp => Some(AppMsg::UI(UIMsg::DspAdjustUp)),
             KeyAction::DspAdjustDown => Some(AppMsg::UI(UIMsg::DspAdjustDown)),
             KeyAction::DspResetControl => Some(AppMsg::UI(UIMsg::DspResetControl)),
+            KeyAction::DspMacroSlowedReverb => Some(AppMsg::UI(UIMsg::DspMacroSlowedReverb)),
+            KeyAction::DspMacroNightcore => Some(AppMsg::UI(UIMsg::DspMacroNightcore)),
+            KeyAction::DspMacroResetAll => Some(AppMsg::UI(UIMsg::DspMacroResetAll)),
         }
     }
 }
@@ -619,6 +628,9 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('-'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('_'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
+                KeyBinding::new(KeyCode::Char('1'), KeyAction::DspMacroSlowedReverb),
+                KeyBinding::new(KeyCode::Char('2'), KeyAction::DspMacroNightcore),
+                KeyBinding::new(KeyCode::Char('0'), KeyAction::DspMacroResetAll),
             ],
         );
 

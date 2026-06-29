@@ -801,6 +801,11 @@ pub fn handle_dsp_adjust_up(state: &mut AppState) -> Vec<AppMsg> {
         18 => audio_action::handle_adjust_echo(state, 0.05),
         19 => audio_action::handle_adjust_lowpass(state, 500.0),
         20 => audio_action::handle_adjust_highpass(state, 50.0),
+        21 => audio_action::handle_adjust_exciter(state, 0.2),
+        22 => audio_action::handle_adjust_bitcrush(state, 0.05),
+        23 => audio_action::handle_adjust_width(state, 0.1),
+        24 => audio_action::handle_adjust_karaoke(state, 0.05),
+        25 => audio_action::handle_adjust_wobble(state, 0.05),
         _ => vec![],
     }
 }
@@ -821,6 +826,11 @@ pub fn handle_dsp_adjust_down(state: &mut AppState) -> Vec<AppMsg> {
         18 => audio_action::handle_adjust_echo(state, -0.05),
         19 => audio_action::handle_adjust_lowpass(state, -500.0),
         20 => audio_action::handle_adjust_highpass(state, -50.0),
+        21 => audio_action::handle_adjust_exciter(state, -0.2),
+        22 => audio_action::handle_adjust_bitcrush(state, -0.05),
+        23 => audio_action::handle_adjust_width(state, -0.1),
+        24 => audio_action::handle_adjust_karaoke(state, -0.05),
+        25 => audio_action::handle_adjust_wobble(state, -0.05),
         _ => vec![],
     }
 }
@@ -879,6 +889,26 @@ pub fn handle_dsp_reset_control(state: &mut AppState) -> Vec<AppMsg> {
         20 => {
             state.session.audio.highpass = 20.0;
             vec![AppMsg::Audio(AudioMsg::DispatchSetHighpass(20.0))]
+        }
+        21 => {
+            state.session.audio.exciter = 0.0;
+            vec![AppMsg::Audio(AudioMsg::DispatchSetExciter(0.0))]
+        }
+        22 => {
+            state.session.audio.bitcrush = 0.0;
+            vec![AppMsg::Audio(AudioMsg::DispatchSetBitcrush(0.0))]
+        }
+        23 => {
+            state.session.audio.width = 1.0;
+            vec![AppMsg::Audio(AudioMsg::DispatchSetWidth(1.0))]
+        }
+        24 => {
+            state.session.audio.karaoke = 0.0;
+            vec![AppMsg::Audio(AudioMsg::DispatchSetKaraoke(0.0))]
+        }
+        25 => {
+            state.session.audio.wobble = 0.0;
+            vec![AppMsg::Audio(AudioMsg::DispatchSetWobble(0.0))]
         }
         _ => vec![],
     }

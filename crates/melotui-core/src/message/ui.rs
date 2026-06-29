@@ -52,4 +52,7 @@ pub enum UIMsg {
     DspAdjustUp,
     DspAdjustDown,
     DspResetControl,
+    DspMacroSlowedReverb,
+    DspMacroNightcore,
+    DspMacroResetAll,
 }

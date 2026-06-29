@@ -12,6 +12,11 @@ pub struct AudioParams {
     pub eq_bands: [Shared; 10],
     pub auto_pan_rate: Shared,
     pub auto_pan_depth: Shared,
+    pub wobble: Shared,
+    pub karaoke: Shared,
+    pub width: Shared,
+    pub bitcrush: Shared,
+    pub exciter: Shared,
 }
 
 impl AudioParams {
@@ -27,6 +32,11 @@ impl AudioParams {
             eq_bands: std::array::from_fn(|_| shared(0.0)),
             auto_pan_rate: shared(0.0),
             auto_pan_depth: shared(0.0),
+            wobble: shared(0.0),
+            karaoke: shared(0.0),
+            width: shared(1.0),
+            bitcrush: shared(0.0),
+            exciter: shared(0.0),
         }
     }
 }
@@ -38,7 +48,7 @@ const EQ_FREQS: [f32; 10] = [
 
 /// Build the mono DSP chain as a Net (dynamic audio graph).
 ///
-/// Pipeline: highpass → bass_shelf → treble_shelf → 10-band EQ → lowpass → echo
+/// Pipeline: highpass → bass_shelf → treble_shelf → exciter → bitcrush → wobble → 10-band EQ → lowpass → echo
 fn build_mono_chain(params: &AudioParams) -> Net {
     let headroom = constant(0.707);
 
@@ -55,6 +65,50 @@ fn build_mono_chain(params: &AudioParams) -> Net {
     let treble_node =
         (pass() | constant(3000.0) | constant(0.7) | var(&params.treble)) >> highshelf();
 
+    // sub-bass exciter
+    let exciter_shared = params.exciter.clone();
+    let exciter_node = (pass() ^ pass())
+        >> (pass()
+            | ((pass() | constant(120.0) | constant(0.707))
+                >> lowpass()
+                >> map(move |f: &Frame<f32, U1>| {
+                    let e = exciter_shared.value();
+                    if e <= 0.001 {
+                        0.0
+                    } else {
+                        (f[0] * (1.0 + 2.0 * e)).tanh() * e * 0.25
+                    }
+                })))
+        >> map(|f: &Frame<f32, U2>| f[0] + f[1]);
+
+    // bitcrusher
+    let bc_shared = params.bitcrush.clone();
+    let bc_node = map(move |f: &Frame<f32, U1>| {
+        let b = bc_shared.value();
+        if b <= 0.001 {
+            f[0]
+        } else {
+            let steps = 65536.0 * (1.0 - 0.999 * b);
+            (f[0] * steps).round() / steps
+        }
+    });
+
+    // lo-fi wobble (tape flutter)
+    let wobble_shared = params.wobble.clone();
+    let wobble_node = (pass()
+        ^ ((pass()
+            | ((constant(4.0) >> sine()) * (var(&params.wobble) * constant(0.003))
+                + constant(0.005)))
+            >> tap(0.0, 0.01)))
+        >> map(move |f: &Frame<f32, U2>| {
+            let w = wobble_shared.value();
+            if w <= 0.001 {
+                f[0]
+            } else {
+                f[0] * (1.0 - w * 0.5) + f[1] * (w * 0.5)
+            }
+        });
+
     // low-pass filter (bypassed at 20000 Hz)
     let lp_node = (pass() | var(&params.lowpass) | constant(0.707)) >> lowpass();
 
@@ -68,14 +122,20 @@ fn build_mono_chain(params: &AudioParams) -> Net {
     let hp_id = net.push(Box::new(hp_node));
     let bass_id = net.push(Box::new(bass_node));
     let treble_id = net.push(Box::new(treble_node));
+    let exciter_id = net.push(Box::new(exciter_node));
+    let bc_id = net.push(Box::new(bc_node));
+    let wobble_id = net.push(Box::new(wobble_node));
 
-    // Connect: input → hp → bass → treble
+    // Connect: input → hp → bass → treble → exciter → bc → wobble
     net.pipe_input(hp_id);
     net.pipe_all(hp_id, bass_id);
     net.pipe_all(bass_id, treble_id);
+    net.pipe_all(treble_id, exciter_id);
+    net.pipe_all(exciter_id, bc_id);
+    net.pipe_all(bc_id, wobble_id);
 
     // 10-band parametric EQ (bell filters)
-    let mut prev_id = treble_id;
+    let mut prev_id = wobble_id;
     for (i, &freq) in EQ_FREQS.iter().enumerate() {
         let band_gain = var(&params.eq_bands[i]);
         let gain_linear = band_gain
@@ -117,16 +177,6 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
     let stereo_mixer = (stereo_pass.clone() ^ stereo_pass.clone()) >> mixer_core;
 
     // ── True Stereo Equal-Power Pan + Auto-Pan LFO ───────
-    // Combined pan position: static pan + LFO modulation
-    // LFO: sine oscillator at auto_pan_rate Hz, scaled by auto_pan_depth
-    // Total pan is clamped to [-1, 1] then mapped through equal-power law:
-    //   left  = cos((pan+1) × π/4)
-    //   right = sin((pan+1) × π/4)
-    // This guarantees cos²(θ)+sin²(θ)=1, so total power is locked at 0 dB.
-    //
-    // CRITICAL: We use ^ (branch) NOT .clone() to fan out the signal.
-    // Cloning would create two independent sine oscillators with drifting phase,
-    // causing the L/R gains to desynchronize.
     let pan_static = var(&params.pan);
     let lfo = (var(&params.auto_pan_rate) >> sine()) * var(&params.auto_pan_depth);
     let combined_pan = (pan_static + lfo) >> map(|p: &Frame<f32, U1>| p[0].clamp(-1.0, 1.0));
@@ -140,8 +190,28 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
         angle.sin()
     });
 
-    // Branch: feed same pan value to both cos (left) and sin (right)
     let pan_stereo = combined_pan >> (cos_map ^ sin_map);
+
+    // ── Mid/Side Matrix (Karaoke & Stereo Widener) ───────
+    let make_ms_matrix = || {
+        let karaoke_shared = params.karaoke.clone();
+        let width_shared = params.width.clone();
+        map(move |f: &Frame<f32, U2>| {
+            let k = karaoke_shared.value();
+            let w = width_shared.value();
+            if k <= 0.001 && (w - 1.0).abs() <= 0.001 {
+                return *f;
+            }
+            let l = f[0];
+            let r = f[1];
+            let mid = (l + r) * 0.5 * (1.0 - k);
+            let side = (l - r) * 0.5 * w;
+            let mut out = *f;
+            out[0] = mid + side;
+            out[1] = mid - side;
+            out
+        })
+    };
 
     // ── Limiter ──────────────────────────────────────────
     let limiter_stereo = limiter(0.001, 0.1) | limiter(0.001, 0.1);
@@ -154,7 +224,8 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
                 >> split::<U2>()
                 >> (stereo_pass.clone() * pan_stereo)
                 >> stereo_mixer
-                >> limiter_stereo,
+                >> make_ms_matrix()
+                >> limiter_stereo.clone(),
         )
     } else {
         let mono_chain2 = build_mono_chain(params);
@@ -162,6 +233,7 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
             (mono_chain | mono_chain2)
                 >> (stereo_pass.clone() * pan_stereo)
                 >> stereo_mixer
+                >> make_ms_matrix()
                 >> limiter_stereo,
         )
     }

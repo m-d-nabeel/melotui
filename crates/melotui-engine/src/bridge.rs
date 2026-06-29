@@ -116,6 +116,21 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             AudioMsg::DispatchSetAutoPanDepth(v) => {
                 Some(IpcCommand::Audio(AudioCommand::SetAutoPanDepth(*v)))
             }
+            AudioMsg::DispatchSetWobble(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetWobble(*v)))
+            }
+            AudioMsg::DispatchSetKaraoke(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetKaraoke(*v)))
+            }
+            AudioMsg::DispatchSetWidth(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetWidth(*v)))
+            }
+            AudioMsg::DispatchSetBitcrush(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetBitcrush(*v)))
+            }
+            AudioMsg::DispatchSetExciter(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetExciter(*v)))
+            }
             _ => None,
         },
 

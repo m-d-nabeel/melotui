@@ -22,13 +22,25 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         .constraints([
             Constraint::Fill(1),    // Spectrum visualizer (gets remaining space)
             Constraint::Length(12), // Horizontal EQ (10 bands + borders)
-            Constraint::Min(10),    // Controls grid (3 columns, ~4-5 items each)
+            Constraint::Length(8),  // Controls grid (3 columns, max 6 inline items + borders)
+            Constraint::Length(1),  // Macro legend footer
         ])
         .split(area);
 
     draw_mini_spectrum(frame, main_layout[0], state, cache);
     draw_horizontal_eq(frame, main_layout[1], state, t);
     draw_controls_grid(frame, main_layout[2], state, t);
+
+    let legend = Paragraph::new(Line::from(vec![
+        Span::styled("[1] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::raw("Slowed+Reverb   "),
+        Span::styled("[2] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::raw("Nightcore   "),
+        Span::styled("[0] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::raw("Reset All"),
+    ]))
+    .alignment(Alignment::Center);
+    frame.render_widget(legend, main_layout[3]);
 }
 
 // ── Mini Spectrum ────────────────────────────────────────
@@ -268,6 +280,24 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
                 format_mult,
                 t.slider_treble,
             ),
+            ControlItem::new(
+                21,
+                "Exciter",
+                state.exciter(),
+                0.0,
+                5.0,
+                format_exciter,
+                t.slider_bass,
+            ),
+            ControlItem::new(
+                22,
+                "Bitcrush",
+                state.bitcrush(),
+                0.0,
+                1.0,
+                format_percent_off,
+                t.slider_treble,
+            ),
         ],
         selected,
         t,
@@ -294,7 +324,25 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
                 state.auto_pan_depth(),
                 0.0,
                 1.0,
-                format_percent,
+                format_percent_off,
+                t.slider_pan,
+            ),
+            ControlItem::new(
+                23,
+                "Width",
+                state.width(),
+                0.0,
+                3.0,
+                format_width,
+                t.slider_pan,
+            ),
+            ControlItem::new(
+                24,
+                "Karaoke",
+                state.karaoke(),
+                0.0,
+                1.0,
+                format_percent_off,
                 t.slider_pan,
             ),
         ],
@@ -313,7 +361,7 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
                 state.reverb(),
                 0.0,
                 1.0,
-                format_percent,
+                format_percent_off,
                 t.slider_reverb,
             ),
             ControlItem::new(
@@ -322,7 +370,7 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
                 state.echo(),
                 0.0,
                 0.9,
-                format_percent,
+                format_percent_off,
                 t.slider_echo,
             ),
             ControlItem::new(
@@ -331,7 +379,7 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
                 state.lowpass(),
                 200.0,
                 20000.0,
-                format_freq,
+                format_lopass,
                 t.slider_lowpass,
             ),
             ControlItem::new(
@@ -340,8 +388,17 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
                 state.highpass(),
                 20.0,
                 5000.0,
-                format_freq,
+                format_hipass,
                 t.slider_highpass,
+            ),
+            ControlItem::new(
+                25,
+                "Wobble",
+                state.wobble(),
+                0.0,
+                1.0,
+                format_percent_off,
+                t.slider_echo,
             ),
         ],
         selected,
@@ -366,46 +423,63 @@ fn draw_control_column(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let row_constraints: Vec<Constraint> = items
-        .iter()
-        .flat_map(|_| [Constraint::Length(1), Constraint::Length(1)])
-        .collect();
+    let row_constraints: Vec<Constraint> = (0..items.len()).map(|_| Constraint::Length(1)).collect();
     let rows = Layout::default()
         .direction(Direction::Vertical)
         .constraints(row_constraints)
         .split(inner);
 
     for (i, item) in items.iter().enumerate() {
-        let row_label = i * 2;
-        let row_slider = i * 2 + 1;
-        if row_slider >= rows.len() {
+        if i >= rows.len() {
             break;
         }
         let is_sel = selected == item.id;
-        render_stacked_control(frame, rows[row_label], rows[row_slider], item, is_sel, t);
+        render_inline_control(frame, rows[i], item, is_sel, t);
     }
 }
 
-fn render_stacked_control(
+fn render_inline_control(
     frame: &mut Frame,
-    label_area: Rect,
-    slider_area: Rect,
+    area: Rect,
     item: &ControlItem<'_>,
     is_selected: bool,
     t: &Theme,
 ) {
-    let bg = if is_selected {
-        t.dsp_selected_bg
+    if area.width < 15 {
+        return;
+    }
+
+    let label_width = 11u16; // e.g. "▸ Bitcrush "
+    let value_width = 7u16;  // e.g. "  20.0k" or "   100%"
+    let bar_width = area.width.saturating_sub(label_width + value_width);
+
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(label_width),
+            Constraint::Length(bar_width),
+            Constraint::Length(value_width),
+        ])
+        .split(area);
+
+    let accent = if is_selected {
+        item.accent
     } else {
-        ratatui::style::Color::Reset
+        t.eq_bar_fill
     };
     let label_color = if is_selected {
         item.accent
     } else {
         t.fg_secondary
     };
+    let bg = if is_selected {
+        t.dsp_selected_bg
+    } else {
+        ratatui::style::Color::Reset
+    };
 
-    let val_str = (item.fmt)(item.value);
+    // Label
+    let indicator = if is_selected { "▸" } else { " " };
     let label_style = if is_selected {
         Style::default()
             .fg(label_color)
@@ -414,68 +488,59 @@ fn render_stacked_control(
     } else {
         Style::default().fg(label_color).bg(bg)
     };
+    frame.render_widget(
+        Paragraph::new(format!("{} {:<8} ", indicator, item.label)).style(label_style),
+        cols[0],
+    );
 
-    let indicator = if is_selected { "▸ " } else { "  " };
-    let label_line = Line::from(vec![
-        Span::styled(indicator, label_style),
-        Span::styled(item.label.to_string(), label_style),
-        Span::styled(" ", Style::default().bg(bg)),
-        Span::styled(val_str, Style::default().fg(t.fg_muted).bg(bg)),
-    ]);
-    frame.render_widget(Paragraph::new(label_line), label_area);
-
+    // Slider bar
     let ratio = ((item.value - item.min) / (item.max - item.min)).clamp(0.0, 1.0);
-    render_control_bar(frame, slider_area, ratio, item.accent, bg, t);
+    if item.id == 14 {
+        // Pan is bipolar (-1.0 to 1.0)
+        render_bipolar_bar(frame, cols[1], ratio, accent, bg, t);
+    } else {
+        render_unipolar_bar(frame, cols[1], ratio, accent, bg, t);
+    }
+
+    // Value
+    let val_str = (item.fmt)(item.value);
+    frame.render_widget(
+        Paragraph::new(format!("{:>7}", val_str))
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(label_color).bg(bg)),
+        cols[2],
+    );
 }
 
-fn render_control_bar(
+fn render_unipolar_bar(
     frame: &mut Frame,
     area: Rect,
-    ratio: f32,
+    ratio: f32, // 0.0 = min, 1.0 = max
     accent: ratatui::style::Color,
     bg: ratatui::style::Color,
     t: &Theme,
 ) {
-    if area.width < 4 {
+    if area.width < 3 {
         return;
     }
 
-    // Add left padding
-    let padded = Rect {
-        x: area.x + 2,
-        y: area.y,
-        width: area.width.saturating_sub(3),
-        height: area.height,
-    };
+    let width = area.width as usize;
+    let max_idx = width.saturating_sub(1);
+    let pos = ((ratio * max_idx as f32).round() as usize).min(max_idx);
 
-    let width = padded.width as usize;
-    let filled = ((ratio * width as f32) as usize).min(width);
-
-    let mut spans = Vec::new();
-
-    // Filled portion
-    if filled > 0 {
-        spans.push(Span::styled(
-            "━".repeat(filled),
-            Style::default().fg(accent).bg(bg),
-        ));
+    let mut spans = Vec::with_capacity(width);
+    for i in 0..width {
+        let (ch, color) = if i < pos {
+            ("━", accent)
+        } else if i == pos {
+            ("●", accent)
+        } else {
+            ("─", t.slider_track)
+        };
+        spans.push(Span::styled(ch, Style::default().fg(color).bg(bg)));
     }
 
-    // Thumb
-    if filled < width {
-        spans.push(Span::styled("●", Style::default().fg(accent).bg(bg)));
-    }
-
-    // Empty portion
-    let remaining = width.saturating_sub(filled + 1);
-    if remaining > 0 {
-        spans.push(Span::styled(
-            "─".repeat(remaining),
-            Style::default().fg(t.slider_track).bg(bg),
-        ));
-    }
-
-    frame.render_widget(Paragraph::new(Line::from(spans)), padded);
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 // ── Value Formatters ─────────────────────────────────────
@@ -494,19 +559,11 @@ fn format_mult(v: f32) -> String {
 
 fn format_pan(v: f32) -> String {
     if v.abs() < 0.05 {
-        "C".to_string()
+        "Center".to_string()
     } else if v < 0.0 {
         format!("L{}%", (v.abs() * 100.0) as i32)
     } else {
         format!("R{}%", (v * 100.0) as i32)
-    }
-}
-
-fn format_freq(v: f32) -> String {
-    if v >= 1000.0 {
-        format!("{:.1}k", v / 1000.0)
-    } else {
-        format!("{:.0}Hz", v)
     }
 }
 
@@ -515,5 +572,51 @@ fn format_hz(v: f32) -> String {
         "Off".to_string()
     } else {
         format!("{:.2}Hz", v)
+    }
+}
+
+fn format_percent_off(v: f32) -> String {
+    if v < 0.01 {
+        "Off".to_string()
+    } else {
+        format!("{}%", (v * 100.0) as i32)
+    }
+}
+
+fn format_width(v: f32) -> String {
+    if (v - 1.0).abs() < 0.05 {
+        "Normal".to_string()
+    } else if v < 0.05 {
+        "Mono".to_string()
+    } else {
+        format!("{}%", (v * 100.0) as i32)
+    }
+}
+
+fn format_lopass(v: f32) -> String {
+    if v >= 19900.0 {
+        "Open".to_string()
+    } else if v >= 1000.0 {
+        format!("{:.1}k", v / 1000.0)
+    } else {
+        format!("{:.0}Hz", v)
+    }
+}
+
+fn format_hipass(v: f32) -> String {
+    if v <= 21.0 {
+        "Open".to_string()
+    } else if v >= 1000.0 {
+        format!("{:.1}k", v / 1000.0)
+    } else {
+        format!("{:.0}Hz", v)
+    }
+}
+
+fn format_exciter(v: f32) -> String {
+    if v < 0.05 {
+        "Off".to_string()
+    } else {
+        format!("+{:.1}", v)
     }
 }

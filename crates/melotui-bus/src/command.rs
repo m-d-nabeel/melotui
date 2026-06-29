@@ -32,6 +32,11 @@ pub enum AudioCommand {
     },
     SetAutoPanRate(f32),
     SetAutoPanDepth(f32),
+    SetWobble(f32),
+    SetKaraoke(f32),
+    SetWidth(f32),
+    SetBitcrush(f32),
+    SetExciter(f32),
     Shutdown,
 }
 

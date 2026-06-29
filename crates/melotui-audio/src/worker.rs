@@ -132,6 +132,11 @@ impl AudioEngine {
             }
             AudioCommand::SetAutoPanRate(v) => self.dsp_params.auto_pan_rate.set_value(v),
             AudioCommand::SetAutoPanDepth(v) => self.dsp_params.auto_pan_depth.set_value(v),
+            AudioCommand::SetWobble(v) => self.dsp_params.wobble.set_value(v),
+            AudioCommand::SetKaraoke(v) => self.dsp_params.karaoke.set_value(v),
+            AudioCommand::SetWidth(v) => self.dsp_params.width.set_value(v),
+            AudioCommand::SetBitcrush(v) => self.dsp_params.bitcrush.set_value(v),
+            AudioCommand::SetExciter(v) => self.dsp_params.exciter.set_value(v),
             AudioCommand::Shutdown => return false,
         }
         true
@@ -257,6 +262,11 @@ impl AudioCommandExt for AudioCommand {
                 | AudioCommand::SetEqBand { .. }
                 | AudioCommand::SetAutoPanRate(_)
                 | AudioCommand::SetAutoPanDepth(_)
+                | AudioCommand::SetWobble(_)
+                | AudioCommand::SetKaraoke(_)
+                | AudioCommand::SetWidth(_)
+                | AudioCommand::SetBitcrush(_)
+                | AudioCommand::SetExciter(_)
                 | AudioCommand::SetVisualizer { .. }
         )
     }

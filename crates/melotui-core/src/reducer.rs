@@ -94,6 +94,11 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::AdjustAutoPanDepth(delta) => {
             audio_action::handle_adjust_auto_pan_depth(state, delta)
         }
+        AudioMsg::AdjustWobble(delta) => audio_action::handle_adjust_wobble(state, delta),
+        AudioMsg::AdjustKaraoke(delta) => audio_action::handle_adjust_karaoke(state, delta),
+        AudioMsg::AdjustWidth(delta) => audio_action::handle_adjust_width(state, delta),
+        AudioMsg::AdjustBitcrush(delta) => audio_action::handle_adjust_bitcrush(state, delta),
+        AudioMsg::AdjustExciter(delta) => audio_action::handle_adjust_exciter(state, delta),
         AudioMsg::DispatchSetVolume(volume) => {
             audio_action::handle_dispatch_set_volume(state, volume)
         }
@@ -118,6 +123,11 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::DispatchSetAutoPanDepth(depth) => {
             audio_action::handle_dispatch_set_auto_pan_depth(state, depth)
         }
+        AudioMsg::DispatchSetWobble(val) => audio_action::handle_dispatch_set_wobble(state, val),
+        AudioMsg::DispatchSetKaraoke(val) => audio_action::handle_dispatch_set_karaoke(state, val),
+        AudioMsg::DispatchSetWidth(val) => audio_action::handle_dispatch_set_width(state, val),
+        AudioMsg::DispatchSetBitcrush(val) => audio_action::handle_dispatch_set_bitcrush(state, val),
+        AudioMsg::DispatchSetExciter(val) => audio_action::handle_dispatch_set_exciter(state, val),
     }
 }
 
@@ -154,7 +164,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::ConfirmNo => ui_action::handle_confirm_no(state),
         UIMsg::CycleFocusMode => ui_action::handle_cycle_focus_mode(state),
         UIMsg::SetFocusMode(mode) => ui_action::handle_set_focus_mode(state, mode),
-        UIMsg::SetSidebarWidth(width) => ui_action::handle_set_sidebar_width(state, width),
+        UIMsg::SetSidebarWidth(w) => ui_action::handle_set_sidebar_width(state, w),
         UIMsg::AdjustSidebarWidth(delta) => ui_action::handle_adjust_sidebar_width(state, delta),
         UIMsg::LyricsSelectorMoveUp => ui_action::handle_lyrics_selector_move_up(state),
         UIMsg::LyricsSelectorMoveDown => ui_action::handle_lyrics_selector_move_down(state),
@@ -170,6 +180,9 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::DspAdjustUp => ui_action::handle_dsp_adjust_up(state),
         UIMsg::DspAdjustDown => ui_action::handle_dsp_adjust_down(state),
         UIMsg::DspResetControl => ui_action::handle_dsp_reset_control(state),
+        UIMsg::DspMacroSlowedReverb => audio_action::handle_macro_slowed_reverb(state),
+        UIMsg::DspMacroNightcore => audio_action::handle_macro_nightcore(state),
+        UIMsg::DspMacroResetAll => audio_action::handle_macro_reset_all(state),
     }
 }
 fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> {

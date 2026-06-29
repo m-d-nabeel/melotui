@@ -10,15 +10,15 @@ pub const EQ_BAND_LABELS: [&str; 10] = [
 
 /// Total number of DSP controls.
 /// EQ bands 0-9, then 3-column grid:
-///   Sound:   Volume(10), Speed(11), Bass(12), Treble(13)
-///   Spatial: Pan(14), AP Rate(15), AP Depth(16)
-///   Effects: Reverb(17), Echo(18), Lo-pass(19), Hi-pass(20)
-pub const DSP_CONTROL_COUNT: usize = 21;
+///   Sound:   Volume(10), Speed(11), Bass(12), Treble(13), Exciter(21), Bitcrush(22)
+///   Spatial: Pan(14), AP Rate(15), AP Depth(16), Width(23), Karaoke(24)
+///   Effects: Reverb(17), Echo(18), Lo-pass(19), Hi-pass(20), Wobble(25)
+pub const DSP_CONTROL_COUNT: usize = 26;
 
 /// Grid column layouts for spatial navigation.
-pub const GRID_COL_SOUND: [usize; 4] = [10, 11, 12, 13];
-pub const GRID_COL_SPATIAL: [usize; 3] = [14, 15, 16];
-pub const GRID_COL_EFFECTS: [usize; 4] = [17, 18, 19, 20];
+pub const GRID_COL_SOUND: [usize; 6] = [10, 11, 12, 13, 21, 22];
+pub const GRID_COL_SPATIAL: [usize; 5] = [14, 15, 16, 23, 24];
+pub const GRID_COL_EFFECTS: [usize; 5] = [17, 18, 19, 20, 25];
 
 #[derive(Debug, Clone)]
 pub struct AudioState {
@@ -34,6 +34,11 @@ pub struct AudioState {
     pub auto_pan_rate: f32,  // LFO speed in Hz, 0.0 = off, range 0.0 to 2.0
     pub auto_pan_depth: f32, // LFO depth, range 0.0 to 1.0
     pub eq_bands: [f32; 10], // range -12.0 to +12.0 dB per band
+    pub exciter: f32,        // range 0.0 to 5.0
+    pub bitcrush: f32,       // range 0.0 to 1.0
+    pub width: f32,          // range 0.0 to 3.0 (1.0 = normal)
+    pub karaoke: f32,        // range 0.0 to 1.0
+    pub wobble: f32,         // range 0.0 to 1.0
 }
 
 impl Default for AudioState {
@@ -51,6 +56,11 @@ impl Default for AudioState {
             auto_pan_rate: 0.0,
             auto_pan_depth: 0.0,
             eq_bands: [0.0; 10],
+            exciter: 0.0,
+            bitcrush: 0.0,
+            width: 1.0,
+            karaoke: 0.0,
+            wobble: 0.0,
         }
     }
 }
