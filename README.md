@@ -2,9 +2,10 @@
 
 `melotui` is a fast, responsive, and feature-rich terminal-based music player written in Rust. It features real-time audio visualization, DSP effects (like Nightcore and Slowed+Reverb), integrated YouTube downloading, and system media controls.
 
-*(Insert screenshot here: `![Melotui Screenshot](assets/screenshot.png)`)*
+*(Insert screenshots here: `![Melotui Screenshot](assets/screenshot_1.png)`)*
 
 ## Core Features
+
 - **Local Library & Playlists**: Automatic scanning and organization of your music files.
 - **Audio Playback**: Support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
 - **Spectrum Visualizer**: Real-time audio spectrum visualization (supports CAVA).
@@ -17,18 +18,20 @@
 ## Installation
 
 > [!IMPORTANT]
-> **Dependencies are required!** 
+> **Dependencies are required!**
 > Since `melotui` interfaces directly with your system's audio devices and DBUS for media controls, you **must** install the native development libraries before building.
 
 ### 1. Install System Dependencies
 
 **Ubuntu / Debian:**
+
 ```bash
 sudo apt-get update
 sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
 ```
 
 **Fedora / RHEL:**
+
 ```bash
 sudo dnf install alsa-lib-devel dbus-devel pkgconf-pkg-config
 ```
@@ -37,7 +40,9 @@ sudo dnf install alsa-lib-devel dbus-devel pkgconf-pkg-config
 *(macOS handles audio and media controls natively via CoreAudio/CoreMedia, so no additional system libraries are required for compilation!)*
 
 ### 2. Install yt-dlp (Optional but Recommended)
+
 To use the in-app YouTube download feature (`:dl <query>`), you must have `yt-dlp` installed and available in your system's PATH.
+
 - [yt-dlp installation guide](https://github.com/yt-dlp/yt-dlp/wiki/Installation)
 
 ### 3. Build and Run
@@ -57,6 +62,7 @@ The compiled binary will be available at `./target/release/melotui-bin`.
 ## Usage
 
 Start the player:
+
 ```bash
 ./target/release/melotui-bin
 ```
@@ -66,11 +72,13 @@ Start the player:
 > Once inside the app, simply press `?` to open the Help Overlay and see a complete list of all available keybindings and commands!
 
 ### Basic Navigation
+
 - Use `h`/`j`/`k`/`l` or the `Arrow Keys` to navigate.
 - Press `Tab` to switch between panels.
 - Press `:` to enter the command bar (e.g., `:dl lofi hip hop` or `:quit`).
 
 ## License
+
 Licensed under either of
 
 - Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
