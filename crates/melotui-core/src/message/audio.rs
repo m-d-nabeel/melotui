@@ -10,6 +10,8 @@ pub enum AudioMsg {
     AdjustLowpass(f32),
     AdjustHighpass(f32),
     AdjustEqBand { band: usize, delta: f32 },
+    AdjustAutoPanRate(f32),
+    AdjustAutoPanDepth(f32),
     DispatchSetVolume(f32),
     DispatchSetSpeed(f32),
     DispatchSetBass(f32),
@@ -20,4 +22,6 @@ pub enum AudioMsg {
     DispatchSetLowpass(f32),
     DispatchSetHighpass(f32),
     DispatchSetEqBand { band: usize, gain: f32 },
+    DispatchSetAutoPanRate(f32),
+    DispatchSetAutoPanDepth(f32),
 }

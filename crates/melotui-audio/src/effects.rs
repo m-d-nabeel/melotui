@@ -10,6 +10,8 @@ pub struct AudioParams {
     pub lowpass: Shared,
     pub highpass: Shared,
     pub eq_bands: [Shared; 10],
+    pub auto_pan_rate: Shared,
+    pub auto_pan_depth: Shared,
 }
 
 impl AudioParams {
@@ -23,6 +25,8 @@ impl AudioParams {
             lowpass: shared(20000.0),
             highpass: shared(20.0),
             eq_bands: std::array::from_fn(|_| shared(0.0)),
+            auto_pan_rate: shared(0.0),
+            auto_pan_depth: shared(0.0),
         }
     }
 }
@@ -97,46 +101,62 @@ fn build_mono_chain(params: &AudioParams) -> Net {
 }
 
 pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit> {
-    // stereo reverb
+    // ── Stereo Reverb ────────────────────────────────────
     let wet_vol = var(&params.reverb);
     let wet_stereo = wet_vol.clone() | wet_vol;
     let dry_gain = constant(1.0) - var(&params.reverb);
     let dry_stereo = dry_gain.clone() | dry_gain;
 
     let stereo_pass = pass() | pass();
-    // dry path: scale original signal
     let dry_path = stereo_pass.clone() * dry_stereo;
 
-    // reverb unit
     let reverb_unit = reverb_stereo(10.0, 3.0, 0.5);
     let wet_path = reverb_unit * wet_stereo;
 
     let mixer_core = dry_path + wet_path;
-    // mix dry/wet signals
     let stereo_mixer = (stereo_pass.clone() ^ stereo_pass.clone()) >> mixer_core;
 
-    // pan: convert -1..1 to left/right gain
-    // pan law: equal power. left = cos((pan+1)*pi/4), right = sin((pan+1)*pi/4)
-    let pan_val = var(&params.pan);
-    let pan_left = pan_val.clone() >> map(|p: &Frame<f32, U1>| {
+    // ── True Stereo Equal-Power Pan + Auto-Pan LFO ───────
+    // Combined pan position: static pan + LFO modulation
+    // LFO: sine oscillator at auto_pan_rate Hz, scaled by auto_pan_depth
+    // Total pan is clamped to [-1, 1] then mapped through equal-power law:
+    //   left  = cos((pan+1) * π/4)
+    //   right = sin((pan+1) * π/4)
+    // This guarantees cos²(θ)+sin²(θ)=1, so total power is locked at 0 dB.
+    let pan_static = var(&params.pan);
+    let lfo = (var(&params.auto_pan_rate) >> sine()) * var(&params.auto_pan_depth);
+    let combined_pan = (pan_static + lfo) >> map(|p: &Frame<f32, U1>| p[0].clamp(-1.0, 1.0));
+
+    let pan_left = combined_pan.clone() >> map(|p: &Frame<f32, U1>| {
         let angle = (p[0] + 1.0) * std::f32::consts::FRAC_PI_4;
         angle.cos()
     });
-    let pan_right = pan_val >> map(|p: &Frame<f32, U1>| {
+    let pan_right = combined_pan >> map(|p: &Frame<f32, U1>| {
         let angle = (p[0] + 1.0) * std::f32::consts::FRAC_PI_4;
         angle.sin()
     });
     let pan_stereo = pan_left | pan_right;
 
-    // ceiling to prevent clipping
+    // ── Limiter ──────────────────────────────────────────
     let limiter_stereo = limiter(0.001, 0.1) | limiter(0.001, 0.1);
 
     let mono_chain = build_mono_chain(params);
 
     if channels == 1 {
-        Box::new(mono_chain >> split::<U2>() >> (stereo_pass.clone() * pan_stereo) >> stereo_mixer >> limiter_stereo)
+        Box::new(
+            mono_chain
+                >> split::<U2>()
+                >> (stereo_pass.clone() * pan_stereo)
+                >> stereo_mixer
+                >> limiter_stereo,
+        )
     } else {
         let mono_chain2 = build_mono_chain(params);
-        Box::new((mono_chain | mono_chain2) >> (stereo_pass.clone() * pan_stereo) >> stereo_mixer >> limiter_stereo)
+        Box::new(
+            (mono_chain | mono_chain2)
+                >> (stereo_pass.clone() * pan_stereo)
+                >> stereo_mixer
+                >> limiter_stereo,
+        )
     }
 }

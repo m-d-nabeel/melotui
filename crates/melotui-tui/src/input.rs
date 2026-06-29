@@ -50,6 +50,12 @@ impl InputHandler {
             return contexts; // modal, blocks other inputs
         }
 
+        // DSP Studio takes precedence over panel contexts
+        if state.ui_show_dsp_studio() {
+            contexts.push(KeyContext::DspStudio);
+            return contexts;
+        }
+
         // panel contexts
         if state.is_library_focused() {
             contexts.push(KeyContext::Library);

@@ -20,6 +20,7 @@ pub enum KeyContext {
     PlaylistPicker,
     Confirm,
     LyricsSelector,
+    DspStudio,
     Global,
 }
 
@@ -115,6 +116,16 @@ pub enum KeyAction {
     // panel resize
     ShrinkSidebar,
     GrowSidebar,
+
+    // DSP Studio
+    ToggleDspStudio,
+    DspSelectUp,
+    DspSelectDown,
+    DspSelectLeft,
+    DspSelectRight,
+    DspAdjustUp,
+    DspAdjustDown,
+    DspResetControl,
 }
 
 impl KeyAction {
@@ -189,6 +200,14 @@ impl KeyAction {
             KeyAction::CycleFocusMode => "Focus Mode",
             KeyAction::ShrinkSidebar => "Sidebar-",
             KeyAction::GrowSidebar => "Sidebar+",
+            KeyAction::ToggleDspStudio => "DSP Studio",
+            KeyAction::DspSelectUp => "DSP Up",
+            KeyAction::DspSelectDown => "DSP Down",
+            KeyAction::DspSelectLeft => "DSP Left",
+            KeyAction::DspSelectRight => "DSP Right",
+            KeyAction::DspAdjustUp => "DSP Increase",
+            KeyAction::DspAdjustDown => "DSP Decrease",
+            KeyAction::DspResetControl => "DSP Reset",
         }
     }
 }
@@ -285,6 +304,14 @@ impl KeyAction {
             KeyAction::CycleFocusMode => Some(AppMsg::UI(UIMsg::CycleFocusMode)),
             KeyAction::ShrinkSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(-2))),
             KeyAction::GrowSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(2))),
+            KeyAction::ToggleDspStudio => Some(AppMsg::UI(UIMsg::ToggleDspStudio)),
+            KeyAction::DspSelectUp => Some(AppMsg::UI(UIMsg::DspSelectUp)),
+            KeyAction::DspSelectDown => Some(AppMsg::UI(UIMsg::DspSelectDown)),
+            KeyAction::DspSelectLeft => Some(AppMsg::UI(UIMsg::DspSelectLeft)),
+            KeyAction::DspSelectRight => Some(AppMsg::UI(UIMsg::DspSelectRight)),
+            KeyAction::DspAdjustUp => Some(AppMsg::UI(UIMsg::DspAdjustUp)),
+            KeyAction::DspAdjustDown => Some(AppMsg::UI(UIMsg::DspAdjustDown)),
+            KeyAction::DspResetControl => Some(AppMsg::UI(UIMsg::DspResetControl)),
         }
     }
 }
@@ -334,6 +361,7 @@ impl KeyRegistry {
                 "trackinfo" => KeyContext::TrackInfo,
                 "playlist" | "playlistpicker" => KeyContext::PlaylistPicker,
                 "confirm" => KeyContext::Confirm,
+                "dspstudio" | "dsp" => KeyContext::DspStudio,
                 "global" => KeyContext::Global,
                 _ => {
                     let err = format!("Unknown keymap context: {}", ctx_str);
@@ -566,6 +594,33 @@ impl Default for KeyRegistry {
                     .with_mod(KeyModifiers::CONTROL),
                 KeyBinding::new(KeyCode::Char('l'), KeyAction::GrowSidebar)
                     .with_mod(KeyModifiers::CONTROL),
+                KeyBinding::new(KeyCode::F(2), KeyAction::ToggleDspStudio),
+            ],
+        );
+
+        // DSP Studio context
+        bindings.insert(
+            KeyContext::DspStudio,
+            vec![
+                KeyBinding::new(KeyCode::F(2), KeyAction::ToggleDspStudio),
+                KeyBinding::new(KeyCode::Esc, KeyAction::ToggleDspStudio),
+                KeyBinding::new(KeyCode::Char('k'), KeyAction::DspSelectUp),
+                KeyBinding::new(KeyCode::Up, KeyAction::DspSelectUp),
+                KeyBinding::new(KeyCode::Char('j'), KeyAction::DspSelectDown),
+                KeyBinding::new(KeyCode::Down, KeyAction::DspSelectDown),
+                KeyBinding::new(KeyCode::Left, KeyAction::DspSelectLeft),
+                KeyBinding::new(KeyCode::Right, KeyAction::DspSelectRight),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::DspAdjustUp),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::DspAdjustDown),
+                KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
+                KeyBinding::new(KeyCode::Char('+'), KeyAction::VolUp),
+                KeyBinding::new(KeyCode::Char('='), KeyAction::VolUp),
+                KeyBinding::new(KeyCode::Char('-'), KeyAction::VolDown),
+                KeyBinding::new(KeyCode::Char('_'), KeyAction::VolDown),
+                KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause),
+                KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit),
+                KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode),
+                KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp),
             ],
         );
 

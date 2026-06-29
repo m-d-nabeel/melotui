@@ -27,6 +27,8 @@ pub enum AudioCommand {
     SetLowpass(f32),
     SetHighpass(f32),
     SetEqBand { band: usize, gain: f32 },
+    SetAutoPanRate(f32),
+    SetAutoPanDepth(f32),
     Shutdown,
 }
 

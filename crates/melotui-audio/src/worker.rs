@@ -130,6 +130,8 @@ impl AudioEngine {
                     self.dsp_params.eq_bands[band].set_value(gain);
                 }
             }
+            AudioCommand::SetAutoPanRate(v) => self.dsp_params.auto_pan_rate.set_value(v),
+            AudioCommand::SetAutoPanDepth(v) => self.dsp_params.auto_pan_depth.set_value(v),
             AudioCommand::Shutdown => return false,
         }
         true
@@ -253,6 +255,8 @@ impl AudioCommandExt for AudioCommand {
                 | AudioCommand::SetLowpass(_)
                 | AudioCommand::SetHighpass(_)
                 | AudioCommand::SetEqBand { .. }
+                | AudioCommand::SetAutoPanRate(_)
+                | AudioCommand::SetAutoPanDepth(_)
                 | AudioCommand::SetVisualizer { .. }
         )
     }

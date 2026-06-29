@@ -45,10 +45,11 @@ pub enum UIMsg {
     LyricsSelectorCancel,
     // DSP Studio
     ToggleDspStudio,
-    DspSelectNext,
-    DspSelectPrev,
+    DspSelectUp,
+    DspSelectDown,
+    DspSelectLeft,
+    DspSelectRight,
     DspAdjustUp,
     DspAdjustDown,
     DspResetControl,
 }
-

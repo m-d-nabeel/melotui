@@ -88,6 +88,12 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::AdjustEqBand { band, delta } => {
             audio_action::handle_adjust_eq_band(state, band, delta)
         }
+        AudioMsg::AdjustAutoPanRate(delta) => {
+            audio_action::handle_adjust_auto_pan_rate(state, delta)
+        }
+        AudioMsg::AdjustAutoPanDepth(delta) => {
+            audio_action::handle_adjust_auto_pan_depth(state, delta)
+        }
         AudioMsg::DispatchSetVolume(volume) => {
             audio_action::handle_dispatch_set_volume(state, volume)
         }
@@ -105,6 +111,12 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::DispatchSetHighpass(hp) => audio_action::handle_dispatch_set_highpass(state, hp),
         AudioMsg::DispatchSetEqBand { band, gain } => {
             audio_action::handle_dispatch_set_eq_band(state, band, gain)
+        }
+        AudioMsg::DispatchSetAutoPanRate(rate) => {
+            audio_action::handle_dispatch_set_auto_pan_rate(state, rate)
+        }
+        AudioMsg::DispatchSetAutoPanDepth(depth) => {
+            audio_action::handle_dispatch_set_auto_pan_depth(state, depth)
         }
     }
 }
@@ -151,8 +163,10 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::LyricsSelectorSubmit => ui_action::handle_lyrics_selector_submit(state),
         UIMsg::LyricsSelectorCancel => ui_action::handle_lyrics_selector_cancel(state),
         UIMsg::ToggleDspStudio => ui_action::handle_toggle_dsp_studio(state),
-        UIMsg::DspSelectNext => ui_action::handle_dsp_select_next(state),
-        UIMsg::DspSelectPrev => ui_action::handle_dsp_select_prev(state),
+        UIMsg::DspSelectUp => ui_action::handle_dsp_select_up(state),
+        UIMsg::DspSelectDown => ui_action::handle_dsp_select_down(state),
+        UIMsg::DspSelectLeft => ui_action::handle_dsp_select_left(state),
+        UIMsg::DspSelectRight => ui_action::handle_dsp_select_right(state),
         UIMsg::DspAdjustUp => ui_action::handle_dsp_adjust_up(state),
         UIMsg::DspAdjustDown => ui_action::handle_dsp_adjust_down(state),
         UIMsg::DspResetControl => ui_action::handle_dsp_reset_control(state),

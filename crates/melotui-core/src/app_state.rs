@@ -114,6 +114,12 @@ impl AppState {
     pub fn highpass(&self) -> f32 {
         self.session.audio.highpass
     }
+    pub fn auto_pan_rate(&self) -> f32 {
+        self.session.audio.auto_pan_rate
+    }
+    pub fn auto_pan_depth(&self) -> f32 {
+        self.session.audio.auto_pan_depth
+    }
     pub fn eq_bands(&self) -> &[f32; 10] {
         &self.session.audio.eq_bands
     }

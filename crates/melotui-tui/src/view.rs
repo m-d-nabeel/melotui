@@ -11,8 +11,8 @@ use crate::{
     image_cache::ImageCache,
     theme::Theme,
     widgets::{
-        command_view, confirm_view, help_view, notification_popup, playback_view,
-        playlist_picker_view, sidebar, sound_control_view, visualizer_view,
+        command_view, confirm_view, dsp_studio_view, help_view, notification_popup,
+        playback_view, playlist_picker_view, sidebar, sound_control_view, visualizer_view,
     },
 };
 
@@ -48,6 +48,22 @@ pub fn draw(
 
 /// Full layout: sidebar + visualizer + mixer + playback
 fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut ImageCache) {
+    if state.ui_show_dsp_studio() {
+        // DSP Studio: full width, no sidebar
+        let playback_height = if state.ui_show_playback() { 7 } else { 0 };
+        let layout = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Fill(1), Constraint::Length(playback_height)])
+            .split(area);
+
+        dsp_studio_view::draw(frame, layout[0], state, image_cache);
+
+        if state.ui_show_playback() {
+            playback_view::draw(frame, layout[1], state);
+        }
+        return;
+    }
+
     let sidebar_width = state.sidebar_width();
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)

@@ -64,6 +64,18 @@ pub fn handle_adjust_eq_band(state: &mut AppState, band: usize, delta: f32) -> V
     })]
 }
 
+pub fn handle_adjust_auto_pan_rate(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
+    let new = (state.auto_pan_rate() + delta).clamp(0.0, 10.0);
+    state.session.audio.auto_pan_rate = new;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(new))]
+}
+
+pub fn handle_adjust_auto_pan_depth(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
+    let new = (state.auto_pan_depth() + delta).clamp(0.0, 1.0);
+    state.session.audio.auto_pan_depth = new;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(new))]
+}
+
 // Dispatch handlers (no-op in reducer, intercepted by engine bridge)
 pub fn handle_dispatch_set_volume(_state: &mut AppState, _volume: f32) -> Vec<AppMsg> {
     vec![]
@@ -106,6 +118,14 @@ pub fn handle_dispatch_set_eq_band(
     _band: usize,
     _gain: f32,
 ) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_set_auto_pan_rate(_state: &mut AppState, _rate: f32) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_set_auto_pan_depth(_state: &mut AppState, _depth: f32) -> Vec<AppMsg> {
     vec![]
 }
 

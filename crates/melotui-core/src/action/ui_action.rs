@@ -691,17 +691,88 @@ pub fn handle_command_history_next(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_toggle_dsp_studio(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.show_dsp_studio = !state.session.ui.show_dsp_studio;
+    // Dispatch SetVisualizer to activate spectrum when entering DSP Studio
+    if state.session.ui.show_dsp_studio {
+        vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+            spectrum_style: Some(crate::state::SpectrumStyle::Bar),
+        })]
+    } else {
+        vec![]
+    }
+}
+
+/// Up: move cursor up within current zone (EQ or grid column)
+pub fn handle_dsp_select_up(state: &mut AppState) -> Vec<AppMsg> {
+    let idx = state.session.ui.dsp_selected_control;
+    if idx == 0 {
+        // Wrap: top of EQ → bottom of grid
+        state.session.ui.dsp_selected_control = crate::state::audio::DSP_CONTROL_COUNT - 1;
+    } else if idx <= 9 {
+        // Within EQ
+        state.session.ui.dsp_selected_control = idx - 1;
+    } else {
+        // Within grid: find column and move up
+        let (col, row) = grid_coords(idx);
+        if row == 0 {
+            // Top of grid column → bottom of EQ
+            state.session.ui.dsp_selected_control = 9;
+        } else {
+            state.session.ui.dsp_selected_control = grid_index(col, row - 1);
+        }
+    }
     vec![]
 }
 
-pub fn handle_dsp_select_next(state: &mut AppState) -> Vec<AppMsg> {
-    let max = crate::state::audio::DSP_CONTROL_COUNT - 1;
-    state.session.ui.dsp_selected_control = (state.session.ui.dsp_selected_control + 1).min(max);
+/// Down: move cursor down within current zone
+pub fn handle_dsp_select_down(state: &mut AppState) -> Vec<AppMsg> {
+    let idx = state.session.ui.dsp_selected_control;
+    if idx < 9 {
+        // Within EQ
+        state.session.ui.dsp_selected_control = idx + 1;
+    } else if idx == 9 {
+        // Bottom of EQ → top of grid (first column, row 0)
+        state.session.ui.dsp_selected_control = 10;
+    } else {
+        // Within grid
+        let (col, row) = grid_coords(idx);
+        let col_len = grid_col_len(col);
+        if row + 1 >= col_len {
+            // Bottom of grid column → wrap to top of EQ
+            state.session.ui.dsp_selected_control = 0;
+        } else {
+            state.session.ui.dsp_selected_control = grid_index(col, row + 1);
+        }
+    }
     vec![]
 }
 
-pub fn handle_dsp_select_prev(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.ui.dsp_selected_control = state.session.ui.dsp_selected_control.saturating_sub(1);
+/// Left: hop to adjacent column in the grid (no-op in EQ zone)
+pub fn handle_dsp_select_left(state: &mut AppState) -> Vec<AppMsg> {
+    let idx = state.session.ui.dsp_selected_control;
+    if idx <= 9 {
+        return vec![]; // EQ zone: Left does nothing
+    }
+    let (col, row) = grid_coords(idx);
+    if col > 0 {
+        let new_col = col - 1;
+        let clamped_row = row.min(grid_col_len(new_col) - 1);
+        state.session.ui.dsp_selected_control = grid_index(new_col, clamped_row);
+    }
+    vec![]
+}
+
+/// Right: hop to adjacent column in the grid (no-op in EQ zone)
+pub fn handle_dsp_select_right(state: &mut AppState) -> Vec<AppMsg> {
+    let idx = state.session.ui.dsp_selected_control;
+    if idx <= 9 {
+        return vec![]; // EQ zone: Right does nothing
+    }
+    let (col, row) = grid_coords(idx);
+    if col < 2 {
+        let new_col = col + 1;
+        let clamped_row = row.min(grid_col_len(new_col) - 1);
+        state.session.ui.dsp_selected_control = grid_index(new_col, clamped_row);
+    }
     vec![]
 }
 
@@ -712,13 +783,15 @@ pub fn handle_dsp_adjust_up(state: &mut AppState) -> Vec<AppMsg> {
         0..=9 => audio_action::handle_adjust_eq_band(state, idx, 1.0),
         10 => audio_action::handle_adjust_volume(state, 0.05),
         11 => audio_action::handle_adjust_speed(state, 0.1),
-        12 => audio_action::handle_adjust_pan(state, 0.1),
-        13 => audio_action::handle_adjust_bass(state, 0.1),
-        14 => audio_action::handle_adjust_treble(state, 0.1),
-        15 => audio_action::handle_adjust_reverb(state, 0.05),
-        16 => audio_action::handle_adjust_echo(state, 0.05),
-        17 => audio_action::handle_adjust_lowpass(state, 500.0),
-        18 => audio_action::handle_adjust_highpass(state, 50.0),
+        12 => audio_action::handle_adjust_bass(state, 0.1),
+        13 => audio_action::handle_adjust_treble(state, 0.1),
+        14 => audio_action::handle_adjust_pan(state, 0.1),
+        15 => audio_action::handle_adjust_auto_pan_rate(state, 0.5),
+        16 => audio_action::handle_adjust_auto_pan_depth(state, 0.1),
+        17 => audio_action::handle_adjust_reverb(state, 0.05),
+        18 => audio_action::handle_adjust_echo(state, 0.05),
+        19 => audio_action::handle_adjust_lowpass(state, 500.0),
+        20 => audio_action::handle_adjust_highpass(state, 50.0),
         _ => vec![],
     }
 }
@@ -730,13 +803,15 @@ pub fn handle_dsp_adjust_down(state: &mut AppState) -> Vec<AppMsg> {
         0..=9 => audio_action::handle_adjust_eq_band(state, idx, -1.0),
         10 => audio_action::handle_adjust_volume(state, -0.05),
         11 => audio_action::handle_adjust_speed(state, -0.1),
-        12 => audio_action::handle_adjust_pan(state, -0.1),
-        13 => audio_action::handle_adjust_bass(state, -0.1),
-        14 => audio_action::handle_adjust_treble(state, -0.1),
-        15 => audio_action::handle_adjust_reverb(state, -0.05),
-        16 => audio_action::handle_adjust_echo(state, -0.05),
-        17 => audio_action::handle_adjust_lowpass(state, -500.0),
-        18 => audio_action::handle_adjust_highpass(state, -50.0),
+        12 => audio_action::handle_adjust_bass(state, -0.1),
+        13 => audio_action::handle_adjust_treble(state, -0.1),
+        14 => audio_action::handle_adjust_pan(state, -0.1),
+        15 => audio_action::handle_adjust_auto_pan_rate(state, -0.5),
+        16 => audio_action::handle_adjust_auto_pan_depth(state, -0.1),
+        17 => audio_action::handle_adjust_reverb(state, -0.05),
+        18 => audio_action::handle_adjust_echo(state, -0.05),
+        19 => audio_action::handle_adjust_lowpass(state, -500.0),
+        20 => audio_action::handle_adjust_highpass(state, -50.0),
         _ => vec![],
     }
 }
@@ -751,14 +826,47 @@ pub fn handle_dsp_reset_control(state: &mut AppState) -> Vec<AppMsg> {
         }
         10 => { state.session.audio.volume = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetVolume(1.0))] }
         11 => { state.session.audio.speed = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetSpeed(1.0))] }
-        12 => { state.session.audio.pan = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetPan(0.0))] }
-        13 => { state.session.audio.bass = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetBass(1.0))] }
-        14 => { state.session.audio.treble = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(1.0))] }
-        15 => { state.session.audio.reverb = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetReverb(0.0))] }
-        16 => { state.session.audio.echo = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(0.0))] }
-        17 => { state.session.audio.lowpass = 20000.0; vec![AppMsg::Audio(AudioMsg::DispatchSetLowpass(20000.0))] }
-        18 => { state.session.audio.highpass = 20.0; vec![AppMsg::Audio(AudioMsg::DispatchSetHighpass(20.0))] }
+        12 => { state.session.audio.bass = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetBass(1.0))] }
+        13 => { state.session.audio.treble = 1.0; vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(1.0))] }
+        14 => { state.session.audio.pan = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetPan(0.0))] }
+        15 => { state.session.audio.auto_pan_rate = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(0.0))] }
+        16 => { state.session.audio.auto_pan_depth = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(0.0))] }
+        17 => { state.session.audio.reverb = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetReverb(0.0))] }
+        18 => { state.session.audio.echo = 0.0; vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(0.0))] }
+        19 => { state.session.audio.lowpass = 20000.0; vec![AppMsg::Audio(AudioMsg::DispatchSetLowpass(20000.0))] }
+        20 => { state.session.audio.highpass = 20.0; vec![AppMsg::Audio(AudioMsg::DispatchSetHighpass(20.0))] }
         _ => vec![],
+    }
+}
+
+// ── Grid navigation helpers ─────────────────────────────
+
+/// Returns (column_index, row_within_column) for a control index in the grid (10-20).
+fn grid_coords(idx: usize) -> (usize, usize) {
+    use crate::state::audio::*;
+    for (col, items) in [GRID_COL_SOUND.as_slice(), GRID_COL_SPATIAL.as_slice(), GRID_COL_EFFECTS.as_slice()].iter().enumerate() {
+        if let Some(row) = items.iter().position(|&i| i == idx) {
+            return (col, row);
+        }
+    }
+    (0, 0) // fallback
+}
+
+/// Returns the control index for a (column, row) in the grid.
+fn grid_index(col: usize, row: usize) -> usize {
+    use crate::state::audio::*;
+    let cols: [&[usize]; 3] = [&GRID_COL_SOUND, &GRID_COL_SPATIAL, &GRID_COL_EFFECTS];
+    let items = cols[col.min(2)];
+    items[row.min(items.len() - 1)]
+}
+
+/// Returns the number of items in a grid column.
+fn grid_col_len(col: usize) -> usize {
+    match col {
+        0 => crate::state::audio::GRID_COL_SOUND.len(),
+        1 => crate::state::audio::GRID_COL_SPATIAL.len(),
+        2 => crate::state::audio::GRID_COL_EFFECTS.len(),
+        _ => 0,
     }
 }
 

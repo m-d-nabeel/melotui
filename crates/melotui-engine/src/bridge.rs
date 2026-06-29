@@ -110,6 +110,12 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                     gain: *gain,
                 }))
             }
+            AudioMsg::DispatchSetAutoPanRate(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetAutoPanRate(*v)))
+            }
+            AudioMsg::DispatchSetAutoPanDepth(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetAutoPanDepth(*v)))
+            }
             _ => None,
         },
 
