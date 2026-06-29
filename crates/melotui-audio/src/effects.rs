@@ -76,13 +76,13 @@ fn build_mono_chain(params: &AudioParams) -> Net {
 
     // 10-band parametric EQ (bell filters)
     let mut prev_id = treble_id;
-    for i in 0..10 {
-        let freq = EQ_FREQS[i];
+    for (i, &freq) in EQ_FREQS.iter().enumerate() {
         let band_gain = var(&params.eq_bands[i]);
-        let gain_linear = band_gain >> map(|g: &Frame<f32, U1>| {
-            let db = g[0];
-            (10.0_f32).powf(db / 20.0)
-        });
+        let gain_linear = band_gain
+            >> map(|g: &Frame<f32, U1>| {
+                let db = g[0];
+                (10.0_f32).powf(db / 20.0)
+            });
         let bell_node = (pass() | constant(freq) | constant(1.0) | gain_linear) >> bell();
         let bell_id = net.push(Box::new(bell_node));
         net.pipe_all(prev_id, bell_id);

@@ -207,8 +207,8 @@ impl Theme {
             slider_reverb: Color::Rgb(203, 166, 247), // Mauve
             slider_echo: Color::Rgb(243, 139, 168),   // Red
             slider_track: Color::Rgb(69, 71, 90),     // Surface1
-            slider_pan: Color::Rgb(245, 194, 231),     // Pink
-            slider_lowpass: Color::Rgb(180, 190, 254),  // Lavender
+            slider_pan: Color::Rgb(245, 194, 231),    // Pink
+            slider_lowpass: Color::Rgb(180, 190, 254), // Lavender
             slider_highpass: Color::Rgb(250, 179, 135), // Peach
 
             // DSP Studio

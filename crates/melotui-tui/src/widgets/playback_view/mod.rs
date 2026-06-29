@@ -198,14 +198,25 @@ pub fn draw_compact(frame: &mut Frame, area: Rect, state: &AppState) {
         let title_line = if let Some(track) = current_track {
             let artist = track.artist.as_deref().unwrap_or("Unknown");
             Line::from(vec![
-                Span::styled(format!(" {} ", status_icon), Style::default().fg(status_color)),
-                Span::styled(&track.title, Style::default().fg(t.fg_primary).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!(" {} ", status_icon),
+                    Style::default().fg(status_color),
+                ),
+                Span::styled(
+                    &track.title,
+                    Style::default()
+                        .fg(t.fg_primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
                 Span::styled(" • ", Style::default().fg(t.fg_muted)),
                 Span::styled(artist, Style::default().fg(t.fg_secondary)),
             ])
         } else {
             Line::from(vec![
-                Span::styled(format!(" {} ", status_icon), Style::default().fg(status_color)),
+                Span::styled(
+                    format!(" {} ", status_icon),
+                    Style::default().fg(status_color),
+                ),
                 Span::styled("No Track", Style::default().fg(t.fg_muted)),
             ])
         };

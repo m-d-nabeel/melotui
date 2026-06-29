@@ -20,15 +20,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Fill(1),           // Spectrum visualizer (gets remaining space)
-            Constraint::Length(12),        // Horizontal EQ (10 bands + borders)
-            Constraint::Min(10),           // Controls grid (3 columns, ~4-5 items each)
+            Constraint::Fill(1),    // Spectrum visualizer (gets remaining space)
+            Constraint::Length(12), // Horizontal EQ (10 bands + borders)
+            Constraint::Min(10),    // Controls grid (3 columns, ~4-5 items each)
         ])
         .split(area);
 
     draw_mini_spectrum(frame, main_layout[0], state, cache);
-    draw_horizontal_eq(frame, main_layout[1], state, &t);
-    draw_controls_grid(frame, main_layout[2], state, &t);
+    draw_horizontal_eq(frame, main_layout[1], state, t);
+    draw_controls_grid(frame, main_layout[2], state, t);
 }
 
 // ── Mini Spectrum ────────────────────────────────────────
@@ -65,7 +65,15 @@ fn draw_horizontal_eq(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
         }
         let is_selected = selected == i;
         let gain_db = eq_bands[i];
-        render_eq_slider(frame, *row, EQ_BAND_LABELS[i], gain_db, -12.0, 12.0, is_selected, t);
+        render_eq_slider(
+            frame,
+            *row,
+            EQ_BAND_LABELS[i],
+            gain_db,
+            (-12.0, 12.0),
+            is_selected,
+            t,
+        );
     }
 }
 
@@ -74,8 +82,7 @@ fn render_eq_slider(
     area: Rect,
     label: &str,
     value: f32,
-    min: f32,
-    max: f32,
+    range: (f32, f32),
     is_selected: bool,
     t: &Theme,
 ) {
@@ -96,13 +103,28 @@ fn render_eq_slider(
         ])
         .split(area);
 
-    let accent = if is_selected { t.eq_bar_selected } else { t.eq_bar_fill };
-    let label_color = if is_selected { t.eq_bar_selected } else { t.fg_secondary };
-    let bg = if is_selected { t.dsp_selected_bg } else { ratatui::style::Color::Reset };
+    let accent = if is_selected {
+        t.eq_bar_selected
+    } else {
+        t.eq_bar_fill
+    };
+    let label_color = if is_selected {
+        t.eq_bar_selected
+    } else {
+        t.fg_secondary
+    };
+    let bg = if is_selected {
+        t.dsp_selected_bg
+    } else {
+        ratatui::style::Color::Reset
+    };
 
     // Label
     let label_style = if is_selected {
-        Style::default().fg(label_color).bg(bg).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(label_color)
+            .bg(bg)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(label_color).bg(bg)
     };
@@ -112,6 +134,7 @@ fn render_eq_slider(
     );
 
     // Bipolar slider bar (center = zero)
+    let (min, max) = range;
     let ratio = ((value - min) / (max - min)).clamp(0.0, 1.0);
     render_bipolar_bar(frame, cols[1], ratio, accent, bg, t);
 
@@ -144,7 +167,9 @@ fn render_bipolar_bar(
     for i in 0..width {
         if i == center {
             bar.push('│');
-        } else if (pos <= center && i >= pos && i < center) || (pos > center && i > center && i <= pos) {
+        } else if (pos <= center && i >= pos && i < center)
+            || (pos > center && i > center && i <= pos)
+        {
             bar.push('━');
         } else {
             bar.push('─');
@@ -172,10 +197,41 @@ fn render_bipolar_bar(
 
 // ── Controls Grid (3 columns) ────────────────────────────
 
+struct ControlItem<'a> {
+    id: usize,
+    label: &'a str,
+    value: f32,
+    min: f32,
+    max: f32,
+    fmt: fn(f32) -> String,
+    accent: ratatui::style::Color,
+}
+
+impl<'a> ControlItem<'a> {
+    fn new(
+        id: usize,
+        label: &'a str,
+        value: f32,
+        min: f32,
+        max: f32,
+        fmt: fn(f32) -> String,
+        accent: ratatui::style::Color,
+    ) -> Self {
+        Self {
+            id,
+            label,
+            value,
+            min,
+            max,
+            fmt,
+            accent,
+        }
+    }
+}
+
 fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme) {
     let selected = state.dsp_selected_control();
 
-    // Three-column layout: Sound | Spatial | Effects
     let cols = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -185,35 +241,133 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
         ])
         .split(area);
 
-    // ── Sound column ─────────────────────────────────
-    draw_control_column(frame, cols[0], " Sound ", &[
-        (10, "Volume", state.volume(), 0.0, 1.5, format_percent as fn(f32) -> String, t.slider_volume),
-        (11, "Speed", state.speed(), 0.5, 2.0, format_speed, t.slider_speed),
-        (12, "Bass", state.bass(), 0.1, 5.0, format_mult, t.slider_bass),
-        (13, "Treble", state.treble(), 0.0, 5.0, format_mult, t.slider_treble),
-    ], selected, t);
+    draw_control_column(
+        frame,
+        cols[0],
+        " Sound ",
+        &[
+            ControlItem::new(
+                10,
+                "Volume",
+                state.volume(),
+                0.0,
+                1.5,
+                format_percent as fn(f32) -> String,
+                t.slider_volume,
+            ),
+            ControlItem::new(
+                11,
+                "Speed",
+                state.speed(),
+                0.5,
+                2.0,
+                format_speed,
+                t.slider_speed,
+            ),
+            ControlItem::new(
+                12,
+                "Bass",
+                state.bass(),
+                0.1,
+                5.0,
+                format_mult,
+                t.slider_bass,
+            ),
+            ControlItem::new(
+                13,
+                "Treble",
+                state.treble(),
+                0.0,
+                5.0,
+                format_mult,
+                t.slider_treble,
+            ),
+        ],
+        selected,
+        t,
+    );
 
-    // ── Spatial column ───────────────────────────────
-    draw_control_column(frame, cols[1], " Spatial ", &[
-        (14, "Pan", state.pan(), -1.0, 1.0, format_pan, t.slider_pan),
-        (15, "AP Rate", state.auto_pan_rate(), 0.0, 10.0, format_hz, t.slider_pan),
-        (16, "AP Depth", state.auto_pan_depth(), 0.0, 1.0, format_percent, t.slider_pan),
-    ], selected, t);
+    draw_control_column(
+        frame,
+        cols[1],
+        " Spatial ",
+        &[
+            ControlItem::new(14, "Pan", state.pan(), -1.0, 1.0, format_pan, t.slider_pan),
+            ControlItem::new(
+                15,
+                "AP Rate",
+                state.auto_pan_rate(),
+                0.0,
+                10.0,
+                format_hz,
+                t.slider_pan,
+            ),
+            ControlItem::new(
+                16,
+                "AP Depth",
+                state.auto_pan_depth(),
+                0.0,
+                1.0,
+                format_percent,
+                t.slider_pan,
+            ),
+        ],
+        selected,
+        t,
+    );
 
-    // ── Effects column ───────────────────────────────
-    draw_control_column(frame, cols[2], " Effects ", &[
-        (17, "Reverb", state.reverb(), 0.0, 1.0, format_percent, t.slider_reverb),
-        (18, "Echo", state.echo(), 0.0, 0.9, format_percent, t.slider_echo),
-        (19, "Lo-pass", state.lowpass(), 200.0, 20000.0, format_freq, t.slider_lowpass),
-        (20, "Hi-pass", state.highpass(), 20.0, 5000.0, format_freq, t.slider_highpass),
-    ], selected, t);
+    draw_control_column(
+        frame,
+        cols[2],
+        " Effects ",
+        &[
+            ControlItem::new(
+                17,
+                "Reverb",
+                state.reverb(),
+                0.0,
+                1.0,
+                format_percent,
+                t.slider_reverb,
+            ),
+            ControlItem::new(
+                18,
+                "Echo",
+                state.echo(),
+                0.0,
+                0.9,
+                format_percent,
+                t.slider_echo,
+            ),
+            ControlItem::new(
+                19,
+                "Lo-pass",
+                state.lowpass(),
+                200.0,
+                20000.0,
+                format_freq,
+                t.slider_lowpass,
+            ),
+            ControlItem::new(
+                20,
+                "Hi-pass",
+                state.highpass(),
+                20.0,
+                5000.0,
+                format_freq,
+                t.slider_highpass,
+            ),
+        ],
+        selected,
+        t,
+    );
 }
 
 fn draw_control_column(
     frame: &mut Frame,
     area: Rect,
     title: &str,
-    items: &[(usize, &str, f32, f32, f32, fn(f32) -> String, ratatui::style::Color)],
+    items: &[ControlItem<'_>],
     selected: usize,
     t: &Theme,
 ) {
@@ -226,7 +380,6 @@ fn draw_control_column(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // 2 rows per control: label + slider
     let row_constraints: Vec<Constraint> = items
         .iter()
         .flat_map(|_| [Constraint::Length(1), Constraint::Length(1)])
@@ -236,26 +389,14 @@ fn draw_control_column(
         .constraints(row_constraints)
         .split(inner);
 
-    for (i, (ctrl_idx, label, value, min, max, fmt, accent)) in items.iter().enumerate() {
+    for (i, item) in items.iter().enumerate() {
         let row_label = i * 2;
         let row_slider = i * 2 + 1;
         if row_slider >= rows.len() {
             break;
         }
-        let is_sel = selected == *ctrl_idx;
-        render_stacked_control(
-            frame,
-            rows[row_label],
-            rows[row_slider],
-            label,
-            *value,
-            *min,
-            *max,
-            fmt,
-            is_sel,
-            *accent,
-            t,
-        );
+        let is_sel = selected == item.id;
+        render_stacked_control(frame, rows[row_label], rows[row_slider], item, is_sel, t);
     }
 }
 
@@ -263,22 +404,27 @@ fn render_stacked_control(
     frame: &mut Frame,
     label_area: Rect,
     slider_area: Rect,
-    label: &str,
-    value: f32,
-    min: f32,
-    max: f32,
-    format_fn: &dyn Fn(f32) -> String,
+    item: &ControlItem<'_>,
     is_selected: bool,
-    accent: ratatui::style::Color,
     t: &Theme,
 ) {
-    let bg = if is_selected { t.dsp_selected_bg } else { ratatui::style::Color::Reset };
-    let label_color = if is_selected { accent } else { t.fg_secondary };
+    let bg = if is_selected {
+        t.dsp_selected_bg
+    } else {
+        ratatui::style::Color::Reset
+    };
+    let label_color = if is_selected {
+        item.accent
+    } else {
+        t.fg_secondary
+    };
 
-    // Label row: "  Label              Value"
-    let val_str = format_fn(value);
+    let val_str = (item.fmt)(item.value);
     let label_style = if is_selected {
-        Style::default().fg(label_color).bg(bg).add_modifier(Modifier::BOLD)
+        Style::default()
+            .fg(label_color)
+            .bg(bg)
+            .add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(label_color).bg(bg)
     };
@@ -286,15 +432,14 @@ fn render_stacked_control(
     let indicator = if is_selected { "▸ " } else { "  " };
     let label_line = Line::from(vec![
         Span::styled(indicator, label_style),
-        Span::styled(format!("{}", label), label_style),
+        Span::styled(item.label.to_string(), label_style),
         Span::styled(" ", Style::default().bg(bg)),
         Span::styled(val_str, Style::default().fg(t.fg_muted).bg(bg)),
     ]);
     frame.render_widget(Paragraph::new(label_line), label_area);
 
-    // Slider row
-    let ratio = ((value - min) / (max - min)).clamp(0.0, 1.0);
-    render_control_bar(frame, slider_area, ratio, accent, bg, t);
+    let ratio = ((item.value - item.min) / (item.max - item.min)).clamp(0.0, 1.0);
+    render_control_bar(frame, slider_area, ratio, item.accent, bg, t);
 }
 
 fn render_control_bar(

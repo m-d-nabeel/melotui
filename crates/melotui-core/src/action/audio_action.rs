@@ -113,11 +113,7 @@ pub fn handle_dispatch_set_highpass(_state: &mut AppState, _hp: f32) -> Vec<AppM
     vec![]
 }
 
-pub fn handle_dispatch_set_eq_band(
-    _state: &mut AppState,
-    _band: usize,
-    _gain: f32,
-) -> Vec<AppMsg> {
+pub fn handle_dispatch_set_eq_band(_state: &mut AppState, _band: usize, _gain: f32) -> Vec<AppMsg> {
     vec![]
 }
 
@@ -128,4 +124,3 @@ pub fn handle_dispatch_set_auto_pan_rate(_state: &mut AppState, _rate: f32) -> V
 pub fn handle_dispatch_set_auto_pan_depth(_state: &mut AppState, _depth: f32) -> Vec<AppMsg> {
     vec![]
 }
-
