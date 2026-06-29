@@ -1,5 +1,7 @@
 mod input_processor;
 mod logging;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod mpris;
 mod runtime;
 
 fn main() -> anyhow::Result<()> {

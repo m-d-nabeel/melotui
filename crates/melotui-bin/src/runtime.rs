@@ -65,6 +65,15 @@ pub fn run() -> Result<()> {
         music_roots,
     };
 
+    // Initialize MPRIS / system media controls (Linux/macOS only)
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let (mut mpris_manager, mpris_rx) = {
+        match crate::mpris::MprisManager::new() {
+            Some((mgr, rx)) => (Some(mgr), Some(rx)),
+            None => (None, None),
+        }
+    };
+
     if let Ok((w, h)) = tui.size() {
         runtime
             .effect_queue
@@ -111,6 +120,19 @@ pub fn run() -> Result<()> {
             should_render = true;
         }
 
+        // Poll MPRIS media key events (Linux/macOS only)
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        if let Some(ref rx) = mpris_rx {
+            while let Ok(evt) = rx.try_recv() {
+                match evt {
+                    crate::mpris::MprisEvent::MediaKey(msg) => {
+                        runtime.effect_queue.push_back(msg);
+                        should_render = true;
+                    }
+                }
+            }
+        }
+
         let now = Instant::now();
         let dt = now.duration_since(last_tick).as_secs_f32();
         last_tick = now;
@@ -127,6 +149,12 @@ pub fn run() -> Result<()> {
         if should_render {
             tui.draw(&state)?;
             should_render = false;
+
+            // Sync MPRIS metadata/status after render (Linux/macOS only)
+            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            if let Some(ref mut mgr) = mpris_manager {
+                mgr.update_state(&state);
+            }
         }
     }
 

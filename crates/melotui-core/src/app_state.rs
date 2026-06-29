@@ -14,7 +14,7 @@ use crate::{
     utils::{NoOpSpectrum, SpectrumSource},
 };
 use rand::Rng;
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
 pub struct AppState {
     pub app_name: String,
@@ -35,6 +35,7 @@ pub struct AppState {
 
     // cached resources
     pub current_cover: Option<Arc<image::DynamicImage>>,
+    pub current_cover_path: Option<PathBuf>,
     pub track_info_cover: Option<Arc<image::DynamicImage>>,
     pub track_info_cover_id: Option<TrackId>,
     pub config: crate::config::AppConfig,
@@ -78,6 +79,7 @@ impl AppState {
             spectrum_peaks: vec![0.0; 512],
             spectrum_source: Box::new(NoOpSpectrum),
             current_cover: None,
+            current_cover_path: None,
             track_info_cover: None,
             track_info_cover_id: None,
             config: config.clone(),

@@ -16,3 +16,6 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 tracing-appender = "0.2"
 dirs = "6"
 anyhow = "1"
+
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+souvlaki = "0.8"
