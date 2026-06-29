@@ -157,12 +157,13 @@ impl AudioEngine {
                 self.time_keeper.start();
 
                 let channels = decoder.channels();
+                let sample_rate = decoder.sample_rate();
                 let unit: Box<dyn AudioUnit> = create_audio_graph(channels, &self.dsp_params);
                 let dsp_source = FundspSource::new(decoder, unit);
 
                 let ring = HeapRb::<f32>::new(8192);
                 let (producer, consumer) = ring.split();
-                self.vis_manager.attach_source(consumer);
+                self.vis_manager.attach_source(consumer, sample_rate);
 
                 let source_with_sniffer = SpectrumSniffer {
                     input: dsp_source,

@@ -1755,7 +1755,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-audio"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "fundsp",
@@ -1770,7 +1770,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-bin"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -1786,7 +1786,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-bus"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "image",
  "melotui-core",
@@ -1795,7 +1795,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -1812,7 +1812,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-cover"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -1828,7 +1828,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-db"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -1842,7 +1842,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-download"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "melotui-bus",
  "melotui-core",
@@ -1854,7 +1854,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-engine"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "melotui-audio",
  "melotui-bus",
@@ -1867,7 +1867,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-tui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "image",

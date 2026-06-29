@@ -28,6 +28,7 @@ pub struct VisualizerManager {
     enabled: bool,
     style: SpectrumStyle,
     fft_size: usize,
+    sample_rate: u32,
 }
 
 impl VisualizerManager {
@@ -52,6 +53,7 @@ impl VisualizerManager {
                 SpectrumStyle::Default
             },
             fft_size,
+            sample_rate: 44100,
         }
     }
 
@@ -66,9 +68,10 @@ impl VisualizerManager {
         self.reconcile();
     }
 
-    pub fn attach_source(&mut self, consumer: AudioConsumer) {
-        self.detach_source(); // reset current
+    pub fn attach_source(&mut self, consumer: AudioConsumer, sample_rate: u32) {
+        self.take_active_to_idle();
         self.idle_internal = Some(consumer);
+        self.sample_rate = sample_rate;
         self.reconcile();
     }
 
@@ -133,7 +136,7 @@ impl VisualizerManager {
                     self.take_active_to_idle();
                     if let Some(cons) = self.idle_internal.take() {
                         self.backend =
-                            Backend::Internal(SpectrumAnalyzer::new(cons, self.fft_size));
+                            Backend::Internal(SpectrumAnalyzer::new(cons, self.fft_size, self.sample_rate));
                     } else {
                         self.backend = Backend::None;
                     }
@@ -167,7 +170,7 @@ impl VisualizerManager {
                     // fallback to internal
                     if let Some(cons) = self.idle_internal.take() {
                         self.backend =
-                            Backend::Internal(SpectrumAnalyzer::new(cons, self.fft_size));
+                            Backend::Internal(SpectrumAnalyzer::new(cons, self.fft_size, self.sample_rate));
                     }
                 }
             }

@@ -18,7 +18,6 @@ pub fn handle_cover_message(
         } => {
             match context {
                 CoverContext::Playback => {
-                    // TODO: Review - ensure cover matches playing track to avoid race conditions
                     if let Some(current_id) = state.get_playing_track_id()
                         && current_id == id
                     {

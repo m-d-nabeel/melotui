@@ -182,6 +182,12 @@ fn handle_command(
                 }
             }
         }
+        DatabaseCommand::IncrementPlayCount { track_id } => {
+            let tid = TrackId(track_id as u64);
+            if let Err(e) = increment_play_count(conn, tid) {
+                tracing::error!("Failed to increment play count: {:?}", e);
+            }
+        }
         DatabaseCommand::Shutdown => unreachable!("handled above"),
         _ => { /* unhandled commands */ }
     }
@@ -516,6 +522,14 @@ fn remove_from_playlist(
     conn.execute(
         "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
         params![playlist_id.0 as i64, track_id.0 as i64],
+    )?;
+    Ok(())
+}
+
+fn increment_play_count(conn: &rusqlite::Connection, track_id: TrackId) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks SET play_count = play_count + 1 WHERE id = ?",
+        params![track_id.0 as i64],
     )?;
     Ok(())
 }

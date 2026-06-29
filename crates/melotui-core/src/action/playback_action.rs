@@ -158,6 +158,13 @@ pub fn handle_request_prev(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
+    let mut effects = vec![];
+    if let Some(id) = state.session.playback.current {
+        effects.push(AppMsg::Database(
+            crate::message::database::DatabaseMsg::DispatchIncrementPlayCount(id),
+        ));
+    }
+
     state.session.playback.status = PlaybackStatus::Stopped;
     state.session.playback.progress_ms = 0;
 
@@ -165,7 +172,8 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
     if state.session.repeat_mode == RepeatMode::Track
         && let Some(id) = state.session.playback.current
     {
-        return start_playback(state, id, state.is_playing_from_queue());
+        effects.extend(start_playback(state, id, state.is_playing_from_queue()));
+        return effects;
     }
 
     // clean up finished queue item
@@ -184,8 +192,9 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
         && let Some(entry) = state.session.playback_queue.items.pop_front()
     {
         state.session.playback.active_queue_id = Some(entry.id);
-        // TODO: clear active_node when playing from queue?
-        return start_playback(state, entry.track_id, true);
+        state.session.playback.active_node = None;
+        effects.extend(start_playback(state, entry.track_id, true));
+        return effects;
     }
 
     // context fallback
@@ -201,13 +210,14 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
         // update active node
         update_active_node(state, new_id);
 
-        return start_playback(state, new_id, false);
+        effects.extend(start_playback(state, new_id, false));
+        return effects;
     }
 
     state.session.notification.current =
         Some(Notification::new(NotificationKind::Info, "End of Playlist"));
 
-    vec![]
+    effects
 }
 
 pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
