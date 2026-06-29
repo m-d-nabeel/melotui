@@ -128,6 +128,7 @@ pub enum KeyAction {
     DspResetControl,
     DspMacroSlowedReverb,
     DspMacroNightcore,
+    DspMacroSpatial,
     DspMacroResetAll,
 }
 
@@ -213,6 +214,7 @@ impl KeyAction {
             KeyAction::DspResetControl => "DSP Reset",
             KeyAction::DspMacroSlowedReverb => "Slowed+Reverb",
             KeyAction::DspMacroNightcore => "Nightcore",
+            KeyAction::DspMacroSpatial => "3D Spatial",
             KeyAction::DspMacroResetAll => "Reset All DSP",
         }
     }
@@ -320,6 +322,7 @@ impl KeyAction {
             KeyAction::DspResetControl => Some(AppMsg::UI(UIMsg::DspResetControl)),
             KeyAction::DspMacroSlowedReverb => Some(AppMsg::UI(UIMsg::DspMacroSlowedReverb)),
             KeyAction::DspMacroNightcore => Some(AppMsg::UI(UIMsg::DspMacroNightcore)),
+            KeyAction::DspMacroSpatial => Some(AppMsg::UI(UIMsg::DspMacroSpatial)),
             KeyAction::DspMacroResetAll => Some(AppMsg::UI(UIMsg::DspMacroResetAll)),
         }
     }
@@ -630,6 +633,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
                 KeyBinding::new(KeyCode::Char('1'), KeyAction::DspMacroSlowedReverb),
                 KeyBinding::new(KeyCode::Char('2'), KeyAction::DspMacroNightcore),
+                KeyBinding::new(KeyCode::Char('3'), KeyAction::DspMacroSpatial),
                 KeyBinding::new(KeyCode::Char('0'), KeyAction::DspMacroResetAll),
             ],
         );

@@ -37,6 +37,8 @@ pub enum AudioCommand {
     SetWidth(f32),
     SetBitcrush(f32),
     SetExciter(f32),
+    SetPingPong(f32),
+    SetPhaser(f32),
     Shutdown,
 }
 

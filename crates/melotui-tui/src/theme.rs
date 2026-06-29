@@ -212,8 +212,8 @@ impl Theme {
             slider_highpass: Color::Rgb(250, 179, 135), // Peach
 
             // DSP Studio
-            dsp_section_border: Color::Rgb(88, 91, 112), // Surface2
-            dsp_selected_bg: Color::Rgb(49, 50, 68),     // Surface0
+            dsp_section_border: Color::Rgb(130, 145, 205), // Muted Indigo
+            dsp_selected_bg: Color::Rgb(49, 50, 68),       // Surface0
             eq_bar_fill: Color::Rgb(166, 227, 161),      // Green
             eq_bar_empty: Color::Rgb(49, 50, 68),        // Surface0
             eq_bar_selected: Color::Rgb(137, 180, 250),  // Blue

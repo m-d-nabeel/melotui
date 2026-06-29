@@ -17,6 +17,8 @@ pub enum AudioMsg {
     AdjustWidth(f32),
     AdjustBitcrush(f32),
     AdjustExciter(f32),
+    AdjustPingPong(f32),
+    AdjustPhaser(f32),
     DispatchSetVolume(f32),
     DispatchSetSpeed(f32),
     DispatchSetBass(f32),
@@ -34,4 +36,6 @@ pub enum AudioMsg {
     DispatchSetWidth(f32),
     DispatchSetBitcrush(f32),
     DispatchSetExciter(f32),
+    DispatchSetPingPong(f32),
+    DispatchSetPhaser(f32),
 }

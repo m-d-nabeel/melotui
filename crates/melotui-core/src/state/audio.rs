@@ -11,14 +11,14 @@ pub const EQ_BAND_LABELS: [&str; 10] = [
 /// Total number of DSP controls.
 /// EQ bands 0-9, then 3-column grid:
 ///   Sound:   Volume(10), Speed(11), Bass(12), Treble(13), Exciter(21), Bitcrush(22)
-///   Spatial: Pan(14), AP Rate(15), AP Depth(16), Width(23), Karaoke(24)
-///   Effects: Reverb(17), Echo(18), Lo-pass(19), Hi-pass(20), Wobble(25)
-pub const DSP_CONTROL_COUNT: usize = 26;
+///   Spatial: Pan(14), AP Rate(15), AP Depth(16), Width(23), Karaoke(24), PingPong(26)
+///   Effects: Reverb(17), Echo(18), Lo-pass(19), Hi-pass(20), Wobble(25), Phaser(27)
+pub const DSP_CONTROL_COUNT: usize = 28;
 
 /// Grid column layouts for spatial navigation.
 pub const GRID_COL_SOUND: [usize; 6] = [10, 11, 12, 13, 21, 22];
-pub const GRID_COL_SPATIAL: [usize; 5] = [14, 15, 16, 23, 24];
-pub const GRID_COL_EFFECTS: [usize; 5] = [17, 18, 19, 20, 25];
+pub const GRID_COL_SPATIAL: [usize; 6] = [14, 15, 16, 23, 24, 26];
+pub const GRID_COL_EFFECTS: [usize; 6] = [17, 18, 19, 20, 25, 27];
 
 #[derive(Debug, Clone)]
 pub struct AudioState {
@@ -39,6 +39,8 @@ pub struct AudioState {
     pub width: f32,          // range 0.0 to 3.0 (1.0 = normal)
     pub karaoke: f32,        // range 0.0 to 1.0
     pub wobble: f32,         // range 0.0 to 1.0
+    pub ping_pong: f32,      // range 0.0 to 1.0
+    pub phaser: f32,         // range 0.0 to 1.0
 }
 
 impl Default for AudioState {
@@ -61,6 +63,8 @@ impl Default for AudioState {
             width: 1.0,
             karaoke: 0.0,
             wobble: 0.0,
+            ping_pong: 0.0,
+            phaser: 0.0,
         }
     }
 }

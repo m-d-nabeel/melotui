@@ -28,16 +28,19 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         .split(area);
 
     draw_mini_spectrum(frame, main_layout[0], state, cache);
-    draw_horizontal_eq(frame, main_layout[1], state, t);
+    draw_horizontal_eq(frame, main_layout[1], state, t, t.icon_category);
     draw_controls_grid(frame, main_layout[2], state, t);
 
+    let muted = Style::default().fg(t.fg_muted);
     let legend = Paragraph::new(Line::from(vec![
         Span::styled("[1] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
-        Span::raw("Slowed+Reverb   "),
+        Span::styled("Slowed+Reverb   ", muted),
         Span::styled("[2] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
-        Span::raw("Nightcore   "),
+        Span::styled("Nightcore   ", muted),
+        Span::styled("[3] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
+        Span::styled("3D Spatial   ", muted),
         Span::styled("[0] ", Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)),
-        Span::raw("Reset All"),
+        Span::styled("Reset All", muted),
     ]))
     .alignment(Alignment::Center);
     frame.render_widget(legend, main_layout[3]);
@@ -51,12 +54,12 @@ fn draw_mini_spectrum(frame: &mut Frame, area: Rect, state: &AppState, cache: &m
 
 // ── Horizontal EQ ────────────────────────────────────────
 
-fn draw_horizontal_eq(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme) {
+fn draw_horizontal_eq(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme, border_color: ratatui::style::Color) {
     let block = Block::default()
         .title(" ◆ Equalizer ")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(t.dsp_section_border));
+        .border_style(Style::default().fg(border_color));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -301,6 +304,7 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
         ],
         selected,
         t,
+        t.slider_volume,
     );
 
     draw_control_column(
@@ -311,7 +315,7 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
             ControlItem::new(14, "Pan", state.pan(), -1.0, 1.0, format_pan, t.slider_pan),
             ControlItem::new(
                 15,
-                "AP Rate",
+                "Pan Spd",
                 state.auto_pan_rate(),
                 0.0,
                 2.0,
@@ -320,7 +324,7 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
             ),
             ControlItem::new(
                 16,
-                "AP Depth",
+                "Pan Dpt",
                 state.auto_pan_depth(),
                 0.0,
                 1.0,
@@ -345,9 +349,19 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
                 format_percent_off,
                 t.slider_pan,
             ),
+            ControlItem::new(
+                26,
+                "PingPong",
+                state.ping_pong(),
+                0.0,
+                1.0,
+                format_percent_off,
+                t.slider_pan,
+            ),
         ],
         selected,
         t,
+        t.slider_pan,
     );
 
     draw_control_column(
@@ -375,7 +389,7 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
             ),
             ControlItem::new(
                 19,
-                "Lo-pass",
+                "Lowpass",
                 state.lowpass(),
                 200.0,
                 20000.0,
@@ -384,7 +398,7 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
             ),
             ControlItem::new(
                 20,
-                "Hi-pass",
+                "Highpass",
                 state.highpass(),
                 20.0,
                 5000.0,
@@ -400,9 +414,19 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
                 format_percent_off,
                 t.slider_echo,
             ),
+            ControlItem::new(
+                27,
+                "Phaser",
+                state.phaser(),
+                0.0,
+                1.0,
+                format_percent_off,
+                t.slider_reverb,
+            ),
         ],
         selected,
         t,
+        t.slider_reverb,
     );
 }
 
@@ -413,12 +437,13 @@ fn draw_control_column(
     items: &[ControlItem<'_>],
     selected: usize,
     t: &Theme,
+    border_color: ratatui::style::Color,
 ) {
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(t.dsp_section_border));
+        .border_style(Style::default().fg(border_color));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);

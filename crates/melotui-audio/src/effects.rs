@@ -17,6 +17,8 @@ pub struct AudioParams {
     pub width: Shared,
     pub bitcrush: Shared,
     pub exciter: Shared,
+    pub ping_pong: Shared,
+    pub phaser: Shared,
 }
 
 impl AudioParams {
@@ -37,6 +39,8 @@ impl AudioParams {
             width: shared(1.0),
             bitcrush: shared(0.0),
             exciter: shared(0.0),
+            ping_pong: shared(0.0),
+            phaser: shared(0.0),
         }
     }
 }
@@ -115,6 +119,19 @@ fn build_mono_chain(params: &AudioParams) -> Net {
     // echo: simple feedback delay
     let echo_node = pass() & ((pass() * var(&params.echo)) >> delay(0.5));
 
+    // phaser: sweeping all-pass notches
+    let phaser_shared = params.phaser.clone();
+    let phaser_unit = phaser(0.7, |t| sin_hz(0.2, t) * 0.5 + 0.5);
+    let phaser_node = (pass() ^ (pass() >> phaser_unit))
+        >> map(move |f: &Frame<f32, U2>| {
+            let p = phaser_shared.value();
+            if p <= 0.001 {
+                f[0]
+            } else {
+                f[0] * (1.0 - p * 0.5) + f[1] * (p * 0.5)
+            }
+        });
+
     // Build the chain using Net for dynamic composition
     let mut net = Net::new(1, 1);
 
@@ -149,13 +166,15 @@ fn build_mono_chain(params: &AudioParams) -> Net {
         prev_id = bell_id;
     }
 
-    // lowpass → echo → output
+    // lowpass → echo → phaser → output
     let lp_id = net.push(Box::new(lp_node));
     let echo_id = net.push(Box::new(echo_node));
+    let phaser_id = net.push(Box::new(phaser_node));
 
     net.pipe_all(prev_id, lp_id);
     net.pipe_all(lp_id, echo_id);
-    net.pipe_output(echo_id);
+    net.pipe_all(echo_id, phaser_id);
+    net.pipe_output(phaser_id);
 
     net
 }
@@ -213,6 +232,21 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
         })
     };
 
+    // ── Ping-Pong Stereo Delay ───────────────────────────
+    let make_ping_pong_mixer = || {
+        let pp_gain = var(&params.ping_pong);
+        let left_wet = Net::wrap(Box::new((pass() * pp_gain.clone()) >> ((delay(0.25) * constant(0.7)) & (delay(0.75) * constant(0.3)))));
+        let right_wet = Net::wrap(Box::new((pass() * pp_gain) >> ((delay(0.50) * constant(0.5)) & (delay(1.00) * constant(0.15)))));
+        let wet_path = left_wet | right_wet;
+
+        let dry_gain = constant(1.0) - var(&params.ping_pong);
+        let dry_path = Net::wrap(Box::new((pass() | pass()) * (dry_gain.clone() | dry_gain)));
+
+        let mixer_core = dry_path + wet_path;
+        let stereo_pass = pass() | pass();
+        (stereo_pass.clone() ^ stereo_pass) >> mixer_core
+    };
+
     // ── Limiter ──────────────────────────────────────────
     let limiter_stereo = limiter(0.001, 0.1) | limiter(0.001, 0.1);
 
@@ -224,6 +258,7 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
                 >> split::<U2>()
                 >> (stereo_pass.clone() * pan_stereo)
                 >> stereo_mixer
+                >> make_ping_pong_mixer()
                 >> make_ms_matrix()
                 >> limiter_stereo.clone(),
         )
@@ -233,6 +268,7 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
             (mono_chain | mono_chain2)
                 >> (stereo_pass.clone() * pan_stereo)
                 >> stereo_mixer
+                >> make_ping_pong_mixer()
                 >> make_ms_matrix()
                 >> limiter_stereo,
         )

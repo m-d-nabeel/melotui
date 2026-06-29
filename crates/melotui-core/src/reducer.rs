@@ -99,6 +99,8 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::AdjustWidth(delta) => audio_action::handle_adjust_width(state, delta),
         AudioMsg::AdjustBitcrush(delta) => audio_action::handle_adjust_bitcrush(state, delta),
         AudioMsg::AdjustExciter(delta) => audio_action::handle_adjust_exciter(state, delta),
+        AudioMsg::AdjustPingPong(delta) => audio_action::handle_adjust_ping_pong(state, delta),
+        AudioMsg::AdjustPhaser(delta) => audio_action::handle_adjust_phaser(state, delta),
         AudioMsg::DispatchSetVolume(volume) => {
             audio_action::handle_dispatch_set_volume(state, volume)
         }
@@ -128,6 +130,8 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::DispatchSetWidth(val) => audio_action::handle_dispatch_set_width(state, val),
         AudioMsg::DispatchSetBitcrush(val) => audio_action::handle_dispatch_set_bitcrush(state, val),
         AudioMsg::DispatchSetExciter(val) => audio_action::handle_dispatch_set_exciter(state, val),
+        AudioMsg::DispatchSetPingPong(val) => audio_action::handle_dispatch_set_ping_pong(state, val),
+        AudioMsg::DispatchSetPhaser(val) => audio_action::handle_dispatch_set_phaser(state, val),
     }
 }
 
@@ -182,6 +186,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::DspResetControl => ui_action::handle_dsp_reset_control(state),
         UIMsg::DspMacroSlowedReverb => audio_action::handle_macro_slowed_reverb(state),
         UIMsg::DspMacroNightcore => audio_action::handle_macro_nightcore(state),
+        UIMsg::DspMacroSpatial => audio_action::handle_macro_spatial(state),
         UIMsg::DspMacroResetAll => audio_action::handle_macro_reset_all(state),
     }
 }

@@ -806,6 +806,8 @@ pub fn handle_dsp_adjust_up(state: &mut AppState) -> Vec<AppMsg> {
         23 => audio_action::handle_adjust_width(state, 0.1),
         24 => audio_action::handle_adjust_karaoke(state, 0.05),
         25 => audio_action::handle_adjust_wobble(state, 0.05),
+        26 => audio_action::handle_adjust_ping_pong(state, 0.05),
+        27 => audio_action::handle_adjust_phaser(state, 0.05),
         _ => vec![],
     }
 }
@@ -831,6 +833,8 @@ pub fn handle_dsp_adjust_down(state: &mut AppState) -> Vec<AppMsg> {
         23 => audio_action::handle_adjust_width(state, -0.1),
         24 => audio_action::handle_adjust_karaoke(state, -0.05),
         25 => audio_action::handle_adjust_wobble(state, -0.05),
+        26 => audio_action::handle_adjust_ping_pong(state, -0.05),
+        27 => audio_action::handle_adjust_phaser(state, -0.05),
         _ => vec![],
     }
 }
@@ -909,6 +913,14 @@ pub fn handle_dsp_reset_control(state: &mut AppState) -> Vec<AppMsg> {
         25 => {
             state.session.audio.wobble = 0.0;
             vec![AppMsg::Audio(AudioMsg::DispatchSetWobble(0.0))]
+        }
+        26 => {
+            state.session.audio.ping_pong = 0.0;
+            vec![AppMsg::Audio(AudioMsg::DispatchSetPingPong(0.0))]
+        }
+        27 => {
+            state.session.audio.phaser = 0.0;
+            vec![AppMsg::Audio(AudioMsg::DispatchSetPhaser(0.0))]
         }
         _ => vec![],
     }

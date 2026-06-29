@@ -137,6 +137,8 @@ impl AudioEngine {
             AudioCommand::SetWidth(v) => self.dsp_params.width.set_value(v),
             AudioCommand::SetBitcrush(v) => self.dsp_params.bitcrush.set_value(v),
             AudioCommand::SetExciter(v) => self.dsp_params.exciter.set_value(v),
+            AudioCommand::SetPingPong(v) => self.dsp_params.ping_pong.set_value(v),
+            AudioCommand::SetPhaser(v) => self.dsp_params.phaser.set_value(v),
             AudioCommand::Shutdown => return false,
         }
         true
@@ -267,6 +269,8 @@ impl AudioCommandExt for AudioCommand {
                 | AudioCommand::SetWidth(_)
                 | AudioCommand::SetBitcrush(_)
                 | AudioCommand::SetExciter(_)
+                | AudioCommand::SetPingPong(_)
+                | AudioCommand::SetPhaser(_)
                 | AudioCommand::SetVisualizer { .. }
         )
     }

@@ -155,6 +155,18 @@ pub fn handle_adjust_exciter(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     vec![AppMsg::Audio(AudioMsg::DispatchSetExciter(new_val))]
 }
 
+pub fn handle_adjust_ping_pong(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
+    let new_val = (state.ping_pong() + delta).clamp(0.0, 1.0);
+    state.session.audio.ping_pong = new_val;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetPingPong(new_val))]
+}
+
+pub fn handle_adjust_phaser(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
+    let new_val = (state.phaser() + delta).clamp(0.0, 1.0);
+    state.session.audio.phaser = new_val;
+    vec![AppMsg::Audio(AudioMsg::DispatchSetPhaser(new_val))]
+}
+
 pub fn handle_dispatch_set_wobble(_state: &mut AppState, _val: f32) -> Vec<AppMsg> {
     vec![]
 }
@@ -175,35 +187,68 @@ pub fn handle_dispatch_set_exciter(_state: &mut AppState, _val: f32) -> Vec<AppM
     vec![]
 }
 
+pub fn handle_dispatch_set_ping_pong(_state: &mut AppState, _val: f32) -> Vec<AppMsg> {
+    vec![]
+}
+
+pub fn handle_dispatch_set_phaser(_state: &mut AppState, _val: f32) -> Vec<AppMsg> {
+    vec![]
+}
+
 // ── Macros ──────────────────────────────────────────────
 
 pub fn handle_macro_slowed_reverb(state: &mut AppState) -> Vec<AppMsg> {
     state.session.audio.speed = 0.85;
-    state.session.audio.reverb = 0.40;
-    state.session.audio.lowpass = 3000.0;
+    state.session.audio.reverb = 0.45;
+    state.session.audio.bass = 1.3;
+    state.session.audio.width = 1.3;
+    state.session.audio.lowpass = 3500.0;
     state.session.audio.highpass = 20.0;
-    state.session.audio.wobble = 0.20;
+    state.session.audio.wobble = 0.15;
     vec![
         AppMsg::Audio(AudioMsg::DispatchSetSpeed(0.85)),
-        AppMsg::Audio(AudioMsg::DispatchSetReverb(0.40)),
-        AppMsg::Audio(AudioMsg::DispatchSetLowpass(3000.0)),
+        AppMsg::Audio(AudioMsg::DispatchSetReverb(0.45)),
+        AppMsg::Audio(AudioMsg::DispatchSetBass(1.3)),
+        AppMsg::Audio(AudioMsg::DispatchSetWidth(1.3)),
+        AppMsg::Audio(AudioMsg::DispatchSetLowpass(3500.0)),
         AppMsg::Audio(AudioMsg::DispatchSetHighpass(20.0)),
-        AppMsg::Audio(AudioMsg::DispatchSetWobble(0.20)),
+        AppMsg::Audio(AudioMsg::DispatchSetWobble(0.15)),
     ]
 }
 
 pub fn handle_macro_nightcore(state: &mut AppState) -> Vec<AppMsg> {
     state.session.audio.speed = 1.25;
-    state.session.audio.treble = 2.0;
+    state.session.audio.treble = 1.8;
     state.session.audio.bass = 1.2;
-    state.session.audio.width = 1.5;
+    state.session.audio.width = 1.4;
+    state.session.audio.highpass = 80.0;
+    state.session.audio.exciter = 1.5;
     state.session.audio.lowpass = 20000.0;
     vec![
         AppMsg::Audio(AudioMsg::DispatchSetSpeed(1.25)),
-        AppMsg::Audio(AudioMsg::DispatchSetTreble(2.0)),
+        AppMsg::Audio(AudioMsg::DispatchSetTreble(1.8)),
         AppMsg::Audio(AudioMsg::DispatchSetBass(1.2)),
-        AppMsg::Audio(AudioMsg::DispatchSetWidth(1.5)),
+        AppMsg::Audio(AudioMsg::DispatchSetWidth(1.4)),
+        AppMsg::Audio(AudioMsg::DispatchSetHighpass(80.0)),
+        AppMsg::Audio(AudioMsg::DispatchSetExciter(1.5)),
         AppMsg::Audio(AudioMsg::DispatchSetLowpass(20000.0)),
+    ]
+}
+
+pub fn handle_macro_spatial(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.audio.auto_pan_rate = 0.25;
+    state.session.audio.auto_pan_depth = 0.80;
+    state.session.audio.ping_pong = 0.35;
+    state.session.audio.width = 1.8;
+    state.session.audio.reverb = 0.20;
+    state.session.audio.phaser = 0.15;
+    vec![
+        AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(0.25)),
+        AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(0.80)),
+        AppMsg::Audio(AudioMsg::DispatchSetPingPong(0.35)),
+        AppMsg::Audio(AudioMsg::DispatchSetWidth(1.8)),
+        AppMsg::Audio(AudioMsg::DispatchSetReverb(0.20)),
+        AppMsg::Audio(AudioMsg::DispatchSetPhaser(0.15)),
     ]
 }
 
@@ -227,6 +272,8 @@ pub fn handle_macro_reset_all(state: &mut AppState) -> Vec<AppMsg> {
         AppMsg::Audio(AudioMsg::DispatchSetWidth(def.width)),
         AppMsg::Audio(AudioMsg::DispatchSetBitcrush(def.bitcrush)),
         AppMsg::Audio(AudioMsg::DispatchSetExciter(def.exciter)),
+        AppMsg::Audio(AudioMsg::DispatchSetPingPong(def.ping_pong)),
+        AppMsg::Audio(AudioMsg::DispatchSetPhaser(def.phaser)),
     ];
     for i in 0..10 {
         msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand { band: i, gain: 0.0 }));

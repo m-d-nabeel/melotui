@@ -131,6 +131,12 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             AudioMsg::DispatchSetExciter(v) => {
                 Some(IpcCommand::Audio(AudioCommand::SetExciter(*v)))
             }
+            AudioMsg::DispatchSetPingPong(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetPingPong(*v)))
+            }
+            AudioMsg::DispatchSetPhaser(v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetPhaser(*v)))
+            }
             _ => None,
         },
 

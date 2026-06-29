@@ -141,6 +141,12 @@ impl AppState {
     pub fn exciter(&self) -> f32 {
         self.session.audio.exciter
     }
+    pub fn ping_pong(&self) -> f32 {
+        self.session.audio.ping_pong
+    }
+    pub fn phaser(&self) -> f32 {
+        self.session.audio.phaser
+    }
 
     pub fn theme_overrides(&self) -> &std::collections::HashMap<String, String> {
         &self.session.ui.theme_overrides
