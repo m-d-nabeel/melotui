@@ -65,7 +65,7 @@ pub fn handle_adjust_eq_band(state: &mut AppState, band: usize, delta: f32) -> V
 }
 
 pub fn handle_adjust_auto_pan_rate(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    let new = (state.auto_pan_rate() + delta).clamp(0.0, 10.0);
+    let new = (state.auto_pan_rate() + delta).clamp(0.0, 2.0);
     state.session.audio.auto_pan_rate = new;
     vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(new))]
 }

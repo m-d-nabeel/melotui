@@ -693,13 +693,15 @@ pub fn handle_toggle_dsp_studio(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.show_dsp_studio = !state.session.ui.show_dsp_studio;
     if state.session.ui.show_dsp_studio {
         // Switch to spectrum mode so the mini visualizer renders
+        state.session.spectrum_style = crate::state::SpectrumStyle::Bar;
         state.session.visualizer_mode = VisualizerMode::Spectrum;
-        vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-            spectrum_style: Some(crate::state::SpectrumStyle::Bar),
-        })]
-    } else {
-        vec![]
     }
+
+    let active = state.should_draw_spectrum();
+    let style = state.session.spectrum_style.clone();
+    vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+        spectrum_style: active.then_some(style),
+    })]
 }
 
 /// Up: move cursor up within current zone (EQ or grid column)
@@ -787,7 +789,7 @@ pub fn handle_dsp_adjust_up(state: &mut AppState) -> Vec<AppMsg> {
         12 => audio_action::handle_adjust_bass(state, 0.1),
         13 => audio_action::handle_adjust_treble(state, 0.1),
         14 => audio_action::handle_adjust_pan(state, 0.1),
-        15 => audio_action::handle_adjust_auto_pan_rate(state, 0.5),
+        15 => audio_action::handle_adjust_auto_pan_rate(state, 0.05),
         16 => audio_action::handle_adjust_auto_pan_depth(state, 0.1),
         17 => audio_action::handle_adjust_reverb(state, 0.05),
         18 => audio_action::handle_adjust_echo(state, 0.05),
@@ -807,7 +809,7 @@ pub fn handle_dsp_adjust_down(state: &mut AppState) -> Vec<AppMsg> {
         12 => audio_action::handle_adjust_bass(state, -0.1),
         13 => audio_action::handle_adjust_treble(state, -0.1),
         14 => audio_action::handle_adjust_pan(state, -0.1),
-        15 => audio_action::handle_adjust_auto_pan_rate(state, -0.5),
+        15 => audio_action::handle_adjust_auto_pan_rate(state, -0.05),
         16 => audio_action::handle_adjust_auto_pan_depth(state, -0.1),
         17 => audio_action::handle_adjust_reverb(state, -0.05),
         18 => audio_action::handle_adjust_echo(state, -0.05),
@@ -1057,6 +1059,10 @@ mod tests {
         let msgs = handle_toggle_dsp_studio(&mut state);
         assert!(state.session.ui.show_dsp_studio);
         assert_eq!(state.session.visualizer_mode, VisualizerMode::Spectrum);
+        assert_eq!(
+            state.session.spectrum_style,
+            crate::state::SpectrumStyle::Bar
+        );
         assert!(!msgs.is_empty());
 
         // Default control index is 0

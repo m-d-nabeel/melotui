@@ -401,9 +401,16 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
         format!("Playing {}", title),
     ));
 
-    let mut effects = vec![AppMsg::Playback(PlaybackMsg::DispatchPlay {
-        path: file_path.clone(),
-    })];
+    let active = state.should_draw_spectrum();
+    let style = state.session.spectrum_style.clone();
+    let mut effects = vec![
+        AppMsg::Playback(PlaybackMsg::DispatchPlay {
+            path: file_path.clone(),
+        }),
+        AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+            spectrum_style: active.then_some(style),
+        }),
+    ];
 
     // request async cover load
     if has_cover {

@@ -31,7 +31,7 @@ pub struct AudioState {
     pub pan: f32,            // range -1.0 (full left) to 1.0 (full right)
     pub lowpass: f32,        // range 200.0 to 20000.0 Hz (20000 = bypass)
     pub highpass: f32,       // range 20.0 to 5000.0 Hz (20 = bypass)
-    pub auto_pan_rate: f32,  // LFO speed in Hz, 0.0 = off, range 0.0 to 10.0
+    pub auto_pan_rate: f32,  // LFO speed in Hz, 0.0 = off, range 0.0 to 2.0
     pub auto_pan_depth: f32, // LFO depth, range 0.0 to 1.0
     pub eq_bands: [f32; 10], // range -12.0 to +12.0 dB per band
 }

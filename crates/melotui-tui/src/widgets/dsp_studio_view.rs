@@ -161,38 +161,26 @@ fn render_bipolar_bar(
 
     let width = area.width as usize;
     let center = width / 2;
-    let pos = ((ratio * width as f32) as usize).min(width);
+    let max_idx = width.saturating_sub(1);
+    let pos = ((ratio * max_idx as f32).round() as usize).min(max_idx);
 
-    let mut bar = String::with_capacity(width);
+    let mut spans = Vec::with_capacity(width);
     for i in 0..width {
-        if i == center {
-            bar.push('│');
-        } else if (pos <= center && i >= pos && i < center)
-            || (pos > center && i > center && i <= pos)
+        let (ch, color) = if i == pos {
+            ("●", accent)
+        } else if i == center {
+            ("│", t.eq_zero_line)
+        } else if (pos < center && i > pos && i < center)
+            || (pos > center && i > center && i < pos)
         {
-            bar.push('━');
+            ("━", accent)
         } else {
-            bar.push('─');
-        }
+            ("─", t.slider_track)
+        };
+        spans.push(Span::styled(ch, Style::default().fg(color).bg(bg)));
     }
 
-    // Split at center for coloring
-    let left_str: String = bar.chars().take(center).collect();
-    let center_char: String = bar.chars().skip(center).take(1).collect();
-    let right_str: String = bar.chars().skip(center + 1).collect();
-
-    let (left_color, right_color) = if pos <= center {
-        (accent, t.slider_track)
-    } else {
-        (t.slider_track, accent)
-    };
-
-    let line = Line::from(vec![
-        Span::styled(left_str, Style::default().fg(left_color).bg(bg)),
-        Span::styled(center_char, Style::default().fg(t.eq_zero_line).bg(bg)),
-        Span::styled(right_str, Style::default().fg(right_color).bg(bg)),
-    ]);
-    frame.render_widget(Paragraph::new(line), area);
+    frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
 // ── Controls Grid (3 columns) ────────────────────────────
@@ -298,7 +286,7 @@ fn draw_controls_grid(frame: &mut Frame, area: Rect, state: &AppState, t: &Theme
                 "AP Rate",
                 state.auto_pan_rate(),
                 0.0,
-                10.0,
+                2.0,
                 format_hz,
                 t.slider_pan,
             ),
@@ -528,6 +516,6 @@ fn format_hz(v: f32) -> String {
     if v < 0.01 {
         "Off".to_string()
     } else {
-        format!("{:.1}Hz", v)
+        format!("{:.2}Hz", v)
     }
 }
