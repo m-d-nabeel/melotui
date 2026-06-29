@@ -542,6 +542,9 @@ pub fn handle_dispatch_set_visualizer(
 }
 
 pub fn handle_cycle_focus_mode(state: &mut AppState) -> Vec<AppMsg> {
+    if state.session.ui.show_dsp_studio {
+        state.session.ui.show_dsp_studio = false;
+    }
     let next = state.session.ui.focus_mode.cycle();
     state.session.ui.focus_mode = next;
     state.session.notification.current = Some(
@@ -552,6 +555,9 @@ pub fn handle_cycle_focus_mode(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_set_focus_mode(state: &mut AppState, mode: FocusMode) -> Vec<AppMsg> {
+    if state.session.ui.show_dsp_studio {
+        state.session.ui.show_dsp_studio = false;
+    }
     state.session.ui.focus_mode = mode;
     state.session.notification.current = Some(
         Notification::new(NotificationKind::Info, format!("Focus: {}", mode.label()))

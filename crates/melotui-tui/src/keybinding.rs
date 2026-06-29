@@ -619,20 +619,6 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('-'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('_'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
-                // Playback
-                KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause),
-                KeyBinding::new(KeyCode::Char('n'), KeyAction::PlayNextTrack),
-                KeyBinding::new(KeyCode::Char('p'), KeyAction::PlayPrevTrack),
-                KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward),
-                KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward),
-                KeyBinding::new(KeyCode::Char('.'), KeyAction::SeekForward),
-                KeyBinding::new(KeyCode::Char('>'), KeyAction::SeekForward),
-                KeyBinding::new(KeyCode::Char('z'), KeyAction::ToggleShuffle),
-                KeyBinding::new(KeyCode::Char('c'), KeyAction::CycleRepeat),
-                // System
-                KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit),
-                KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode),
-                KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp),
             ],
         );
 

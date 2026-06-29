@@ -53,6 +53,7 @@ impl InputHandler {
         // DSP Studio takes precedence over panel contexts
         if state.ui_show_dsp_studio() {
             contexts.push(KeyContext::DspStudio);
+            contexts.push(KeyContext::Global);
             return contexts;
         }
 

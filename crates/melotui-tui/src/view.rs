@@ -33,23 +33,7 @@ pub fn draw(
         return;
     }
 
-    // Dispatch to focus mode layout
-    match state.focus_mode() {
-        FocusMode::Full => draw_full(frame, area, state, image_cache),
-        FocusMode::Visualizer => draw_visualizer_only(frame, area, state, image_cache),
-        FocusMode::Playback => draw_playback_only(frame, area, state),
-        FocusMode::VisualizerPlayback => draw_viz_playback(frame, area, state, image_cache),
-        FocusMode::LyricsPlayback => draw_lyrics_playback(frame, area, state),
-    }
-
-    // Overlays render on top regardless of focus mode
-    draw_overlays(frame, area, state, registry);
-}
-
-/// Full layout: sidebar + visualizer + mixer + playback
-fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut ImageCache) {
     if state.ui_show_dsp_studio() {
-        // DSP Studio: full width, no sidebar, compact playback
         let playback_height: u16 = 3;
         let layout = Layout::default()
             .direction(Direction::Vertical)
@@ -58,9 +42,23 @@ fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut 
 
         dsp_studio_view::draw(frame, layout[0], state, image_cache);
         playback_view::draw_compact(frame, layout[1], state);
-        return;
+    } else {
+        // Dispatch to focus mode layout
+        match state.focus_mode() {
+            FocusMode::Full => draw_full(frame, area, state, image_cache),
+            FocusMode::Visualizer => draw_visualizer_only(frame, area, state, image_cache),
+            FocusMode::Playback => draw_playback_only(frame, area, state),
+            FocusMode::VisualizerPlayback => draw_viz_playback(frame, area, state, image_cache),
+            FocusMode::LyricsPlayback => draw_lyrics_playback(frame, area, state),
+        }
     }
 
+    // Overlays render on top regardless of focus mode
+    draw_overlays(frame, area, state, registry);
+}
+
+/// Full layout: sidebar + visualizer + mixer + playback
+fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut ImageCache) {
     let sidebar_width = state.sidebar_width();
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)

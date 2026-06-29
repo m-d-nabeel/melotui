@@ -168,12 +168,10 @@ fn render_bipolar_bar(
     for i in 0..width {
         let (ch, color) = if i == pos {
             ("●", accent)
+        } else if i < pos {
+            ("━", accent)
         } else if i == center {
             ("│", t.eq_zero_line)
-        } else if (pos < center && i > pos && i < center)
-            || (pos > center && i > center && i < pos)
-        {
-            ("━", accent)
         } else {
             ("─", t.slider_track)
         };
