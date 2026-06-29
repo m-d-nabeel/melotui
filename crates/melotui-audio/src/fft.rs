@@ -15,17 +15,19 @@ where
     consumer: C,
     buffer: Vec<f32>,
     fft_size: usize,
+    sample_rate: u32,
 }
 
 impl<C> SpectrumAnalyzer<C>
 where
     C: Consumer<Item = f32>,
 {
-    pub fn new(consumer: C, fft_size: usize) -> Self {
+    pub fn new(consumer: C, fft_size: usize, sample_rate: u32) -> Self {
         Self {
             consumer,
             buffer: Vec::with_capacity(fft_size),
             fft_size,
+            sample_rate,
         }
     }
 
@@ -48,7 +50,7 @@ where
         let hann_window = hann_window(&self.buffer);
         let spectrum_result = samples_fft_to_spectrum(
             &hann_window,
-            44100,
+            self.sample_rate,
             FrequencyLimit::Range(20.0, 22_050.0),
             Some(&divide_by_N),
         );
@@ -132,7 +134,7 @@ mod tests {
     fn test_spectrum_analyzer_incomplete_frame() {
         let rb = HeapRb::<f32>::new(8192);
         let (mut prod, cons) = rb.split();
-        let mut analyzer = SpectrumAnalyzer::new(cons, 4096);
+        let mut analyzer = SpectrumAnalyzer::new(cons, 4096, 44100);
 
         // Push fewer than FFT_SIZE samples
         for _ in 0..1024 {
@@ -147,7 +149,7 @@ mod tests {
     fn test_spectrum_analyzer_full_frame() {
         let rb = HeapRb::<f32>::new(8192);
         let (mut prod, cons) = rb.split();
-        let mut analyzer = SpectrumAnalyzer::new(cons, 4096);
+        let mut analyzer = SpectrumAnalyzer::new(cons, 4096, 44100);
 
         // Push enough for a full frame
         for _ in 0..4096 {
@@ -164,7 +166,7 @@ mod tests {
     fn test_spectrum_analyzer_nan_handling() {
         let rb = HeapRb::<f32>::new(8192);
         let (mut prod, cons) = rb.split();
-        let mut analyzer = SpectrumAnalyzer::new(cons, 4096);
+        let mut analyzer = SpectrumAnalyzer::new(cons, 4096, 44100);
 
         // Push NaNs and Infinities
         for i in 0..4096 {

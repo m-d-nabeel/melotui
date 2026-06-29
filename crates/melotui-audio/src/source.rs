@@ -127,7 +127,8 @@ where
     }
 
     fn channels(&self) -> u16 {
-        self.source.channels()
+        // The DSP graph always outputs stereo (2 channels) even for mono sources.
+        2
     }
 
     fn sample_rate(&self) -> u32 {

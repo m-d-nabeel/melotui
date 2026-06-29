@@ -13,4 +13,5 @@ pub enum DatabaseMsg {
         playlist_id: PlaylistId,
         track_id: TrackId,
     },
+    DispatchIncrementPlayCount(TrackId),
 }

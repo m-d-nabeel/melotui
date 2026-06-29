@@ -288,6 +288,7 @@ fn handle_database_message(_state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMs
         | DatabaseMsg::DispatchCreatePlaylist(_)
         | DatabaseMsg::DispatchDeletePlaylist(_)
         | DatabaseMsg::DispatchAddToPlaylist { .. }
-        | DatabaseMsg::DispatchRemoveFromPlaylist { .. } => vec![],
+        | DatabaseMsg::DispatchRemoveFromPlaylist { .. }
+        | DatabaseMsg::DispatchIncrementPlayCount(_) => vec![],
     }
 }

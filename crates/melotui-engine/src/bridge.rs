@@ -171,6 +171,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                 track_id: track_id.0 as i64,
             },
         )),
+        AppMsg::Database(DatabaseMsg::DispatchIncrementPlayCount(track_id)) => {
+            Some(IpcCommand::Database(DatabaseCommand::IncrementPlayCount {
+                track_id: track_id.0 as i64,
+            }))
+        }
 
         _ => None,
     }
