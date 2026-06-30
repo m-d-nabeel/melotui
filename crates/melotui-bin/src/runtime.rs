@@ -121,6 +121,9 @@ pub fn run() -> Result<()> {
         }
 
         if runtime.engine_alive && handle_ipc_events(&mut runtime, &mut state) {
+            if !runtime.running {
+                break;
+            }
             should_render = true;
         }
 
@@ -147,10 +150,13 @@ pub fn run() -> Result<()> {
         }
 
         if process_effects(&mut runtime, &mut state) {
+            if !runtime.running {
+                break;
+            }
             should_render = true;
         }
 
-        if should_render {
+        if should_render && runtime.running {
             tui.draw(&state)?;
             should_render = false;
 

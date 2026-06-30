@@ -139,7 +139,14 @@ impl AudioEngine {
             AudioCommand::SetExciter(v) => self.dsp_params.exciter.set_value(v),
             AudioCommand::SetPingPong(v) => self.dsp_params.ping_pong.set_value(v),
             AudioCommand::SetPhaser(v) => self.dsp_params.phaser.set_value(v),
-            AudioCommand::Shutdown => return false,
+            AudioCommand::Shutdown => {
+                if !self.sink.empty() {
+                    self.sink.stop();
+                }
+                self.time_keeper.stop();
+                self.vis_manager.detach_source();
+                return false;
+            }
         }
         true
     }
