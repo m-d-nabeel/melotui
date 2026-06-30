@@ -3,7 +3,10 @@ use melotui_bus::{event::IpcEvent, spectrum_bridge};
 use melotui_core::{
     AppMsg, AppState,
     library::Library,
-    message::ui::UIMsg,
+    message::{
+        cover::{CoverContext, CoverMsg},
+        ui::UIMsg,
+    },
     reducer,
     state::{NotificationKind, visualizer::update_visualizer_physics},
 };
@@ -218,14 +221,23 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                     if let Ok(session) = melotui_core::PersistedSession::load() {
                         let count = session.apply_to_app_state(state);
                         if let Some(active_id) = session.active_track_id
-                            && let Some(track) = state.library.tracks.get(&active_id) {
-                                ctx.engine.play(track.file_path.clone());
-                                ctx.engine.pause();
-                                if session.seek_position_ms > 0 {
-                                    ctx.engine
-                                        .seek(session.seek_position_ms, state.seek_epoch());
-                                }
+                            && let Some(track) = state.library.tracks.get(&active_id)
+                        {
+                            ctx.engine.play(track.file_path.clone());
+                            ctx.engine.pause();
+                            if session.seek_position_ms > 0 {
+                                ctx.engine
+                                    .seek(session.seek_position_ms, state.seek_epoch());
                             }
+                            if track.has_cover {
+                                ctx.effect_queue
+                                    .push_back(AppMsg::Cover(CoverMsg::RequestLoad {
+                                        id: active_id,
+                                        path: track.file_path.clone(),
+                                        context: CoverContext::Playback,
+                                    }));
+                            }
+                        }
                         ctx.engine.sync_dsp(state.audio());
                         state.set_notification(
                             NotificationKind::Info,
@@ -236,6 +248,21 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                     }
                 } else {
                     state.set_notification(NotificationKind::Info, "Library loaded");
+                }
+
+                state.ensure_library_selection();
+
+                if state.is_showing_track_info()
+                    && let Some(tid) = state.get_track_info_target_id()
+                    && let Some(info_track) = state.library.get_track(tid).cloned()
+                    && info_track.has_cover
+                {
+                    ctx.effect_queue
+                        .push_back(AppMsg::Cover(CoverMsg::RequestLoad {
+                            id: tid,
+                            path: info_track.file_path,
+                            context: CoverContext::Info,
+                        }));
                 }
             }
             IpcEvent::LibraryRescanned => {

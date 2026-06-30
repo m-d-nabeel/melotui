@@ -318,6 +318,49 @@ impl AppState {
         self.session.nav.show_track_info
     }
 
+    pub fn ensure_library_selection(&mut self) {
+        if let Some(active_id) = self.session.playback.current
+            && let Some(canon) = crate::state::session_store::canonicalize_track_node(
+                &self.library,
+                active_id,
+                self.session.playback.active_node.as_ref(),
+            )
+        {
+            self.session.playback.active_node = Some(canon.clone());
+            let update_sel = match self.session.nav.library.selected_id {
+                Some(SidebarNodeId::Track { id, .. }) => id != active_id,
+                None => true,
+                _ => false,
+            };
+            if update_sel {
+                self.session.nav.library.selected_id = Some(canon.clone());
+            }
+        }
+
+        if let Some(ref sel) = self.session.nav.library.selected_id.clone() {
+            crate::state::session_store::expand_ancestors_of_node(
+                &mut self.session.nav.library.expanded_ids,
+                sel,
+            );
+        } else if let Some(first_node) = crate::library::projector::get_node_at_index(
+            &self.library,
+            &self.session.nav.library,
+            0,
+        ) {
+            self.session.nav.library.selected_id = Some(first_node);
+        }
+    }
+
+    pub fn get_track_info_target_id(&self) -> Option<TrackId> {
+        match self.session.nav.active_panel {
+            crate::navigation::state::LeftPanelMode::Library => {
+                self.get_selected_track_id_in_sidebar()
+            }
+            crate::navigation::state::LeftPanelMode::Queue => self.get_selected_track_id_in_queue(),
+        }
+        .or(self.session.playback.current)
+    }
+
     /// viewing playlist or folder?
     pub fn is_viewing_collection(&self) -> bool {
         matches!(

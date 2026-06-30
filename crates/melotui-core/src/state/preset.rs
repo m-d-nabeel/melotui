@@ -28,9 +28,10 @@ impl DspPreset {
                 let entry = entry?;
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) == Some("toml")
-                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        names.push(stem.to_string());
-                    }
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    names.push(stem.to_string());
+                }
             }
         }
         names.sort();

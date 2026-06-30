@@ -1,7 +1,8 @@
 use crate::{command::SearchField, navigation::ids::SidebarNodeId, playback::state::QueueId};
+use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum LeftPanelMode {
     #[default]
     Library,

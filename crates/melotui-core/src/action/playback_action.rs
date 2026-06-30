@@ -637,4 +637,103 @@ mod tests {
             AppMsg::Playback(PlaybackMsg::DispatchStop)
         ));
     }
+
+    #[test]
+    fn test_skip_next_and_prev_after_session_restore() {
+        use crate::navigation::ids::SidebarNodeId;
+        use crate::state::session_store::PersistedSession;
+        use std::path::PathBuf;
+
+        let mut tracks = HashMap::new();
+        for id in 1..=3 {
+            let track_id = TrackId(id);
+            tracks.insert(
+                track_id,
+                TrackMeta {
+                    id: track_id,
+                    file_path: PathBuf::from(format!("/home/user/Music/Album/track{}.mp3", id)),
+                    title: format!("Track {}", id),
+                    artist: Some("Artist".into()),
+                    album: Some("Album".into()),
+                    genre: None,
+                    year: None,
+                    is_favorite: false,
+                    track_number: Some(id as u32),
+                    duration_ms: 180000,
+                    bitrate: None,
+                    sample_rate: None,
+                    format: "mp3".into(),
+                    has_cover: false,
+                    file_size_bytes: 1024,
+                },
+            );
+        }
+
+        let library = Library::new(vec![PathBuf::from("/home/user/Music")], vec![], tracks);
+
+        // --- Step 1: Normal App Session ---
+        // Start app, select Track 2 in sidebar, and play it.
+        let mut original_state =
+            AppState::new(library.clone(), &crate::config::AppConfig::default());
+        let folder_node = SidebarNodeId::Folder(PathBuf::from("/home/user/Music/Album"));
+        original_state.session.nav.library.selected_id = Some(SidebarNodeId::Track {
+            id: TrackId(2),
+            parent: Box::new(folder_node.clone()),
+        });
+
+        // Trigger normal playback selection action
+        handle_request_play_selected(&mut original_state);
+        assert_eq!(original_state.session.playback.current, Some(TrackId(2)));
+        assert_eq!(
+            original_state.session.playback.context_queue,
+            vec![TrackId(1), TrackId(2), TrackId(3)]
+        );
+        assert_eq!(original_state.session.playback.context_idx, 1);
+
+        // --- Step 2: Simulate App Shutdown & Session Persistence ---
+        // PersistedSession::from_app_state serializes the state exactly as saved to last_session.toml
+        let persisted = PersistedSession::from_app_state(&original_state);
+        let toml_str = toml::to_string(&persisted).expect("Serialization failed");
+
+        // --- Step 3: Simulate App Relaunch (runtime.rs LibraryLoaded flow) ---
+        let mut restored_state = AppState::new(library, &crate::config::AppConfig::default());
+        let loaded_session: PersistedSession =
+            toml::from_str(&toml_str).expect("Deserialization failed");
+
+        // Execute exact runtime restoration sequence from runtime.rs
+        loaded_session.apply_to_app_state(&mut restored_state);
+        restored_state.ensure_library_selection();
+
+        // Verify state after full restoration
+        assert_eq!(restored_state.session.playback.current, Some(TrackId(2)));
+        assert_eq!(
+            restored_state.session.playback.context_queue,
+            vec![TrackId(1), TrackId(2), TrackId(3)]
+        );
+        assert_eq!(restored_state.session.playback.context_idx, 1);
+
+        // --- Step 4: Verify Skip Next works identically after session restore ---
+        // Advance time to bypass 1s same-track play throttle
+        restored_state.session.last_play_time =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        let next_effects = handle_request_next(&mut restored_state);
+        assert!(
+            !next_effects.is_empty(),
+            "Skip next should produce playback actions"
+        );
+        assert_eq!(restored_state.session.playback.current, Some(TrackId(3)));
+        assert_eq!(restored_state.session.playback.context_idx, 2);
+
+        // --- Step 5: Verify Skip Prev works identically after session restore ---
+        restored_state.session.playback.progress_ms = 0; // Ensure progress is at start so it skips to previous track
+        restored_state.session.last_play_time =
+            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        let prev_effects = handle_request_prev(&mut restored_state);
+        assert!(
+            !prev_effects.is_empty(),
+            "Skip prev should produce playback actions"
+        );
+        assert_eq!(restored_state.session.playback.current, Some(TrackId(2)));
+        assert_eq!(restored_state.session.playback.context_idx, 1);
+    }
 }

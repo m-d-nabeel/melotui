@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
 use crate::{domain::TrackId, navigation::ids::SidebarNodeId};
@@ -10,7 +11,7 @@ pub enum PlaybackStatus {
     Stopped,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum RepeatMode {
     #[default]
     Off,

@@ -1,8 +1,9 @@
 use crate::domain::ids::{PlaylistId, TrackId};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 // UI concepts
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CategoryId {
     Folders,
     Artists,
@@ -15,7 +16,7 @@ pub enum CategoryId {
 
 // Universal node selector for the sidebar tree
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum SidebarNodeId {
     #[default]
     Root,
