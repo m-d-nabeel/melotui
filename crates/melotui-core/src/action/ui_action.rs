@@ -5,7 +5,7 @@ use crate::{
     navigation::ids::SidebarNodeId,
     state::{
         Notification, NotificationKind, VisualizerMode,
-        ui::{ConfirmDialog, FocusMode, PlaylistPickerState},
+        ui::{ConfirmDialog, FocusMode, PlaylistPickerState, PresetPickerState},
         visualizer::{SpectrumStyle, is_cava_available},
     },
 };
@@ -531,6 +531,57 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         }
         Command::Focus { mode } => handle_set_focus_mode(state, mode),
         Command::Sidebar { width } => handle_set_sidebar_width(state, width),
+        Command::PresetSave { name } => {
+            let params = crate::state::PersistedDspParams::from_audio_state(&state.session.audio);
+            let preset = crate::state::DspPreset {
+                name: name.clone(),
+                params,
+            };
+            if let Err(e) = preset.save() {
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Error,
+                    format!("Failed to save preset '{}': {}", name, e),
+                ));
+            } else {
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Info,
+                    format!("Preset '{}' saved", name),
+                ));
+            }
+            vec![]
+        }
+        Command::PresetLoad { name } => match crate::state::DspPreset::load(&name) {
+            Ok(preset) => {
+                preset.params.apply_to_audio_state(&mut state.session.audio);
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Info,
+                    format!("Preset '{}' loaded", name),
+                ));
+                sync_audio_msgs(&state.session.audio)
+            }
+            Err(e) => {
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Error,
+                    format!("Failed to load preset '{}': {}", name, e),
+                ));
+                vec![]
+            }
+        },
+        Command::PresetDelete { name } => {
+            if let Err(e) = crate::state::DspPreset::delete(&name) {
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Error,
+                    format!("Failed to delete preset '{}': {}", name, e),
+                ));
+            } else {
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Info,
+                    format!("Preset '{}' deleted", name),
+                ));
+            }
+            vec![]
+        }
+        Command::PresetPicker => handle_enter_preset_picker(state),
     }
 }
 
@@ -962,6 +1013,155 @@ fn grid_col_len(col: usize) -> usize {
         2 => crate::state::audio::GRID_COL_EFFECTS.len(),
         _ => 0,
     }
+}
+
+fn sync_audio_msgs(audio: &crate::state::AudioState) -> Vec<AppMsg> {
+    use crate::message::audio::AudioMsg;
+    let mut msgs = vec![
+        AppMsg::Audio(AudioMsg::DispatchSetVolume(audio.volume)),
+        AppMsg::Audio(AudioMsg::DispatchSetSpeed(audio.speed)),
+        AppMsg::Audio(AudioMsg::DispatchSetBass(audio.bass)),
+        AppMsg::Audio(AudioMsg::DispatchSetTreble(audio.treble)),
+        AppMsg::Audio(AudioMsg::DispatchSetReverb(audio.reverb)),
+        AppMsg::Audio(AudioMsg::DispatchSetEcho(audio.echo)),
+        AppMsg::Audio(AudioMsg::DispatchSetPan(audio.pan)),
+        AppMsg::Audio(AudioMsg::DispatchSetLowpass(audio.lowpass)),
+        AppMsg::Audio(AudioMsg::DispatchSetHighpass(audio.highpass)),
+        AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(audio.auto_pan_rate)),
+        AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(audio.auto_pan_depth)),
+        AppMsg::Audio(AudioMsg::DispatchSetExciter(audio.exciter)),
+        AppMsg::Audio(AudioMsg::DispatchSetBitcrush(audio.bitcrush)),
+        AppMsg::Audio(AudioMsg::DispatchSetWidth(audio.width)),
+        AppMsg::Audio(AudioMsg::DispatchSetKaraoke(audio.karaoke)),
+        AppMsg::Audio(AudioMsg::DispatchSetWobble(audio.wobble)),
+        AppMsg::Audio(AudioMsg::DispatchSetPingPong(audio.ping_pong)),
+        AppMsg::Audio(AudioMsg::DispatchSetPhaser(audio.phaser)),
+    ];
+    for (i, &gain) in audio.eq_bands.iter().enumerate() {
+        msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand { band: i, gain }));
+    }
+    msgs
+}
+
+pub fn handle_enter_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
+    let presets = crate::state::DspPreset::list().unwrap_or_default();
+    state.session.ui.mode = UIMode::PresetPicker;
+    state.session.ui.preset_picker = PresetPickerState {
+        query: String::new(),
+        selection: 0,
+        scroll_offset: 0,
+        presets,
+    };
+    vec![]
+}
+
+pub fn handle_exit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.mode = UIMode::Normal;
+    state.session.ui.preset_picker = Default::default();
+    vec![]
+}
+
+fn preset_picker_filtered(state: &AppState) -> Vec<String> {
+    let query = state.session.ui.preset_picker.query.trim().to_lowercase();
+    state
+        .session
+        .ui
+        .preset_picker
+        .presets
+        .iter()
+        .filter(|p| p.to_lowercase().contains(&query))
+        .cloned()
+        .collect()
+}
+
+pub fn handle_preset_picker_move_up(state: &mut AppState) -> Vec<AppMsg> {
+    let picker = &mut state.session.ui.preset_picker;
+    picker.selection = picker.selection.saturating_sub(1);
+    if picker.selection < picker.scroll_offset {
+        picker.scroll_offset = picker.selection;
+    }
+    vec![]
+}
+
+pub fn handle_preset_picker_move_down(state: &mut AppState) -> Vec<AppMsg> {
+    let filtered_len = preset_picker_filtered(state).len();
+    let total_items = if !state.session.ui.preset_picker.query.trim().is_empty() {
+        filtered_len + 1
+    } else {
+        filtered_len
+    };
+    let max_idx = total_items.saturating_sub(1);
+    let picker = &mut state.session.ui.preset_picker;
+    if picker.selection < max_idx {
+        picker.selection += 1;
+    }
+    let viewport = 10;
+    if picker.selection >= picker.scroll_offset + viewport {
+        picker.scroll_offset = picker.selection + 1 - viewport;
+    }
+    vec![]
+}
+
+pub fn handle_preset_picker_update_query(state: &mut AppState, c: char) -> Vec<AppMsg> {
+    state.session.ui.preset_picker.query.push(c);
+    state.session.ui.preset_picker.selection = 0;
+    state.session.ui.preset_picker.scroll_offset = 0;
+    vec![]
+}
+
+pub fn handle_preset_picker_backspace(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.preset_picker.query.pop();
+    state.session.ui.preset_picker.selection = 0;
+    state.session.ui.preset_picker.scroll_offset = 0;
+    vec![]
+}
+
+pub fn handle_submit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
+    let filtered = preset_picker_filtered(state);
+    let selection = state.session.ui.preset_picker.selection;
+    let query = state.session.ui.preset_picker.query.trim().to_string();
+
+    let mut msgs = vec![];
+    if selection < filtered.len() {
+        let name = &filtered[selection];
+        match crate::state::DspPreset::load(name) {
+            Ok(preset) => {
+                preset.params.apply_to_audio_state(&mut state.session.audio);
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Info,
+                    format!("Preset '{}' loaded", name),
+                ));
+                msgs.extend(sync_audio_msgs(&state.session.audio));
+            }
+            Err(e) => {
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Error,
+                    format!("Failed to load preset '{}': {}", name, e),
+                ));
+            }
+        }
+    } else if !query.is_empty() {
+        let params = crate::state::PersistedDspParams::from_audio_state(&state.session.audio);
+        let preset = crate::state::DspPreset {
+            name: query.clone(),
+            params,
+        };
+        if let Err(e) = preset.save() {
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Error,
+                format!("Failed to save preset '{}': {}", query, e),
+            ));
+        } else {
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Info,
+                format!("Preset '{}' saved", query),
+            ));
+        }
+    }
+
+    state.session.ui.mode = UIMode::Normal;
+    state.session.ui.preset_picker = Default::default();
+    msgs
 }
 
 #[cfg(test)]

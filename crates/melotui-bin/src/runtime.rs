@@ -63,6 +63,7 @@ pub fn run() -> Result<()> {
         effect_queue: VecDeque::new(),
         input_processor: InputProcessor::new(),
         music_roots,
+        session_restored: false,
     };
 
     // Initialize MPRIS / system media controls (Linux/macOS only)
@@ -168,6 +169,7 @@ struct RuntimeContext {
     effect_queue: VecDeque<AppMsg>,
     input_processor: InputProcessor,
     music_roots: Vec<PathBuf>,
+    session_restored: bool,
 }
 
 fn resolve_paths(config: &melotui_core::config::AppConfig) -> Result<(PathBuf, Vec<PathBuf>)> {
@@ -211,7 +213,30 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
             IpcEvent::LibraryLoaded { snapshot } => {
                 tracing::info!("Library loaded with {} tracks", snapshot.tracks.len());
                 state.library = *snapshot;
-                state.set_notification(NotificationKind::Info, "Library loaded");
+                if !ctx.session_restored && state.config.ui.restore_session {
+                    ctx.session_restored = true;
+                    if let Ok(session) = melotui_core::PersistedSession::load() {
+                        let count = session.apply_to_app_state(state);
+                        if let Some(active_id) = session.active_track_id
+                            && let Some(track) = state.library.tracks.get(&active_id) {
+                                ctx.engine.play(track.file_path.clone());
+                                ctx.engine.pause();
+                                if session.seek_position_ms > 0 {
+                                    ctx.engine
+                                        .seek(session.seek_position_ms, state.seek_epoch());
+                                }
+                            }
+                        ctx.engine.sync_dsp(state.audio());
+                        state.set_notification(
+                            NotificationKind::Info,
+                            format!("Session restored ({} tracks in queue)", count),
+                        );
+                    } else {
+                        state.set_notification(NotificationKind::Info, "Library loaded");
+                    }
+                } else {
+                    state.set_notification(NotificationKind::Info, "Library loaded");
+                }
             }
             IpcEvent::LibraryRescanned => {
                 // reload after scan
@@ -230,6 +255,12 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
         changed = true;
         // lifecycle
         if matches!(msg, AppMsg::RequestQuit) {
+            let session = melotui_core::PersistedSession::from_app_state(state);
+            if let Err(e) = session.save() {
+                tracing::warn!("Failed to save session: {}", e);
+            } else {
+                tracing::info!("Session saved successfully");
+            }
             if ctx.engine_alive {
                 ctx.engine.shutdown();
                 ctx.engine_alive = false;

@@ -2,14 +2,16 @@ use std::{process::Command, str::FromStr};
 
 use crate::AppState;
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum VisualizerMode {
     Spectrum,
     #[default]
     AlbumArt,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SpectrumStyle {
     Cava,
     Default,

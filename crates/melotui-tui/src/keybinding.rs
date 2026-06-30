@@ -18,6 +18,7 @@ pub enum KeyContext {
     Queue,
     TrackInfo,
     PlaylistPicker,
+    PresetPicker,
     Confirm,
     LyricsSelector,
     DspStudio,
@@ -93,6 +94,14 @@ pub enum KeyAction {
     PlaylistPickerMoveUp,
     PlaylistPickerMoveDown,
     PlaylistPickerBackspace,
+
+    // preset picker
+    EnterPresetPicker,
+    ExitPresetPicker,
+    SubmitPresetPicker,
+    PresetPickerMoveUp,
+    PresetPickerMoveDown,
+    PresetPickerBackspace,
 
     // lyrics selector
     LyricsSelectorUp,
@@ -191,6 +200,12 @@ impl KeyAction {
             KeyAction::PlaylistPickerMoveUp => "Up",
             KeyAction::PlaylistPickerMoveDown => "Down",
             KeyAction::PlaylistPickerBackspace => "Backspace",
+            KeyAction::EnterPresetPicker => "Presets",
+            KeyAction::ExitPresetPicker => "Close",
+            KeyAction::SubmitPresetPicker => "Submit",
+            KeyAction::PresetPickerMoveUp => "Up",
+            KeyAction::PresetPickerMoveDown => "Down",
+            KeyAction::PresetPickerBackspace => "Backspace",
             KeyAction::LyricsSelectorUp => "Up",
             KeyAction::LyricsSelectorDown => "Down",
             KeyAction::LyricsSelectorLeft => "Left",
@@ -305,6 +320,12 @@ impl KeyAction {
             KeyAction::PlaylistPickerMoveUp => Some(AppMsg::UI(UIMsg::PlaylistPickerMoveUp)),
             KeyAction::PlaylistPickerMoveDown => Some(AppMsg::UI(UIMsg::PlaylistPickerMoveDown)),
             KeyAction::PlaylistPickerBackspace => Some(AppMsg::UI(UIMsg::PlaylistPickerBackspace)),
+            KeyAction::EnterPresetPicker => Some(AppMsg::UI(UIMsg::EnterPresetPicker)),
+            KeyAction::ExitPresetPicker => Some(AppMsg::UI(UIMsg::ExitPresetPicker)),
+            KeyAction::SubmitPresetPicker => Some(AppMsg::UI(UIMsg::SubmitPresetPicker)),
+            KeyAction::PresetPickerMoveUp => Some(AppMsg::UI(UIMsg::PresetPickerMoveUp)),
+            KeyAction::PresetPickerMoveDown => Some(AppMsg::UI(UIMsg::PresetPickerMoveDown)),
+            KeyAction::PresetPickerBackspace => Some(AppMsg::UI(UIMsg::PresetPickerBackspace)),
             KeyAction::DeletePlaylist => Some(AppMsg::UI(UIMsg::DeletePlaylistConfirm)),
             KeyAction::RemoveFromPlaylist => None, // id resolved in input.rs
             KeyAction::ConfirmYes => Some(AppMsg::UI(UIMsg::ConfirmYes)),
@@ -372,6 +393,7 @@ impl KeyRegistry {
                 "queue" => KeyContext::Queue,
                 "trackinfo" => KeyContext::TrackInfo,
                 "playlist" | "playlistpicker" => KeyContext::PlaylistPicker,
+                "preset" | "presetpicker" => KeyContext::PresetPicker,
                 "confirm" => KeyContext::Confirm,
                 "dspstudio" | "dsp" => KeyContext::DspStudio,
                 "global" => KeyContext::Global,
@@ -506,6 +528,18 @@ impl Default for KeyRegistry {
             ],
         );
 
+        // preset picker
+        bindings.insert(
+            KeyContext::PresetPicker,
+            vec![
+                KeyBinding::new(KeyCode::Esc, KeyAction::ExitPresetPicker),
+                KeyBinding::new(KeyCode::Enter, KeyAction::SubmitPresetPicker),
+                KeyBinding::new(KeyCode::Down, KeyAction::PresetPickerMoveDown),
+                KeyBinding::new(KeyCode::Up, KeyAction::PresetPickerMoveUp),
+                KeyBinding::new(KeyCode::Backspace, KeyAction::PresetPickerBackspace),
+            ],
+        );
+
         // confirm dialog
         bindings.insert(
             KeyContext::Confirm,
@@ -635,6 +669,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('2'), KeyAction::DspMacroNightcore),
                 KeyBinding::new(KeyCode::Char('3'), KeyAction::DspMacroSpatial),
                 KeyBinding::new(KeyCode::Char('0'), KeyAction::DspMacroResetAll),
+                KeyBinding::new(KeyCode::Char('p'), KeyAction::EnterPresetPicker),
             ],
         );
 

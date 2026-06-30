@@ -16,5 +16,5 @@ pub mod utils;
 pub use app_state::AppState;
 pub use command::Command;
 pub use message::AppMsg;
-pub use state::{SessionState, UIMode};
+pub use state::{DspPreset, PersistedDspParams, PersistedSession, SessionState, UIMode};
 pub use utils::{NoOpSpectrum, SpectrumSource};

@@ -9,7 +9,7 @@ use crate::{
     playback::state::{PlaybackStatus, QueueEntry, QueueId, RepeatMode},
     state::{
         Notification, NotificationKind, SessionState, SpectrumStyle, UIMode, VisualizerMode,
-        ui::PlaylistPickerState,
+        ui::{PlaylistPickerState, PresetPickerState},
     },
     utils::{NoOpSpectrum, SpectrumSource},
 };
@@ -89,6 +89,12 @@ impl AppState {
 
 // audio system access
 impl AppState {
+    pub fn audio(&self) -> &crate::state::AudioState {
+        &self.session.audio
+    }
+    pub fn seek_epoch(&self) -> u64 {
+        self.session.seek_epoch
+    }
     pub fn volume(&self) -> f32 {
         self.session.audio.volume
     }
@@ -483,6 +489,10 @@ impl AppState {
 
     pub fn playlist_picker(&self) -> &PlaylistPickerState {
         &self.session.ui.playlist_picker
+    }
+
+    pub fn preset_picker(&self) -> &PresetPickerState {
+        &self.session.ui.preset_picker
     }
 
     pub fn confirm_dialog(&self) -> Option<&crate::state::ui::ConfirmDialog> {

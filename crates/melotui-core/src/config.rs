@@ -52,6 +52,8 @@ pub struct UiConfig {
     pub fps_limit: u64,
     /// Max visible items in playlist picker
     pub playlist_picker_max_visible: usize,
+    /// Whether to automatically restore last session on startup
+    pub restore_session: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -107,6 +109,7 @@ impl Default for UiConfig {
             search_debounce_ms: 500,
             fps_limit: 60,
             playlist_picker_max_visible: 10,
+            restore_session: true,
         }
     }
 }
