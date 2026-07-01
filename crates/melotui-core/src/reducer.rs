@@ -35,6 +35,9 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
         NavigationMsg::MoveDown => nav_action::handle_move_down(state),
         NavigationMsg::ToggleArt => playback_action::handle_toggle_art(state),
         NavigationMsg::ToggleTreeExpand => nav_action::handle_toggle_tree_expand(state),
+        NavigationMsg::CycleVisualizerStyle => {
+            playback_action::handle_cycle_visualizer_style(state)
+        }
     }
 }
 

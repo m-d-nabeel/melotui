@@ -17,6 +17,8 @@ pub enum SpectrumStyle {
     Default,
     Bar,
     Particle,
+    Radial,
+    Nova,
 }
 
 pub fn is_cava_available() -> bool {
@@ -43,6 +45,25 @@ impl SpectrumStyle {
             SpectrumStyle::Default => "Default",
             SpectrumStyle::Bar => "Bar",
             SpectrumStyle::Particle => "Particle",
+            SpectrumStyle::Radial => "Radial",
+            SpectrumStyle::Nova => "Nova",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            SpectrumStyle::Cava => SpectrumStyle::Default,
+            SpectrumStyle::Default => SpectrumStyle::Bar,
+            SpectrumStyle::Bar => SpectrumStyle::Particle,
+            SpectrumStyle::Particle => SpectrumStyle::Radial,
+            SpectrumStyle::Radial => SpectrumStyle::Nova,
+            SpectrumStyle::Nova => {
+                if is_cava_available() {
+                    SpectrumStyle::Cava
+                } else {
+                    SpectrumStyle::Default
+                }
+            }
         }
     }
 }
@@ -56,6 +77,8 @@ impl FromStr for SpectrumStyle {
             "default" | "def" => Ok(SpectrumStyle::Default),
             "bar" => Ok(SpectrumStyle::Bar),
             "particle" | "part" | "p" => Ok(SpectrumStyle::Particle),
+            "radial" | "rad" | "orbit" => Ok(SpectrumStyle::Radial),
+            "nova" | "supernova" | "pulse" | "corona" => Ok(SpectrumStyle::Nova),
             _ => Err(()),
         }
     }
@@ -96,6 +119,10 @@ pub fn update_visualizer_physics(state: &mut AppState, dt: f32) {
                 }
             }
         }
+        let take_n = len.clamp(1, 64);
+        let energy: f32 = state.spectrum_smooth.iter().take(take_n).sum::<f32>() / take_n as f32;
+        let speed = 0.4 + (energy * 18.0).min(5.0);
+        state.swirl_phase += speed * dt;
         return;
     }
 
@@ -116,4 +143,9 @@ pub fn update_visualizer_physics(state: &mut AppState, dt: f32) {
             }
         }
     }
+
+    let take_n = len.clamp(1, 64);
+    let energy: f32 = state.spectrum_smooth.iter().take(take_n).sum::<f32>() / take_n as f32;
+    let speed = 0.4 + (energy * 18.0).min(5.0);
+    state.swirl_phase += speed * dt;
 }

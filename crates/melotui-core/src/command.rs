@@ -194,7 +194,7 @@ impl FromStr for Command {
                     Ok(Command::ChangeVisualizer { arg: style })
                 } else {
                     Ok(Command::Unknown(
-                        "Allowed: Cava, Default, Bar, Particle".into(),
+                        "Allowed: Cava, Default, Radial, Nova".into(),
                     ))
                 }
             }
@@ -425,9 +425,9 @@ mod tests {
     #[test]
     fn test_parse_visualizer() {
         assert_eq!(
-            Command::parse("v particle"),
+            Command::parse("v radial"),
             Command::ChangeVisualizer {
-                arg: SpectrumStyle::Particle
+                arg: SpectrumStyle::Radial
             }
         );
         assert_eq!(
@@ -436,7 +436,7 @@ mod tests {
         );
         assert_eq!(
             Command::parse("v unknown"),
-            Command::Unknown("Allowed: Cava, Default, Bar, Particle".into())
+            Command::Unknown("Allowed: Cava, Default, Radial, Nova".into())
         );
     }
 

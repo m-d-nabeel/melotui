@@ -42,6 +42,7 @@ pub enum KeyAction {
     // navigation
     TogglePanel,
     ToggleVisualizer,
+    CycleVisualizerStyle,
     ToggleLyrics,
     TogglePlaybackPanel,
     MoveUp,
@@ -156,6 +157,7 @@ impl KeyAction {
             KeyAction::CommandHistoryNext => "History Next",
             KeyAction::TogglePanel => "Switch Panel",
             KeyAction::ToggleVisualizer => "Visualizer",
+            KeyAction::CycleVisualizerStyle => "Cycle Visualizer",
             KeyAction::ToggleLyrics => "Lyrics",
             KeyAction::TogglePlaybackPanel => "Playback Panel",
             KeyAction::MoveUp => "Up",
@@ -249,6 +251,9 @@ impl KeyAction {
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
             KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
             KeyAction::ToggleVisualizer => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
+            KeyAction::CycleVisualizerStyle => {
+                Some(AppMsg::Navigation(NavigationMsg::CycleVisualizerStyle))
+            }
             KeyAction::ToggleLyrics => Some(AppMsg::UI(UIMsg::ToggleLyrics)),
             KeyAction::TogglePlaybackPanel => Some(AppMsg::UI(UIMsg::TogglePlaybackPanel)),
             KeyAction::ToggleFolderExpand => {
@@ -603,6 +608,8 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary),
                 KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer)
                     .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('w'), KeyAction::CycleVisualizerStyle),
+                KeyBinding::new(KeyCode::F(3), KeyAction::CycleVisualizerStyle),
                 KeyBinding::new(KeyCode::Char('l'), KeyAction::ToggleLyrics),
                 KeyBinding::new(KeyCode::Char('L'), KeyAction::ToggleLyrics)
                     .with_mod(KeyModifiers::SHIFT),

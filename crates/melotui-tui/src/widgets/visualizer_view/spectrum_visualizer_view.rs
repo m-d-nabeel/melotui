@@ -526,3 +526,245 @@ pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
 
     frame.render_widget(canvas, inner_area);
 }
+
+pub fn draw_radial(frame: &mut Frame, area: Rect, state: &AppState) {
+    let block = Block::default()
+        .title(" Visualizer: Radial (Orbit) ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded);
+
+    let inner_area = block.inner(area);
+    frame.render_widget(block, area);
+
+    let spectrum = &state.spectrum_smooth;
+    let peaks = &state.spectrum_peaks;
+    let time = state.time_elapsed as f64;
+
+    if spectrum.is_empty() {
+        return;
+    }
+
+    let canvas = Canvas::default()
+        .marker(symbols::Marker::Braille)
+        .x_bounds([0.0, (inner_area.width * 2) as f64])
+        .y_bounds([0.0, (inner_area.height * 4) as f64])
+        .paint(move |ctx| {
+            let width = (inner_area.width * 2) as f64;
+            let height = (inner_area.height * 4) as f64;
+            let cx = width / 2.0;
+            let cy = height / 2.0;
+
+            let base_r = (width.min(height) * 0.22).max(5.0);
+            let bass = spectrum.first().copied().unwrap_or(0.0) as f64;
+            let pulse_r = base_r + bass * SENSITIVITY as f64 * 0.3;
+
+            // Draw central pulsating core circle
+            let core_steps = 60;
+            for s in 0..core_steps {
+                let a1 = s as f64 * 2.0 * std::f64::consts::PI / core_steps as f64;
+                let a2 = (s + 1) as f64 * 2.0 * std::f64::consts::PI / core_steps as f64;
+                ctx.draw(&Line {
+                    x1: cx + pulse_r * 0.6 * a1.cos(),
+                    y1: cy + pulse_r * 0.6 * a1.sin(),
+                    x2: cx + pulse_r * 0.6 * a2.cos(),
+                    y2: cy + pulse_r * 0.6 * a2.sin(),
+                    color: Color::DarkGray,
+                });
+            }
+
+            let num_rays = 90.min(spectrum.len());
+            if num_rays == 0 {
+                return;
+            }
+
+            let step = spectrum.len() as f64 / num_rays as f64;
+            for i in 0..num_rays {
+                let idx = (i as f64 * step) as usize;
+                if idx >= spectrum.len() {
+                    break;
+                }
+
+                // Smooth slow rotation
+                let theta =
+                    (i as f64 / num_rays as f64) * 2.0 * std::f64::consts::PI + (time * 0.25);
+                let val = (spectrum[idx] * SENSITIVITY * 1.6) as f64;
+                let peak = (peaks[idx] * SENSITIVITY * 1.6) as f64;
+
+                let x1 = cx + pulse_r * theta.cos();
+                let y1 = cy + pulse_r * theta.sin();
+                let x2 = cx + (pulse_r + val) * theta.cos();
+                let y2 = cy + (pulse_r + val) * theta.sin();
+
+                // Dynamic neon gradient
+                let phase = (i as f64 / num_rays as f64) + time * 0.1;
+                let r = ((phase * 2.0 * std::f64::consts::PI).sin() * 100.0 + 155.0)
+                    .clamp(0.0, 255.0) as u8;
+                let g = ((phase * 2.0 * std::f64::consts::PI + 2.094).sin() * 100.0 + 155.0)
+                    .clamp(0.0, 255.0) as u8;
+                let b = ((phase * 2.0 * std::f64::consts::PI + 4.188).sin() * 100.0 + 155.0)
+                    .clamp(0.0, 255.0) as u8;
+
+                ctx.draw(&Line {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    color: Color::Rgb(r, g, b),
+                });
+
+                if peak > val + 1.0 {
+                    let px = cx + (pulse_r + peak + 1.5) * theta.cos();
+                    let py = cy + (pulse_r + peak + 1.5) * theta.sin();
+                    ctx.draw(&Rectangle {
+                        x: px,
+                        y: py,
+                        width: 1.0,
+                        height: 1.0,
+                        color: Color::White,
+                    });
+                }
+
+                // Orbital dust particles
+                if val > 5.0 && i % 3 == 0 {
+                    let p_dist = pulse_r + val + 8.0 + (time * 2.0 + i as f64).sin() * 4.0;
+                    ctx.draw(&Rectangle {
+                        x: cx + p_dist * theta.cos(),
+                        y: cy + p_dist * theta.sin(),
+                        width: 1.0,
+                        height: 1.0,
+                        color: Color::Rgb(r, g, b),
+                    });
+                }
+            }
+        });
+
+    frame.render_widget(canvas, inner_area);
+}
+
+pub fn draw_nova(frame: &mut Frame, area: Rect, state: &AppState) {
+    let block = Block::default()
+        .title(" Visualizer: Nova (Supernova Spectrum) ")
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded);
+
+    let inner_area = block.inner(area);
+    frame.render_widget(block, area);
+
+    let spectrum = &state.spectrum_smooth;
+    let peaks = &state.spectrum_peaks;
+    let time = state.time_elapsed as f64;
+
+    if spectrum.is_empty() {
+        return;
+    }
+
+    let canvas = Canvas::default()
+        .marker(symbols::Marker::Braille)
+        .x_bounds([0.0, (inner_area.width * 2) as f64])
+        .y_bounds([0.0, (inner_area.height * 4) as f64])
+        .paint(move |ctx| {
+            let width = (inner_area.width * 2) as f64;
+            let height = (inner_area.height * 4) as f64;
+            let cx = width / 2.0;
+            let cy = height / 2.0;
+
+            let base_r = (width.min(height) * 0.22).max(6.0);
+            let bass = spectrum.first().copied().unwrap_or(0.0) as f64;
+            let pulse_r = base_r + bass * SENSITIVITY as f64 * 0.35;
+
+            // Glowing inner corona circle
+            let core_steps = 72;
+            for s in 0..core_steps {
+                let a1 = s as f64 * 2.0 * std::f64::consts::PI / core_steps as f64;
+                let a2 = (s + 1) as f64 * 2.0 * std::f64::consts::PI / core_steps as f64;
+                ctx.draw(&Line {
+                    x1: cx + pulse_r * a1.cos(),
+                    y1: cy + pulse_r * a1.sin(),
+                    x2: cx + pulse_r * a2.cos(),
+                    y2: cy + pulse_r * a2.sin(),
+                    color: Color::Rgb(255, 80, 150),
+                });
+            }
+
+            // Expanding shockwave ring on high bass energy
+            if bass * SENSITIVITY as f64 > 3.5 {
+                let shock_r = pulse_r + 10.0 + ((time * 25.0) % 18.0);
+                let alpha_ratio = (1.0 - ((shock_r - pulse_r) / 28.0)).clamp(0.1, 1.0);
+                for s in (0..core_steps).step_by(2) {
+                    let a1 = s as f64 * 2.0 * std::f64::consts::PI / core_steps as f64;
+                    let a2 = (s + 1) as f64 * 2.0 * std::f64::consts::PI / core_steps as f64;
+                    ctx.draw(&Line {
+                        x1: cx + shock_r * a1.cos(),
+                        y1: cy + shock_r * a1.sin(),
+                        x2: cx + shock_r * a2.cos(),
+                        y2: cy + shock_r * a2.sin(),
+                        color: Color::Rgb(
+                            (80.0 * alpha_ratio) as u8,
+                            (240.0 * alpha_ratio) as u8,
+                            (255.0 * alpha_ratio) as u8,
+                        ),
+                    });
+                }
+            }
+
+            // Mirrored radial spectrum bars (total 120 bars around 360 degrees)
+            let total_bars = 120.min(spectrum.len() * 2);
+            let half_bars = total_bars / 2;
+            if half_bars == 0 {
+                return;
+            }
+
+            let step = (spectrum.len() as f64 / half_bars as f64).max(1.0);
+            for i in 0..total_bars {
+                // Mirror left and right from bottom center (theta = PI/2)
+                let is_right = i < half_bars;
+                let bar_idx = if is_right { i } else { total_bars - 1 - i };
+                let freq_idx = ((bar_idx as f64 * step) as usize).min(spectrum.len() - 1);
+
+                let frac = bar_idx as f64 / half_bars as f64; // 0.0 at bass (bottom) to 1.0 at treble (top)
+                let angle_offset = frac * std::f64::consts::PI;
+                let theta = if is_right {
+                    std::f64::consts::PI / 2.0 - angle_offset
+                } else {
+                    std::f64::consts::PI / 2.0 + angle_offset
+                };
+
+                let val = (spectrum[freq_idx] * SENSITIVITY * 1.7) as f64;
+                let peak = (peaks[freq_idx] * SENSITIVITY * 1.7) as f64;
+
+                let x1 = cx + pulse_r * theta.cos();
+                let y1 = cy + pulse_r * theta.sin();
+                let x2 = cx + (pulse_r + val) * theta.cos();
+                let y2 = cy + (pulse_r + val) * theta.sin();
+
+                // High-energy spectrum color palette: Hot Magenta (bass) -> Electric Cyan/Blue -> Gold (treble)
+                let r = ((1.0 - frac) * 255.0 + frac * 50.0).clamp(0.0, 255.0) as u8;
+                let g =
+                    ((frac * std::f64::consts::PI).sin() * 230.0 + 30.0).clamp(0.0, 255.0) as u8;
+                let b = (frac * 255.0 + (1.0 - frac) * 120.0).clamp(0.0, 255.0) as u8;
+
+                ctx.draw(&Line {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    color: Color::Rgb(r, g, b),
+                });
+
+                // Peak caps hovering above bars
+                if peak > val + 0.8 {
+                    let px = cx + (pulse_r + peak + 1.2) * theta.cos();
+                    let py = cy + (pulse_r + peak + 1.2) * theta.sin();
+                    ctx.draw(&Rectangle {
+                        x: px,
+                        y: py,
+                        width: 1.0,
+                        height: 1.0,
+                        color: Color::White,
+                    });
+                }
+            }
+        });
+
+    frame.render_widget(canvas, inner_area);
+}

@@ -328,6 +328,22 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
     })]
 }
 
+pub fn handle_cycle_visualizer_style(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.visualizer_mode = VisualizerMode::Spectrum;
+    state.session.spectrum_style = state.session.spectrum_style.next();
+    let style = state.session.spectrum_style.clone();
+    state.session.notification.current = Some(
+        Notification::new(
+            NotificationKind::Info,
+            format!("Visualizer Style: {}", style.as_str()),
+        )
+        .with_duration(2),
+    );
+    vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+        spectrum_style: Some(style),
+    })]
+}
+
 pub fn handle_dispatch_play(_: &mut AppState, _: std::path::PathBuf) -> Vec<AppMsg> {
     vec![]
 }

@@ -27,6 +27,7 @@ pub struct AppState {
 
     // runtime buffers
     pub time_elapsed: f32,
+    pub swirl_phase: f32,
     pub last_nav_time: f32,
     pub spectrum_raw: Vec<f32>,
     pub spectrum_smooth: Vec<f32>,
@@ -73,6 +74,7 @@ impl AppState {
 
             // runtime init
             time_elapsed: 0.0,
+            swirl_phase: 0.0,
             last_nav_time: 0.0,
             spectrum_raw: vec![0.0; 512],
             spectrum_smooth: vec![0.0; 512],
