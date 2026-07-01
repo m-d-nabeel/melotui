@@ -300,7 +300,11 @@ fn fetch_lyrics_task(
         if let Some(id) = &provider_id {
             // We have an exact ID, fetch directly!
             let req = ureq::get(&format!("https://lrclib.net/api/get/{}", id))
-                .timeout(std::time::Duration::from_secs(5));
+                .set(
+                    "User-Agent",
+                    "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
+                )
+                .timeout(std::time::Duration::from_secs(30));
             if let Ok(response) = req.call()
                 && response.status() == 200
             {
@@ -310,7 +314,11 @@ fn fetch_lyrics_task(
             let req = ureq::get("https://lrclib.net/api/get")
                 .query("track_name", &track_name)
                 .query("artist_name", &artist_name)
-                .timeout(std::time::Duration::from_secs(5));
+                .set(
+                    "User-Agent",
+                    "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
+                )
+                .timeout(std::time::Duration::from_secs(30));
 
             if let Ok(response) = req.call()
                 && response.status() == 200
@@ -329,7 +337,11 @@ fn fetch_lyrics_task(
 
             let req = ureq::get("https://lrclib.net/api/search")
                 .query("q", &query)
-                .timeout(std::time::Duration::from_secs(5));
+                .set(
+                    "User-Agent",
+                    "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
+                )
+                .timeout(std::time::Duration::from_secs(30));
 
             if let Ok(response) = req.call()
                 && response.status() == 200
@@ -395,7 +407,12 @@ fn fetch_lyrics_task(
             .collect::<String>();
 
         let ovh_url = format!("https://api.lyrics.ovh/v1/{}/{}", ovh_artist, ovh_track);
-        let req = ureq::get(&ovh_url).timeout(std::time::Duration::from_secs(5));
+        let req = ureq::get(&ovh_url)
+            .set(
+                "User-Agent",
+                "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
+            )
+            .timeout(std::time::Duration::from_secs(30));
 
         if let Ok(response) = req.call()
             && response.status() == 200
@@ -432,7 +449,11 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
     // 1. LRCLIB Search
     let lrclib_req = ureq::get("https://lrclib.net/api/search")
         .query("q", &query)
-        .timeout(std::time::Duration::from_secs(5));
+        .set(
+            "User-Agent",
+            "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
+        )
+        .timeout(std::time::Duration::from_secs(30));
 
     if let Ok(res) = lrclib_req.call()
         && res.status() == 200
@@ -482,7 +503,11 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
         .collect::<String>();
 
     let ovh_req = ureq::get(&format!("https://api.lyrics.ovh/suggest/{}", ovh_query))
-        .timeout(std::time::Duration::from_secs(5));
+        .set(
+            "User-Agent",
+            "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
+        )
+        .timeout(std::time::Duration::from_secs(30));
 
     if let Ok(res) = ovh_req.call()
         && res.status() == 200

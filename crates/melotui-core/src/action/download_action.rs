@@ -172,6 +172,9 @@ pub fn handle_lyrics_fetched(state: &mut AppState, _save_path: std::path::PathBu
             .with_duration(3),
     );
 
+    // Auto switch to Lyrics View tab so the user can see them
+    state.session.ui.show_lyrics = true;
+
     // Re-trigger audio started logic to load the newly downloaded lyrics file without
     // actually stopping/restarting playback
     if let Some(track) = state.get_playing_track() {
