@@ -2,6 +2,8 @@ use fundsp::buffer::BufferVec;
 use fundsp::hacker32::*;
 use rodio::Source;
 use rodio::source::SeekError;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 /// FunDSP -> Rodio adapter
@@ -9,7 +11,7 @@ use std::time::Duration;
 pub struct FundspSource<S> {
     source: S,
     unit: Box<dyn AudioUnit>,
-    channels: usize,
+    input_channels: usize,
 
     // block processing
     input_buffer: BufferVec,
@@ -18,31 +20,35 @@ pub struct FundspSource<S> {
     // output queue
     output_queue: Vec<f32>,
     current_idx: usize,
+    bypass: Arc<AtomicBool>,
 }
 
 impl<S> FundspSource<S>
 where
     S: Source<Item = f32>,
 {
-    pub fn new(source: S, unit: Box<dyn AudioUnit>) -> Self {
-        let channels = source.channels() as usize;
+    const OUTPUT_CHANNELS: usize = 2;
+
+    pub fn new(source: S, unit: Box<dyn AudioUnit>, bypass: Arc<AtomicBool>) -> Self {
+        let input_channels = source.channels() as usize;
         let mut unit = unit;
         let block_size = 64;
 
         unit.reset();
         unit.set_sample_rate(source.sample_rate() as f64);
 
-        let input_buffer = BufferVec::new(channels);
-        let output_buffer = BufferVec::new(channels);
+        let input_buffer = BufferVec::new(input_channels);
+        let output_buffer = BufferVec::new(Self::OUTPUT_CHANNELS); // Always output stereo
 
         Self {
             source,
             unit,
-            channels,
+            input_channels,
             input_buffer,
             output_buffer,
-            output_queue: Vec::with_capacity(block_size * channels),
+            output_queue: Vec::with_capacity(block_size * Self::OUTPUT_CHANNELS),
             current_idx: 0,
+            bypass,
         }
     }
 
@@ -57,7 +63,7 @@ where
 
         for i in 0..block_size {
             let mut frame_complete = true;
-            for ch in 0..self.channels {
+            for ch in 0..self.input_channels {
                 if let Some(sample) = self.source.next() {
                     input_view.channel_f32_mut(ch)[i] = sample;
                 } else {
@@ -77,6 +83,25 @@ where
             return false;
         }
 
+        if self.bypass.load(Ordering::Relaxed) {
+            let input_ref = self.input_buffer.buffer_ref();
+            for i in 0..frames_read {
+                if self.input_channels == 1 {
+                    let sample = input_ref.channel_f32(0)[i];
+                    for _ in 0..Self::OUTPUT_CHANNELS {
+                        self.output_queue.push(sample);
+                    }
+                } else {
+                    for ch in 0..Self::OUTPUT_CHANNELS {
+                        let ch_idx = if ch < self.input_channels { ch } else { 0 };
+                        let sample = input_ref.channel_f32(ch_idx)[i];
+                        self.output_queue.push(sample);
+                    }
+                }
+            }
+            return true;
+        }
+
         let input_ref = self.input_buffer.buffer_ref();
         let mut output_mut = self.output_buffer.buffer_mut();
 
@@ -85,7 +110,7 @@ where
         let output_ref = self.output_buffer.buffer_ref();
 
         for i in 0..frames_read {
-            for ch in 0..self.channels {
+            for ch in 0..Self::OUTPUT_CHANNELS {
                 let sample = output_ref.channel_f32(ch)[i];
                 self.output_queue.push(sample);
             }
@@ -127,8 +152,8 @@ where
     }
 
     fn channels(&self) -> u16 {
-        // The DSP graph always outputs stereo (2 channels) even for mono sources.
-        2
+        // The DSP graph always outputs stereo even for mono sources.
+        Self::OUTPUT_CHANNELS as u16
     }
 
     fn sample_rate(&self) -> u32 {

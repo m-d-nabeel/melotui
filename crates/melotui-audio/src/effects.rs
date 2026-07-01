@@ -43,6 +43,26 @@ impl AudioParams {
             phaser: shared(0.0),
         }
     }
+
+    pub fn is_all_default(&self) -> bool {
+        (self.bass.value() - 1.0).abs() < 0.001
+            && (self.treble.value() - 1.0).abs() < 0.001
+            && self.reverb.value() < 0.001
+            && self.echo.value() < 0.001
+            && self.pan.value().abs() < 0.001
+            && (self.lowpass.value() - 20000.0).abs() < 1.0
+            && (self.highpass.value() - 20.0).abs() < 1.0
+            && self.eq_bands.iter().all(|b| b.value().abs() < 0.001)
+            && self.auto_pan_rate.value() < 0.001
+            && self.auto_pan_depth.value() < 0.001
+            && self.wobble.value() < 0.001
+            && self.karaoke.value() < 0.001
+            && (self.width.value() - 1.0).abs() < 0.001
+            && self.bitcrush.value() < 0.001
+            && self.exciter.value() < 0.001
+            && self.ping_pong.value() < 0.001
+            && self.phaser.value() < 0.001
+    }
 }
 
 /// Center frequencies for the 10-band parametric EQ.

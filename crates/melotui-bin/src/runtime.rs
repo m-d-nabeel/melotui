@@ -244,6 +244,15 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                             }
                         }
                         ctx.engine.sync_dsp(state.audio());
+
+                        if state.should_draw_spectrum() {
+                            ctx.effect_queue.push_back(AppMsg::Playback(
+                                melotui_core::message::playback::PlaybackMsg::DispatchSetVisualizer {
+                                    spectrum_style: Some(state.spectrum_style().clone()),
+                                },
+                            ));
+                        }
+
                         state.set_notification(
                             NotificationKind::Info,
                             format!("Session restored ({} tracks in queue)", count),

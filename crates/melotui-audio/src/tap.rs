@@ -10,6 +10,8 @@ where
 {
     pub input: I,
     pub producer: P,
+    pub batch: [f32; 64],
+    pub batch_pos: usize,
 }
 
 impl<I, P> Iterator for SpectrumSniffer<I, P>
@@ -20,11 +22,17 @@ where
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let sample = self.input.next();
-        if let Some(s) = sample {
-            let _ = self.producer.try_push(s);
+        let sample = self.input.next()?;
+
+        self.batch[self.batch_pos] = sample;
+        self.batch_pos += 1;
+
+        if self.batch_pos >= 64 {
+            let _ = self.producer.push_slice(&self.batch);
+            self.batch_pos = 0;
         }
-        sample
+
+        Some(sample)
     }
 }
 
