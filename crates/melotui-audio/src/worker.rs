@@ -26,8 +26,9 @@ pub fn run(
     spectrum_producer: SpectrumProducer,
     fft_size: usize,
 ) {
-    let stream_handle =
+    let mut stream_handle =
         rodio::OutputStreamBuilder::open_default_stream().expect("open default audio stream");
+    stream_handle.log_on_drop(false);
 
     let mut engine = AudioEngine::new(
         Sink::connect_new(stream_handle.mixer()),
