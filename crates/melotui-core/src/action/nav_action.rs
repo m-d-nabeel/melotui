@@ -119,7 +119,8 @@ pub fn handle_toggle_tree_expand(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
-    let mut effects = vec![];
+    state.session.nav.show_track_info = false;
+    let effects = vec![];
 
     match state.session.nav.active_panel {
         LeftPanelMode::Library => {
@@ -131,12 +132,6 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                 if let Some(first) = projector::get_node_at_index(&state.library, nav, 0) {
                     state.session.nav.library.selected_id = Some(first);
                     state.session.nav.library.scroll_offset = 0;
-                }
-                // Check if new selection needs cover load
-                if state.session.nav.show_track_info
-                    && let Some(tid) = state.get_selected_track_id_in_sidebar()
-                {
-                    request_info_cover_load(state, tid, &mut effects);
                 }
                 return effects;
             }
@@ -177,11 +172,6 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
                     }
                 }
             }
-            if state.session.nav.show_track_info
-                && let Some(tid) = state.get_selected_track_id_in_sidebar()
-            {
-                request_info_cover_load(state, tid, &mut effects);
-            }
         }
         LeftPanelMode::Queue => {
             let queue = state.queue();
@@ -200,11 +190,6 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
             } else {
                 state.session.nav.queue.selected_queue_id = Some(queue[0].id);
             }
-            if state.session.nav.show_track_info
-                && let Some(tid) = state.get_selected_track_id_in_queue()
-            {
-                request_info_cover_load(state, tid, &mut effects);
-            }
         }
     }
     effects
@@ -212,7 +197,8 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
-    let mut effects = vec![];
+    state.session.nav.show_track_info = false;
+    let effects = vec![];
 
     match state.session.nav.active_panel {
         LeftPanelMode::Library => {
@@ -224,11 +210,6 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                 if let Some(first) = projector::get_node_at_index(&state.library, nav, 0) {
                     state.session.nav.library.selected_id = Some(first);
                     state.session.nav.library.scroll_offset = 0;
-                }
-                if state.session.nav.show_track_info
-                    && let Some(tid) = state.get_selected_track_id_in_sidebar()
-                {
-                    request_info_cover_load(state, tid, &mut effects);
                 }
                 return effects;
             }
@@ -285,11 +266,6 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                     }
                 }
             }
-            if state.session.nav.show_track_info
-                && let Some(tid) = state.get_selected_track_id_in_sidebar()
-            {
-                request_info_cover_load(state, tid, &mut effects);
-            }
         }
         LeftPanelMode::Queue => {
             let queue = state.queue();
@@ -311,35 +287,9 @@ pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
                     state.session.nav.queue.selected_queue_id = Some(queue[0].id);
                 }
             }
-            if state.session.nav.show_track_info
-                && let Some(tid) = state.get_selected_track_id_in_queue()
-            {
-                request_info_cover_load(state, tid, &mut effects);
-            }
         }
     }
     effects
-}
-
-fn request_info_cover_load(
-    state: &mut AppState,
-    tid: crate::domain::TrackId,
-    effects: &mut Vec<AppMsg>,
-) {
-    if let Some(track) = state.library.get_track(tid) {
-        if track.has_cover {
-            effects.push(AppMsg::Cover(
-                crate::message::cover::CoverMsg::RequestLoad {
-                    id: tid,
-                    path: track.file_path.clone(),
-                    context: crate::message::cover::CoverContext::Info,
-                },
-            ));
-        } else {
-            // Clear immediately to avoid showing stale artwork.
-            state.clear_track_info_cover();
-        }
-    }
 }
 
 #[cfg(test)]

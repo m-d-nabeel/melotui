@@ -132,6 +132,7 @@ impl MprisManager {
         let volume_changed = (current_volume - self.cached.volume).abs() > 0.01;
 
         if volume_changed {
+            #[cfg(target_os = "linux")]
             if let Err(e) = self.controls.set_volume(current_volume as f64) {
                 tracing::debug!("Failed to set MPRIS volume: {:?}", e);
             }

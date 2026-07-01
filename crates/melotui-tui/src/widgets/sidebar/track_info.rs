@@ -16,22 +16,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let art_state = &mut cache.track_info;
     let picker = &cache.picker;
 
-    let track_id = if state.is_library_focused() {
-        state.get_selected_track_id_in_sidebar()
-    } else {
-        state.get_selected_track_id_in_queue()
-    };
-
-    let track_id = match track_id {
-        Some(id) => id,
-        None => return,
-    };
-
-    let track = match state.library.get_track(track_id) {
-        Some(t) => t,
-        None => return,
-    };
-
     let t = crate::theme::get_theme(state);
 
     let block = Block::default()
@@ -48,6 +32,28 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
+
+    let track_id = if state.is_library_focused() {
+        state.get_selected_track_id_in_sidebar()
+    } else {
+        state.get_selected_track_id_in_queue()
+    };
+
+    let track_id = match track_id {
+        Some(id) => id,
+        None => {
+            render_empty_state(frame, inner_area, t);
+            return;
+        }
+    };
+
+    let track = match state.library.get_track(track_id) {
+        Some(track) => track,
+        None => {
+            render_empty_state(frame, inner_area, t);
+            return;
+        }
+    };
 
     // Art + info split - Always allocate space for art to prevent layout jumping
     let art_height = std::cmp::max(
@@ -331,4 +337,24 @@ fn render_file_info(
     ];
 
     frame.render_widget(Paragraph::new(info_text).wrap(Wrap { trim: true }), area);
+}
+
+fn render_empty_state(frame: &mut Frame, area: Rect, t: &Theme) {
+    let msg = Paragraph::new("No track selected")
+        .alignment(Alignment::Center)
+        .style(
+            Style::default()
+                .fg(t.fg_muted)
+                .add_modifier(Modifier::ITALIC),
+        );
+
+    let y_offset = area.height.saturating_sub(1) / 2;
+    let centered_rect = Rect {
+        x: area.x,
+        y: area.y + y_offset,
+        width: area.width,
+        height: 1,
+    };
+
+    frame.render_widget(msg, centered_rect);
 }
