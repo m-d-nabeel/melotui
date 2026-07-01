@@ -46,8 +46,6 @@ impl InputHandler {
 
         if state.is_showing_track_info() {
             contexts.push(KeyContext::TrackInfo);
-            contexts.push(KeyContext::Global);
-            return contexts;
         }
 
         if state.lyrics_search_state().is_some() {
@@ -290,6 +288,7 @@ mod tests {
                 year: None,
                 is_favorite: false,
                 track_number: None,
+                play_count: 0,
                 duration_ms: 10000,
                 bitrate: None,
                 sample_rate: None,

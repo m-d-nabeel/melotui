@@ -62,6 +62,7 @@ pub enum KeyAction {
     SeekBackward,
     ToggleShuffle,
     CycleRepeat,
+    ToggleSort,
 
     // library/queue
     AddToQueue,
@@ -174,6 +175,7 @@ impl KeyAction {
             KeyAction::SeekForward => "Seek Fwd",
             KeyAction::SeekBackward => "Seek Bwd",
             KeyAction::ToggleShuffle => "Shuffle",
+            KeyAction::ToggleSort => "Sort",
             KeyAction::CycleRepeat => "Repeat",
             KeyAction::AddToQueue => "Add Queue",
             KeyAction::QueuePlayNext => "Play Next",
@@ -282,6 +284,7 @@ impl KeyAction {
             ))),
 
             KeyAction::ToggleShuffle => Some(AppMsg::Library(LibraryMsg::ToggleShuffle)),
+            KeyAction::ToggleSort => Some(AppMsg::Library(LibraryMsg::ToggleSort)),
             KeyAction::CycleRepeat => Some(AppMsg::Library(LibraryMsg::ToggleRepeatMode)),
 
             KeyAction::RemoveFromQueue => Some(AppMsg::Library(LibraryMsg::RemoveFromQueue)),
@@ -518,6 +521,7 @@ impl Default for KeyRegistry {
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::DeletePlaylist)
                     .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('o'), KeyAction::ToggleSort),
             ],
         );
 

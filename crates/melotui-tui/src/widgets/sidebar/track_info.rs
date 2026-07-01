@@ -125,7 +125,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
                 Constraint::Length(1), // Album
                 Constraint::Length(1), // Spacer
                 Constraint::Length(1), // Badges
-                Constraint::Length(1), // Details
+                Constraint::Length(2), // Details
                 Constraint::Min(0),    // Flex
             ])
             .split(info_area);
@@ -148,7 +148,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             Constraint::Length(1), // Album
             Constraint::Length(1), // Spacer
             Constraint::Length(1), // Badges
-            Constraint::Length(1), // Details
+            Constraint::Length(2), // Details
             Constraint::Length(1), // Spacer
             Constraint::Length(1), // Separator
             Constraint::Min(4),    // File Info
@@ -234,15 +234,20 @@ fn render_badges(
     if bitrate > 0 {
         parts.push(Span::raw(" "));
         parts.push(Span::styled(
-            format!(" {} kbps ", bitrate),
+            format!(" {}k ", bitrate),
             Style::default().bg(t.badge_detail_bg).fg(t.fg_primary),
         ));
     }
 
     if sample > 0 {
+        let sample_str = if sample.is_multiple_of(1000) {
+            format!("{}k", sample / 1000)
+        } else {
+            format!("{:.1}k", sample as f64 / 1000.0)
+        };
         parts.push(Span::raw(" "));
         parts.push(Span::styled(
-            format!(" {} Hz ", sample),
+            format!(" {} ", sample_str),
             Style::default().bg(t.badge_detail_bg).fg(t.fg_primary),
         ));
     }
@@ -260,6 +265,9 @@ fn render_details(
     t: &Theme,
 ) {
     let mut details = Vec::new();
+    if track.play_count > 0 {
+        details.push(format!("▶ {}", track.play_count));
+    }
     if let Some(y) = track.year {
         details.push(format!("{}", y));
     }
@@ -272,6 +280,7 @@ fn render_details(
     frame.render_widget(
         Paragraph::new(details_str)
             .alignment(Alignment::Center)
+            .wrap(Wrap { trim: true })
             .style(Style::default().fg(t.fg_muted)),
         area,
     );

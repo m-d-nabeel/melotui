@@ -282,6 +282,8 @@ fn get_icon(
                 CategoryId::Genres => "󰊗",
                 CategoryId::Years => "󰔠",
                 CategoryId::Favorites => "󰋎",
+                CategoryId::RecentlyPlayed => "󰥔",
+                CategoryId::MostPlayed => "󰓎",
             };
             format!("{} {} ", arrow, icon)
         }

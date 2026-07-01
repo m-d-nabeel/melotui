@@ -210,6 +210,7 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
         LibraryMsg::PlayNext(track) => library_action::handle_play_next(state, track),
         LibraryMsg::ToggleRepeatMode => library_action::handle_toggle_repeat_mode(state),
         LibraryMsg::ToggleShuffle => library_action::handle_toggle_shuffle(state),
+        LibraryMsg::ToggleSort => library_action::handle_toggle_sort(state),
         LibraryMsg::RemoveFromQueue => library_action::handle_remove_from_queue(state),
         LibraryMsg::ClearQueue => library_action::handle_clear_queue(state),
         LibraryMsg::RequestScanLibrary => library_action::handle_request_scan_library(state),
@@ -300,14 +301,19 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
     }
 }
 
-fn handle_database_message(_state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
+fn handle_database_message(state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
     match msg {
         DatabaseMsg::DispatchToggleFavorite(_)
         | DatabaseMsg::DispatchCreatePlaylist(_)
         | DatabaseMsg::DispatchDeletePlaylist(_)
         | DatabaseMsg::DispatchAddToPlaylist { .. }
         | DatabaseMsg::DispatchRemoveFromPlaylist { .. }
-        | DatabaseMsg::DispatchIncrementPlayCount(_)
         | DatabaseMsg::DispatchSearchTracks(_) => vec![],
+        DatabaseMsg::DispatchIncrementPlayCount(track_id) => {
+            if let Some(track) = state.library.tracks.get_mut(&track_id) {
+                track.play_count += 1;
+            }
+            vec![]
+        }
     }
 }
