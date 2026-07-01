@@ -76,8 +76,9 @@ pub fn handle_adjust_auto_pan_depth(state: &mut AppState, delta: f32) -> Vec<App
     vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(new))]
 }
 
-// Dispatch handlers (no-op in reducer, intercepted by engine bridge)
-pub fn handle_dispatch_set_volume(_state: &mut AppState, _volume: f32) -> Vec<AppMsg> {
+// Dispatch handlers (intercepted by engine bridge)
+pub fn handle_dispatch_set_volume(state: &mut AppState, volume: f32) -> Vec<AppMsg> {
+    state.session.audio.volume = volume.clamp(0.0, 1.5);
     vec![]
 }
 
