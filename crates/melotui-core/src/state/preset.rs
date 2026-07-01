@@ -39,7 +39,7 @@ impl DspPreset {
     }
 
     pub fn load(name: &str) -> Result<Self> {
-        let path = Self::presets_dir()?.join(format!("{}.toml", name));
+        let path = Self::preset_path(name)?;
         if !path.exists() {
             anyhow::bail!("Preset '{}' does not exist", name);
         }
@@ -49,19 +49,44 @@ impl DspPreset {
     }
 
     pub fn save(&self) -> Result<()> {
-        let path = Self::presets_dir()?.join(format!("{}.toml", self.name));
+        let path = Self::preset_path(&self.name)?;
         let content = toml::to_string_pretty(self)?;
         std::fs::write(&path, content)?;
         Ok(())
     }
 
     pub fn delete(name: &str) -> Result<()> {
-        let path = Self::presets_dir()?.join(format!("{}.toml", name));
+        let path = Self::preset_path(name)?;
         if path.exists() {
             std::fs::remove_file(path)?;
         }
         Ok(())
     }
+
+    fn preset_path(name: &str) -> Result<PathBuf> {
+        let name = valid_preset_name(name)?;
+        Ok(Self::presets_dir()?.join(format!("{}.toml", name)))
+    }
+}
+
+fn valid_preset_name(name: &str) -> Result<&str> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("Preset name cannot be empty");
+    }
+    if trimmed != name || trimmed == "." || trimmed == ".." || trimmed.starts_with('.') {
+        anyhow::bail!("Invalid preset name '{}'", name);
+    }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.'))
+    {
+        anyhow::bail!(
+            "Invalid preset name '{}'. Use letters, numbers, spaces, '.', '-' or '_'",
+            name
+        );
+    }
+    Ok(trimmed)
 }
 
 #[cfg(test)]
@@ -87,5 +112,22 @@ mod tests {
         assert_eq!(deserialized.params.bass, 5.0);
         assert_eq!(deserialized.params.treble, -2.0);
         assert_eq!(deserialized.params.eq_bands[2], 4.0);
+    }
+
+    #[test]
+    fn test_preset_name_validation_rejects_path_escape() {
+        assert!(DspPreset::preset_path("../config").is_err());
+        assert!(DspPreset::preset_path("subdir/name").is_err());
+        assert!(DspPreset::preset_path("/tmp/name").is_err());
+        assert!(DspPreset::preset_path("..").is_err());
+        assert!(DspPreset::preset_path(".hidden").is_err());
+        assert!(DspPreset::preset_path(" name").is_err());
+        assert!(DspPreset::preset_path("name ").is_err());
+    }
+
+    #[test]
+    fn test_preset_name_validation_allows_safe_names() {
+        assert!(DspPreset::preset_path("Bass Boost").is_ok());
+        assert!(DspPreset::preset_path("nightcore-1.2_final").is_ok());
     }
 }

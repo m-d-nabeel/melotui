@@ -226,14 +226,13 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                     ctx.session_restored = true;
                     if let Ok(session) = melotui_core::PersistedSession::load() {
                         let count = session.apply_to_app_state(state);
-                        if let Some(active_id) = session.active_track_id
+                        if let Some(active_id) = state.get_playing_track_id()
                             && let Some(track) = state.library.tracks.get(&active_id)
                         {
                             ctx.engine.play(track.file_path.clone());
                             ctx.engine.pause();
-                            if session.seek_position_ms > 0 {
-                                ctx.engine
-                                    .seek(session.seek_position_ms, state.seek_epoch());
+                            if state.progress_ms() > 0 {
+                                ctx.engine.seek(state.progress_ms(), state.seek_epoch());
                             }
                             if track.has_cover {
                                 ctx.effect_queue

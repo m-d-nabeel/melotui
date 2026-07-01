@@ -194,7 +194,7 @@ impl FromStr for Command {
                     Ok(Command::ChangeVisualizer { arg: style })
                 } else {
                     Ok(Command::Unknown(
-                        "Allowed: Cava, Default, Radial, Nova".into(),
+                        "Allowed: Cava, Default, Bar, Particle, Radial, Nova".into(),
                     ))
                 }
             }
@@ -436,7 +436,7 @@ mod tests {
         );
         assert_eq!(
             Command::parse("v unknown"),
-            Command::Unknown("Allowed: Cava, Default, Radial, Nova".into())
+            Command::Unknown("Allowed: Cava, Default, Bar, Particle, Radial, Nova".into())
         );
     }
 

@@ -118,6 +118,7 @@ impl PersistedDspParams {
         audio.wobble = self.wobble;
         audio.ping_pong = self.ping_pong;
         audio.phaser = self.phaser;
+        audio.sanitize();
     }
 }
 
@@ -290,7 +291,7 @@ impl PersistedSession {
             if let Some(meta) = state.library.tracks.get(&active_id) {
                 state.session.playback.current = Some(active_id);
                 state.session.playback.duration_ms = Some(meta.duration_ms);
-                state.session.playback.progress_ms = self.seek_position_ms;
+                state.session.playback.progress_ms = self.seek_position_ms.min(meta.duration_ms);
                 state.session.playback.status = crate::playback::state::PlaybackStatus::Paused;
             } else {
                 state.session.playback.current = None;
@@ -413,6 +414,7 @@ impl PersistedSession {
         state.session.visualizer_mode = self.visualizer_mode.clone();
         state.session.spectrum_style = self.spectrum_style.clone();
         self.dsp.apply_to_audio_state(&mut state.session.audio);
+        state.session.audio.sanitize();
 
         valid_queue.len()
     }
@@ -587,5 +589,92 @@ mod tests {
                 .expanded_ids
                 .contains(&SidebarNodeId::Category(CategoryId::Folders))
         );
+    }
+
+    #[test]
+    fn test_apply_to_app_state_sanitizes_persisted_audio_and_seek() {
+        use crate::domain::TrackMeta;
+        use crate::library::Library;
+        use std::collections::HashMap;
+        use std::path::PathBuf;
+
+        let track_id = TrackId(100);
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            track_id,
+            TrackMeta {
+                id: track_id,
+                file_path: PathBuf::from("/home/user/Music/Album/song.mp3"),
+                title: "Test Song".to_string(),
+                artist: None,
+                album: None,
+                genre: None,
+                year: None,
+                is_favorite: false,
+                track_number: None,
+                duration_ms: 180000,
+                bitrate: None,
+                sample_rate: None,
+                format: "mp3".into(),
+                has_cover: false,
+                file_size_bytes: 1024,
+            },
+        );
+
+        let library = Library::new(vec![PathBuf::from("/home/user/Music")], vec![], tracks);
+        let mut state = crate::AppState::new(library, &crate::config::AppConfig::default());
+
+        let session = PersistedSession {
+            active_track_id: Some(track_id),
+            seek_position_ms: 999999,
+            volume: f32::NAN,
+            speed: 0.0,
+            dsp: PersistedDspParams {
+                speed: Some(f32::INFINITY),
+                bass: -100.0,
+                treble: 100.0,
+                reverb: f32::NAN,
+                echo: 42.0,
+                pan: -42.0,
+                lowpass: 0.0,
+                highpass: 100000.0,
+                auto_pan_rate: -1.0,
+                auto_pan_depth: 9.0,
+                eq_bands: [f32::NAN, -99.0, 99.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                exciter: 99.0,
+                bitcrush: -1.0,
+                width: 99.0,
+                karaoke: 99.0,
+                wobble: -1.0,
+                ping_pong: 99.0,
+                phaser: f32::NEG_INFINITY,
+            },
+            ..Default::default()
+        };
+
+        session.apply_to_app_state(&mut state);
+
+        assert_eq!(state.session.playback.progress_ms, 180000);
+        assert_eq!(state.session.audio.volume, 1.0);
+        assert_eq!(state.session.audio.speed, 1.0);
+        assert_eq!(state.session.audio.bass, 0.1);
+        assert_eq!(state.session.audio.treble, 5.0);
+        assert_eq!(state.session.audio.reverb, 0.0);
+        assert_eq!(state.session.audio.echo, 0.9);
+        assert_eq!(state.session.audio.pan, -1.0);
+        assert_eq!(state.session.audio.lowpass, 200.0);
+        assert_eq!(state.session.audio.highpass, 5000.0);
+        assert_eq!(state.session.audio.auto_pan_rate, 0.0);
+        assert_eq!(state.session.audio.auto_pan_depth, 1.0);
+        assert_eq!(state.session.audio.eq_bands[0], 0.0);
+        assert_eq!(state.session.audio.eq_bands[1], -12.0);
+        assert_eq!(state.session.audio.eq_bands[2], 12.0);
+        assert_eq!(state.session.audio.exciter, 5.0);
+        assert_eq!(state.session.audio.bitcrush, 0.0);
+        assert_eq!(state.session.audio.width, 3.0);
+        assert_eq!(state.session.audio.karaoke, 1.0);
+        assert_eq!(state.session.audio.wobble, 0.0);
+        assert_eq!(state.session.audio.ping_pong, 1.0);
+        assert_eq!(state.session.audio.phaser, 0.0);
     }
 }
