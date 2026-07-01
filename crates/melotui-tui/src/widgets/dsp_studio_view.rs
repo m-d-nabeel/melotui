@@ -46,7 +46,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
                 .fg(t.accent_primary)
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled("Nightcore   ", muted),
+        Span::styled("Bass Boosted   ", muted),
         Span::styled(
             "[3] ",
             Style::default()
@@ -239,10 +239,8 @@ fn render_bipolar_bar(
             ("━", accent)
         } else if is_interval {
             ("▪", t.slider_track)
-        } else if show_ticks {
-            ("┄", t.slider_track)
         } else {
-            ("─", t.slider_track)
+            ("┄", t.slider_track)
         };
         spans.push(Span::styled(ch, Style::default().fg(color).bg(bg)));
     }
@@ -615,7 +613,7 @@ fn render_unipolar_bar(
         } else if i == pos {
             ("●", accent)
         } else {
-            ("─", t.slider_track)
+            ("┄", t.slider_track)
         };
         spans.push(Span::styled(ch, Style::default().fg(color).bg(bg)));
     }

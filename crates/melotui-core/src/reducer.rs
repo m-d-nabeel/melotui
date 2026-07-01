@@ -199,7 +199,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::DspAdjustDown => ui_action::handle_dsp_adjust_down(state),
         UIMsg::DspResetControl => ui_action::handle_dsp_reset_control(state),
         UIMsg::DspMacroSlowedReverb => audio_action::handle_macro_slowed_reverb(state),
-        UIMsg::DspMacroNightcore => audio_action::handle_macro_nightcore(state),
+        UIMsg::DspMacroBassBoosted => audio_action::handle_macro_bass_boosted(state),
         UIMsg::DspMacroSpatial => audio_action::handle_macro_spatial(state),
         UIMsg::DspMacroResetAll => audio_action::handle_macro_reset_all(state),
     }
