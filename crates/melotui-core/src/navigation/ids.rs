@@ -12,6 +12,8 @@ pub enum CategoryId {
     Years,
     Playlists,
     Favorites,
+    RecentlyPlayed,
+    MostPlayed,
 }
 
 // Universal node selector for the sidebar tree

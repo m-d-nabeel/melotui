@@ -62,6 +62,7 @@ pub enum KeyAction {
     SeekBackward,
     ToggleShuffle,
     CycleRepeat,
+    ToggleSort,
 
     // library/queue
     AddToQueue,
@@ -137,7 +138,7 @@ pub enum KeyAction {
     DspAdjustDown,
     DspResetControl,
     DspMacroSlowedReverb,
-    DspMacroNightcore,
+    DspMacroBassBoosted,
     DspMacroSpatial,
     DspMacroResetAll,
 }
@@ -174,6 +175,7 @@ impl KeyAction {
             KeyAction::SeekForward => "Seek Fwd",
             KeyAction::SeekBackward => "Seek Bwd",
             KeyAction::ToggleShuffle => "Shuffle",
+            KeyAction::ToggleSort => "Sort",
             KeyAction::CycleRepeat => "Repeat",
             KeyAction::AddToQueue => "Add Queue",
             KeyAction::QueuePlayNext => "Play Next",
@@ -230,7 +232,7 @@ impl KeyAction {
             KeyAction::DspAdjustDown => "DSP Decrease",
             KeyAction::DspResetControl => "DSP Reset",
             KeyAction::DspMacroSlowedReverb => "Slowed+Reverb",
-            KeyAction::DspMacroNightcore => "Nightcore",
+            KeyAction::DspMacroBassBoosted => "Bass Boosted",
             KeyAction::DspMacroSpatial => "3D Spatial",
             KeyAction::DspMacroResetAll => "Reset All DSP",
         }
@@ -282,6 +284,7 @@ impl KeyAction {
             ))),
 
             KeyAction::ToggleShuffle => Some(AppMsg::Library(LibraryMsg::ToggleShuffle)),
+            KeyAction::ToggleSort => Some(AppMsg::Library(LibraryMsg::ToggleSort)),
             KeyAction::CycleRepeat => Some(AppMsg::Library(LibraryMsg::ToggleRepeatMode)),
 
             KeyAction::RemoveFromQueue => Some(AppMsg::Library(LibraryMsg::RemoveFromQueue)),
@@ -347,7 +350,7 @@ impl KeyAction {
             KeyAction::DspAdjustDown => Some(AppMsg::UI(UIMsg::DspAdjustDown)),
             KeyAction::DspResetControl => Some(AppMsg::UI(UIMsg::DspResetControl)),
             KeyAction::DspMacroSlowedReverb => Some(AppMsg::UI(UIMsg::DspMacroSlowedReverb)),
-            KeyAction::DspMacroNightcore => Some(AppMsg::UI(UIMsg::DspMacroNightcore)),
+            KeyAction::DspMacroBassBoosted => Some(AppMsg::UI(UIMsg::DspMacroBassBoosted)),
             KeyAction::DspMacroSpatial => Some(AppMsg::UI(UIMsg::DspMacroSpatial)),
             KeyAction::DspMacroResetAll => Some(AppMsg::UI(UIMsg::DspMacroResetAll)),
         }
@@ -518,6 +521,7 @@ impl Default for KeyRegistry {
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::DeletePlaylist)
                     .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::Char('o'), KeyAction::ToggleSort),
             ],
         );
 
@@ -673,7 +677,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('_'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
                 KeyBinding::new(KeyCode::Char('1'), KeyAction::DspMacroSlowedReverb),
-                KeyBinding::new(KeyCode::Char('2'), KeyAction::DspMacroNightcore),
+                KeyBinding::new(KeyCode::Char('2'), KeyAction::DspMacroBassBoosted),
                 KeyBinding::new(KeyCode::Char('3'), KeyAction::DspMacroSpatial),
                 KeyBinding::new(KeyCode::Char('0'), KeyAction::DspMacroResetAll),
                 KeyBinding::new(KeyCode::Char('p'), KeyAction::EnterPresetPicker),

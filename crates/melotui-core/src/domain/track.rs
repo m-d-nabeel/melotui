@@ -17,6 +17,7 @@ pub struct TrackMeta {
     pub track_number: Option<u32>,
 
     pub duration_ms: u64,
+    pub play_count: u32,
     pub bitrate: Option<u32>,
     pub sample_rate: Option<u32>,
     pub format: String,

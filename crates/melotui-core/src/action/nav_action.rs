@@ -363,6 +363,7 @@ mod tests {
                 year: None,
                 is_favorite: false,
                 track_number: None,
+                play_count: 0,
                 duration_ms: 10000,
                 bitrate: None,
                 sample_rate: None,

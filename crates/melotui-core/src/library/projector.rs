@@ -14,7 +14,7 @@ pub struct SidebarRow {
 
 /// visible row count
 pub fn get_row_count(snapshot: &Library, nav: &LibraryNavState) -> usize {
-    let mut count = 7; // Categories: Folders, Favorites, Artists, Albums, Genres, Years, Playlists
+    let mut count = 9; // Categories: RecentlyPlayed, MostPlayed, Folders, Favorites, Artists, Albums, Genres, Years, Playlists
 
     if nav
         .expanded_ids
@@ -27,6 +27,18 @@ pub fn get_row_count(snapshot: &Library, nav: &LibraryNavState) -> usize {
         .contains(&SidebarNodeId::Category(CategoryId::Favorites))
     {
         count += snapshot.favorites.len();
+    }
+    if nav
+        .expanded_ids
+        .contains(&SidebarNodeId::Category(CategoryId::RecentlyPlayed))
+    {
+        count += snapshot.recently_played.len();
+    }
+    if nav
+        .expanded_ids
+        .contains(&SidebarNodeId::Category(CategoryId::MostPlayed))
+    {
+        count += snapshot.most_played.len();
     }
     if nav
         .expanded_ids
@@ -168,6 +180,8 @@ where
     F: FnMut(SidebarRow) -> bool,
 {
     let categories = [
+        (CategoryId::RecentlyPlayed, "Recently Played"),
+        (CategoryId::MostPlayed, "Most Played"),
         (CategoryId::Folders, "Folders"),
         (CategoryId::Favorites, "Favorites"),
         (CategoryId::Artists, "Artists"),
@@ -193,19 +207,17 @@ where
 
         if expanded {
             let stop = match cat {
-                CategoryId::Folders => visit_directory(
-                    &snapshot.folder_tree,
-                    &nav.expanded_ids,
-                    1,
-                    snapshot,
-                    &mut visitor,
-                ),
-                CategoryId::Favorites => {
-                    visit_favorites(&snapshot.favorites, &node_id, 1, snapshot, &mut visitor)
+                CategoryId::Folders => {
+                    visit_directory(&snapshot.folder_tree, nav, 1, snapshot, &mut visitor)
                 }
+                CategoryId::Favorites => visit_favorites(&node_id, nav, 1, snapshot, &mut visitor),
+                CategoryId::RecentlyPlayed => {
+                    visit_favorites(&node_id, nav, 1, snapshot, &mut visitor)
+                }
+                CategoryId::MostPlayed => visit_favorites(&node_id, nav, 1, snapshot, &mut visitor),
                 CategoryId::Artists => visit_generic_map(
                     &snapshot.artists,
-                    &nav.expanded_ids,
+                    nav,
                     1,
                     SidebarNodeId::Artist,
                     snapshot,
@@ -213,7 +225,7 @@ where
                 ),
                 CategoryId::Albums => visit_generic_map(
                     &snapshot.albums,
-                    &nav.expanded_ids,
+                    nav,
                     1,
                     SidebarNodeId::Album,
                     snapshot,
@@ -221,7 +233,7 @@ where
                 ),
                 CategoryId::Genres => visit_generic_map(
                     &snapshot.genres,
-                    &nav.expanded_ids,
+                    nav,
                     1,
                     SidebarNodeId::Genre,
                     snapshot,
@@ -229,15 +241,13 @@ where
                 ),
                 CategoryId::Years => visit_generic_map(
                     &snapshot.years,
-                    &nav.expanded_ids,
+                    nav,
                     1,
                     SidebarNodeId::Year,
                     snapshot,
                     &mut visitor,
                 ),
-                CategoryId::Playlists => {
-                    visit_playlists(snapshot, &nav.expanded_ids, 1, &mut visitor)
-                }
+                CategoryId::Playlists => visit_playlists(snapshot, nav, 1, &mut visitor),
             };
 
             if stop {
@@ -249,7 +259,7 @@ where
 
 fn visit_directory<F>(
     node: &DirectoryNode,
-    expanded_ids: &HashSet<SidebarNodeId>,
+    nav: &LibraryNavState,
     level: u8,
     snapshot: &Library,
     visitor: &mut F,
@@ -259,7 +269,7 @@ where
 {
     for subdir in &node.subdirs {
         let id = SidebarNodeId::Folder(subdir.path.clone());
-        let expanded = expanded_ids.contains(&id);
+        let expanded = nav.expanded_ids.contains(&id);
         let has_children = !subdir.subdirs.is_empty() || !subdir.tracks.is_empty();
 
         if visitor(SidebarRow {
@@ -272,34 +282,36 @@ where
             return true;
         }
 
-        if expanded && visit_directory(subdir, expanded_ids, level + 1, snapshot, visitor) {
+        if expanded && visit_directory(subdir, nav, level + 1, snapshot, visitor) {
             return true;
         }
     }
 
-    for tid in &node.tracks {
-        if let Some(track) = snapshot.tracks.get(tid) {
-            let id = SidebarNodeId::Track {
-                id: *tid,
-                parent: Box::new(SidebarNodeId::Folder(node.path.clone())),
-            };
-            if visitor(SidebarRow {
-                id,
-                label: track.title.clone(),
-                level: level + 1,
-                is_expandable: false,
-                is_expanded: false,
-            }) {
-                return true;
-            }
+    let parent_node = SidebarNodeId::Folder(node.path.clone());
+    let sorted_tracks =
+        snapshot.resolve_sorted_tracks_for_node(&parent_node, nav.sort_field, nav.sort_direction);
+
+    for track in sorted_tracks {
+        let id = SidebarNodeId::Track {
+            id: track.id,
+            parent: Box::new(parent_node.clone()),
+        };
+        if visitor(SidebarRow {
+            id,
+            label: track.title.clone(),
+            level: level + 1,
+            is_expandable: false,
+            is_expanded: false,
+        }) {
+            return true;
         }
     }
     false
 }
 
 fn visit_favorites<F>(
-    favorites: &[crate::domain::TrackId],
     parent_id: &SidebarNodeId,
+    nav: &LibraryNavState,
     level: u8,
     snapshot: &Library,
     visitor: &mut F,
@@ -307,39 +319,35 @@ fn visit_favorites<F>(
 where
     F: FnMut(SidebarRow) -> bool,
 {
-    for tid in favorites {
-        if let Some(track) = snapshot.tracks.get(tid) {
-            let id = SidebarNodeId::Track {
-                id: *tid,
-                parent: Box::new(parent_id.clone()),
-            };
-            if visitor(SidebarRow {
-                id,
-                label: track.title.clone(),
-                level,
-                is_expandable: false,
-                is_expanded: false,
-            }) {
-                return true;
-            }
+    let sorted_tracks =
+        snapshot.resolve_sorted_tracks_for_node(parent_id, nav.sort_field, nav.sort_direction);
+
+    for track in sorted_tracks {
+        let id = SidebarNodeId::Track {
+            id: track.id,
+            parent: Box::new(parent_id.clone()),
+        };
+        if visitor(SidebarRow {
+            id,
+            label: track.title.clone(),
+            level,
+            is_expandable: false,
+            is_expanded: false,
+        }) {
+            return true;
         }
     }
     false
 }
 
-fn visit_playlists<F>(
-    snapshot: &Library,
-    expanded_ids: &HashSet<SidebarNodeId>,
-    level: u8,
-    visitor: &mut F,
-) -> bool
+fn visit_playlists<F>(snapshot: &Library, nav: &LibraryNavState, level: u8, visitor: &mut F) -> bool
 where
     F: FnMut(SidebarRow) -> bool,
 {
     for pid in &snapshot.playlist_order {
         if let Some(playlist) = snapshot.playlists.get(pid) {
             let p_node = SidebarNodeId::Playlist(*pid);
-            let expanded = expanded_ids.contains(&p_node);
+            let expanded = nav.expanded_ids.contains(&p_node);
 
             if visitor(SidebarRow {
                 id: p_node.clone(),
@@ -352,21 +360,24 @@ where
             }
 
             if expanded {
-                for tid in &playlist.tracks {
-                    if let Some(track) = snapshot.tracks.get(tid) {
-                        let id = SidebarNodeId::Track {
-                            id: *tid,
-                            parent: Box::new(p_node.clone()),
-                        };
-                        if visitor(SidebarRow {
-                            id,
-                            label: track.title.clone(),
-                            level: level + 1,
-                            is_expandable: false,
-                            is_expanded: false,
-                        }) {
-                            return true;
-                        }
+                let sorted_tracks = snapshot.resolve_sorted_tracks_for_node(
+                    &p_node,
+                    nav.sort_field,
+                    nav.sort_direction,
+                );
+                for track in sorted_tracks {
+                    let id = SidebarNodeId::Track {
+                        id: track.id,
+                        parent: Box::new(p_node.clone()),
+                    };
+                    if visitor(SidebarRow {
+                        id,
+                        label: track.title.clone(),
+                        level: level + 1,
+                        is_expandable: false,
+                        is_expanded: false,
+                    }) {
+                        return true;
                     }
                 }
             }
@@ -378,7 +389,7 @@ where
 /// generic map visitor
 fn visit_generic_map<K, F, IDGen>(
     map: &std::collections::BTreeMap<K, Vec<crate::domain::TrackId>>,
-    expanded_ids: &HashSet<SidebarNodeId>,
+    nav: &LibraryNavState,
     level: u8,
     id_gen: IDGen,
     snapshot: &Library,
@@ -389,9 +400,9 @@ where
     F: FnMut(SidebarRow) -> bool,
     IDGen: Fn(K) -> SidebarNodeId,
 {
-    for (key, tids) in map {
+    for key in map.keys() {
         let id = id_gen(key.clone());
-        let expanded = expanded_ids.contains(&id);
+        let expanded = nav.expanded_ids.contains(&id);
 
         if visitor(SidebarRow {
             id: id.clone(),
@@ -404,21 +415,21 @@ where
         }
 
         if expanded {
-            for tid in tids {
-                if let Some(track) = snapshot.tracks.get(tid) {
-                    let t_id = SidebarNodeId::Track {
-                        id: *tid,
-                        parent: Box::new(id.clone()),
-                    };
-                    if visitor(SidebarRow {
-                        id: t_id,
-                        label: track.title.clone(),
-                        level: level + 1,
-                        is_expandable: false,
-                        is_expanded: false,
-                    }) {
-                        return true;
-                    }
+            let sorted_tracks =
+                snapshot.resolve_sorted_tracks_for_node(&id, nav.sort_field, nav.sort_direction);
+            for track in sorted_tracks {
+                let t_id = SidebarNodeId::Track {
+                    id: track.id,
+                    parent: Box::new(id.clone()),
+                };
+                if visitor(SidebarRow {
+                    id: t_id,
+                    label: track.title.clone(),
+                    level: level + 1,
+                    is_expandable: false,
+                    is_expanded: false,
+                }) {
+                    return true;
                 }
             }
         }

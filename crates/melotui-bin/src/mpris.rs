@@ -22,6 +22,8 @@ struct CachedState {
     track_id: Option<TrackId>,
     status: PlaybackStatus,
     cover_path: Option<PathBuf>,
+    seek_epoch: u64,
+    volume: f32,
 }
 
 pub struct MprisManager {
@@ -63,7 +65,27 @@ impl MprisManager {
                 MediaControlEvent::Next => Some(AppMsg::Playback(PlaybackMsg::RequestPlayNext)),
                 MediaControlEvent::Previous => Some(AppMsg::Playback(PlaybackMsg::RequestPlayPrev)),
                 MediaControlEvent::Stop => Some(AppMsg::Playback(PlaybackMsg::RequestStop)),
-                // TODO: Handle Seek, SetPosition, SetVolume in the future
+                MediaControlEvent::Seek(direction) => {
+                    let offset = match direction {
+                        souvlaki::SeekDirection::Forward => 5,
+                        souvlaki::SeekDirection::Backward => -5,
+                    };
+                    Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(offset)))
+                }
+                MediaControlEvent::SeekBy(direction, duration) => {
+                    let mut offset = duration.as_secs() as i64;
+                    if let souvlaki::SeekDirection::Backward = direction {
+                        offset = -offset;
+                    }
+                    Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(offset)))
+                }
+                MediaControlEvent::SetPosition(position) => Some(AppMsg::Playback(
+                    PlaybackMsg::RequestSeekAbsolute(position.0.as_secs()),
+                )),
+                MediaControlEvent::SetVolume(vol) => Some(AppMsg::Audio(
+                    melotui_core::message::audio::AudioMsg::DispatchSetVolume(vol as f32),
+                )),
+                MediaControlEvent::Quit => Some(AppMsg::RequestQuit),
                 _ => None,
             };
 
@@ -86,6 +108,8 @@ impl MprisManager {
                     track_id: None,
                     status: PlaybackStatus::Stopped,
                     cover_path: None,
+                    seek_epoch: 0,
+                    volume: 1.0,
                 },
             },
             rx,
@@ -98,16 +122,35 @@ impl MprisManager {
         let current_id = state.get_playing_track_id();
         let current_status = state.playback_status();
         let current_cover = &state.current_cover_path;
+        let current_epoch = state.seek_epoch();
+        let current_volume = state.volume();
 
         let track_changed = current_id != self.cached.track_id;
         let status_changed = *current_status != self.cached.status;
         let cover_changed = *current_cover != self.cached.cover_path;
+        let seek_changed = current_epoch != self.cached.seek_epoch;
+        let volume_changed = (current_volume - self.cached.volume).abs() > 0.01;
 
-        // Update playback status
-        if status_changed || track_changed {
+        if volume_changed {
+            if let Err(e) = self.controls.set_volume(current_volume as f64) {
+                tracing::debug!("Failed to set MPRIS volume: {:?}", e);
+            }
+            self.cached.volume = current_volume;
+        }
+
+        // Update playback status and position
+        if status_changed || track_changed || seek_changed {
             let playback = match current_status {
-                PlaybackStatus::Playing => MediaPlayback::Playing { progress: None },
-                PlaybackStatus::Paused => MediaPlayback::Paused { progress: None },
+                PlaybackStatus::Playing => MediaPlayback::Playing {
+                    progress: Some(souvlaki::MediaPosition(std::time::Duration::from_millis(
+                        state.progress_ms(),
+                    ))),
+                },
+                PlaybackStatus::Paused => MediaPlayback::Paused {
+                    progress: Some(souvlaki::MediaPosition(std::time::Duration::from_millis(
+                        state.progress_ms(),
+                    ))),
+                },
                 PlaybackStatus::Stopped => MediaPlayback::Stopped,
             };
 
@@ -116,6 +159,7 @@ impl MprisManager {
             }
 
             self.cached.status = current_status.clone();
+            self.cached.seek_epoch = current_epoch;
         }
 
         // Update metadata (track info + cover art)

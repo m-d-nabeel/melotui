@@ -23,11 +23,30 @@ pub struct LibraryNavState {
     pub expanded_ids: HashSet<SidebarNodeId>,
     pub scroll_offset: usize,
     pub search: SearchState,
+    pub sort_field: SortField,
+    pub sort_direction: SortDirection,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct QueueNavState {
     pub selected_queue_id: Option<QueueId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SortField {
+    #[default]
+    Title,
+    Artist,
+    Album,
+    Year,
+    Duration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum SortDirection {
+    #[default]
+    Ascending,
+    Descending,
 }
 
 #[derive(Debug, Clone)]

@@ -7,6 +7,7 @@ pub enum LibraryMsg {
     PlayNext(TrackId),
     ToggleRepeatMode,
     ToggleShuffle,
+    ToggleSort,
     RequestToggleFavorite(TrackId),
     RemoveFromQueue,
     ClearQueue,

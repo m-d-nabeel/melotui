@@ -1,4 +1,4 @@
-use crate::{AppMsg, AppState, message::audio::AudioMsg};
+use crate::{AppMsg, AppState, message::audio::AudioMsg, state::audio::AudioState};
 
 pub fn handle_adjust_volume(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     let new_volume = (state.volume() + delta).clamp(0.0, 1.5);
@@ -76,8 +76,9 @@ pub fn handle_adjust_auto_pan_depth(state: &mut AppState, delta: f32) -> Vec<App
     vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(new))]
 }
 
-// Dispatch handlers (no-op in reducer, intercepted by engine bridge)
-pub fn handle_dispatch_set_volume(_state: &mut AppState, _volume: f32) -> Vec<AppMsg> {
+// Dispatch handlers (intercepted by engine bridge)
+pub fn handle_dispatch_set_volume(state: &mut AppState, volume: f32) -> Vec<AppMsg> {
+    state.session.audio.volume = volume.clamp(0.0, 1.5);
     vec![]
 }
 
@@ -197,59 +198,74 @@ pub fn handle_dispatch_set_phaser(_state: &mut AppState, _val: f32) -> Vec<AppMs
 
 // ── Macros ──────────────────────────────────────────────
 
-pub fn handle_macro_slowed_reverb(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.audio.speed = 0.85;
-    state.session.audio.reverb = 0.45;
-    state.session.audio.bass = 1.3;
-    state.session.audio.width = 1.3;
-    state.session.audio.lowpass = 3500.0;
-    state.session.audio.highpass = 20.0;
-    state.session.audio.wobble = 0.15;
-    vec![
-        AppMsg::Audio(AudioMsg::DispatchSetSpeed(0.85)),
-        AppMsg::Audio(AudioMsg::DispatchSetReverb(0.45)),
-        AppMsg::Audio(AudioMsg::DispatchSetBass(1.3)),
-        AppMsg::Audio(AudioMsg::DispatchSetWidth(1.3)),
-        AppMsg::Audio(AudioMsg::DispatchSetLowpass(3500.0)),
-        AppMsg::Audio(AudioMsg::DispatchSetHighpass(20.0)),
-        AppMsg::Audio(AudioMsg::DispatchSetWobble(0.15)),
-    ]
+fn apply_macro_profile(state: &mut AppState, mut audio: AudioState) -> Vec<AppMsg> {
+    audio.volume = state.session.audio.volume;
+    state.session.audio = audio.clone();
+
+    let mut msgs = vec![
+        AppMsg::Audio(AudioMsg::DispatchSetSpeed(audio.speed)),
+        AppMsg::Audio(AudioMsg::DispatchSetBass(audio.bass)),
+        AppMsg::Audio(AudioMsg::DispatchSetTreble(audio.treble)),
+        AppMsg::Audio(AudioMsg::DispatchSetReverb(audio.reverb)),
+        AppMsg::Audio(AudioMsg::DispatchSetEcho(audio.echo)),
+        AppMsg::Audio(AudioMsg::DispatchSetPan(audio.pan)),
+        AppMsg::Audio(AudioMsg::DispatchSetLowpass(audio.lowpass)),
+        AppMsg::Audio(AudioMsg::DispatchSetHighpass(audio.highpass)),
+        AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(audio.auto_pan_rate)),
+        AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(audio.auto_pan_depth)),
+        AppMsg::Audio(AudioMsg::DispatchSetWobble(audio.wobble)),
+        AppMsg::Audio(AudioMsg::DispatchSetKaraoke(audio.karaoke)),
+        AppMsg::Audio(AudioMsg::DispatchSetWidth(audio.width)),
+        AppMsg::Audio(AudioMsg::DispatchSetBitcrush(audio.bitcrush)),
+        AppMsg::Audio(AudioMsg::DispatchSetExciter(audio.exciter)),
+        AppMsg::Audio(AudioMsg::DispatchSetPingPong(audio.ping_pong)),
+        AppMsg::Audio(AudioMsg::DispatchSetPhaser(audio.phaser)),
+    ];
+    for (band, gain) in audio.eq_bands.iter().copied().enumerate() {
+        msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand { band, gain }));
+    }
+    msgs
 }
 
-pub fn handle_macro_nightcore(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.audio.speed = 1.25;
-    state.session.audio.treble = 1.8;
-    state.session.audio.bass = 1.2;
-    state.session.audio.width = 1.4;
-    state.session.audio.highpass = 80.0;
-    state.session.audio.exciter = 1.5;
-    state.session.audio.lowpass = 20000.0;
-    vec![
-        AppMsg::Audio(AudioMsg::DispatchSetSpeed(1.25)),
-        AppMsg::Audio(AudioMsg::DispatchSetTreble(1.8)),
-        AppMsg::Audio(AudioMsg::DispatchSetBass(1.2)),
-        AppMsg::Audio(AudioMsg::DispatchSetWidth(1.4)),
-        AppMsg::Audio(AudioMsg::DispatchSetHighpass(80.0)),
-        AppMsg::Audio(AudioMsg::DispatchSetExciter(1.5)),
-        AppMsg::Audio(AudioMsg::DispatchSetLowpass(20000.0)),
-    ]
+pub fn handle_macro_slowed_reverb(state: &mut AppState) -> Vec<AppMsg> {
+    let audio = AudioState {
+        speed: 0.82,
+        bass: 1.12,
+        treble: 0.92,
+        reverb: 0.34,
+        echo: 0.08,
+        width: 1.15,
+        lowpass: 9000.0,
+        wobble: 0.04,
+        ..AudioState::default()
+    };
+    apply_macro_profile(state, audio)
+}
+
+pub fn handle_macro_bass_boosted(state: &mut AppState) -> Vec<AppMsg> {
+    let audio = AudioState {
+        bass: 1.75,
+        treble: 1.08,
+        width: 1.12,
+        highpass: 28.0,
+        lowpass: 18000.0,
+        exciter: 0.45,
+        eq_bands: [4.5, 4.0, 2.5, 0.8, 0.0, 0.0, 0.0, 0.4, 0.6, 0.0],
+        ..AudioState::default()
+    };
+    apply_macro_profile(state, audio)
 }
 
 pub fn handle_macro_spatial(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.audio.auto_pan_rate = 0.25;
-    state.session.audio.auto_pan_depth = 0.80;
-    state.session.audio.ping_pong = 0.35;
-    state.session.audio.width = 1.8;
-    state.session.audio.reverb = 0.20;
-    state.session.audio.phaser = 0.15;
-    vec![
-        AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(0.25)),
-        AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(0.80)),
-        AppMsg::Audio(AudioMsg::DispatchSetPingPong(0.35)),
-        AppMsg::Audio(AudioMsg::DispatchSetWidth(1.8)),
-        AppMsg::Audio(AudioMsg::DispatchSetReverb(0.20)),
-        AppMsg::Audio(AudioMsg::DispatchSetPhaser(0.15)),
-    ]
+    let audio = AudioState {
+        auto_pan_rate: 0.10,
+        auto_pan_depth: 0.90,
+        ping_pong: 0.08,
+        width: 1.35,
+        reverb: 0.08,
+        ..AudioState::default()
+    };
+    apply_macro_profile(state, audio)
 }
 
 pub fn handle_macro_reset_all(state: &mut AppState) -> Vec<AppMsg> {
@@ -282,4 +298,92 @@ pub fn handle_macro_reset_all(state: &mut AppState) -> Vec<AppMsg> {
         }));
     }
     msgs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{config::AppConfig, library::snapshot::Library};
+    use std::collections::HashMap;
+
+    fn test_state() -> AppState {
+        AppState::new(
+            Library::new(vec![], vec![], HashMap::new()),
+            &AppConfig::default(),
+        )
+    }
+
+    #[test]
+    fn slowed_reverb_macro_applies_complete_profile() {
+        let mut state = test_state();
+        state.session.audio.auto_pan_depth = 1.0;
+        state.session.audio.ping_pong = 1.0;
+        state.session.audio.bitcrush = 1.0;
+
+        let msgs = handle_macro_slowed_reverb(&mut state);
+
+        assert_eq!(state.session.audio.speed, 0.82);
+        assert_eq!(state.session.audio.reverb, 0.34);
+        assert_eq!(state.session.audio.echo, 0.08);
+        assert_eq!(state.session.audio.lowpass, 9000.0);
+        assert_eq!(state.session.audio.auto_pan_depth, 0.0);
+        assert_eq!(state.session.audio.ping_pong, 0.0);
+        assert_eq!(state.session.audio.bitcrush, 0.0);
+        assert!(matches!(
+            msgs.iter()
+                .find(|msg| matches!(msg, AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(_)))),
+            Some(AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(0.0)))
+        ));
+    }
+
+    #[test]
+    fn bass_boosted_macro_replaces_nightcore_slot() {
+        let mut state = test_state();
+        state.session.audio.speed = 1.25;
+        state.session.audio.reverb = 0.5;
+        state.session.audio.auto_pan_depth = 0.9;
+
+        let msgs = handle_macro_bass_boosted(&mut state);
+
+        assert_eq!(state.session.audio.speed, 1.0);
+        assert_eq!(state.session.audio.bass, 1.75);
+        assert_eq!(state.session.audio.treble, 1.08);
+        assert_eq!(state.session.audio.reverb, 0.0);
+        assert_eq!(state.session.audio.auto_pan_depth, 0.0);
+        assert_eq!(state.session.audio.eq_bands[0], 4.5);
+        assert_eq!(state.session.audio.eq_bands[1], 4.0);
+        assert!(matches!(
+            msgs.iter().find(|msg| matches!(
+                msg,
+                AppMsg::Audio(AudioMsg::DispatchSetEqBand { band: 0, .. })
+            )),
+            Some(AppMsg::Audio(AudioMsg::DispatchSetEqBand {
+                band: 0,
+                gain: 4.5
+            }))
+        ));
+    }
+
+    #[test]
+    fn spatial_macro_is_clean_8d_profile() {
+        let mut state = test_state();
+        state.session.audio.bass = 2.0;
+        state.session.audio.eq_bands = [3.0; 10];
+        state.session.audio.wobble = 0.5;
+
+        let msgs = handle_macro_spatial(&mut state);
+
+        assert_eq!(state.session.audio.bass, 1.0);
+        assert_eq!(state.session.audio.eq_bands, [0.0; 10]);
+        assert_eq!(state.session.audio.wobble, 0.0);
+        assert_eq!(state.session.audio.auto_pan_rate, 0.10);
+        assert_eq!(state.session.audio.auto_pan_depth, 0.90);
+        assert_eq!(state.session.audio.width, 1.35);
+        assert_eq!(state.session.audio.reverb, 0.08);
+        assert!(matches!(
+            msgs.iter()
+                .find(|msg| matches!(msg, AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(_)))),
+            Some(AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(0.10)))
+        ));
+    }
 }

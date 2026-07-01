@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta};
 use crate::navigation::ids::{CategoryId, SidebarNodeId};
+use crate::navigation::state::{SortDirection, SortField};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectoryNode {
@@ -48,6 +49,8 @@ pub struct Library {
     pub genres: std::collections::BTreeMap<String, Vec<TrackId>>,
     pub years: std::collections::BTreeMap<u32, Vec<TrackId>>,
     pub favorites: Vec<TrackId>,
+    pub recently_played: Vec<TrackId>,
+    pub most_played: Vec<TrackId>,
 }
 
 impl Library {
@@ -64,6 +67,16 @@ impl Library {
         roots: Vec<PathBuf>,
         playlists_vec: Vec<PlaylistMeta>,
         tracks: HashMap<TrackId, TrackMeta>,
+    ) -> Self {
+        Self::new_with_stats(roots, playlists_vec, tracks, vec![], vec![])
+    }
+
+    pub fn new_with_stats(
+        roots: Vec<PathBuf>,
+        playlists_vec: Vec<PlaylistMeta>,
+        tracks: HashMap<TrackId, TrackMeta>,
+        recently_played: Vec<TrackId>,
+        most_played: Vec<TrackId>,
     ) -> Self {
         let mut playlists = HashMap::new();
         let mut playlist_order = Vec::new();
@@ -136,6 +149,8 @@ impl Library {
             genres,
             years,
             favorites,
+            recently_played,
+            most_played,
         }
     }
 
@@ -377,6 +392,12 @@ impl Library {
             SidebarNodeId::Category(CategoryId::Favorites) => {
                 self.resolve_track_list(&self.favorites)
             }
+            SidebarNodeId::Category(CategoryId::RecentlyPlayed) => {
+                self.resolve_track_list(&self.recently_played)
+            }
+            SidebarNodeId::Category(CategoryId::MostPlayed) => {
+                self.resolve_track_list(&self.most_played)
+            }
             SidebarNodeId::Category(_) => vec![],
             SidebarNodeId::Track { .. } => vec![],
             SidebarNodeId::Root => vec![],
@@ -399,10 +420,41 @@ impl Library {
                 .map(|d| d.tracks.clone())
                 .unwrap_or_default(),
             SidebarNodeId::Category(CategoryId::Favorites) => self.favorites.clone(),
+            SidebarNodeId::Category(CategoryId::RecentlyPlayed) => self.recently_played.clone(),
+            SidebarNodeId::Category(CategoryId::MostPlayed) => self.most_played.clone(),
             SidebarNodeId::Category(_) => vec![],
             SidebarNodeId::Track { .. } => vec![],
             SidebarNodeId::Root => vec![],
         }
+    }
+
+    pub fn resolve_sorted_tracks_for_node(
+        &self,
+        node: &SidebarNodeId,
+        sort_field: SortField,
+        sort_direction: SortDirection,
+    ) -> Vec<&TrackMeta> {
+        let mut tracks = self.resolve_tracks_for_node(node);
+
+        tracks.sort_by(|a, b| {
+            let cmp = match sort_field {
+                SortField::Title => a.title.cmp(&b.title),
+                SortField::Artist => a.artist.cmp(&b.artist).then_with(|| a.title.cmp(&b.title)),
+                SortField::Album => a
+                    .album
+                    .cmp(&b.album)
+                    .then_with(|| a.track_number.cmp(&b.track_number)),
+                SortField::Year => a.year.cmp(&b.year).then_with(|| a.title.cmp(&b.title)),
+                SortField::Duration => a.duration_ms.cmp(&b.duration_ms),
+            };
+            if sort_direction == SortDirection::Descending {
+                cmp.reverse()
+            } else {
+                cmp
+            }
+        });
+
+        tracks
     }
 
     fn resolve_track_list(&self, ids: &[TrackId]) -> Vec<&TrackMeta> {
@@ -462,6 +514,7 @@ mod tests {
             genre: genre.map(|s| s.to_string()),
             year: Some(2020),
             track_number: None,
+            play_count: 0,
             duration_ms: 1000,
             bitrate: None,
             sample_rate: None,

@@ -132,6 +132,44 @@ pub fn handle_toggle_shuffle(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+pub fn handle_toggle_sort(state: &mut AppState) -> Vec<AppMsg> {
+    use crate::navigation::state::{SortDirection, SortField};
+
+    // Toggle logic: Title -> Artist -> Album -> Year -> Duration
+    // If we're at Duration, switch direction and go back to Title
+
+    let current_field = state.session.nav.library.sort_field;
+    let current_dir = state.session.nav.library.sort_direction;
+
+    let (new_field, new_dir) = match (current_field, current_dir) {
+        (SortField::Title, dir) => (SortField::Artist, dir),
+        (SortField::Artist, dir) => (SortField::Album, dir),
+        (SortField::Album, dir) => (SortField::Year, dir),
+        (SortField::Year, dir) => (SortField::Duration, dir),
+        (SortField::Duration, SortDirection::Ascending) => {
+            (SortField::Title, SortDirection::Descending)
+        }
+        (SortField::Duration, SortDirection::Descending) => {
+            (SortField::Title, SortDirection::Ascending)
+        }
+    };
+
+    state.session.nav.library.sort_field = new_field;
+    state.session.nav.library.sort_direction = new_dir;
+
+    let dir_str = match new_dir {
+        SortDirection::Ascending => "Asc",
+        SortDirection::Descending => "Desc",
+    };
+
+    state.session.notification.current = Some(Notification::new(
+        NotificationKind::Info,
+        format!("Sorted by {:?} ({})", new_field, dir_str),
+    ));
+
+    vec![]
+}
+
 pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
     if !state.is_queue_focused() {
         return vec![];
@@ -562,6 +600,7 @@ mod tests {
                 year: None,
                 is_favorite: false,
                 track_number: None,
+                play_count: 0,
                 duration_ms: 10000,
                 bitrate: None,
                 sample_rate: None,

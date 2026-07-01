@@ -492,7 +492,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Re
     let mut stmt = conn.prepare(
         "SELECT id, file_path, title, artist, album, genre, year, is_favorite,
                 track_number, bitrate_kbps, sample_rate_hz, format,
-                duration_ms, has_cover, file_size_bytes
+                duration_ms, play_count, has_cover, file_size_bytes
          FROM tracks ORDER BY file_path ASC",
     )?;
 
@@ -516,8 +516,9 @@ fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Re
                 sample_rate: row.get(10)?,
                 format: row.get(11)?,
                 duration_ms: row.get::<_, i64>(12)? as u64,
-                has_cover: row.get(13)?,
-                file_size_bytes: row.get(14)?,
+                play_count: row.get::<_, i64>(13)? as u32,
+                has_cover: row.get(14)?,
+                file_size_bytes: row.get(15)?,
             },
         ))
     })?;
@@ -560,7 +561,31 @@ fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Re
         });
     }
 
-    Ok(Library::new(roots, playlists_vec, tracks_map))
+    // load recently played
+    let mut recently_played = Vec::new();
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT track_id FROM play_history ORDER BY played_at DESC LIMIT 100")
+        && let Ok(rows) = stmt.query_map([], |row| Ok(TrackId(row.get::<_, i64>(0)? as u64)))
+    {
+        recently_played = rows.flatten().collect();
+    }
+
+    // load most played
+    let mut most_played = Vec::new();
+    if let Ok(mut stmt) = conn
+        .prepare("SELECT id FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT 100")
+        && let Ok(rows) = stmt.query_map([], |row| Ok(TrackId(row.get::<_, i64>(0)? as u64)))
+    {
+        most_played = rows.flatten().collect();
+    }
+
+    Ok(Library::new_with_stats(
+        roots,
+        playlists_vec,
+        tracks_map,
+        recently_played,
+        most_played,
+    ))
 }
 
 /// toggle favorite
@@ -621,6 +646,10 @@ fn increment_play_count(conn: &rusqlite::Connection, track_id: TrackId) -> Resul
     conn.execute(
         "UPDATE tracks SET play_count = play_count + 1 WHERE id = ?",
         params![track_id.0 as i64],
+    )?;
+    conn.execute(
+        "INSERT INTO play_history (track_id, duration_s) VALUES (?, ?)",
+        params![track_id.0 as i64, 0], // Note: duration_s is 0 for now, could be passed later
     )?;
     Ok(())
 }
