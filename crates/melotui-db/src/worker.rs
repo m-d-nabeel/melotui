@@ -62,7 +62,7 @@ fn handle_command(
             let mut scan_failed = false;
             for root in &roots {
                 tracing::info!("Scanning {:?}...", root);
-                if let Err(e) = handle_scan_library(conn, root) {
+                if let Err(e) = handle_scan_library(conn, worker, root) {
                     tracing::error!("Failed to scan {:?}: {:?}", root, e);
                     worker.send(IpcEvent::Error {
                         message: format!("Failed to scan {:?}: {}", root, e),
@@ -188,24 +188,58 @@ fn handle_command(
                 tracing::error!("Failed to increment play count: {:?}", e);
             }
         }
+        DatabaseCommand::SearchTracks { query } => {
+            match conn.prepare("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?") {
+                Ok(mut stmt) => {
+                    match stmt.query_map(params![query], |row| Ok(TrackId(row.get::<_, i64>(0)? as u64))) {
+                        Ok(rows) => {
+                            let results: Vec<TrackId> = rows.flatten().collect();
+                            worker.send(IpcEvent::SearchResults { query, results });
+                        }
+                        Err(e) => {
+                            tracing::error!("Failed to query FTS: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to prepare FTS query: {:?}", e);
+                }
+            }
+        }
         DatabaseCommand::Shutdown => unreachable!("handled above"),
-        _ => { /* unhandled commands */ }
     }
 }
 
-#[tracing::instrument(skip(conn))]
-fn handle_scan_library(conn: &rusqlite::Connection, root: &Path) -> Result<()> {
+#[tracing::instrument(skip(conn, worker))]
+fn handle_scan_library(conn: &rusqlite::Connection, worker: &impl IpcWorker<DatabaseCommand>, root: &Path) -> Result<()> {
     info!("Scanning library at: {:?}", root);
 
     // do not delete all tracks
 
     let mut count = 0;
+    let mut skipped = 0;
     let scan_start = std::time::Instant::now();
+
+    // load cache
+    let mut cache: HashMap<String, (i64, i64)> = HashMap::new();
+    if let Ok(mut stmt) = conn.prepare("SELECT file_path, file_size_bytes, file_modified_at FROM tracks") {
+        if let Ok(rows) = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        }) {
+            for row in rows.flatten() {
+                cache.insert(row.0, (row.1, row.2));
+            }
+        }
+    }
 
     // use transaction
     conn.execute("BEGIN TRANSACTION", [])?;
 
-    let res = scan_directory(conn, root, &mut count);
+    let res = scan_directory(conn, worker, root, &mut count, &mut skipped, &cache, cache.len());
 
     if res.is_ok() {
         conn.execute("COMMIT", [])?;
@@ -216,8 +250,9 @@ fn handle_scan_library(conn: &rusqlite::Connection, root: &Path) -> Result<()> {
 
     let scan_elapsed = scan_start.elapsed();
     tracing::info!(
-        "Scanned directory and processed {} tracks in {:?}",
+        "Scanned directory and processed {} tracks (skipped {}) in {:?}",
         count,
+        skipped,
         scan_elapsed
     );
 
@@ -253,20 +288,60 @@ fn prune_library(conn: &rusqlite::Connection) -> Result<usize> {
     Ok(dead_ids.len())
 }
 
-fn scan_directory(conn: &rusqlite::Connection, dir: &Path, count: &mut usize) -> Result<()> {
+fn scan_directory(
+    conn: &rusqlite::Connection,
+    worker: &impl IpcWorker<DatabaseCommand>,
+    dir: &Path,
+    count: &mut usize,
+    skipped: &mut usize,
+    cache: &HashMap<String, (i64, i64)>,
+    total_cached: usize,
+) -> Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         let path = entry.path();
 
         if path.is_dir() {
-            scan_directory(conn, &path, count)?;
-        } else if path.is_file()
-            && let Some(track_data) = extract_track_data(&path)
-        {
-            insert_or_replace_track(conn, &track_data)?;
-            *count += 1;
-            if (*count).is_multiple_of(100) {
-                tracing::info!("Processed {} tracks...", *count);
+            scan_directory(conn, worker, &path, count, skipped, cache, total_cached)?;
+        } else if path.is_file() {
+            let path_str = path.to_string_lossy().into_owned();
+            if let Ok(meta) = fs::metadata(&path) {
+                let size = meta.len() as i64;
+                let modified = meta
+                    .modified()
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+
+                if let Some(&(cached_size, cached_modified)) = cache.get(&path_str) {
+                    if size == cached_size && modified == cached_modified {
+                        *skipped += 1;
+                        if (*count + *skipped).is_multiple_of(50) {
+                            worker.send(IpcEvent::ScanProgress {
+                                scanned: *count as u32,
+                                skipped: *skipped as u32,
+                                total: total_cached as u32,
+                            });
+                        }
+                        continue;
+                    }
+                }
+            }
+
+            if let Some(track_data) = extract_track_data(&path) {
+                if let Err(e) = insert_or_replace_track(conn, &track_data) {
+                    tracing::error!("Failed to insert track {:?}: {:?}", path, e);
+                    continue; // resilient scan, do not fail transaction
+                }
+                *count += 1;
+                if (*count + *skipped).is_multiple_of(50) {
+                    worker.send(IpcEvent::ScanProgress {
+                        scanned: *count as u32,
+                        skipped: *skipped as u32,
+                        total: total_cached as u32,
+                    });
+                }
             }
         }
     }

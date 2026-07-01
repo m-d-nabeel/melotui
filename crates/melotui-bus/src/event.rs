@@ -57,6 +57,15 @@ pub enum IpcEvent {
         track_id: TrackId,
         is_favorite: bool,
     },
+    ScanProgress {
+        scanned: u32,
+        skipped: u32,
+        total: u32,
+    },
+    SearchResults {
+        query: String,
+        results: Vec<TrackId>,
+    },
 
     // playlists
     PlaylistCreated {

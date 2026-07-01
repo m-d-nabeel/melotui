@@ -14,4 +14,5 @@ pub enum DatabaseMsg {
         track_id: TrackId,
     },
     DispatchIncrementPlayCount(TrackId),
+    DispatchSearchTracks(String),
 }

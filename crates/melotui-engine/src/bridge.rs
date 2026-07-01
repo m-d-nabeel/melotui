@@ -176,6 +176,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                 track_id: track_id.0 as i64,
             }))
         }
+        AppMsg::Database(DatabaseMsg::DispatchSearchTracks(query)) => {
+            Some(IpcCommand::Database(DatabaseCommand::SearchTracks {
+                query: query.clone(),
+            }))
+        }
 
         _ => None,
     }
@@ -256,6 +261,18 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
                 playlist_id
             );
             AppMsg::Noop
+        }
+        IpcEvent::ScanProgress {
+            scanned,
+            skipped,
+            total,
+        } => AppMsg::Library(LibraryMsg::UpdateScanProgress {
+            scanned,
+            skipped,
+            total,
+        }),
+        IpcEvent::SearchResults { query, results } => {
+            AppMsg::Library(LibraryMsg::SetSearchResults { query, results })
         }
         _ => AppMsg::Noop,
     }

@@ -32,4 +32,13 @@ pub enum LibraryMsg {
         id: PlaylistId,
         name: String,
     },
+    UpdateScanProgress {
+        scanned: u32,
+        skipped: u32,
+        total: u32,
+    },
+    SetSearchResults {
+        query: String,
+        results: Vec<TrackId>,
+    },
 }

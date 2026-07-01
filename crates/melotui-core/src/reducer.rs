@@ -247,6 +247,12 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
             }
             vec![]
         }
+        LibraryMsg::UpdateScanProgress { scanned, skipped, total } => {
+            library_action::handle_update_scan_progress(state, scanned, skipped, total)
+        }
+        LibraryMsg::SetSearchResults { query, results } => {
+            library_action::handle_set_search_results(state, query, results)
+        }
     }
 }
 
@@ -299,6 +305,7 @@ fn handle_database_message(_state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMs
         | DatabaseMsg::DispatchDeletePlaylist(_)
         | DatabaseMsg::DispatchAddToPlaylist { .. }
         | DatabaseMsg::DispatchRemoveFromPlaylist { .. }
-        | DatabaseMsg::DispatchIncrementPlayCount(_) => vec![],
+        | DatabaseMsg::DispatchIncrementPlayCount(_)
+        | DatabaseMsg::DispatchSearchTracks(_) => vec![],
     }
 }
