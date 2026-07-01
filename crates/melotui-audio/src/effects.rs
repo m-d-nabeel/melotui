@@ -1,5 +1,11 @@
 use fundsp::hacker32::*;
 use fundsp::net::Net;
+use fundsp::{
+    DEFAULT_SR,
+    buffer::{BufferMut, BufferRef},
+    signal::SignalFrame,
+};
+use std::f32::consts::TAU;
 
 pub struct AudioParams {
     pub bass: Shared,
@@ -70,19 +76,202 @@ const EQ_FREQS: [f32; 10] = [
     32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
 ];
 
+#[derive(Clone)]
+struct StereoSpatializer {
+    pan: Shared,
+    auto_pan_rate: Shared,
+    auto_pan_depth: Shared,
+    sample_rate: f32,
+    phase: f32,
+    smoothed_pan: f32,
+    delay_buffer: Vec<f32>,
+    write_idx: usize,
+    shadow_l: f32,
+    shadow_r: f32,
+}
+
+impl StereoSpatializer {
+    const MAX_ITD_SECONDS: f32 = 0.000_65;
+    const SHADOW_CUTOFF_HZ: f32 = 4_200.0;
+
+    fn new(params: &AudioParams) -> Self {
+        let mut spatializer = Self {
+            pan: params.pan.clone(),
+            auto_pan_rate: params.auto_pan_rate.clone(),
+            auto_pan_depth: params.auto_pan_depth.clone(),
+            sample_rate: DEFAULT_SR as f32,
+            phase: 0.0,
+            smoothed_pan: 0.0,
+            delay_buffer: Vec::new(),
+            write_idx: 0,
+            shadow_l: 0.0,
+            shadow_r: 0.0,
+        };
+        spatializer.resize_delay_buffer();
+        spatializer
+    }
+
+    fn resize_delay_buffer(&mut self) {
+        let len = (self.sample_rate * Self::MAX_ITD_SECONDS).ceil() as usize + 4;
+        self.delay_buffer.resize(std::cmp::max(len, 4), 0.0);
+        self.write_idx = std::cmp::min(self.write_idx, self.delay_buffer.len() - 1);
+    }
+
+    fn balance_gains(pan: f32) -> (f32, f32) {
+        if pan < 0.0 {
+            (1.0, (1.0 + pan).max(0.0).sqrt())
+        } else {
+            ((1.0 - pan).max(0.0).sqrt(), 1.0)
+        }
+    }
+
+    fn read_delay(&self, delay_samples: f32) -> f32 {
+        let len = self.delay_buffer.len() as f32;
+        let mut pos = self.write_idx as f32 - delay_samples.clamp(0.0, len - 2.0);
+        while pos < 0.0 {
+            pos += len;
+        }
+
+        let i0 = pos.floor() as usize % self.delay_buffer.len();
+        let i1 = (i0 + 1) % self.delay_buffer.len();
+        let frac = pos - pos.floor();
+        self.delay_buffer[i0] * (1.0 - frac) + self.delay_buffer[i1] * frac
+    }
+
+    fn shadow_sample(state: &mut f32, sample: f32, amount: f32, sample_rate: f32) -> f32 {
+        let alpha = 1.0 - (-TAU * Self::SHADOW_CUTOFF_HZ / sample_rate).exp();
+        *state += alpha * (sample - *state);
+        sample * (1.0 - amount) + *state * amount
+    }
+
+    fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
+        let rate = self.auto_pan_rate.value().clamp(0.0, 2.0);
+        let depth = self.auto_pan_depth.value().clamp(0.0, 1.0);
+        let auto = if depth > 0.001 && rate > 0.001 {
+            self.phase = (self.phase + rate / self.sample_rate).fract();
+            (self.phase * TAU).sin() * depth
+        } else {
+            0.0
+        };
+
+        let target_pan = (self.pan.value() + auto).clamp(-1.0, 1.0);
+        self.smoothed_pan += (target_pan - self.smoothed_pan) * 0.02;
+        let pan = self.smoothed_pan;
+        let lateral = pan.abs();
+        let (left_gain, right_gain) = Self::balance_gains(pan);
+
+        let dry_l = left * left_gain;
+        let dry_r = right * right_gain;
+        let auto_active = depth > 0.001 && (rate > 0.001 || self.pan.value().abs() > 0.001);
+        if !auto_active {
+            return (dry_l, dry_r);
+        }
+
+        let mono = (left + right) * 0.5;
+        self.delay_buffer[self.write_idx] = mono;
+
+        let max_delay = self.sample_rate * Self::MAX_ITD_SECONDS * depth;
+        let left_delay = pan.max(0.0) * max_delay;
+        let right_delay = (-pan).max(0.0) * max_delay;
+        let mut spatial_l = self.read_delay(left_delay);
+        let mut spatial_r = self.read_delay(right_delay);
+
+        let shadow = 0.45 * lateral * depth;
+        spatial_l = Self::shadow_sample(
+            &mut self.shadow_l,
+            spatial_l,
+            pan.max(0.0) * shadow,
+            self.sample_rate,
+        );
+        spatial_r = Self::shadow_sample(
+            &mut self.shadow_r,
+            spatial_r,
+            (-pan).max(0.0) * shadow,
+            self.sample_rate,
+        );
+        spatial_l *= left_gain;
+        spatial_r *= right_gain;
+
+        self.write_idx = (self.write_idx + 1) % self.delay_buffer.len();
+
+        let spatial_mix = (0.25 + depth * 0.55).min(0.8);
+        let dry_mix = 1.0 - spatial_mix;
+        let makeup = 1.0 + spatial_mix * 0.08;
+        (
+            (dry_l * dry_mix + spatial_l * spatial_mix) * makeup,
+            (dry_r * dry_mix + spatial_r * spatial_mix) * makeup,
+        )
+    }
+}
+
+impl AudioUnit for StereoSpatializer {
+    fn reset(&mut self) {
+        self.phase = 0.0;
+        self.smoothed_pan = self.pan.value().clamp(-1.0, 1.0);
+        self.delay_buffer.fill(0.0);
+        self.write_idx = 0;
+        self.shadow_l = 0.0;
+        self.shadow_r = 0.0;
+    }
+
+    fn set_sample_rate(&mut self, sample_rate: f64) {
+        self.sample_rate = (sample_rate as f32).max(1.0);
+        self.resize_delay_buffer();
+        self.reset();
+    }
+
+    fn tick(&mut self, input: &[f32], output: &mut [f32]) {
+        let (left, right) = self.process_sample(input[0], input[1]);
+        output[0] = left;
+        output[1] = right;
+    }
+
+    fn process(&mut self, size: usize, input: &BufferRef, output: &mut BufferMut) {
+        for i in 0..size {
+            let (left, right) =
+                self.process_sample(input.channel_f32(0)[i], input.channel_f32(1)[i]);
+            output.channel_f32_mut(0)[i] = left;
+            output.channel_f32_mut(1)[i] = right;
+        }
+    }
+
+    fn inputs(&self) -> usize {
+        2
+    }
+
+    fn outputs(&self) -> usize {
+        2
+    }
+
+    fn route(&mut self, input: &SignalFrame, _frequency: f64) -> SignalFrame {
+        let mut output = SignalFrame::new(2);
+        output.set(0, input.at(0).combine_nonlinear(input.at(1), 0.0));
+        output.set(1, input.at(1).combine_nonlinear(input.at(0), 0.0));
+        output
+    }
+
+    fn get_id(&self) -> u64 {
+        0x05a7_1a11_05fa_71a1
+    }
+
+    fn footprint(&self) -> usize {
+        std::mem::size_of::<Self>()
+    }
+}
+
 /// Build the mono DSP chain as a Net (dynamic audio graph).
 ///
 /// Pipeline: highpass → bass_shelf → treble_shelf → exciter → bitcrush → wobble → 10-band EQ → lowpass → echo
 fn build_mono_chain(params: &AudioParams) -> Net {
-    let headroom = constant(0.707);
-
     // high-pass filter (bypassed at 20 Hz)
     let hp_node = (pass() | var(&params.highpass) | constant(0.707)) >> highpass();
 
-    // bass: low shelf @ 80Hz (cascaded for steeper slope)
-    let bass_node = ((pass() * headroom) | constant(80.0) | constant(0.707) | var(&params.bass))
+    // bass: cascaded shelves, neutral at the default gain of 1.0.
+    let bass_gain_1 = var(&params.bass) >> map(|g: &Frame<f32, U1>| g[0].max(0.001).sqrt());
+    let bass_gain_2 = var(&params.bass) >> map(|g: &Frame<f32, U1>| g[0].max(0.001).sqrt());
+    let bass_node = (pass() | constant(80.0) | constant(0.707) | bass_gain_1)
         >> lowshelf()
-        >> (pass() | constant(60.0) | constant(0.8) | constant(3.5))
+        >> (pass() | constant(60.0) | constant(0.8) | bass_gain_2)
         >> lowshelf();
 
     // treble: high shelf @ 3000Hz
@@ -215,21 +404,7 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
     let mixer_core = dry_path + wet_path;
     let stereo_mixer = (stereo_pass.clone() ^ stereo_pass.clone()) >> mixer_core;
 
-    // ── True Stereo Equal-Power Pan + Auto-Pan LFO ───────
-    let pan_static = var(&params.pan);
-    let lfo = (var(&params.auto_pan_rate) >> sine()) * var(&params.auto_pan_depth);
-    let combined_pan = (pan_static + lfo) >> map(|p: &Frame<f32, U1>| p[0].clamp(-1.0, 1.0));
-
-    let cos_map = map(|p: &Frame<f32, U1>| {
-        let angle = (p[0] + 1.0) * std::f32::consts::FRAC_PI_4;
-        angle.cos()
-    });
-    let sin_map = map(|p: &Frame<f32, U1>| {
-        let angle = (p[0] + 1.0) * std::f32::consts::FRAC_PI_4;
-        angle.sin()
-    });
-
-    let pan_stereo = combined_pan >> (cos_map ^ sin_map);
+    let spatializer = || Net::wrap(Box::new(StereoSpatializer::new(params)));
 
     // ── Mid/Side Matrix (Karaoke & Stereo Widener) ───────
     let make_ms_matrix = || {
@@ -281,7 +456,7 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
         Box::new(
             mono_chain
                 >> split::<U2>()
-                >> (stereo_pass.clone() * pan_stereo)
+                >> spatializer()
                 >> stereo_mixer
                 >> make_ping_pong_mixer()
                 >> make_ms_matrix()
@@ -291,11 +466,64 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
         let mono_chain2 = build_mono_chain(params);
         Box::new(
             (mono_chain | mono_chain2)
-                >> (stereo_pass.clone() * pan_stereo)
+                >> spatializer()
                 >> stereo_mixer
                 >> make_ping_pong_mixer()
                 >> make_ms_matrix()
                 >> limiter_stereo,
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 0.0001,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn spatializer_default_preserves_stereo_sample() {
+        let params = AudioParams::new();
+        let mut spatializer = StereoSpatializer::new(&params);
+        spatializer.reset();
+
+        let mut output = [0.0, 0.0];
+        spatializer.tick(&[0.8, -0.2], &mut output);
+
+        assert_close(output[0], 0.8);
+        assert_close(output[1], -0.2);
+    }
+
+    #[test]
+    fn spatializer_center_pan_does_not_attenuate() {
+        let params = AudioParams::new();
+        params.pan.set_value(0.0);
+        let mut spatializer = StereoSpatializer::new(&params);
+        spatializer.reset();
+
+        let mut output = [0.0, 0.0];
+        spatializer.tick(&[0.5, 0.5], &mut output);
+
+        assert_close(output[0], 0.5);
+        assert_close(output[1], 0.5);
+    }
+
+    #[test]
+    fn spatializer_hard_pan_keeps_near_channel_level() {
+        let params = AudioParams::new();
+        params.pan.set_value(1.0);
+        let mut spatializer = StereoSpatializer::new(&params);
+        spatializer.reset();
+
+        let mut output = [0.0, 0.0];
+        spatializer.tick(&[0.5, 0.5], &mut output);
+
+        assert!(output[0].abs() < 0.0001);
+        assert_close(output[1], 0.5);
     }
 }
