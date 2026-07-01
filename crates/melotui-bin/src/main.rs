@@ -4,7 +4,7 @@ mod logging;
 mod mpris;
 mod runtime;
 
-fn main() -> anyhow::Result<()> {
+fn main() {
     let _log_guard = logging::init();
 
     std::panic::set_hook(Box::new(|panic| {
@@ -13,7 +13,10 @@ fn main() -> anyhow::Result<()> {
         eprintln!("panic: {}", panic);
     }));
 
-    runtime::run()?;
+    let res = runtime::run();
 
-    Ok(())
+    if let Err(e) = res {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
 }

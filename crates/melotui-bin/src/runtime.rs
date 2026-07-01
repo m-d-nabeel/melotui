@@ -302,12 +302,18 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
             } else {
                 tracing::info!("Session saved successfully");
             }
+
             if ctx.engine_alive {
                 ctx.engine.shutdown();
                 ctx.engine_alive = false;
             }
             ctx.running = false;
-            break;
+
+            // We must force exit here because dropping MprisManager (souvlaki DBus) at the end of this function
+            // can block for several seconds waiting for the DBus thread to join.
+            // But we must restore the terminal first!
+            let _ = melotui_tui::restore_terminal();
+            std::process::exit(0);
         }
 
         // side effects

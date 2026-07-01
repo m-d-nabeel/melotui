@@ -191,7 +191,9 @@ fn handle_command(
         DatabaseCommand::SearchTracks { query } => {
             match conn.prepare("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?") {
                 Ok(mut stmt) => {
-                    match stmt.query_map(params![query], |row| Ok(TrackId(row.get::<_, i64>(0)? as u64))) {
+                    match stmt.query_map(params![query], |row| {
+                        Ok(TrackId(row.get::<_, i64>(0)? as u64))
+                    }) {
                         Ok(rows) => {
                             let results: Vec<TrackId> = rows.flatten().collect();
                             worker.send(IpcEvent::SearchResults { query, results });
@@ -211,7 +213,11 @@ fn handle_command(
 }
 
 #[tracing::instrument(skip(conn, worker))]
-fn handle_scan_library(conn: &rusqlite::Connection, worker: &impl IpcWorker<DatabaseCommand>, root: &Path) -> Result<()> {
+fn handle_scan_library(
+    conn: &rusqlite::Connection,
+    worker: &impl IpcWorker<DatabaseCommand>,
+    root: &Path,
+) -> Result<()> {
     info!("Scanning library at: {:?}", root);
 
     // do not delete all tracks
@@ -222,24 +228,33 @@ fn handle_scan_library(conn: &rusqlite::Connection, worker: &impl IpcWorker<Data
 
     // load cache
     let mut cache: HashMap<String, (i64, i64)> = HashMap::new();
-    if let Ok(mut stmt) = conn.prepare("SELECT file_path, file_size_bytes, file_modified_at FROM tracks") {
-        if let Ok(rows) = stmt.query_map([], |row| {
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT file_path, file_size_bytes, file_modified_at FROM tracks")
+        && let Ok(rows) = stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, i64>(1)?,
                 row.get::<_, i64>(2)?,
             ))
-        }) {
-            for row in rows.flatten() {
-                cache.insert(row.0, (row.1, row.2));
-            }
+        })
+    {
+        for row in rows.flatten() {
+            cache.insert(row.0, (row.1, row.2));
         }
     }
 
     // use transaction
     conn.execute("BEGIN TRANSACTION", [])?;
 
-    let res = scan_directory(conn, worker, root, &mut count, &mut skipped, &cache, cache.len());
+    let res = scan_directory(
+        conn,
+        worker,
+        root,
+        &mut count,
+        &mut skipped,
+        &cache,
+        cache.len(),
+    );
 
     if res.is_ok() {
         conn.execute("COMMIT", [])?;
@@ -314,18 +329,19 @@ fn scan_directory(
                     .unwrap_or_default()
                     .as_secs() as i64;
 
-                if let Some(&(cached_size, cached_modified)) = cache.get(&path_str) {
-                    if size == cached_size && modified == cached_modified {
-                        *skipped += 1;
-                        if (*count + *skipped).is_multiple_of(50) {
-                            worker.send(IpcEvent::ScanProgress {
-                                scanned: *count as u32,
-                                skipped: *skipped as u32,
-                                total: total_cached as u32,
-                            });
-                        }
-                        continue;
+                if let Some(&(cached_size, cached_modified)) = cache.get(&path_str)
+                    && size == cached_size
+                    && modified == cached_modified
+                {
+                    *skipped += 1;
+                    if (*count + *skipped).is_multiple_of(50) {
+                        worker.send(IpcEvent::ScanProgress {
+                            scanned: *count as u32,
+                            skipped: *skipped as u32,
+                            total: total_cached as u32,
+                        });
                     }
+                    continue;
                 }
             }
 

@@ -18,35 +18,50 @@ pub fn handle_request_scan_library(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
-pub fn handle_update_scan_progress(state: &mut AppState, scanned: u32, skipped: u32, _total: u32) -> Vec<AppMsg> {
+pub fn handle_update_scan_progress(
+    state: &mut AppState,
+    scanned: u32,
+    skipped: u32,
+    _total: u32,
+) -> Vec<AppMsg> {
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Scanning Library... {} processed ({} skipped)", scanned, skipped),
+        format!(
+            "Scanning Library... {} processed ({} skipped)",
+            scanned, skipped
+        ),
     ));
     vec![]
 }
 
-pub fn handle_set_search_results(state: &mut AppState, query: String, results: Vec<TrackId>) -> Vec<AppMsg> {
+pub fn handle_set_search_results(
+    state: &mut AppState,
+    query: String,
+    results: Vec<TrackId>,
+) -> Vec<AppMsg> {
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
         format!("Found {} results for '{}'", results.len(), query),
     ));
-    
+
     // We update the active search state to display the results in the current view
     // For now we map these TrackIds back to SidebarNodeId::Track so the UI can navigate them
-    let matches: Vec<SidebarNodeId> = results.into_iter().filter_map(|id| {
-        state.library.get_track(id).map(|meta| {
-            let parent = meta
-                .artist
-                .as_ref()
-                .map(|a| SidebarNodeId::Artist(a.clone()))
-                .unwrap_or(SidebarNodeId::Root);
-            SidebarNodeId::Track {
-                id,
-                parent: Box::new(parent),
-            }
+    let matches: Vec<SidebarNodeId> = results
+        .into_iter()
+        .filter_map(|id| {
+            state.library.get_track(id).map(|meta| {
+                let parent = meta
+                    .artist
+                    .as_ref()
+                    .map(|a| SidebarNodeId::Artist(a.clone()))
+                    .unwrap_or(SidebarNodeId::Root);
+                SidebarNodeId::Track {
+                    id,
+                    parent: Box::new(parent),
+                }
+            })
         })
-    }).collect();
+        .collect();
 
     state.session.nav.library.search = SearchState {
         field: Some(SearchField::Song),
