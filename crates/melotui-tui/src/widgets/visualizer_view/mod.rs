@@ -12,6 +12,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             SpectrumStyle::Default => spectrum_visualizer_view::draw_default(frame, area, state),
             SpectrumStyle::Bar => spectrum_visualizer_view::draw_bar(frame, area, state),
             SpectrumStyle::Particle => spectrum_visualizer_view::draw_particle(frame, area, state),
+            SpectrumStyle::Radial => spectrum_visualizer_view::draw_radial(frame, area, state),
+            SpectrumStyle::Nova => spectrum_visualizer_view::draw_nova(frame, area, state),
         }
     } else {
         album_art_view::draw(frame, area, state, cache);

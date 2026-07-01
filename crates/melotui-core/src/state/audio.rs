@@ -68,3 +68,38 @@ impl Default for AudioState {
         }
     }
 }
+
+impl AudioState {
+    pub fn sanitize(&mut self) {
+        let defaults = Self::default();
+        self.volume = clamp_finite(self.volume, defaults.volume, 0.0, 1.5);
+        self.speed = clamp_finite(self.speed, defaults.speed, 0.5, 2.0);
+        self.bass = clamp_finite(self.bass, defaults.bass, 0.1, 5.0);
+        self.treble = clamp_finite(self.treble, defaults.treble, 0.0, 5.0);
+        self.reverb = clamp_finite(self.reverb, defaults.reverb, 0.0, 1.0);
+        self.echo = clamp_finite(self.echo, defaults.echo, 0.0, 0.9);
+        self.pan = clamp_finite(self.pan, defaults.pan, -1.0, 1.0);
+        self.lowpass = clamp_finite(self.lowpass, defaults.lowpass, 200.0, 20000.0);
+        self.highpass = clamp_finite(self.highpass, defaults.highpass, 20.0, 5000.0);
+        self.auto_pan_rate = clamp_finite(self.auto_pan_rate, defaults.auto_pan_rate, 0.0, 2.0);
+        self.auto_pan_depth = clamp_finite(self.auto_pan_depth, defaults.auto_pan_depth, 0.0, 1.0);
+        for band in &mut self.eq_bands {
+            *band = clamp_finite(*band, 0.0, -12.0, 12.0);
+        }
+        self.exciter = clamp_finite(self.exciter, defaults.exciter, 0.0, 5.0);
+        self.bitcrush = clamp_finite(self.bitcrush, defaults.bitcrush, 0.0, 1.0);
+        self.width = clamp_finite(self.width, defaults.width, 0.0, 3.0);
+        self.karaoke = clamp_finite(self.karaoke, defaults.karaoke, 0.0, 1.0);
+        self.wobble = clamp_finite(self.wobble, defaults.wobble, 0.0, 1.0);
+        self.ping_pong = clamp_finite(self.ping_pong, defaults.ping_pong, 0.0, 1.0);
+        self.phaser = clamp_finite(self.phaser, defaults.phaser, 0.0, 1.0);
+    }
+}
+
+fn clamp_finite(value: f32, default: f32, min: f32, max: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(min, max)
+    } else {
+        default
+    }
+}

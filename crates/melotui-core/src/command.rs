@@ -56,6 +56,10 @@ pub enum Command {
     Sidebar { width: u16 },
     SeekRelative(i64),
     SeekAbsolute(u64),
+    PresetSave { name: String },
+    PresetLoad { name: String },
+    PresetDelete { name: String },
+    PresetPicker,
     Unknown(String),
 }
 
@@ -84,6 +88,10 @@ impl fmt::Display for Command {
             Command::Sidebar { width } => write!(f, "sidebar {}", width),
             Command::SeekRelative(offset) => write!(f, "seek {:+}", offset),
             Command::SeekAbsolute(pos) => write!(f, "seek {}", pos),
+            Command::PresetSave { name } => write!(f, "preset save {}", name),
+            Command::PresetLoad { name } => write!(f, "preset load {}", name),
+            Command::PresetDelete { name } => write!(f, "preset rm {}", name),
+            Command::PresetPicker => write!(f, "preset"),
             Command::Unknown(s) => write!(f, "unknown: {}", s),
         }
     }
@@ -186,7 +194,7 @@ impl FromStr for Command {
                     Ok(Command::ChangeVisualizer { arg: style })
                 } else {
                     Ok(Command::Unknown(
-                        "Allowed: Cava, Default, Bar, Particle".into(),
+                        "Allowed: Cava, Default, Bar, Particle, Radial, Nova".into(),
                     ))
                 }
             }
@@ -229,6 +237,43 @@ impl FromStr for Command {
                     }
                     _ => Ok(Command::Unknown(format!(
                         "pl: unknown subcommand '{}'",
+                        sub
+                    ))),
+                }
+            }
+
+            "preset" | "dsp" => {
+                let sub = tokens.first().map(|s| s.as_str()).unwrap_or("");
+                let name = if tokens.len() > 1 {
+                    tokens[1..].join(" ")
+                } else {
+                    String::new()
+                };
+                match sub {
+                    "" | "list" | "picker" => Ok(Command::PresetPicker),
+                    "save" => {
+                        if name.is_empty() {
+                            Ok(Command::Unknown("preset save requires a name".into()))
+                        } else {
+                            Ok(Command::PresetSave { name })
+                        }
+                    }
+                    "load" => {
+                        if name.is_empty() {
+                            Ok(Command::Unknown("preset load requires a name".into()))
+                        } else {
+                            Ok(Command::PresetLoad { name })
+                        }
+                    }
+                    "rm" | "del" | "delete" => {
+                        if name.is_empty() {
+                            Ok(Command::Unknown("preset rm requires a name".into()))
+                        } else {
+                            Ok(Command::PresetDelete { name })
+                        }
+                    }
+                    _ => Ok(Command::Unknown(format!(
+                        "preset: unknown subcommand '{}'",
                         sub
                     ))),
                 }
@@ -380,9 +425,9 @@ mod tests {
     #[test]
     fn test_parse_visualizer() {
         assert_eq!(
-            Command::parse("v particle"),
+            Command::parse("v radial"),
             Command::ChangeVisualizer {
-                arg: SpectrumStyle::Particle
+                arg: SpectrumStyle::Radial
             }
         );
         assert_eq!(
@@ -391,7 +436,7 @@ mod tests {
         );
         assert_eq!(
             Command::parse("v unknown"),
-            Command::Unknown("Allowed: Cava, Default, Bar, Particle".into())
+            Command::Unknown("Allowed: Cava, Default, Bar, Particle, Radial, Nova".into())
         );
     }
 

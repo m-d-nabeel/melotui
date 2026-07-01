@@ -23,6 +23,13 @@ pub enum UIMsg {
     PlaylistPickerMoveDown,
     PlaylistPickerUpdateQuery(char),
     PlaylistPickerBackspace,
+    EnterPresetPicker,
+    ExitPresetPicker,
+    SubmitPresetPicker,
+    PresetPickerMoveUp,
+    PresetPickerMoveDown,
+    PresetPickerUpdateQuery(char),
+    PresetPickerBackspace,
     DeletePlaylistConfirm,
     ShowConfirm {
         message: String,

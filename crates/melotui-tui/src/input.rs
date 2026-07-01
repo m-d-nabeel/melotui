@@ -34,6 +34,11 @@ impl InputHandler {
             return contexts;
         }
 
+        if *state.ui_mode() == UIMode::PresetPicker {
+            contexts.push(KeyContext::PresetPicker);
+            return contexts;
+        }
+
         if *state.ui_mode() == UIMode::Confirm {
             contexts.push(KeyContext::Confirm);
             return contexts;
@@ -111,6 +116,11 @@ impl InputHandler {
                 && let KeyCode::Char(c) = key.code
             {
                 return Some(AppMsg::UI(UIMsg::PlaylistPickerUpdateQuery(c)));
+            }
+            if *state.ui_mode() == UIMode::PresetPicker
+                && let KeyCode::Char(c) = key.code
+            {
+                return Some(AppMsg::UI(UIMsg::PresetPickerUpdateQuery(c)));
             }
             return None;
         };
@@ -334,5 +344,24 @@ mod tests {
             msg,
             Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))
         ));
+    }
+
+    #[test]
+    fn test_preset_picker_input() {
+        let mut state = test_state();
+        reduce(&mut state, AppMsg::UI(UIMsg::EnterPresetPicker));
+
+        let char_key = KeyEvent::new(KeyCode::Char('p'), KeyModifiers::empty());
+        let registry = crate::keybinding::KeyRegistry::default();
+        let msg = InputHandler::handle(char_key, &state, &registry);
+
+        assert!(matches!(
+            msg,
+            Some(AppMsg::UI(UIMsg::PresetPickerUpdateQuery('p')))
+        ));
+
+        let enter_key = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
+        let msg = InputHandler::handle(enter_key, &state, &registry);
+        assert!(matches!(msg, Some(AppMsg::UI(UIMsg::SubmitPresetPicker))));
     }
 }

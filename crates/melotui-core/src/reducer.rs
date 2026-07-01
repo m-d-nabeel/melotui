@@ -35,6 +35,9 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
         NavigationMsg::MoveDown => nav_action::handle_move_down(state),
         NavigationMsg::ToggleArt => playback_action::handle_toggle_art(state),
         NavigationMsg::ToggleTreeExpand => nav_action::handle_toggle_tree_expand(state),
+        NavigationMsg::CycleVisualizerStyle => {
+            playback_action::handle_cycle_visualizer_style(state)
+        }
     }
 }
 
@@ -163,6 +166,13 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
             ui_action::handle_playlist_picker_update_query(state, c)
         }
         UIMsg::PlaylistPickerBackspace => ui_action::handle_playlist_picker_backspace(state),
+        UIMsg::EnterPresetPicker => ui_action::handle_enter_preset_picker(state),
+        UIMsg::ExitPresetPicker => ui_action::handle_exit_preset_picker(state),
+        UIMsg::SubmitPresetPicker => ui_action::handle_submit_preset_picker(state),
+        UIMsg::PresetPickerMoveUp => ui_action::handle_preset_picker_move_up(state),
+        UIMsg::PresetPickerMoveDown => ui_action::handle_preset_picker_move_down(state),
+        UIMsg::PresetPickerUpdateQuery(c) => ui_action::handle_preset_picker_update_query(state, c),
+        UIMsg::PresetPickerBackspace => ui_action::handle_preset_picker_backspace(state),
         UIMsg::DeletePlaylistConfirm => ui_action::handle_delete_playlist_confirm(state),
         UIMsg::ShowConfirm {
             message,

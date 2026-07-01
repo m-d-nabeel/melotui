@@ -6,10 +6,13 @@ pub enum UIMode {
     Normal,
     Command,
     PlaylistPicker,
+    PresetPicker,
     Confirm,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum FocusMode {
     #[default]
     Full, // sidebar + visualizer + mixer + playback
@@ -64,6 +67,14 @@ pub struct PlaylistPickerState {
     pub track_id: Option<TrackId>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct PresetPickerState {
+    pub query: String,
+    pub selection: usize,
+    pub scroll_offset: usize,
+    pub presets: Vec<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfirmDialog {
     pub message: String,
@@ -79,6 +90,7 @@ pub struct UIState {
     pub command_history: crate::history::CommandHistory,
     pub history_index: Option<usize>,
     pub playlist_picker: PlaylistPickerState,
+    pub preset_picker: PresetPickerState,
     /// track waiting to be added after async playlist creation
     pub pending_add_track: Option<TrackId>,
     pub confirm_dialog: Option<ConfirmDialog>,
@@ -105,6 +117,7 @@ impl Default for UIState {
             command_history: crate::history::CommandHistory::new(),
             history_index: None,
             playlist_picker: PlaylistPickerState::default(),
+            preset_picker: PresetPickerState::default(),
             pending_add_track: None,
             confirm_dialog: None,
             show_help: false,

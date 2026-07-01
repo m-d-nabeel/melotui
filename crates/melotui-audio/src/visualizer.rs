@@ -135,8 +135,11 @@ impl VisualizerManager {
                     tracing::info!("Switching Visualizer to Internal");
                     self.take_active_to_idle();
                     if let Some(cons) = self.idle_internal.take() {
-                        self.backend =
-                            Backend::Internal(SpectrumAnalyzer::new(cons, self.fft_size, self.sample_rate));
+                        self.backend = Backend::Internal(SpectrumAnalyzer::new(
+                            cons,
+                            self.fft_size,
+                            self.sample_rate,
+                        ));
                     } else {
                         self.backend = Backend::None;
                     }
@@ -169,8 +172,11 @@ impl VisualizerManager {
                     tracing::error!("Failed to start Cava: {}", e);
                     // fallback to internal
                     if let Some(cons) = self.idle_internal.take() {
-                        self.backend =
-                            Backend::Internal(SpectrumAnalyzer::new(cons, self.fft_size, self.sample_rate));
+                        self.backend = Backend::Internal(SpectrumAnalyzer::new(
+                            cons,
+                            self.fft_size,
+                            self.sample_rate,
+                        ));
                     }
                 }
             }

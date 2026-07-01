@@ -8,4 +8,5 @@ pub enum NavigationMsg {
     MoveDown,
     ToggleArt,
     ToggleTreeExpand,
+    CycleVisualizerStyle,
 }
