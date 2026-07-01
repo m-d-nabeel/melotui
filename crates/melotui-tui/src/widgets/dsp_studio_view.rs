@@ -221,22 +221,28 @@ fn render_bipolar_bar(
         let is_interval = show_ticks
             && i > 0
             && i < max_idx
-            && (i == t1 || i == t2 || i == t3 || i == t4 || i == t5 || i == t6 || i == t7);
+            && (i == t1 || i == t2 || i == t3 || i == t5 || i == t6 || i == t7);
+
+        let is_center = i == t4;
+
+        let is_active = if pos >= center {
+            i >= center && i < pos
+        } else {
+            i > pos && i <= center
+        };
 
         let (ch, color) = if i == pos {
             ("●", accent)
-        } else if i < pos {
-            if is_interval {
-                ("┿", accent)
-            } else {
-                ("━", accent)
-            }
+        } else if is_center {
+            ("◆", if is_active { accent } else { t.eq_zero_line })
+        } else if is_active {
+            ("━", accent)
+        } else if is_interval {
+            ("▪", t.slider_track)
+        } else if show_ticks {
+            ("┄", t.slider_track)
         } else {
-            if is_interval {
-                ("┼", t.eq_zero_line)
-            } else {
-                ("─", t.slider_track)
-            }
+            ("─", t.slider_track)
         };
         spans.push(Span::styled(ch, Style::default().fg(color).bg(bg)));
     }
