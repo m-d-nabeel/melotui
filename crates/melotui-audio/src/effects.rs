@@ -88,6 +88,8 @@ struct StereoSpatializer {
     write_idx: usize,
     shadow_l: f32,
     shadow_r: f32,
+    rear_l: f32,
+    rear_r: f32,
 }
 
 impl StereoSpatializer {
@@ -106,6 +108,8 @@ impl StereoSpatializer {
             write_idx: 0,
             shadow_l: 0.0,
             shadow_r: 0.0,
+            rear_l: 0.0,
+            rear_r: 0.0,
         };
         spatializer.resize_delay_buffer();
         spatializer
@@ -147,9 +151,17 @@ impl StereoSpatializer {
     fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
         let rate = self.auto_pan_rate.value().clamp(0.0, 2.0);
         let depth = self.auto_pan_depth.value().clamp(0.0, 1.0);
+        let orbit_phase = self.phase * TAU;
         let auto = if depth > 0.001 && rate > 0.001 {
             self.phase = (self.phase + rate / self.sample_rate).fract();
             (self.phase * TAU).sin() * depth
+        } else {
+            0.0
+        };
+        let rear_orbit = if depth > 0.001 && rate > 0.001 {
+            // The left/right pan is sine-shaped. Cosine gives the two center crossings
+            // different front/back character so the orbit does not flatten behind the head.
+            ((orbit_phase.cos() + 1.0) * 0.5) * depth
         } else {
             0.0
         };
@@ -197,10 +209,31 @@ impl StereoSpatializer {
         let spatial_mix = (0.25 + depth * 0.55).min(0.8);
         let dry_mix = 1.0 - spatial_mix;
         let makeup = 1.0 + spatial_mix * 0.08;
-        (
-            (dry_l * dry_mix + spatial_l * spatial_mix) * makeup,
-            (dry_r * dry_mix + spatial_r * spatial_mix) * makeup,
-        )
+        let mut out_l = (dry_l * dry_mix + spatial_l * spatial_mix) * makeup;
+        let mut out_r = (dry_r * dry_mix + spatial_r * spatial_mix) * makeup;
+
+        let rear_amount = rear_orbit * (1.0 - lateral).powi(2) * 0.38;
+        if rear_amount > 0.001 {
+            let rear_delay = max_delay * (0.45 + 0.25 * rear_orbit);
+            let rear_mono = self.read_delay(rear_delay);
+            let rear_left = Self::shadow_sample(
+                &mut self.rear_l,
+                rear_mono + right * 0.18,
+                rear_amount * 0.75,
+                self.sample_rate,
+            );
+            let rear_right = Self::shadow_sample(
+                &mut self.rear_r,
+                rear_mono + left * 0.18,
+                rear_amount * 0.75,
+                self.sample_rate,
+            );
+
+            out_l = out_l * (1.0 - rear_amount) + rear_left * rear_amount;
+            out_r = out_r * (1.0 - rear_amount) + rear_right * rear_amount;
+        }
+
+        (out_l, out_r)
     }
 }
 
@@ -212,6 +245,8 @@ impl AudioUnit for StereoSpatializer {
         self.write_idx = 0;
         self.shadow_l = 0.0;
         self.shadow_r = 0.0;
+        self.rear_l = 0.0;
+        self.rear_r = 0.0;
     }
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -525,5 +560,24 @@ mod tests {
 
         assert!(output[0].abs() < 0.0001);
         assert_close(output[1], 0.5);
+    }
+
+    #[test]
+    fn spatializer_auto_pan_adds_rear_center_cue() {
+        let params = AudioParams::new();
+        params.auto_pan_rate.set_value(0.10);
+        params.auto_pan_depth.set_value(0.90);
+        let mut spatializer = StereoSpatializer::new(&params);
+        spatializer.reset();
+
+        let mut output = [0.0, 0.0];
+        spatializer.tick(&[0.5, 0.5], &mut output);
+
+        assert!(output[0].is_finite());
+        assert!(output[1].is_finite());
+        assert!(
+            (output[0] - 0.5).abs() > 0.001 || (output[1] - 0.5).abs() > 0.001,
+            "rear cue should alter the otherwise unchanged center image"
+        );
     }
 }

@@ -257,7 +257,7 @@ pub fn handle_macro_bass_boosted(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_macro_spatial(state: &mut AppState) -> Vec<AppMsg> {
     let audio = AudioState {
-        auto_pan_rate: 0.15,
+        auto_pan_rate: 0.10,
         auto_pan_depth: 0.90,
         ping_pong: 0.08,
         width: 1.35,
@@ -375,14 +375,14 @@ mod tests {
         assert_eq!(state.session.audio.bass, 1.0);
         assert_eq!(state.session.audio.eq_bands, [0.0; 10]);
         assert_eq!(state.session.audio.wobble, 0.0);
-        assert_eq!(state.session.audio.auto_pan_rate, 0.18);
+        assert_eq!(state.session.audio.auto_pan_rate, 0.10);
         assert_eq!(state.session.audio.auto_pan_depth, 0.90);
         assert_eq!(state.session.audio.width, 1.35);
         assert_eq!(state.session.audio.reverb, 0.08);
         assert!(matches!(
             msgs.iter()
                 .find(|msg| matches!(msg, AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(_)))),
-            Some(AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(0.18)))
+            Some(AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(0.10)))
         ));
     }
 }

@@ -271,7 +271,6 @@ mod tests {
 
     #[test]
     fn test_playlist_picker_input() {
-        use melotui_core::command::SearchField;
         use melotui_core::domain::{TrackMeta, ids::TrackId};
 
         let mut tracks = std::collections::HashMap::new();
@@ -282,7 +281,7 @@ mod tests {
                 id: track_id,
                 file_path: std::path::PathBuf::from("/tmp/test.mp3"),
                 title: "Test Track".into(),
-                artist: None,
+                artist: Some("Test Artist".into()),
                 album: None,
                 genre: None,
                 year: None,
@@ -301,13 +300,23 @@ mod tests {
         let library = Library::new(vec![std::path::PathBuf::from("/tmp")], vec![], tracks);
         let mut state = AppState::new(library, &melotui_core::config::AppConfig::default());
 
-        // Ensure a track is selected using Search
+        // Select the artist node via synchronous search
         reduce(
             &mut state,
-            AppMsg::Library(LibraryMsg::Search {
-                field: SearchField::Song,
+            AppMsg::Library(melotui_core::message::library::LibraryMsg::Search {
+                field: melotui_core::command::SearchField::Artist,
                 query: "Test".to_string(),
             }),
+        );
+        // Expand the artist node
+        reduce(
+            &mut state,
+            AppMsg::Navigation(melotui_core::message::navigation::NavigationMsg::ToggleTreeExpand),
+        );
+        // Move down to select the first track under the artist
+        reduce(
+            &mut state,
+            AppMsg::Navigation(melotui_core::message::navigation::NavigationMsg::MoveDown),
         );
 
         // Open the playlist picker
