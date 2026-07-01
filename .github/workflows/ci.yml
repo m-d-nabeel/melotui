@@ -1,9 +1,21 @@
 name: CI
+
 on:
   push:
     branches: [master]
   pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
@@ -23,7 +35,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Test (workspace)
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
+
   lint:
     name: Lint (fmt + clippy)
     runs-on: ubuntu-22.04
@@ -40,9 +53,10 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: Check formatting
-        run: cargo fmt --check
+        run: cargo fmt --all --check
       - name: Clippy (default features)
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
   build:
     name: Build (release)
     runs-on: ubuntu-22.04
@@ -57,4 +71,4 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build release
-        run: cargo build --release
+        run: cargo build --workspace --release --locked

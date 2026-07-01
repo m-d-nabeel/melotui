@@ -3,7 +3,13 @@ use melotui_bus::{
 };
 use ringbuf::{HeapRb, traits::Split};
 use rodio::{Decoder, Sink, Source};
-use std::{fs::File, path::PathBuf, thread, time::Duration};
+use std::{
+    fs::File,
+    path::PathBuf,
+    sync::{Arc, atomic::AtomicBool},
+    thread,
+    time::Duration,
+};
 
 use fundsp::hacker32::AudioUnit;
 
@@ -20,8 +26,9 @@ pub fn run(
     spectrum_producer: SpectrumProducer,
     fft_size: usize,
 ) {
-    let stream_handle =
+    let mut stream_handle =
         rodio::OutputStreamBuilder::open_default_stream().expect("open default audio stream");
+    stream_handle.log_on_drop(false);
 
     let mut engine = AudioEngine::new(
         Sink::connect_new(stream_handle.mixer()),
@@ -84,6 +91,7 @@ struct AudioEngine {
     vis_manager: VisualizerManager,
     dsp_params: AudioParams,
     seek_epoch: u64,
+    bypass: Arc<AtomicBool>,
 }
 
 impl AudioEngine {
@@ -95,6 +103,7 @@ impl AudioEngine {
             vis_manager: VisualizerManager::new(fft_size),
             dsp_params: AudioParams::new(),
             seek_epoch: 0,
+            bypass: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -103,6 +112,7 @@ impl AudioEngine {
         cmd: AudioCommand,
         worker: &mut W,
     ) -> bool {
+        let is_setter = cmd.is_setter();
         match cmd {
             AudioCommand::Play { path } => self.do_play(path, worker),
             AudioCommand::Stop => self.do_stop(),
@@ -148,6 +158,14 @@ impl AudioEngine {
                 return false;
             }
         }
+
+        if is_setter {
+            self.bypass.store(
+                self.dsp_params.is_all_default(),
+                std::sync::atomic::Ordering::Relaxed,
+            );
+        }
+
         true
     }
 
@@ -166,7 +184,7 @@ impl AudioEngine {
                 let channels = decoder.channels();
                 let sample_rate = decoder.sample_rate();
                 let unit: Box<dyn AudioUnit> = create_audio_graph(channels, &self.dsp_params);
-                let dsp_source = FundspSource::new(decoder, unit);
+                let dsp_source = FundspSource::new(decoder, unit, self.bypass.clone());
 
                 let ring = HeapRb::<f32>::new(8192);
                 let (producer, consumer) = ring.split();
@@ -175,6 +193,8 @@ impl AudioEngine {
                 let source_with_sniffer = SpectrumSniffer {
                     input: dsp_source,
                     producer,
+                    batch: [0.0; 64],
+                    batch_pos: 0,
                 };
 
                 self.sink.append(source_with_sniffer);
