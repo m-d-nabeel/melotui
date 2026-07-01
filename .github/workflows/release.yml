@@ -1,21 +1,48 @@
 name: Release
+
 on:
   push:
-    branches:
-      - master
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Existing release tag to publish, for example v0.3.0"
+        required: true
+        type: string
+
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+
 jobs:
-  build-and-release:
-    name: Release for ${{ matrix.os }} (${{ matrix.target }})
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Require semver tag
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Release tag must look like v1.2.3, optionally with prerelease/build metadata."
+            exit 1
+          fi
+
+  build:
+    name: Build ${{ matrix.asset_name }}
     runs-on: ${{ matrix.os }}
+    needs: validate
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             cargo_bin_name: melotui-bin
             final_bin_name: melotui
@@ -25,7 +52,7 @@ jobs:
             cargo_bin_name: melotui-bin.exe
             final_bin_name: melotui.exe
             asset_name: melotui-windows-x86_64.zip
-          - os: macos-latest
+          - os: macos-14
             target: x86_64-apple-darwin
             cargo_bin_name: melotui-bin
             final_bin_name: melotui
@@ -37,53 +64,75 @@ jobs:
             final_bin_name: melotui
             asset_name: melotui-macos-aarch64.tar.gz
             deployment_target: "11.0"
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Update latest tag
-        if: github.ref == 'refs/heads/master'
-        run: |
-          git tag -f latest
-          git push origin latest --force
-      - name: Install Linux Dependencies
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
-      - name: Install Rust toolchain
+          sudo apt-get install -y --no-install-recommends libasound2-dev libdbus-1-dev pkg-config
+
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-${{ matrix.target }}
+
       - name: Build
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
-        run: cargo build --profile production --bin melotui-bin --target ${{ matrix.target }}
-      - name: Package (Unix)
+        run: cargo build --profile production --bin melotui-bin --target ${{ matrix.target }} --locked
+
+      - name: Package Unix
         if: runner.os != 'Windows'
         run: |
-          cd target/${{ matrix.target }}/production
-          strip ${{ matrix.cargo_bin_name }} || true
-          mv ${{ matrix.cargo_bin_name }} ${{ matrix.final_bin_name }}
-          tar -czf ../../../${{ matrix.asset_name }} ${{ matrix.final_bin_name }}
-      - name: Package (Windows)
+          mkdir -p dist
+          cp target/${{ matrix.target }}/production/${{ matrix.cargo_bin_name }} dist/${{ matrix.final_bin_name }}
+          strip dist/${{ matrix.final_bin_name }} || true
+          tar -C dist -czf ${{ matrix.asset_name }} ${{ matrix.final_bin_name }}
+
+      - name: Package Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          cd target/${{ matrix.target }}/production
-          Move-Item ${{ matrix.cargo_bin_name }} ${{ matrix.final_bin_name }}
-          Compress-Archive -Path ${{ matrix.final_bin_name }} -DestinationPath ..\..\..\${{ matrix.asset_name }}
-      - name: Create Release
-        if: runner.os == 'Linux'
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item target\${{ matrix.target }}\production\${{ matrix.cargo_bin_name }} dist\${{ matrix.final_bin_name }}
+          Compress-Archive -Path dist\${{ matrix.final_bin_name }} -DestinationPath ${{ matrix.asset_name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-22.04
+    needs: build
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref == 'refs/heads/master' && 'latest' || github.ref_name }}
-          prerelease: ${{ github.ref == 'refs/heads/master' }}
+          tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
-      - name: Upload Release Assets
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref == 'refs/heads/master' && 'latest' || github.ref_name }}
-          files: ${{ matrix.asset_name }}
+          fail_on_unmatched_files: true
+          files: dist/*
