@@ -96,6 +96,21 @@ pub struct AudioConfig {
     pub default_lowpass: f32,
     /// Default high-pass filter cutoff in Hz (20–5000)
     pub default_highpass: f32,
+    /// Output sample rate in Hz. `None` uses the device default.
+    ///
+    /// Set this to your sound server's native rate (PipeWire: check
+    /// `pw-metadata -n settings | grep clock.rate`, usually 48000) to avoid a
+    /// pointless resample round-trip — the ALSA "default" PCM commonly reports
+    /// 44100 even when the server runs at 48000.
+    pub sample_rate: Option<u32>,
+    /// Output buffer size in frames. `None` uses cpal's default
+    /// (25 ms period / 100 ms buffer).
+    ///
+    /// This is the dropout safety margin: cpal derives a period of
+    /// `buffer_size / 4`, so 8192 @ 48 kHz gives a ~46 ms period inside a
+    /// ~171 ms buffer. Larger is more robust under load and adds latency;
+    /// since melotui is not a live-monitoring tool, robustness wins.
+    pub buffer_size: Option<u32>,
 }
 
 impl Default for UiConfig {
@@ -140,6 +155,8 @@ impl Default for AudioConfig {
             default_pan: 0.0,
             default_lowpass: 20000.0,
             default_highpass: 20.0,
+            sample_rate: Some(48_000),
+            buffer_size: Some(8192),
         }
     }
 }

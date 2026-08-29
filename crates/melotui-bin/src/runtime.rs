@@ -39,6 +39,8 @@ pub fn run() -> Result<()> {
         spectrum_producer: producer,
         fft_size: config.audio.fft_size,
         max_cover_resolution: config.library.max_cover_resolution,
+        sample_rate: config.audio.sample_rate,
+        buffer_size: config.audio.buffer_size,
     });
 
     // request async library load
@@ -166,6 +168,15 @@ pub fn run() -> Result<()> {
                 mgr.update_state(&state);
             }
         }
+    }
+
+    // Dropping MprisManager (souvlaki DBus) can block for several seconds
+    // joining its background thread. The process is about to end, so leak it
+    // deliberately: same effect the old `process::exit` had on it, but without
+    // taking the log flush and terminal restore down as well.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    if let Some(mgr) = mpris_manager.take() {
+        std::mem::forget(mgr);
     }
 
     tui.shutdown()
@@ -309,11 +320,14 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
             }
             ctx.running = false;
 
-            // We must force exit here because dropping MprisManager (souvlaki DBus) at the end of this function
-            // can block for several seconds waiting for the DBus thread to join.
-            // But we must restore the terminal first!
-            let _ = melotui_tui::restore_terminal();
-            std::process::exit(0);
+            // Stop draining effects; the main loop breaks on `!running` and the
+            // shutdown path at the end of `run` takes over. This used to call
+            // `std::process::exit(0)` directly to dodge a slow MprisManager
+            // drop, but that also skipped the tracing WorkerGuard, so the last
+            // buffered log lines — the ones you actually want when diagnosing a
+            // dropout — never reached disk. `run` now neutralises the slow drop
+            // explicitly instead.
+            break;
         }
 
         // side effects

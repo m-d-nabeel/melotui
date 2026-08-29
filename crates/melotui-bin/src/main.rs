@@ -5,7 +5,7 @@ mod mpris;
 mod runtime;
 
 fn main() {
-    let _log_guard = logging::init();
+    let log_guard = logging::init();
 
     std::panic::set_hook(Box::new(|panic| {
         let _ = melotui_tui::restore_terminal();
@@ -17,6 +17,10 @@ fn main() {
 
     if let Err(e) = res {
         eprintln!("Error: {}", e);
+        // Flush the buffered log writer before bailing; `process::exit` does not
+        // run destructors, so without this the lines explaining the failure are
+        // exactly the ones that never get written.
+        drop(log_guard);
         std::process::exit(1);
     }
 }

@@ -18,5 +18,13 @@ ringbuf = "0.4"
 anyhow = "1"
 fundsp = "0.20"
 
+# Pulled in directly (not via rodio) purely to switch on cpal's optional
+# `audio_thread_priority` dependency. Without it cpal compiles a no-op stub and
+# the thread that runs our decoder + DSP graph stays SCHED_OTHER, which is what
+# caused dropouts whenever another app competed for CPU. With it, the thread is
+# promoted to SCHED_RR via RTKit (no limits.conf change needed).
+[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+cpal = { version = "0.16", features = ["audio_thread_priority"] }
+
 [dev-dependencies]
 mockall = "0.14.0"

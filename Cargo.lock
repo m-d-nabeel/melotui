@@ -129,6 +129,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "audio_thread_priority"
+version = "0.33.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "716b7ed619475af650836aa562422e724b807201acd10046298d6efa22b558a3"
+dependencies = [
+ "cfg-if",
+ "dbus 0.6.5",
+ "libc",
+ "log",
+ "mach",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -496,6 +510,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cbd307f43cc2a697e2d1f8bc7a1d824b5269e052209e28883e5bc04d095aaa3f"
 dependencies = [
  "alsa",
+ "audio_thread_priority",
  "coreaudio-rs",
  "dasp_sample",
  "jni",
@@ -669,6 +684,16 @@ checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
 
 [[package]]
 name = "dbus"
+version = "0.6.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48b5f0f36f1eebe901b0e6bee369a77ed3396334bf3f09abd46454a576f71819"
+dependencies = [
+ "libc",
+ "libdbus-sys",
+]
+
+[[package]]
+name = "dbus"
 version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b942602992bb7acfd1f51c49811c58a610ef9181b6e66f3e519d79b540a3bf73"
@@ -684,7 +709,7 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64bff0bd181fba667660276c6b7ebdc50cff37ce593e7adf9e734f89c8f444e8"
 dependencies = [
- "dbus",
+ "dbus 0.9.11",
 ]
 
 [[package]]
@@ -1717,6 +1742,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mach"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b823e83b2affd8f40a9ee8c29dbc56404c1e34cd2710921f2801e2cf29527afa"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "mach2"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1758,6 +1792,7 @@ name = "melotui-audio"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "cpal",
  "fundsp",
  "melotui-bus",
  "melotui-core",
@@ -3309,7 +3344,7 @@ dependencies = [
  "block",
  "cocoa",
  "core-graphics",
- "dbus",
+ "dbus 0.9.11",
  "dbus-crossroads",
  "dispatch",
  "objc",

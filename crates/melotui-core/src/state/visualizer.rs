@@ -1,4 +1,8 @@
-use std::{process::Command, str::FromStr};
+use std::{
+    process::{Command, Stdio},
+    str::FromStr,
+    sync::OnceLock,
+};
 
 use crate::AppState;
 
@@ -21,8 +25,22 @@ pub enum SpectrumStyle {
     Nova,
 }
 
+/// Whether the external `cava` binary is on `PATH`.
+///
+/// Probed once and cached. This used to shell out on every call, and callers
+/// include `SpectrumStyle::next()` — which runs inside the reducer on the UI
+/// thread — so cycling visualizer styles forked a process per keypress.
 pub fn is_cava_available() -> bool {
-    Command::new("cava").arg("--version").output().is_ok()
+    static AVAILABLE: OnceLock<bool> = OnceLock::new();
+    *AVAILABLE.get_or_init(|| {
+        Command::new("cava")
+            .arg("--version")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .stdin(Stdio::null())
+            .status()
+            .is_ok()
+    })
 }
 
 impl Default for SpectrumStyle {
