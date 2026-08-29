@@ -1,6 +1,6 @@
 use lofty::{file::TaggedFileExt, probe::Probe};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use crate::domain::{PlaylistId, PlaylistMeta, TrackId, TrackMeta};
@@ -404,28 +404,87 @@ impl Library {
         }
     }
 
-    pub fn resolve_track_ids_for_node(&self, node: &SidebarNodeId) -> Vec<TrackId> {
-        match node {
-            SidebarNodeId::Playlist(pid) => self
-                .playlists
-                .get(pid)
-                .map(|p| p.tracks.clone())
-                .unwrap_or_default(),
-            SidebarNodeId::Artist(name) => self.artists.get(name).cloned().unwrap_or_default(),
-            SidebarNodeId::Album(name) => self.albums.get(name).cloned().unwrap_or_default(),
-            SidebarNodeId::Genre(name) => self.genres.get(name).cloned().unwrap_or_default(),
-            SidebarNodeId::Year(year) => self.years.get(year).cloned().unwrap_or_default(),
-            SidebarNodeId::Folder(path) => self
-                .find_directory_node(path)
-                .map(|d| d.tracks.clone())
-                .unwrap_or_default(),
-            SidebarNodeId::Category(CategoryId::Favorites) => self.favorites.clone(),
-            SidebarNodeId::Category(CategoryId::RecentlyPlayed) => self.recently_played.clone(),
-            SidebarNodeId::Category(CategoryId::MostPlayed) => self.most_played.clone(),
-            SidebarNodeId::Category(_) => vec![],
-            SidebarNodeId::Track { .. } => vec![],
-            SidebarNodeId::Root => vec![],
+    /// Track ids for a sidebar node, in the exact order the tree displays them.
+    ///
+    /// This has to go through [`resolve_sorted_tracks_for_node`] rather than
+    /// reading the raw indices (`self.artists`, `self.albums`, ...) directly.
+    /// Those are kept sorted by [`TrackId`] — insertion/scan order — purely so
+    /// index rebuilds are cheap; the tree itself is always rendered through
+    /// `resolve_sorted_tracks_for_node`, honouring the user's chosen sort field
+    /// and direction. Building a playback context from the raw indices instead
+    /// made Next/Prev walk a different order than the one on screen — picking
+    /// the third track shown would jump to whatever had the third-lowest
+    /// internal id, which could be anywhere in the visible list.
+    ///
+    /// Every consumer of "what should Next/Prev walk" must come through here,
+    /// not through `resolve_tracks_for_node` — that name doesn't exist as a
+    /// public id-returning method precisely so there is nothing shaped like the
+    /// old trap left to reach for by mistake.
+    pub fn resolve_track_ids_for_node(
+        &self,
+        node: &SidebarNodeId,
+        sort_field: SortField,
+        sort_direction: SortDirection,
+    ) -> Vec<TrackId> {
+        self.resolve_sorted_tracks_for_node(node, sort_field, sort_direction)
+            .into_iter()
+            .map(|t| t.id)
+            .collect()
+    }
+
+    /// Shuffle-declustering group id for each of `ids`, in the same order.
+    ///
+    /// Groups by whichever metadata dimension actually varies across `ids` and
+    /// would feel repetitive if two tracks sharing it played back to back:
+    /// normally the artist, but the album once the whole list already shares
+    /// one artist — so shuffling one artist's discography spreads across their
+    /// albums instead of doing nothing (every track would share one group) or,
+    /// worse, still grouping by artist and doing nothing there too.
+    ///
+    /// This reads the tracks themselves rather than taking the originating
+    /// sidebar node, so it needs nothing but the id list: it is exactly as
+    /// correct for a context rebuilt from a persisted session, where no node is
+    /// available, as for one built live from a tree selection. It also copes
+    /// better with the node's *label* lying about its content — an "Album"
+    /// node that is actually a various-artists compilation still gets grouped
+    /// by artist, because more than one artist is genuinely present.
+    pub fn shuffle_group_keys(&self, ids: &[TrackId]) -> Vec<u32> {
+        let mut distinct_artists: HashSet<Option<&str>> = HashSet::new();
+        for id in ids {
+            distinct_artists.insert(self.tracks.get(id).and_then(|t| t.artist.as_deref()));
+            if distinct_artists.len() > 1 {
+                break;
+            }
         }
+
+        if distinct_artists.len() > 1 {
+            self.group_ids_by(ids, |t| t.artist.clone())
+        } else {
+            self.group_ids_by(ids, |t| t.album.clone())
+        }
+    }
+
+    /// Assigns a small dense id to each distinct key `key_of` returns across
+    /// `ids`, preserving `ids`' order. Tracks with no value for the dimension
+    /// (e.g. a missing artist tag) share one group rather than each getting a
+    /// spurious group of their own.
+    fn group_ids_by(
+        &self,
+        ids: &[TrackId],
+        key_of: impl Fn(&TrackMeta) -> Option<String>,
+    ) -> Vec<u32> {
+        let mut next_id: u32 = 0;
+        let mut seen: HashMap<Option<String>, u32> = HashMap::new();
+        ids.iter()
+            .map(|id| {
+                let key = self.tracks.get(id).and_then(&key_of);
+                *seen.entry(key).or_insert_with(|| {
+                    let g = next_id;
+                    next_id += 1;
+                    g
+                })
+            })
+            .collect()
     }
 
     pub fn resolve_sorted_tracks_for_node(
@@ -633,6 +692,104 @@ mod tests {
         let resolved = snapshot.resolve_tracks_for_node(&fav_node);
         assert_eq!(resolved.len(), 1);
         assert_eq!(resolved[0].id, TrackId(2));
+    }
+
+    #[test]
+    fn resolve_track_ids_for_node_matches_the_tree_sort_order() {
+        // Scanned as (and so id-ordered) Zebra, Apple, Mango; sorted by title
+        // the tree shows Apple, Mango, Zebra. This is the exact shape that made
+        // Next/Prev "jump around": building the context from the raw indices
+        // walked the id order while the tree displayed the title order.
+        fn titled(id: u64, title: &str) -> TrackMeta {
+            TrackMeta {
+                id: TrackId(id),
+                file_path: PathBuf::from(format!("/lib/{title}.mp3")),
+                title: title.into(),
+                artist: Some("X".into()),
+                album: None,
+                genre: None,
+                year: None,
+                is_favorite: false,
+                track_number: None,
+                play_count: 0,
+                duration_ms: 1000,
+                bitrate: None,
+                sample_rate: None,
+                format: "mp3".into(),
+                has_cover: false,
+                file_size_bytes: 0,
+            }
+        }
+        let mut tracks = HashMap::new();
+        tracks.insert(TrackId(1), titled(1, "Zebra"));
+        tracks.insert(TrackId(2), titled(2, "Apple"));
+        tracks.insert(TrackId(3), titled(3, "Mango"));
+        let snapshot = Library::new(vec![PathBuf::from("/lib")], vec![], tracks);
+        let node = SidebarNodeId::Artist("X".into());
+
+        let ids = snapshot.resolve_track_ids_for_node(&node, SortField::Title, SortDirection::Ascending);
+        let titles: Vec<&str> = ids
+            .iter()
+            .map(|id| snapshot.get_track(*id).unwrap().title.as_str())
+            .collect();
+        assert_eq!(titles, vec!["Apple", "Mango", "Zebra"]);
+    }
+
+    #[test]
+    fn shuffle_group_keys_groups_by_artist_when_more_than_one_is_present() {
+        let mut tracks = HashMap::new();
+        tracks.insert(TrackId(1), create_mock_track(1, "/lib/A.mp3", Some("Artist A"), None, None, false));
+        tracks.insert(TrackId(2), create_mock_track(2, "/lib/B.mp3", Some("Artist B"), None, None, false));
+        tracks.insert(TrackId(3), create_mock_track(3, "/lib/C.mp3", Some("Artist A"), None, None, false));
+        let snapshot = Library::new(vec![PathBuf::from("/lib")], vec![], tracks);
+
+        let ids = vec![TrackId(1), TrackId(2), TrackId(3)];
+        let groups = snapshot.shuffle_group_keys(&ids);
+        assert_eq!(groups[0], groups[2], "the two Artist A tracks share a group");
+        assert_ne!(groups[0], groups[1], "Artist A and Artist B must differ");
+    }
+
+    #[test]
+    fn shuffle_group_keys_falls_back_to_album_within_a_single_artist() {
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            TrackId(1),
+            create_mock_track(1, "/lib/A.mp3", Some("Solo Artist"), Some("Album 1"), None, false),
+        );
+        tracks.insert(
+            TrackId(2),
+            create_mock_track(2, "/lib/B.mp3", Some("Solo Artist"), Some("Album 2"), None, false),
+        );
+        tracks.insert(
+            TrackId(3),
+            create_mock_track(3, "/lib/C.mp3", Some("Solo Artist"), Some("Album 1"), None, false),
+        );
+        let snapshot = Library::new(vec![PathBuf::from("/lib")], vec![], tracks);
+
+        // One artist throughout: grouping by artist would be a single bucket
+        // and do nothing, so it must fall through to album instead.
+        let ids = vec![TrackId(1), TrackId(2), TrackId(3)];
+        let groups = snapshot.shuffle_group_keys(&ids);
+        assert_eq!(groups[0], groups[2], "the two Album 1 tracks share a group");
+        assert_ne!(groups[0], groups[1], "Album 1 and Album 2 must differ");
+    }
+
+    #[test]
+    fn shuffle_group_keys_degenerates_to_one_group_for_a_single_album() {
+        let mut tracks = HashMap::new();
+        tracks.insert(
+            TrackId(1),
+            create_mock_track(1, "/lib/A.mp3", Some("Solo Artist"), Some("The Album"), None, false),
+        );
+        tracks.insert(
+            TrackId(2),
+            create_mock_track(2, "/lib/B.mp3", Some("Solo Artist"), Some("The Album"), None, false),
+        );
+        let snapshot = Library::new(vec![PathBuf::from("/lib")], vec![], tracks);
+
+        let ids = vec![TrackId(1), TrackId(2)];
+        let groups = snapshot.shuffle_group_keys(&ids);
+        assert_eq!(groups[0], groups[1], "one artist, one album: nothing to decluster by");
     }
 
     #[test]

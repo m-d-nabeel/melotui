@@ -320,7 +320,11 @@ impl PersistedSession {
         let (tracks, source_name) = if valid_context.is_empty() {
             match state.session.playback.active_node {
                 Some(SidebarNodeId::Track { ref parent, id }) => {
-                    let resolved = state.library.resolve_track_ids_for_node(parent);
+                    let resolved = state.library.resolve_track_ids_for_node(
+                        parent,
+                        state.session.nav.library.sort_field,
+                        state.session.nav.library.sort_direction,
+                    );
                     let tracks = if resolved.is_empty() { vec![id] } else { resolved };
                     (tracks, self.source_name.clone())
                 }
@@ -330,8 +334,10 @@ impl PersistedSession {
             (valid_context, self.source_name.clone())
         };
 
-        state.session.playback.context = PlaybackContext::restore(
+        let groups = state.library.shuffle_group_keys(&tracks);
+        state.session.playback.context = PlaybackContext::restore_with_groups(
             tracks,
+            groups,
             self.context_idx,
             state.session.playback.current,
             source_name,

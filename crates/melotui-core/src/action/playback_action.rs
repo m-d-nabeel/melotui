@@ -16,6 +16,7 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
     let mut should_update_context = false;
 
     let mut new_context_tracks: Vec<TrackId> = Vec::new();
+    let mut new_context_groups: Vec<u32> = Vec::new();
     let mut new_context_start: usize = 0;
     let mut new_source_name = String::new();
 
@@ -52,11 +53,21 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
                     should_update_context = true;
 
                     // resolve for all parents
-                    new_context_tracks = state.library.resolve_track_ids_for_node(&parent);
+                    new_context_tracks = state.library.resolve_track_ids_for_node(
+                        &parent,
+                        state.session.nav.library.sort_field,
+                        state.session.nav.library.sort_direction,
+                    );
+                    // Computed here, before the empty-context fallback can
+                    // replace `new_context_tracks`, keeping the two in
+                    // lockstep rather than re-deriving groups wherever the
+                    // context is eventually built.
+                    new_context_groups = state.library.shuffle_group_keys(&new_context_tracks);
 
                     if new_context_tracks.is_empty() {
                         // fallback if no context support
                         new_context_tracks = vec![id];
+                        new_context_groups = vec![0];
                         new_source_name = "Library Selection".to_string();
                     } else {
                         match *parent {
@@ -109,8 +120,9 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
     if let Some(id) = target_track_id {
         if should_update_context && !from_queue {
             let shuffle = state.session.playback.context.shuffle();
-            state.session.playback.context = PlaybackContext::new(
+            state.session.playback.context = PlaybackContext::with_groups(
                 new_context_tracks,
+                new_context_groups,
                 new_context_start,
                 new_source_name,
                 shuffle,
@@ -557,6 +569,146 @@ mod tests {
     fn untick(state: &mut AppState) {
         state.session.last_play_time =
             Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+    }
+
+    #[test]
+    fn next_walks_the_same_order_the_tree_displays() {
+        // Scanned (and so id-assigned) as Zebra, Apple, Mango; the tree, sorted
+        // by title (the default), shows Apple, Mango, Zebra. Next used to walk
+        // the id order instead, so picking the first track shown (Apple) and
+        // pressing Next played Mango — right by the tree, wrong reason — while
+        // picking the *second* track shown (Mango) and pressing Next jumped to
+        // Zebra, skipping over Apple, which is the "jumps around" symptom.
+        let mut tracks = HashMap::new();
+        for (id, title) in [(1, "Zebra Song"), (2, "Apple Song"), (3, "Mango Song")] {
+            tracks.insert(
+                TrackId(id),
+                TrackMeta {
+                    id: TrackId(id),
+                    file_path: format!("/tmp/{title}.flac").into(),
+                    title: title.into(),
+                    artist: Some("Artist X".into()),
+                    album: None,
+                    genre: None,
+                    year: None,
+                    is_favorite: false,
+                    track_number: None,
+                    play_count: 0,
+                    duration_ms: 10_000,
+                    bitrate: None,
+                    sample_rate: None,
+                    format: "flac".into(),
+                    has_cover: false,
+                    file_size_bytes: 0,
+                },
+            );
+        }
+        let library = Library::new(vec![std::path::PathBuf::from("/tmp")], vec![], tracks);
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
+
+        // Select "Mango Song" (TrackId 3) — the second track the tree shows.
+        state.session.nav.library.selected_id = Some(SidebarNodeId::Track {
+            id: TrackId(3),
+            parent: Box::new(SidebarNodeId::Artist("Artist X".into())),
+        });
+        handle_request_play_selected(&mut state);
+        assert_eq!(
+            state.session.playback.context.tracks(),
+            &[TrackId(2), TrackId(3), TrackId(1)],
+            "context must hold tracks in title order, matching the tree"
+        );
+        assert_eq!(state.get_playing_track().unwrap().title, "Mango Song");
+
+        untick(&mut state);
+        handle_request_next(&mut state);
+        assert_eq!(
+            state.get_playing_track().unwrap().title,
+            "Zebra Song",
+            "Next after the tree's 2nd track must play its 3rd, not skip around"
+        );
+    }
+
+    #[test]
+    fn shuffling_a_multi_artist_selection_declusters_by_artist() {
+        // Two artists, 6 tracks each, selected via a Genre node (so the context
+        // spans more than one artist). Enabling shuffle end-to-end through
+        // handle_request_play_selected + handle_toggle_shuffle must produce a
+        // context that actually avoids playing the same artist back to back —
+        // proving the group keys reach PlaybackContext, not just that
+        // shuffle_group_keys works in isolation.
+        let mut tracks = HashMap::new();
+        for n in 1..=6u64 {
+            tracks.insert(
+                TrackId(n),
+                TrackMeta {
+                    id: TrackId(n),
+                    file_path: format!("/tmp/a{n}.mp3").into(),
+                    title: format!("A{n}"),
+                    artist: Some("Artist A".into()),
+                    album: None,
+                    genre: Some("Rock".into()),
+                    year: None,
+                    is_favorite: false,
+                    track_number: None,
+                    play_count: 0,
+                    duration_ms: 10_000,
+                    bitrate: None,
+                    sample_rate: None,
+                    format: "mp3".into(),
+                    has_cover: false,
+                    file_size_bytes: 0,
+                },
+            );
+            tracks.insert(
+                TrackId(100 + n),
+                TrackMeta {
+                    id: TrackId(100 + n),
+                    file_path: format!("/tmp/b{n}.mp3").into(),
+                    title: format!("B{n}"),
+                    artist: Some("Artist B".into()),
+                    album: None,
+                    genre: Some("Rock".into()),
+                    year: None,
+                    is_favorite: false,
+                    track_number: None,
+                    play_count: 0,
+                    duration_ms: 10_000,
+                    bitrate: None,
+                    sample_rate: None,
+                    format: "mp3".into(),
+                    has_cover: false,
+                    file_size_bytes: 0,
+                },
+            );
+        }
+        let library = Library::new(vec![std::path::PathBuf::from("/tmp")], vec![], tracks);
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
+
+        state.session.nav.library.selected_id = Some(SidebarNodeId::Track {
+            id: TrackId(1),
+            parent: Box::new(SidebarNodeId::Genre("Rock".into())),
+        });
+        handle_request_play_selected(&mut state);
+        crate::action::library_action::handle_toggle_shuffle(&mut state);
+        assert!(state.shuffle_active());
+
+        let mut prev_artist = state.get_playing_track().unwrap().artist.clone();
+        let mut forced_repeats = 0;
+        for _ in 0..11 {
+            untick(&mut state);
+            handle_request_next(&mut state);
+            let artist = state.get_playing_track().unwrap().artist.clone();
+            if artist == prev_artist {
+                forced_repeats += 1;
+            }
+            prev_artist = artist;
+        }
+
+        assert!(
+            forced_repeats <= 1,
+            "{forced_repeats} same-artist repeats across 12 plays of 2 artists x 6 tracks \
+             is what an artist-blind shuffle would do, not a declustered one"
+        );
     }
 
     #[test]
