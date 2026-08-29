@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::domain::TrackId;
-use crate::playback::context::PlaybackContext;
 use crate::navigation::{ids::SidebarNodeId, state::LeftPanelMode};
+use crate::playback::context::PlaybackContext;
 use crate::playback::state::RepeatMode;
 use crate::state::{SpectrumStyle, VisualizerMode, audio::AudioState, ui::FocusMode};
 
@@ -325,7 +325,11 @@ impl PersistedSession {
                         state.session.nav.library.sort_field,
                         state.session.nav.library.sort_direction,
                     );
-                    let tracks = if resolved.is_empty() { vec![id] } else { resolved };
+                    let tracks = if resolved.is_empty() {
+                        vec![id]
+                    } else {
+                        resolved
+                    };
                     (tracks, self.source_name.clone())
                 }
                 _ => (Vec::new(), self.source_name.clone()),
@@ -542,6 +546,7 @@ mod tests {
                 is_favorite: false,
                 track_number: None,
                 play_count: 0,
+                last_played_at: None,
                 duration_ms: 180000,
                 bitrate: None,
                 sample_rate: None,
@@ -620,6 +625,7 @@ mod tests {
                 is_favorite: false,
                 track_number: None,
                 play_count: 0,
+                last_played_at: None,
                 duration_ms: 180000,
                 bitrate: None,
                 sample_rate: None,

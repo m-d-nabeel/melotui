@@ -154,12 +154,30 @@ impl PlaybackContext {
         }
     }
 
-    /// What `advance` would return, without moving. Keeps "up next" displays
-    /// honest by construction — they cannot drift from what actually plays.
+    /// Whether calling `advance` would produce a track at all.
+    ///
+    /// Deliberately separate from [`peek_next`](Self::peek_next): *whether*
+    /// something plays next never depends on shuffle (a wrap under
+    /// `RepeatMode::Playlist` always has something to deal, reshuffled or
+    /// not) — only *which* track does. Conflating the two here previously
+    /// made a real `advance()` call get skipped entirely at a shuffle wrap,
+    /// because the caller mistook "I can't predict which track" for "there is
+    /// no next track" and stopped instead of continuing.
+    pub fn has_next(&self, repeat: &RepeatMode) -> bool {
+        self.step(true, repeat).is_some()
+    }
+
+    /// What `advance` would return, without moving — for *display* only (the
+    /// "up next" label). Keeps that label honest by construction when it can
+    /// be: it cannot drift from what actually plays, because it is never
+    /// asked to guess.
+    ///
+    /// Returns `None` both when nothing will play next and when a shuffle
+    /// wrap makes the exact track genuinely unknowable ahead of time. Callers
+    /// that need to know *whether* to advance at all — as opposed to what
+    /// label to print — must use [`has_next`](Self::has_next) instead, never
+    /// this method; see its docs for why.
     pub fn peek_next(&self, repeat: &RepeatMode) -> Option<TrackId> {
-        // A wrap under shuffle reshuffles, so the true next track is not
-        // knowable; naming the first track of the current order would be a
-        // guess. Report the wrap target only when playing in order.
         let next = self.step(true, repeat)?;
         if self.shuffle && next == 0 && self.cursor + 1 >= self.order.len() {
             return None;
@@ -316,7 +334,14 @@ impl PlaybackContext {
         shuffle: bool,
     ) -> Self {
         let groups = vec![0; tracks.len()];
-        Self::restore_with_groups(tracks, groups, persisted_position, active, source_name, shuffle)
+        Self::restore_with_groups(
+            tracks,
+            groups,
+            persisted_position,
+            active,
+            source_name,
+            shuffle,
+        )
     }
 
     /// [`restore`](Self::restore), decluster-shuffling by `groups` when
@@ -425,7 +450,10 @@ mod tests {
             let mut prev = ctx.current().unwrap();
             for _ in 0..40 {
                 let next = ctx.advance(&RepeatMode::Playlist).unwrap();
-                assert_ne!(next, prev, "shuffle must never play the same track twice running");
+                assert_ne!(
+                    next, prev,
+                    "shuffle must never play the same track twice running"
+                );
                 prev = next;
             }
         }
@@ -440,7 +468,11 @@ mod tests {
         assert_eq!(ctx.natural_position(), 2);
 
         ctx.set_shuffle(true);
-        assert_eq!(ctx.current(), Some(playing), "shuffling must not skip the track");
+        assert_eq!(
+            ctx.current(),
+            Some(playing),
+            "shuffling must not skip the track"
+        );
 
         ctx.set_shuffle(false);
         assert_eq!(ctx.current(), Some(playing));
@@ -536,7 +568,11 @@ mod tests {
         let mut sorted = seen.clone();
         sorted.sort();
         sorted.dedup();
-        assert_eq!(sorted.len(), 45, "a pass must still cover the whole list exactly once");
+        assert_eq!(
+            sorted.len(),
+            45,
+            "a pass must still cover the whole list exactly once"
+        );
     }
 
     #[test]
@@ -556,7 +592,8 @@ mod tests {
             }
         }
 
-        let mut ctx = PlaybackContext::with_groups(tracks.clone(), groups.clone(), 0, "P".into(), true);
+        let mut ctx =
+            PlaybackContext::with_groups(tracks.clone(), groups.clone(), 0, "P".into(), true);
         let mut positions_of_group_0 = Vec::new();
         for i in 0..46 {
             let g = group_of(&groups, &tracks, ctx.current().unwrap());

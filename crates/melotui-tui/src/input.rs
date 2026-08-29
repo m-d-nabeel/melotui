@@ -288,6 +288,7 @@ mod tests {
                 is_favorite: false,
                 track_number: None,
                 play_count: 0,
+                last_played_at: None,
                 duration_ms: 10000,
                 bitrate: None,
                 sample_rate: None,

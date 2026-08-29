@@ -517,6 +517,9 @@ fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Re
                 format: row.get(11)?,
                 duration_ms: row.get::<_, i64>(12)? as u64,
                 play_count: row.get::<_, i64>(13)? as u32,
+                // Filled in below from `play_history`, which is the only
+                // place this fact lives on disk.
+                last_played_at: None,
                 has_cover: row.get(14)?,
                 file_size_bytes: row.get(15)?,
             },
@@ -530,6 +533,30 @@ fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Re
         let (id, track) = t?;
         tracks_map.insert(id, track);
         all_track_ids.push(id);
+    }
+
+    // Each track's most recent play, from history. This used to instead be a
+    // separately-loaded `recently_played: Vec<TrackId>` ordered list; now that
+    // `Library::recently_played()` derives its answer from this field on each
+    // track, loading it here is the only DB-specific step left — everything
+    // downstream (ordering, the 100-item cap) lives in one place in
+    // `melotui-core` instead of being duplicated between this query and that
+    // method.
+    if let Ok(mut stmt) =
+        conn.prepare("SELECT track_id, MAX(played_at) FROM play_history GROUP BY track_id")
+        && let Ok(rows) = stmt.query_map([], |row| {
+            Ok((
+                TrackId(row.get::<_, i64>(0)? as u64),
+                row.get::<_, i64>(1)? as u64,
+            ))
+        })
+    {
+        for row in rows.flatten() {
+            let (id, last_played_at) = row;
+            if let Some(track) = tracks_map.get_mut(&id) {
+                track.last_played_at = Some(last_played_at);
+            }
+        }
     }
 
     // load playlists
@@ -561,31 +588,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Re
         });
     }
 
-    // load recently played
-    let mut recently_played = Vec::new();
-    if let Ok(mut stmt) =
-        conn.prepare("SELECT track_id FROM play_history ORDER BY played_at DESC LIMIT 100")
-        && let Ok(rows) = stmt.query_map([], |row| Ok(TrackId(row.get::<_, i64>(0)? as u64)))
-    {
-        recently_played = rows.flatten().collect();
-    }
-
-    // load most played
-    let mut most_played = Vec::new();
-    if let Ok(mut stmt) = conn
-        .prepare("SELECT id FROM tracks WHERE play_count > 0 ORDER BY play_count DESC LIMIT 100")
-        && let Ok(rows) = stmt.query_map([], |row| Ok(TrackId(row.get::<_, i64>(0)? as u64)))
-    {
-        most_played = rows.flatten().collect();
-    }
-
-    Ok(Library::new_with_stats(
-        roots,
-        playlists_vec,
-        tracks_map,
-        recently_played,
-        most_played,
-    ))
+    Ok(Library::new(roots, playlists_vec, tracks_map))
 }
 
 /// toggle favorite

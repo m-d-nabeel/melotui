@@ -1872,6 +1872,7 @@ dependencies = [
  "melotui-core",
  "mockall",
  "rusqlite",
+ "tempfile",
  "tracing",
 ]
 

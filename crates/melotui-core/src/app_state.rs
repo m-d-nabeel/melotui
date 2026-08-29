@@ -255,6 +255,32 @@ impl AppState {
         &self.session.nav.library
     }
 
+    /// Selects a sidebar node directly, as if the cursor had landed on it.
+    ///
+    /// Real keyboard navigation moves the selection one row at a time through
+    /// `nav_action`'s handlers; this is the equivalent "land here" primitive
+    /// for anything that already knows which node it wants selected —
+    /// currently only the behaviour test suite, which needs to put the
+    /// cursor on a specific track without walking the whole tree to find it.
+    pub fn select_node(&mut self, node: SidebarNodeId) {
+        self.session.nav.library.selected_id = Some(node);
+    }
+
+    /// Sets the library sort field and direction directly.
+    ///
+    /// The keyboard-driven path (`LibraryMsg::ToggleSort`) only cycles through
+    /// fields one at a time, which is real UI behaviour worth keeping as the
+    /// only *interactive* way to change sort — this exists for callers (tests
+    /// today) that need a specific field without replaying the cycle.
+    pub fn set_sort(
+        &mut self,
+        field: crate::navigation::state::SortField,
+        direction: crate::navigation::state::SortDirection,
+    ) {
+        self.session.nav.library.sort_field = field;
+        self.session.nav.library.sort_direction = direction;
+    }
+
     pub fn search_matches(&self) -> &[SidebarNodeId] {
         &self.session.nav.library.search.matches
     }

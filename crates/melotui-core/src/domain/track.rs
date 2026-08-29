@@ -18,6 +18,11 @@ pub struct TrackMeta {
 
     pub duration_ms: u64,
     pub play_count: u32,
+    /// Unix seconds of the most recent play, if any. The one field
+    /// [`crate::library::snapshot::Library::record_play`] is responsible for —
+    /// see that method's docs for why this and `play_count` are not
+    /// separately-cached lists.
+    pub last_played_at: Option<u64>,
     pub bitrate: Option<u32>,
     pub sample_rate: Option<u32>,
     pub format: String,

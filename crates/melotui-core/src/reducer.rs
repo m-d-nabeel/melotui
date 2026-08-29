@@ -310,9 +310,14 @@ fn handle_database_message(state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg
         | DatabaseMsg::DispatchRemoveFromPlaylist { .. }
         | DatabaseMsg::DispatchSearchTracks(_) => vec![],
         DatabaseMsg::DispatchIncrementPlayCount(track_id) => {
-            if let Some(track) = state.library.tracks.get_mut(&track_id) {
-                track.play_count += 1;
-            }
+            // The one place this happens in memory — see `Library::record_play`
+            // for why this used to poke `play_count` directly and why that was
+            // the actual cause of `most_played`/`recently_played` going stale.
+            let played_at = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            state.library.record_play(track_id, played_at);
             vec![]
         }
     }

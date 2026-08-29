@@ -1,11 +1,11 @@
 use crate::{
     AppMsg, AppState,
     domain::TrackId,
-    playback::{advance, context::PlaybackContext},
     message::cover::{CoverContext, CoverMsg},
     message::playback::PlaybackMsg,
     navigation::ids::SidebarNodeId,
     playback::state::{PlaybackStatus, RepeatMode},
+    playback::{advance, context::PlaybackContext},
     state::{Notification, NotificationKind, VisualizerMode},
 };
 
@@ -547,6 +547,7 @@ mod tests {
                     is_favorite: false,
                     track_number: None,
                     play_count: 0,
+                    last_played_at: None,
                     duration_ms: 10_000,
                     bitrate: None,
                     sample_rate: None,
@@ -594,6 +595,7 @@ mod tests {
                     is_favorite: false,
                     track_number: None,
                     play_count: 0,
+                    last_played_at: None,
                     duration_ms: 10_000,
                     bitrate: None,
                     sample_rate: None,
@@ -651,6 +653,7 @@ mod tests {
                     is_favorite: false,
                     track_number: None,
                     play_count: 0,
+                    last_played_at: None,
                     duration_ms: 10_000,
                     bitrate: None,
                     sample_rate: None,
@@ -672,6 +675,7 @@ mod tests {
                     is_favorite: false,
                     track_number: None,
                     play_count: 0,
+                    last_played_at: None,
                     duration_ms: 10_000,
                     bitrate: None,
                     sample_rate: None,
@@ -746,8 +750,12 @@ mod tests {
         // second copy of a track was unreachable and playback looped forever
         // over the first few entries.
         let mut state = playing_context(&[1, 2, 3], 0);
-        state.session.playback.context =
-            PlaybackContext::new(vec![TrackId(1), TrackId(2), TrackId(1)], 0, "P".into(), false);
+        state.session.playback.context = PlaybackContext::new(
+            vec![TrackId(1), TrackId(2), TrackId(1)],
+            0,
+            "P".into(),
+            false,
+        );
         state.session.repeat_mode = RepeatMode::Off;
 
         let mut visited = vec![state.session.playback.context.natural_position()];
@@ -756,7 +764,11 @@ mod tests {
             handle_request_next(&mut state);
             visited.push(state.session.playback.context.natural_position());
         }
-        assert_eq!(visited, vec![0, 1, 2], "must reach the repeated entry at index 2");
+        assert_eq!(
+            visited,
+            vec![0, 1, 2],
+            "must reach the repeated entry at index 2"
+        );
     }
 
     #[test]
@@ -777,10 +789,11 @@ mod tests {
                 .is_some_and(|n| n.message.starts_with("End of")),
             "the user must be told the run is over"
         );
-        assert!(effects.iter().any(|e| matches!(
-            e,
-            AppMsg::Playback(PlaybackMsg::DispatchStop)
-        )));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, AppMsg::Playback(PlaybackMsg::DispatchStop)))
+        );
     }
 
     #[test]
@@ -798,10 +811,11 @@ mod tests {
             "playback must not move on to the next track"
         );
         assert!(matches!(state.playback_status(), PlaybackStatus::Stopped));
-        assert!(effects.iter().any(|e| matches!(
-            e,
-            AppMsg::Playback(PlaybackMsg::DispatchStop)
-        )));
+        assert!(
+            effects
+                .iter()
+                .any(|e| matches!(e, AppMsg::Playback(PlaybackMsg::DispatchStop)))
+        );
     }
 
     #[test]
@@ -811,7 +825,11 @@ mod tests {
 
         untick(&mut state);
         handle_audio_finished(&mut state);
-        assert_eq!(state.session.playback.current, Some(TrackId(1)), "repeat-one replays");
+        assert_eq!(
+            state.session.playback.current,
+            Some(TrackId(1)),
+            "repeat-one replays"
+        );
 
         untick(&mut state);
         handle_request_next(&mut state);
@@ -875,6 +893,7 @@ mod tests {
                 is_favorite: false,
                 track_number: None,
                 play_count: 0,
+                last_played_at: None,
                 duration_ms: 10000,
                 bitrate: None,
                 sample_rate: None,
@@ -1022,6 +1041,7 @@ mod tests {
                     is_favorite: false,
                     track_number: Some(id as u32),
                     play_count: 0,
+                    last_played_at: None,
                     duration_ms: 180000,
                     bitrate: None,
                     sample_rate: None,
@@ -1051,7 +1071,10 @@ mod tests {
             original_state.session.playback.context.tracks(),
             &[TrackId(1), TrackId(2), TrackId(3)]
         );
-        assert_eq!(original_state.session.playback.context.natural_position(), 1);
+        assert_eq!(
+            original_state.session.playback.context.natural_position(),
+            1
+        );
 
         // --- Step 2: Simulate App Shutdown & Session Persistence ---
         // PersistedSession::from_app_state serializes the state exactly as saved to last_session.toml
@@ -1073,7 +1096,10 @@ mod tests {
             restored_state.session.playback.context.tracks(),
             &[TrackId(1), TrackId(2), TrackId(3)]
         );
-        assert_eq!(restored_state.session.playback.context.natural_position(), 1);
+        assert_eq!(
+            restored_state.session.playback.context.natural_position(),
+            1
+        );
 
         // --- Step 4: Verify Skip Next works identically after session restore ---
         // Advance time to bypass 1s same-track play throttle
@@ -1085,7 +1111,10 @@ mod tests {
             "Skip next should produce playback actions"
         );
         assert_eq!(restored_state.session.playback.current, Some(TrackId(3)));
-        assert_eq!(restored_state.session.playback.context.natural_position(), 2);
+        assert_eq!(
+            restored_state.session.playback.context.natural_position(),
+            2
+        );
 
         // --- Step 5: Verify Skip Prev works identically after session restore ---
         restored_state.session.playback.progress_ms = 0; // Ensure progress is at start so it skips to previous track
@@ -1097,6 +1126,9 @@ mod tests {
             "Skip prev should produce playback actions"
         );
         assert_eq!(restored_state.session.playback.current, Some(TrackId(2)));
-        assert_eq!(restored_state.session.playback.context.natural_position(), 1);
+        assert_eq!(
+            restored_state.session.playback.context.natural_position(),
+            1
+        );
     }
 }
