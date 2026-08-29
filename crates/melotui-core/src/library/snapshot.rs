@@ -617,11 +617,8 @@ impl Library {
                 let mut current = self.folder_tree.subdirs.get(i)?;
                 for component in relative.components() {
                     let name = component.as_os_str().to_string_lossy();
-                    if let Some(child) = current.subdirs.iter().find(|d| d.name == name) {
-                        current = child;
-                    } else {
-                        return None;
-                    }
+                    let child = current.subdirs.iter().find(|d| d.name == name)?;
+                    current = child;
                 }
                 return Some(current);
             }
