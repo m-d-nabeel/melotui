@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::domain::TrackId;
+use crate::playback::context::PlaybackContext;
 use crate::navigation::{ids::SidebarNodeId, state::LeftPanelMode};
 use crate::playback::state::RepeatMode;
 use crate::state::{SpectrumStyle, VisualizerMode, audio::AudioState, ui::FocusMode};
@@ -246,10 +247,12 @@ impl PersistedSession {
             left_panel: state.session.nav.active_panel.clone(),
             show_track_info: state.session.nav.show_track_info,
             repeat_mode: state.session.repeat_mode.clone(),
-            context_queue: state.session.playback.context_queue.clone(),
-            context_idx: state.session.playback.context_idx,
-            source_name: state.session.playback.source_name.clone(),
-            shuffle: state.session.playback.shuffle,
+            context_queue: state.session.playback.context.tracks().to_vec(),
+            // The natural position, not the shuffled cursor: the saved order is
+            // the real one, and a fresh permutation is dealt on restore.
+            context_idx: state.session.playback.context.natural_position(),
+            source_name: state.session.playback.context.source_name().to_string(),
+            shuffle: state.session.playback.context.shuffle(),
             playing_from_queue: state.session.playback.playing_from_queue,
             scroll_offset: state.session.nav.library.scroll_offset,
             seek_position_ms: state.session.playback.progress_ms,
@@ -279,11 +282,7 @@ impl PersistedSession {
         state.session.nav.active_panel = self.left_panel.clone();
         state.session.nav.show_track_info = self.show_track_info;
         state.session.repeat_mode = self.repeat_mode.clone();
-        state.session.playback.shuffle = self.shuffle;
         state.session.playback.playing_from_queue = self.playing_from_queue;
-        if !self.source_name.is_empty() {
-            state.session.playback.source_name = self.source_name.clone();
-        }
 
         state.session.nav.library.expanded_ids = self.expanded_nodes.iter().cloned().collect();
 
@@ -308,35 +307,36 @@ impl PersistedSession {
             state.session.playback.active_node = Some(node.clone());
         }
 
+        // Tracks may have left the library since this session was written, which
+        // shifts every index after them. Rebuild through PlaybackContext and let
+        // it re-find the active track rather than trusting the saved index.
         let valid_context: Vec<TrackId> = self
             .context_queue
             .iter()
             .copied()
             .filter(|id| state.library.tracks.contains_key(id))
             .collect();
-        if valid_context.is_empty()
-            && let Some(SidebarNodeId::Track { ref parent, id }) =
-                state.session.playback.active_node
-        {
-            state.session.playback.context_queue = state.library.resolve_track_ids_for_node(parent);
-            if state.session.playback.context_queue.is_empty() {
-                state.session.playback.context_queue = vec![id];
-            }
-            if let Some(idx) = state
-                .session
-                .playback
-                .context_queue
-                .iter()
-                .position(|&t| t == id)
-            {
-                state.session.playback.context_idx = idx;
+
+        let (tracks, source_name) = if valid_context.is_empty() {
+            match state.session.playback.active_node {
+                Some(SidebarNodeId::Track { ref parent, id }) => {
+                    let resolved = state.library.resolve_track_ids_for_node(parent);
+                    let tracks = if resolved.is_empty() { vec![id] } else { resolved };
+                    (tracks, self.source_name.clone())
+                }
+                _ => (Vec::new(), self.source_name.clone()),
             }
         } else {
-            state.session.playback.context_queue = valid_context;
-            state.session.playback.context_idx = self
-                .context_idx
-                .min(state.session.playback.context_queue.len().saturating_sub(1));
-        }
+            (valid_context, self.source_name.clone())
+        };
+
+        state.session.playback.context = PlaybackContext::restore(
+            tracks,
+            self.context_idx,
+            state.session.playback.current,
+            source_name,
+            self.shuffle,
+        );
 
         if let Some(active_id) = state.session.playback.current {
             let use_active = match self.selected_node {

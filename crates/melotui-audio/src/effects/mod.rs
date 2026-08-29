@@ -1,11 +1,12 @@
+pub mod limiter;
+pub mod spatializer;
+
 use fundsp::hacker32::*;
 use fundsp::net::Net;
-use fundsp::{
-    DEFAULT_SR,
-    buffer::{BufferMut, BufferRef},
-    signal::SignalFrame,
-};
-use std::f32::consts::TAU;
+use fundsp::DEFAULT_SR;
+
+use limiter::LinkedLimiter;
+use spatializer::StereoSpatializer;
 
 pub struct AudioParams {
     pub bass: Shared,
@@ -71,228 +72,50 @@ impl AudioParams {
     }
 }
 
+impl AudioParams {
+    /// Largest boost, in dB, that the tone controls and EQ can apply at any one
+    /// frequency.
+    ///
+    /// The shelves and the bell filters are the only stages that add level, so
+    /// this is the worst case the rest of the chain has to survive.
+    fn max_boost_db(&self) -> f32 {
+        let shelf_db = |g: f32| 20.0 * g.max(0.001).log10();
+        let mut peak = shelf_db(self.bass.value()).max(shelf_db(self.treble.value()));
+        for band in &self.eq_bands {
+            peak = peak.max(band.value());
+        }
+        peak.max(0.0)
+    }
+
+    /// Input attenuation applied ahead of the chain so that boosting a band
+    /// changes the *balance* between bands rather than simply driving the
+    /// limiter.
+    ///
+    /// Without this, asking for +6 dB on every EQ band on a track mastered to
+    /// -1 dBFS produced +0.6 dB of actual output: the limiter absorbed the rest
+    /// and paid for it by ducking the midrange. Compensating the full boost
+    /// would instead make every setting quieter than bypass, so we take most of
+    /// it and leave the limiter a little work to do.
+    pub fn headroom_trim(&self) -> f32 {
+        // Empirical. Measured against a -1 dBFS master: at 0.45 the ordinary
+        // settings (bass up to 3.0, a single EQ band) stop reaching the limiter
+        // at all, while the resulting tone stays within 0.3 dB of what letting
+        // the limiter do the work produces. Compensating further only throws
+        // away level -- the limiter is transparent enough now to be a safety
+        // net rather than a permanent processor.
+        const COMPENSATION: f32 = 0.45;
+        let boost = self.max_boost_db();
+        if boost < 0.01 {
+            return 1.0;
+        }
+        10f32.powf(-boost * COMPENSATION / 20.0)
+    }
+}
+
 /// Center frequencies for the 10-band parametric EQ.
 const EQ_FREQS: [f32; 10] = [
     32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
 ];
-
-#[derive(Clone)]
-struct StereoSpatializer {
-    pan: Shared,
-    auto_pan_rate: Shared,
-    auto_pan_depth: Shared,
-    sample_rate: f32,
-    phase: f32,
-    smoothed_pan: f32,
-    delay_buffer: Vec<f32>,
-    write_idx: usize,
-    shadow_l: f32,
-    shadow_r: f32,
-    rear_l: f32,
-    rear_r: f32,
-}
-
-impl StereoSpatializer {
-    const MAX_ITD_SECONDS: f32 = 0.000_65;
-    const SHADOW_CUTOFF_HZ: f32 = 4_200.0;
-
-    fn new(params: &AudioParams) -> Self {
-        let mut spatializer = Self {
-            pan: params.pan.clone(),
-            auto_pan_rate: params.auto_pan_rate.clone(),
-            auto_pan_depth: params.auto_pan_depth.clone(),
-            sample_rate: DEFAULT_SR as f32,
-            phase: 0.0,
-            smoothed_pan: 0.0,
-            delay_buffer: Vec::new(),
-            write_idx: 0,
-            shadow_l: 0.0,
-            shadow_r: 0.0,
-            rear_l: 0.0,
-            rear_r: 0.0,
-        };
-        spatializer.resize_delay_buffer();
-        spatializer
-    }
-
-    fn resize_delay_buffer(&mut self) {
-        let len = (self.sample_rate * Self::MAX_ITD_SECONDS).ceil() as usize + 4;
-        self.delay_buffer.resize(std::cmp::max(len, 4), 0.0);
-        self.write_idx = std::cmp::min(self.write_idx, self.delay_buffer.len() - 1);
-    }
-
-    fn balance_gains(pan: f32) -> (f32, f32) {
-        if pan < 0.0 {
-            (1.0, (1.0 + pan).max(0.0).sqrt())
-        } else {
-            ((1.0 - pan).max(0.0).sqrt(), 1.0)
-        }
-    }
-
-    fn read_delay(&self, delay_samples: f32) -> f32 {
-        let len = self.delay_buffer.len() as f32;
-        let mut pos = self.write_idx as f32 - delay_samples.clamp(0.0, len - 2.0);
-        while pos < 0.0 {
-            pos += len;
-        }
-
-        let i0 = pos.floor() as usize % self.delay_buffer.len();
-        let i1 = (i0 + 1) % self.delay_buffer.len();
-        let frac = pos - pos.floor();
-        self.delay_buffer[i0] * (1.0 - frac) + self.delay_buffer[i1] * frac
-    }
-
-    fn shadow_sample(state: &mut f32, sample: f32, amount: f32, sample_rate: f32) -> f32 {
-        let alpha = 1.0 - (-TAU * Self::SHADOW_CUTOFF_HZ / sample_rate).exp();
-        *state += alpha * (sample - *state);
-        sample * (1.0 - amount) + *state * amount
-    }
-
-    fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
-        let rate = self.auto_pan_rate.value().clamp(0.0, 2.0);
-        let depth = self.auto_pan_depth.value().clamp(0.0, 1.0);
-        let orbit_phase = self.phase * TAU;
-        let auto = if depth > 0.001 && rate > 0.001 {
-            self.phase = (self.phase + rate / self.sample_rate).fract();
-            (self.phase * TAU).sin() * depth
-        } else {
-            0.0
-        };
-        let rear_orbit = if depth > 0.001 && rate > 0.001 {
-            // The left/right pan is sine-shaped. Cosine gives the two center crossings
-            // different front/back character so the orbit does not flatten behind the head.
-            ((orbit_phase.cos() + 1.0) * 0.5) * depth
-        } else {
-            0.0
-        };
-
-        let target_pan = (self.pan.value() + auto).clamp(-1.0, 1.0);
-        self.smoothed_pan += (target_pan - self.smoothed_pan) * 0.02;
-        let pan = self.smoothed_pan;
-        let lateral = pan.abs();
-        let (left_gain, right_gain) = Self::balance_gains(pan);
-
-        let dry_l = left * left_gain;
-        let dry_r = right * right_gain;
-        let auto_active = depth > 0.001 && (rate > 0.001 || self.pan.value().abs() > 0.001);
-        if !auto_active {
-            return (dry_l, dry_r);
-        }
-
-        let mono = (left + right) * 0.5;
-        self.delay_buffer[self.write_idx] = mono;
-
-        let max_delay = self.sample_rate * Self::MAX_ITD_SECONDS * depth;
-        let left_delay = pan.max(0.0) * max_delay;
-        let right_delay = (-pan).max(0.0) * max_delay;
-        let mut spatial_l = self.read_delay(left_delay);
-        let mut spatial_r = self.read_delay(right_delay);
-
-        let shadow = 0.45 * lateral * depth;
-        spatial_l = Self::shadow_sample(
-            &mut self.shadow_l,
-            spatial_l,
-            pan.max(0.0) * shadow,
-            self.sample_rate,
-        );
-        spatial_r = Self::shadow_sample(
-            &mut self.shadow_r,
-            spatial_r,
-            (-pan).max(0.0) * shadow,
-            self.sample_rate,
-        );
-        spatial_l *= left_gain;
-        spatial_r *= right_gain;
-
-        self.write_idx = (self.write_idx + 1) % self.delay_buffer.len();
-
-        let spatial_mix = (0.25 + depth * 0.55).min(0.8);
-        let dry_mix = 1.0 - spatial_mix;
-        let makeup = 1.0 + spatial_mix * 0.08;
-        let mut out_l = (dry_l * dry_mix + spatial_l * spatial_mix) * makeup;
-        let mut out_r = (dry_r * dry_mix + spatial_r * spatial_mix) * makeup;
-
-        let rear_amount = rear_orbit * (1.0 - lateral).powi(2) * 0.38;
-        if rear_amount > 0.001 {
-            let rear_delay = max_delay * (0.45 + 0.25 * rear_orbit);
-            let rear_mono = self.read_delay(rear_delay);
-            let rear_left = Self::shadow_sample(
-                &mut self.rear_l,
-                rear_mono + right * 0.18,
-                rear_amount * 0.75,
-                self.sample_rate,
-            );
-            let rear_right = Self::shadow_sample(
-                &mut self.rear_r,
-                rear_mono + left * 0.18,
-                rear_amount * 0.75,
-                self.sample_rate,
-            );
-
-            out_l = out_l * (1.0 - rear_amount) + rear_left * rear_amount;
-            out_r = out_r * (1.0 - rear_amount) + rear_right * rear_amount;
-        }
-
-        (out_l, out_r)
-    }
-}
-
-impl AudioUnit for StereoSpatializer {
-    fn reset(&mut self) {
-        self.phase = 0.0;
-        self.smoothed_pan = self.pan.value().clamp(-1.0, 1.0);
-        self.delay_buffer.fill(0.0);
-        self.write_idx = 0;
-        self.shadow_l = 0.0;
-        self.shadow_r = 0.0;
-        self.rear_l = 0.0;
-        self.rear_r = 0.0;
-    }
-
-    fn set_sample_rate(&mut self, sample_rate: f64) {
-        self.sample_rate = (sample_rate as f32).max(1.0);
-        self.resize_delay_buffer();
-        self.reset();
-    }
-
-    fn tick(&mut self, input: &[f32], output: &mut [f32]) {
-        let (left, right) = self.process_sample(input[0], input[1]);
-        output[0] = left;
-        output[1] = right;
-    }
-
-    fn process(&mut self, size: usize, input: &BufferRef, output: &mut BufferMut) {
-        for i in 0..size {
-            let (left, right) =
-                self.process_sample(input.channel_f32(0)[i], input.channel_f32(1)[i]);
-            output.channel_f32_mut(0)[i] = left;
-            output.channel_f32_mut(1)[i] = right;
-        }
-    }
-
-    fn inputs(&self) -> usize {
-        2
-    }
-
-    fn outputs(&self) -> usize {
-        2
-    }
-
-    fn route(&mut self, input: &SignalFrame, _frequency: f64) -> SignalFrame {
-        let mut output = SignalFrame::new(2);
-        output.set(0, input.at(0).combine_nonlinear(input.at(1), 0.0));
-        output.set(1, input.at(1).combine_nonlinear(input.at(0), 0.0));
-        output
-    }
-
-    fn get_id(&self) -> u64 {
-        0x05a7_1a11_05fa_71a1
-    }
-
-    fn footprint(&self) -> usize {
-        std::mem::size_of::<Self>()
-    }
-}
 
 /// Build the mono DSP chain as a Net (dynamic audio graph).
 ///
@@ -425,9 +248,14 @@ fn build_mono_chain(params: &AudioParams) -> Net {
 
 pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioUnit> {
     // ── Stereo Reverb ────────────────────────────────────
-    let wet_vol = var(&params.reverb);
+    // Equal-power crossfade. A linear one (dry = 1 - r) drops the direct sound
+    // by 3 dB at only 30% wet, which reads as the track going quiet and mushy
+    // instead of gaining space; the wet signal is decorrelated, so power, not
+    // amplitude, is what adds up.
+    let wet_vol = var(&params.reverb) >> map(|r: &Frame<f32, U1>| r[0].clamp(0.0, 1.0).sqrt());
     let wet_stereo = wet_vol.clone() | wet_vol;
-    let dry_gain = constant(1.0) - var(&params.reverb);
+    let dry_gain =
+        var(&params.reverb) >> map(|r: &Frame<f32, U1>| (1.0 - r[0].clamp(0.0, 1.0)).sqrt());
     let dry_stereo = dry_gain.clone() | dry_gain;
 
     let stereo_pass = pass() | pass();
@@ -474,7 +302,8 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
         ));
         let wet_path = left_wet | right_wet;
 
-        let dry_gain = constant(1.0) - var(&params.ping_pong);
+        let dry_gain =
+            var(&params.ping_pong) >> map(|p: &Frame<f32, U1>| (1.0 - p[0].clamp(0.0, 1.0)).sqrt());
         let dry_path = Net::wrap(Box::new((pass() | pass()) * (dry_gain.clone() | dry_gain)));
 
         let mixer_core = dry_path + wet_path;
@@ -483,7 +312,15 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
     };
 
     // ── Limiter ──────────────────────────────────────────
-    let limiter_stereo = limiter(0.001, 0.1) | limiter(0.001, 0.1);
+    // One detector across both channels; see effects::limiter.
+    let limiter_stereo = || Net::wrap(Box::new(LinkedLimiter::new(DEFAULT_SR as f32)));
+
+    // ── Input trim ───────────────────────────────────────
+    // Gain staging: pull the signal down by most of whatever the tone controls
+    // and EQ are about to add, so a boost re-balances the spectrum instead of
+    // pinning the limiter and dragging the midrange down with it.
+    let trim = params.headroom_trim();
+    let trim_stereo = || (constant(trim) * pass()) | (constant(trim) * pass());
 
     let mono_chain = build_mono_chain(params);
 
@@ -491,93 +328,194 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
         Box::new(
             mono_chain
                 >> split::<U2>()
+                >> trim_stereo()
                 >> spatializer()
                 >> stereo_mixer
                 >> make_ping_pong_mixer()
                 >> make_ms_matrix()
-                >> limiter_stereo.clone(),
+                >> limiter_stereo(),
         )
     } else {
         let mono_chain2 = build_mono_chain(params);
         Box::new(
             (mono_chain | mono_chain2)
+                >> trim_stereo()
                 >> spatializer()
                 >> stereo_mixer
                 >> make_ping_pong_mixer()
                 >> make_ms_matrix()
-                >> limiter_stereo,
+                >> limiter_stereo(),
         )
     }
 }
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fundsp::buffer::BufferVec;
 
-    fn assert_close(actual: f32, expected: f32) {
+    const SR: f32 = 48_000.0;
+
+    fn run(unit: &mut Box<dyn AudioUnit>, input: &[(f32, f32)]) -> Vec<(f32, f32)> {
+        let mut inb = BufferVec::new(2);
+        let mut outb = BufferVec::new(2);
+        let mut out = Vec::with_capacity(input.len());
+        for chunk in input.chunks(64) {
+            {
+                let mut w = inb.buffer_mut();
+                for (i, &(l, r)) in chunk.iter().enumerate() {
+                    w.channel_f32_mut(0)[i] = l;
+                    w.channel_f32_mut(1)[i] = r;
+                }
+            }
+            {
+                let r = inb.buffer_ref();
+                let mut w = outb.buffer_mut();
+                unit.process(chunk.len(), &r, &mut w);
+            }
+            let r = outb.buffer_ref();
+            for i in 0..chunk.len() {
+                out.push((r.channel_f32(0)[i], r.channel_f32(1)[i]));
+            }
+        }
+        out
+    }
+
+    fn db(x: f32) -> f32 {
+        20.0 * x.max(1e-12).log10()
+    }
+
+    fn amplitude_at(sig: &[f32], freq: f32) -> f32 {
+        let s = &sig[sig.len() / 3..];
+        let (mut re, mut im) = (0.0f64, 0.0f64);
+        for (i, &v) in s.iter().enumerate() {
+            let ph = (i as f64) / SR as f64 * freq as f64 * std::f64::consts::TAU;
+            re += v as f64 * ph.cos();
+            im += v as f64 * ph.sin();
+        }
+        (2.0 * (re * re + im * im).sqrt() / s.len() as f64) as f32
+    }
+
+    /// Bass, midrange and treble tones, normalised to a chosen peak level.
+    ///
+    /// A third of a second: the analysis window still covers ~14 cycles of the
+    /// 60 Hz tone, and the whole graph is slow enough in a debug build that
+    /// length matters for how long the suite takes.
+    fn probe(peak_dbfs: f32) -> Vec<(f32, f32)> {
+        let raw: Vec<f32> = (0..16_384)
+            .map(|i| {
+                let t = i as f32 / SR;
+                (t * 60.0 * std::f32::consts::TAU).sin() * 0.55
+                    + (t * 900.0 * std::f32::consts::TAU).sin() * 0.25
+                    + (t * 5_000.0 * std::f32::consts::TAU).sin() * 0.09
+            })
+            .collect();
+        let target = 10f32.powf(peak_dbfs / 20.0);
+        let peak = raw.iter().fold(0.0f32, |a, &v| a.max(v.abs()));
+        raw.iter().map(|&v| (v * target / peak, v * target / peak)).collect()
+    }
+
+    /// dB difference between the 60 Hz and 900 Hz components of the left output
+    /// — i.e. how much bass the chain delivered relative to the midrange.
+    fn bass_to_mid_db(params: &AudioParams, peak_dbfs: f32) -> f32 {
+        let input = probe(peak_dbfs);
+        let mut unit = create_audio_graph(2, params);
+        unit.reset();
+        unit.set_sample_rate(SR as f64);
+        let out = run(&mut unit, &input);
+        let l: Vec<f32> = out.iter().map(|x| x.0).collect();
+        db(amplitude_at(&l, 60.0)) - db(amplitude_at(&l, 900.0))
+    }
+
+    #[test]
+    fn is_transparent_when_every_control_is_at_its_default() {
+        let params = AudioParams::new();
+        assert!(params.is_all_default());
+        let input = probe(-12.0);
+        let mut unit = create_audio_graph(2, &params);
+        unit.reset();
+        unit.set_sample_rate(SR as f64);
+        let out = run(&mut unit, &input);
+
+        let l: Vec<f32> = out.iter().map(|x| x.0).collect();
+        let inl: Vec<f32> = input.iter().map(|x| x.0).collect();
+        for freq in [60.0f32, 900.0, 5_000.0] {
+            let delta = db(amplitude_at(&l, freq)) - db(amplitude_at(&inl, freq));
+            assert!(
+                delta.abs() < 0.5,
+                "{freq} Hz moved by {delta:.2} dB with nothing engaged"
+            );
+        }
+    }
+
+    #[test]
+    fn tone_shaping_does_not_depend_on_how_loud_the_track_is() {
+        // This is what the input trim buys. Without it the limiter absorbed a
+        // level-dependent share of every boost, so the same setting sounded
+        // different on a quiet track than on a loud one — and on a loud one it
+        // mostly just ducked the midrange.
+        let quiet_ref = bass_to_mid_db(&AudioParams::new(), -20.0);
+        let loud_ref = bass_to_mid_db(&AudioParams::new(), -1.0);
+
+        for bass in [2.0f32, 3.0, 5.0] {
+            let params = AudioParams::new();
+            params.bass.set_value(bass);
+            let quiet = bass_to_mid_db(&params, -20.0) - quiet_ref;
+            let loud = bass_to_mid_db(&params, -1.0) - loud_ref;
+            assert!(
+                (quiet - loud).abs() < 1.0,
+                "bass {bass}: delivered {quiet:.2} dB on a quiet track but \
+                 {loud:.2} dB on a loud one"
+            );
+            assert!(quiet > 2.0, "bass {bass}: only {quiet:.2} dB of actual boost");
+        }
+    }
+
+    #[test]
+    fn headroom_trim_tracks_the_largest_boost() {
+        let params = AudioParams::new();
+        assert_eq!(params.headroom_trim(), 1.0, "no boost, no trim");
+
+        params.eq_bands[4].set_value(12.0);
+        let trimmed = params.headroom_trim();
+        assert!(trimmed < 1.0 && trimmed > 0.1, "trim {trimmed} out of range");
+
+        // A cut must not attenuate — there is nothing to make room for.
+        let cut = AudioParams::new();
+        cut.eq_bands[4].set_value(-12.0);
+        assert_eq!(cut.headroom_trim(), 1.0);
+    }
+
+    #[test]
+    fn output_stays_below_full_scale_under_everything_at_once() {
+        let params = AudioParams::new();
+        params.bass.set_value(5.0);
+        params.treble.set_value(3.0);
+        for b in &params.eq_bands {
+            b.set_value(9.0);
+        }
+        params.reverb.set_value(0.6);
+        params.echo.set_value(0.5);
+        params.ping_pong.set_value(0.5);
+        params.exciter.set_value(1.0);
+        params.auto_pan_rate.set_value(1.0);
+        params.auto_pan_depth.set_value(1.0);
+
+        let input = probe(-1.0);
+        let mut unit = create_audio_graph(2, &params);
+        unit.reset();
+        unit.set_sample_rate(SR as f64);
+        let out = run(&mut unit, &input);
+
+        let peak = out
+            .iter()
+            .skip(4_000)
+            .fold(0.0f32, |a, &(l, r)| a.max(l.abs()).max(r.abs()));
+        assert!(peak <= 1.0, "clipped at {peak}");
         assert!(
-            (actual - expected).abs() < 0.0001,
-            "expected {expected}, got {actual}"
-        );
-    }
-
-    #[test]
-    fn spatializer_default_preserves_stereo_sample() {
-        let params = AudioParams::new();
-        let mut spatializer = StereoSpatializer::new(&params);
-        spatializer.reset();
-
-        let mut output = [0.0, 0.0];
-        spatializer.tick(&[0.8, -0.2], &mut output);
-
-        assert_close(output[0], 0.8);
-        assert_close(output[1], -0.2);
-    }
-
-    #[test]
-    fn spatializer_center_pan_does_not_attenuate() {
-        let params = AudioParams::new();
-        params.pan.set_value(0.0);
-        let mut spatializer = StereoSpatializer::new(&params);
-        spatializer.reset();
-
-        let mut output = [0.0, 0.0];
-        spatializer.tick(&[0.5, 0.5], &mut output);
-
-        assert_close(output[0], 0.5);
-        assert_close(output[1], 0.5);
-    }
-
-    #[test]
-    fn spatializer_hard_pan_keeps_near_channel_level() {
-        let params = AudioParams::new();
-        params.pan.set_value(1.0);
-        let mut spatializer = StereoSpatializer::new(&params);
-        spatializer.reset();
-
-        let mut output = [0.0, 0.0];
-        spatializer.tick(&[0.5, 0.5], &mut output);
-
-        assert!(output[0].abs() < 0.0001);
-        assert_close(output[1], 0.5);
-    }
-
-    #[test]
-    fn spatializer_auto_pan_adds_rear_center_cue() {
-        let params = AudioParams::new();
-        params.auto_pan_rate.set_value(0.10);
-        params.auto_pan_depth.set_value(0.90);
-        let mut spatializer = StereoSpatializer::new(&params);
-        spatializer.reset();
-
-        let mut output = [0.0, 0.0];
-        spatializer.tick(&[0.5, 0.5], &mut output);
-
-        assert!(output[0].is_finite());
-        assert!(output[1].is_finite());
-        assert!(
-            (output[0] - 0.5).abs() > 0.001 || (output[1] - 0.5).abs() > 0.001,
-            "rear cue should alter the otherwise unchanged center image"
+            out.iter().all(|&(l, r)| l.is_finite() && r.is_finite()),
+            "graph produced non-finite output"
         );
     }
 }

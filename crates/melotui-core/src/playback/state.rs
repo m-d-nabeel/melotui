@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
-use crate::{domain::TrackId, navigation::ids::SidebarNodeId};
+use crate::{domain::TrackId, navigation::ids::SidebarNodeId, playback::context::PlaybackContext};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum PlaybackStatus {
@@ -46,13 +46,13 @@ pub struct PlaybackState {
     pub active_node: Option<SidebarNodeId>,
     pub playing_from_queue: bool,
     pub active_queue_id: Option<QueueId>,
-    pub source_name: String,         // e.g. "Playlist: Jazz"
-    pub context_queue: Vec<TrackId>, // persistent playlist
-    pub context_idx: usize,
+    /// The run of tracks being listened through, and the position in it.
+    /// Owns the ordering, the cursor, the shuffle permutation and the
+    /// source label, so they can never disagree with one another.
+    pub context: PlaybackContext,
     pub status: PlaybackStatus,
     pub progress_ms: u64,
     pub duration_ms: Option<u64>,
-    pub shuffle: bool,
 }
 
 #[derive(Debug, Clone, Default)]

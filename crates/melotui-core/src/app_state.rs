@@ -13,7 +13,6 @@ use crate::{
     },
     utils::{NoOpSpectrum, SpectrumSource},
 };
-use rand::Rng;
 use std::{collections::VecDeque, path::PathBuf, sync::Arc};
 
 pub struct AppState {
@@ -182,7 +181,7 @@ impl AppState {
     }
 
     pub fn shuffle_active(&self) -> bool {
-        self.session.playback.shuffle
+        self.session.playback.context.shuffle()
     }
 
     pub fn repeat_mode(&self) -> &RepeatMode {
@@ -232,52 +231,20 @@ impl AppState {
     pub fn get_playing_source_name(&self) -> &str {
         if self.session.playback.playing_from_queue {
             "User Queue"
-        } else if self.session.playback.source_name.is_empty() {
+        } else if self.session.playback.context.source_name().is_empty() {
             "Unknown"
         } else {
-            &self.session.playback.source_name
+            self.session.playback.context.source_name()
         }
     }
 
-    pub fn context_queue(&self) -> &Vec<TrackId> {
-        &self.session.playback.context_queue
+    /// Read-only view of the listening context.
+    pub fn playback_context(&self) -> &crate::playback::context::PlaybackContext {
+        &self.session.playback.context
     }
 
-    pub fn get_next_context_id(&self) -> Option<TrackId> {
-        let ctx = &self.session.playback.context_queue;
-        if ctx.is_empty() {
-            return None;
-        }
-
-        let next = if self.shuffle_active() {
-            rand::rng().random_range(0..ctx.len())
-        } else {
-            let n = self.session.playback.context_idx + 1;
-            if n < ctx.len() {
-                n
-            } else if self.session.repeat_mode == RepeatMode::Playlist {
-                0
-            } else {
-                return None;
-            }
-        };
-        Some(ctx[next])
-    }
-
-    pub fn get_prev_context_id(&self) -> Option<TrackId> {
-        let ctx = &self.session.playback.context_queue;
-        if ctx.is_empty() {
-            return None;
-        }
-
-        let prev = if self.session.playback.context_idx > 0 {
-            self.session.playback.context_idx - 1
-        } else if self.session.repeat_mode == RepeatMode::Playlist {
-            ctx.len() - 1
-        } else {
-            return None;
-        };
-        Some(ctx[prev])
+    pub fn context_queue(&self) -> &[TrackId] {
+        self.session.playback.context.tracks()
     }
 }
 
@@ -564,50 +531,7 @@ impl AppState {
 // next song prediction
 impl AppState {
     pub fn predict_next_song(&self) -> String {
-        // Priority: User queue
-        if let Some(qid) = self.session.playback.active_queue_id {
-            // scenario a: playing song in queue
-            if let Some(idx) = self.queue().iter().position(|e| e.id == qid) {
-                if idx + 1 < self.queue().len() {
-                    return self.resolve_track_title(self.queue()[idx + 1].track_id);
-                }
-                // last song, check context
-            }
-            // scenario b: playing song popped
-            else if let Some(first) = self.queue().front() {
-                return self.resolve_track_title(first.track_id);
-            }
-        }
-        // scenario c: playing from context
-        else if let Some(first) = self.queue().front() {
-            return self.resolve_track_title(first.track_id);
-        }
-
-        // context (playlist/folder)
-        let ctx = &self.session.playback.context_queue;
-        let idx = self.session.playback.context_idx;
-
-        if ctx.is_empty() {
-            return "None".into();
-        }
-
-        if self.session.repeat_mode == RepeatMode::Track {
-            return self
-                .get_playing_track()
-                .map(|t| t.title.clone())
-                .unwrap_or("Repeating".into());
-        }
-
-        let next = idx + 1;
-        if next < ctx.len() {
-            return self.resolve_track_title(ctx[next]);
-        }
-
-        if self.session.repeat_mode == RepeatMode::Playlist {
-            return self.resolve_track_title(ctx[0]);
-        }
-
-        "None".into()
+        crate::playback::advance::describe_next(&self.session, |id| self.resolve_track_title(id))
     }
 
     /// resolve track title
