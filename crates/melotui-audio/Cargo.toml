@@ -1,6 +1,6 @@
 [package]
 name = "melotui-audio"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["m-d-nabeel"]
 repository = "https://github.com/m-d-nabeel/melotui"
 edition = "2024"
@@ -26,5 +26,3 @@ fundsp = "0.20"
 [target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
 cpal = { version = "0.16", features = ["audio_thread_priority"] }
 
-[dev-dependencies]
-mockall = "0.14.0"

@@ -1,6 +1,6 @@
 [package]
 name = "melotui-db"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["m-d-nabeel"]
 repository = "https://github.com/m-d-nabeel/melotui"
 edition = "2024"
@@ -15,5 +15,4 @@ lofty = "0.22"
 dirs = "6"
 
 [dev-dependencies]
-mockall = "0.14.0"
 tempfile = "3.12"

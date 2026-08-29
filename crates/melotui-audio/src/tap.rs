@@ -132,7 +132,11 @@ mod tests {
             if self.n >= self.len {
                 return None;
             }
-            let v = if self.n.is_multiple_of(2) { self.l } else { self.r };
+            let v = if self.n.is_multiple_of(2) {
+                self.l
+            } else {
+                self.r
+            };
             self.n += 1;
             Some(v)
         }

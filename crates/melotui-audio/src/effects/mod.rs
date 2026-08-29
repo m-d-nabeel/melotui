@@ -1,9 +1,9 @@
 pub mod limiter;
 pub mod spatializer;
 
+use fundsp::DEFAULT_SR;
 use fundsp::hacker32::*;
 use fundsp::net::Net;
-use fundsp::DEFAULT_SR;
 
 use limiter::LinkedLimiter;
 use spatializer::StereoSpatializer;
@@ -349,7 +349,6 @@ pub fn create_audio_graph(channels: u16, params: &AudioParams) -> Box<dyn AudioU
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -413,7 +412,9 @@ mod tests {
             .collect();
         let target = 10f32.powf(peak_dbfs / 20.0);
         let peak = raw.iter().fold(0.0f32, |a, &v| a.max(v.abs()));
-        raw.iter().map(|&v| (v * target / peak, v * target / peak)).collect()
+        raw.iter()
+            .map(|&v| (v * target / peak, v * target / peak))
+            .collect()
     }
 
     /// dB difference between the 60 Hz and 900 Hz components of the left output
@@ -468,7 +469,10 @@ mod tests {
                 "bass {bass}: delivered {quiet:.2} dB on a quiet track but \
                  {loud:.2} dB on a loud one"
             );
-            assert!(quiet > 2.0, "bass {bass}: only {quiet:.2} dB of actual boost");
+            assert!(
+                quiet > 2.0,
+                "bass {bass}: only {quiet:.2} dB of actual boost"
+            );
         }
     }
 
@@ -479,7 +483,10 @@ mod tests {
 
         params.eq_bands[4].set_value(12.0);
         let trimmed = params.headroom_trim();
-        assert!(trimmed < 1.0 && trimmed > 0.1, "trim {trimmed} out of range");
+        assert!(
+            trimmed < 1.0 && trimmed > 0.1,
+            "trim {trimmed} out of range"
+        );
 
         // A cut must not attenuate — there is nothing to make room for.
         let cut = AudioParams::new();

@@ -25,10 +25,10 @@
 //! (the far ear hears it later), an interaural level difference, and head
 //! shadowing (the far ear hears it duller).
 
+use fundsp::DEFAULT_SR;
 use fundsp::buffer::{BufferMut, BufferRef};
 use fundsp::hacker32::*;
 use fundsp::signal::SignalFrame;
-use fundsp::DEFAULT_SR;
 use std::f32::consts::TAU;
 
 use super::AudioParams;
@@ -211,7 +211,10 @@ impl StereoSpatializer {
             }
         }
 
-        (out_l * gain_l * std::f32::consts::SQRT_2, out_r * gain_r * std::f32::consts::SQRT_2)
+        (
+            out_l * gain_l * std::f32::consts::SQRT_2,
+            out_r * gain_r * std::f32::consts::SQRT_2,
+        )
     }
 }
 
@@ -311,7 +314,10 @@ mod tests {
         for i in 0..48_000 {
             let t = i as f32 / SR;
             let mut o = [0.0; 2];
-            s.tick(&[(t * fa * TAU).sin() * 0.25, (t * fb * TAU).sin() * 0.25], &mut o);
+            s.tick(
+                &[(t * fa * TAU).sin() * 0.25, (t * fb * TAU).sin() * 0.25],
+                &mut o,
+            );
             out_l.push(o[0]);
         }
 
@@ -381,7 +387,10 @@ mod tests {
             let mid = channel_bleed_db(depth, 400.0, 3_000.0);
             let high = channel_bleed_db(depth, 400.0, 8_000.0);
             assert!(mid < -20.0, "depth {depth}: {mid:.1} dB of bleed at 3 kHz");
-            assert!(high < -30.0, "depth {depth}: {high:.1} dB of bleed at 8 kHz");
+            assert!(
+                high < -30.0,
+                "depth {depth}: {high:.1} dB of bleed at 8 kHz"
+            );
         }
     }
 
@@ -396,7 +405,10 @@ mod tests {
         );
         for depth in [0.25f32, 0.5, 0.75, 1.0] {
             let low = channel_bleed_db(depth, 400.0, 700.0);
-            assert!(low < -12.0, "depth {depth}: {low:.1} dB of crossfeed is too much");
+            assert!(
+                low < -12.0,
+                "depth {depth}: {low:.1} dB of crossfeed is too much"
+            );
         }
     }
 
@@ -474,7 +486,10 @@ mod tests {
             let v = (i as f32 / 48_000.0 * 100.0 * TAU).sin();
             s.tick(&[v, -v], &mut out);
             assert!(out[0].is_finite() && out[1].is_finite());
-            assert!(out[0].abs() < 4.0 && out[1].abs() < 4.0, "runaway gain: {out:?}");
+            assert!(
+                out[0].abs() < 4.0 && out[1].abs() < 4.0,
+                "runaway gain: {out:?}"
+            );
         }
     }
 }
