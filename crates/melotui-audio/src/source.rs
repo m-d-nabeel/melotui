@@ -148,7 +148,15 @@ where
     S: Source<Item = f32>,
 {
     fn current_span_len(&self) -> Option<usize> {
-        self.source.current_span_len()
+        // Spans are counted in samples, not frames. A mono input yields two
+        // output samples for every one it consumes, so forwarding the inner
+        // span verbatim under-reports it by half and makes rodio re-bootstrap
+        // its resampler twice as often as the format actually requires.
+        self.source.current_span_len().map(|samples| {
+            samples
+                .saturating_mul(Self::OUTPUT_CHANNELS)
+                .saturating_div(Ord::max(self.input_channels, 1))
+        })
     }
 
     fn channels(&self) -> u16 {
@@ -176,5 +184,88 @@ where
         self.unit.set_sample_rate(self.source.sample_rate() as f64);
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FundspSource, Source};
+    use fundsp::hacker32::{AudioUnit, pass};
+    use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
+    use std::time::Duration;
+
+    /// Minimal source reporting spans the way symphonia does: in samples,
+    /// i.e. frames * channels.
+    struct Tone {
+        channels: u16,
+        span_samples: usize,
+        remaining: usize,
+    }
+
+    impl Iterator for Tone {
+        type Item = f32;
+        fn next(&mut self) -> Option<f32> {
+            if self.remaining == 0 {
+                return None;
+            }
+            self.remaining -= 1;
+            Some(0.25)
+        }
+    }
+
+    impl Source for Tone {
+        fn current_span_len(&self) -> Option<usize> {
+            Some(self.span_samples)
+        }
+        fn channels(&self) -> u16 {
+            self.channels
+        }
+        fn sample_rate(&self) -> u32 {
+            48_000
+        }
+        fn total_duration(&self) -> Option<Duration> {
+            None
+        }
+    }
+
+    fn unit() -> Box<dyn AudioUnit> {
+        Box::new(pass() | pass())
+    }
+
+    #[test]
+    fn span_len_is_reported_in_output_samples_for_mono() {
+        // 1152 mono samples in == 1152 frames == 2304 stereo samples out.
+        let src = Tone {
+            channels: 1,
+            span_samples: 1152,
+            remaining: 4096,
+        };
+        let fs = FundspSource::new(src, unit(), Arc::new(AtomicBool::new(true)));
+        assert_eq!(fs.channels(), 2);
+        assert_eq!(fs.current_span_len(), Some(2304));
+    }
+
+    #[test]
+    fn span_len_is_unchanged_for_stereo() {
+        // Stereo preserves the sample count, so the span passes through as-is.
+        let src = Tone {
+            channels: 2,
+            span_samples: 2304,
+            remaining: 4096,
+        };
+        let fs = FundspSource::new(src, unit(), Arc::new(AtomicBool::new(true)));
+        assert_eq!(fs.current_span_len(), Some(2304));
+    }
+
+    #[test]
+    fn mono_input_really_does_emit_two_samples_per_input_sample() {
+        let src = Tone {
+            channels: 1,
+            span_samples: 1152,
+            remaining: 100,
+        };
+        let fs = FundspSource::new(src, unit(), Arc::new(AtomicBool::new(true)));
+        assert_eq!(fs.count(), 200, "mono is upmixed to stereo");
     }
 }

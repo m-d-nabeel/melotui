@@ -15,6 +15,10 @@ pub struct EngineConfig {
     pub spectrum_producer: SpectrumProducer,
     pub fft_size: usize,
     pub max_cover_resolution: u32,
+    /// Output sample rate in Hz; `None` uses the device default.
+    pub sample_rate: Option<u32>,
+    /// Output buffer size in frames; `None` uses cpal's default.
+    pub buffer_size: Option<u32>,
 }
 
 /// Frontend-agnostic engine that owns all worker threads and the event bus.
@@ -47,9 +51,13 @@ impl Engine {
         // spawn audio worker
         let (audio_tx, audio_worker) = inprocess::join_worker::<AudioCommand>(bus_tx.clone());
         let spectrum_producer = config.spectrum_producer;
-        let fft_size = config.fft_size;
+        let audio_config = melotui_audio::AudioRunConfig {
+            fft_size: config.fft_size,
+            sample_rate: config.sample_rate,
+            buffer_size: config.buffer_size,
+        };
         thread::spawn(move || {
-            melotui_audio::run(audio_worker, spectrum_producer, fft_size);
+            melotui_audio::run(audio_worker, spectrum_producer, audio_config);
             tracing::info!("Audio worker exited");
         });
 

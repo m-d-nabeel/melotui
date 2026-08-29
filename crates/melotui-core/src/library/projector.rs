@@ -26,19 +26,19 @@ pub fn get_row_count(snapshot: &Library, nav: &LibraryNavState) -> usize {
         .expanded_ids
         .contains(&SidebarNodeId::Category(CategoryId::Favorites))
     {
-        count += snapshot.favorites.len();
+        count += snapshot.favorites().len();
     }
     if nav
         .expanded_ids
         .contains(&SidebarNodeId::Category(CategoryId::RecentlyPlayed))
     {
-        count += snapshot.recently_played.len();
+        count += snapshot.recently_played().len();
     }
     if nav
         .expanded_ids
         .contains(&SidebarNodeId::Category(CategoryId::MostPlayed))
     {
-        count += snapshot.most_played.len();
+        count += snapshot.most_played().len();
     }
     if nav
         .expanded_ids

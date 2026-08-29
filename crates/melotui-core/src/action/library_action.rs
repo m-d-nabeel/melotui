@@ -123,8 +123,11 @@ pub fn handle_toggle_repeat_mode(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_toggle_shuffle(state: &mut AppState) -> Vec<AppMsg> {
-    let enabled = !state.session.playback.shuffle;
-    state.session.playback.shuffle = enabled;
+    let enabled = !state.session.playback.context.shuffle();
+    // Rebuilds the play order around whatever is playing, so toggling never
+    // skips the current track and turning it back off returns to the real
+    // position in the list.
+    state.session.playback.context.set_shuffle(enabled);
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
         format!("Shuffle: {}", if enabled { "On" } else { "Off" }),
@@ -601,6 +604,7 @@ mod tests {
                 is_favorite: false,
                 track_number: None,
                 play_count: 0,
+                last_played_at: None,
                 duration_ms: 10000,
                 bitrate: None,
                 sample_rate: None,

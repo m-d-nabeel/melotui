@@ -1,6 +1,6 @@
 [package]
 name = "melotui-tui"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["m-d-nabeel"]
 repository = "https://github.com/m-d-nabeel/melotui"
 edition = "2024"
@@ -22,5 +22,3 @@ unicode-width = "0.2"
 tui-input = { version = "0.15.3", features = ["ratatui-crossterm"] }
 toml = "1.1.2"
 
-[dev-dependencies]
-mockall = "0.14.0"

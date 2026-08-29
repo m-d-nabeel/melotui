@@ -16,24 +16,73 @@ use fundsp::hacker32::AudioUnit;
 use crate::{
     clock::TimeKeeper,
     effects::{AudioParams, create_audio_graph},
+    reaper::Reaper,
     source::FundspSource,
     tap::SpectrumSniffer,
     visualizer::VisualizerManager,
 };
 
+/// Output stream settings, plumbed through from `[audio]` in the user's config.
+pub struct AudioRunConfig {
+    pub fft_size: usize,
+    /// Output rate in Hz; `None` takes whatever the device reports as default.
+    pub sample_rate: Option<u32>,
+    /// Output buffer in frames; `None` leaves cpal on its default
+    /// (25 ms period inside a 100 ms buffer).
+    pub buffer_size: Option<u32>,
+}
+
+/// Opens the output stream, honouring the configured rate and buffer size.
+///
+/// Both settings matter for dropout resistance. The ALSA "default" PCM usually
+/// reports 44100 even when the sound server runs at 48000, which costs us a
+/// resample in each direction; and cpal's default buffer only leaves ~75 ms of
+/// slack for the callback thread to miss its deadline in. On failure rodio
+/// retries every config the device advertises before giving up.
+fn open_output_stream(config: &AudioRunConfig) -> Result<rodio::OutputStream, rodio::StreamError> {
+    let mut builder = rodio::OutputStreamBuilder::from_default_device()?;
+
+    if let Some(rate) = config.sample_rate {
+        builder = builder.with_sample_rate(rate);
+    }
+    if let Some(frames) = config.buffer_size {
+        builder = builder.with_buffer_size(rodio::cpal::BufferSize::Fixed(frames));
+    }
+
+    builder.open_stream_or_fallback()
+}
+
 pub fn run(
     mut worker: impl IpcWorker<AudioCommand>,
     spectrum_producer: SpectrumProducer,
-    fft_size: usize,
+    config: AudioRunConfig,
 ) {
-    let mut stream_handle =
-        rodio::OutputStreamBuilder::open_default_stream().expect("open default audio stream");
+    let mut stream_handle = match open_output_stream(&config) {
+        Ok(handle) => handle,
+        Err(e) => {
+            // Previously this was `.expect(...)`, which panicked this thread and
+            // left the app running with no audio and no explanation. Tell the UI
+            // and stop; `Engine::dispatch` ignores sends to a dead worker.
+            tracing::error!("Failed to open audio output stream: {e}");
+            worker.send(IpcEvent::Error {
+                message: format!("No audio output available: {e}"),
+            });
+            return;
+        }
+    };
     stream_handle.log_on_drop(false);
+
+    tracing::info!(
+        "Audio output opened: {} Hz, {} ch, buffer {:?}",
+        stream_handle.config().sample_rate(),
+        stream_handle.config().channel_count(),
+        stream_handle.config().buffer_size(),
+    );
 
     let mut engine = AudioEngine::new(
         Sink::connect_new(stream_handle.mixer()),
         spectrum_producer,
-        fft_size,
+        config.fft_size,
     );
 
     loop {
@@ -92,6 +141,7 @@ struct AudioEngine {
     dsp_params: AudioParams,
     seek_epoch: u64,
     bypass: Arc<AtomicBool>,
+    reaper: Reaper,
 }
 
 impl AudioEngine {
@@ -104,6 +154,7 @@ impl AudioEngine {
             dsp_params: AudioParams::new(),
             seek_epoch: 0,
             bypass: Arc::new(AtomicBool::new(true)),
+            reaper: Reaper::spawn(),
         }
     }
 
@@ -190,14 +241,13 @@ impl AudioEngine {
                 let (producer, consumer) = ring.split();
                 self.vis_manager.attach_source(consumer, sample_rate);
 
-                let source_with_sniffer = SpectrumSniffer {
-                    input: dsp_source,
-                    producer,
-                    batch: [0.0; 64],
-                    batch_pos: 0,
-                };
+                let source_with_sniffer = SpectrumSniffer::new(dsp_source, producer);
 
-                self.sink.append(source_with_sniffer);
+                // Box here, on the worker thread, so that when rodio drops this
+                // source on the audio callback thread the handoff to the reaper
+                // is a bare pointer move instead of ~1 MB of `free()` calls.
+                self.sink
+                    .append(self.reaper.guard(Box::new(source_with_sniffer)));
                 self.sink.play();
                 self.sink.set_speed(self.time_keeper.current_speed);
 

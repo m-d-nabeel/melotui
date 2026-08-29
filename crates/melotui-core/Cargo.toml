@@ -1,6 +1,6 @@
 [package]
 name = "melotui-core"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["m-d-nabeel"]
 repository = "https://github.com/m-d-nabeel/melotui"
 edition = "2024"
@@ -17,5 +17,3 @@ rand = "0.9"
 tui-input = { version = "0.15.3", default-features = false }
 lrc = "0.1.8"
 
-[dev-dependencies]
-mockall = "0.14.0"

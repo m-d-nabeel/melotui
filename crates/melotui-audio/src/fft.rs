@@ -25,10 +25,18 @@ where
     pub fn new(consumer: C, fft_size: usize, sample_rate: u32) -> Self {
         Self {
             consumer,
-            buffer: Vec::with_capacity(fft_size),
+            // Room for a frame plus a frame of backlog, so a late tick does not
+            // force us to throw away audio.
+            buffer: Vec::with_capacity(fft_size * 2),
             fft_size,
             sample_rate,
         }
+    }
+
+    /// Distance between successive analysis frames: a quarter of the window,
+    /// which is the 75% overlap this analyser has always claimed to use.
+    fn hop(&self) -> usize {
+        (self.fft_size / 4).max(1)
     }
 
     pub fn into_consumer(self) -> C {
@@ -36,10 +44,18 @@ where
     }
 
     pub fn next_spectrum(&mut self) -> Option<Vec<f32>> {
+        // Absorb everything waiting. The old code stopped pushing once the
+        // buffer was full and silently discarded the rest, which threw away the
+        // *newest* audio — the opposite of what a live visualizer wants. Take it
+        // all, then trim from the front if we have fallen behind.
         while let Some(sample) = self.consumer.try_pop() {
-            if self.buffer.len() < self.fft_size {
-                self.buffer.push(sample);
-            }
+            self.buffer.push(sample);
+        }
+
+        let max_backlog = self.fft_size * 2;
+        if self.buffer.len() > max_backlog {
+            let excess = self.buffer.len() - max_backlog;
+            self.buffer.drain(0..excess);
         }
 
         // wait for full buffer
@@ -47,7 +63,7 @@ where
             return None;
         }
 
-        let hann_window = hann_window(&self.buffer);
+        let hann_window = hann_window(&self.buffer[..self.fft_size]);
         let spectrum_result = samples_fft_to_spectrum(
             &hann_window,
             self.sample_rate,
@@ -56,12 +72,8 @@ where
         );
 
         // shift buffer for next frame (75% overlap)
-        let drain_amt = self.fft_size - 1024;
-        if drain_amt < self.buffer.len() {
-            self.buffer.drain(0..drain_amt);
-        } else {
-            self.buffer.clear();
-        }
+        let drain_amt = self.hop().min(self.buffer.len());
+        self.buffer.drain(0..drain_amt);
 
         if let Ok(spectrum) = spectrum_result {
             let data = spectrum.to_map();

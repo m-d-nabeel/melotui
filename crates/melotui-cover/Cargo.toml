@@ -1,6 +1,6 @@
 [package]
 name = "melotui-cover"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["m-d-nabeel"]
 repository = "https://github.com/m-d-nabeel/melotui"
 edition = "2024"
