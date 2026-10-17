@@ -1070,9 +1070,9 @@ mod tests {
     fn the_notch_removes_the_fraction_of_the_band_it_says_it_does() {
         // `depth` is meant to mean "this fraction of the band is removed", so
         // depth 0.7 must measure as roughly -10 dB at the centre. It only does
-        // if PINNA_BAND_GAIN matches the band-pass's actual peak; get that
-        // wrong and every other constant here is being tuned against a notch
-        // that is quietly a different depth than it claims.
+        // if `pinna_notch_scale` solves for the band-pass's actual response;
+        // get that wrong and every other constant here is being tuned against a
+        // notch that is quietly a different depth than it claims.
         let expected = 20.0 * (1.0 - MAX_PINNA_DEPTH).log10();
         for sr in [44_100.0f32, 48_000.0, 96_000.0] {
             for centre in [PINNA_FRONT_HZ, PINNA_REAR_HZ] {
@@ -1245,6 +1245,7 @@ mod tests {
             "turning the room on changed the level by {delta:.2} dB"
         );
     }
+
     /// Not a pass/fail test — a measuring tool, kept because this crate's
     /// history is a bug report about audio dropping out under CPU pressure,
     /// and every cue added here costs per-sample work in the callback.
@@ -1287,8 +1288,6 @@ mod tests {
         // audio from an entirely different part of the track, arriving as a
         // burst out of nowhere.
         let mut s = spatializer(|_| {});
-        let params = AudioParams::new();
-        let _ = &params;
         let mut out = [0.0; 2];
 
         // Loud passage with the effect engaged, filling the room line.
