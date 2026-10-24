@@ -6,6 +6,38 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+/// How long a switch into or out of the bypass takes. Long enough that the
+/// changeover is a fade rather than a step, short enough that it still feels
+/// like a switch.
+const BYPASS_FADE_SECONDS: f32 = 0.010;
+
+/// Holds the unprocessed signal back by the graph's latency, so that dry and
+/// processed line up sample for sample.
+///
+/// The graph runs late — the limiter's lookahead alone is 5 ms — and a bypass
+/// that skipped the delay would jump the music forward by that much every time
+/// it engaged, and back every time it let go.
+struct DryLine {
+    frames: Vec<[f32; 2]>,
+    idx: usize,
+}
+
+impl DryLine {
+    fn new(latency: usize) -> Self {
+        Self {
+            frames: vec![[0.0; 2]; latency + 1],
+            idx: 0,
+        }
+    }
+
+    /// Stores `frame` and returns the one from `latency` frames ago.
+    fn push(&mut self, frame: [f32; 2]) -> [f32; 2] {
+        self.frames[self.idx] = frame;
+        self.idx = (self.idx + 1) % self.frames.len();
+        self.frames[self.idx]
+    }
+}
+
 /// FunDSP -> Rodio adapter
 /// block size 64
 pub struct FundspSource<S> {
@@ -21,6 +53,21 @@ pub struct FundspSource<S> {
     output_queue: Vec<f32>,
     current_idx: usize,
     bypass: Arc<AtomicBool>,
+    /// How much of the processed signal is in the output: 0 bypassed, 1 fully
+    /// processed. It fades toward wherever `bypass` points rather than jumping,
+    /// because processed and dry can be very different signals — panned,
+    /// delayed, carrying a reverb tail — and swapping one for the other between
+    /// two samples is a click.
+    wet: f32,
+    /// Whether the graph has been running since it was last reset, i.e.
+    /// whether its state follows the music rather than some earlier moment.
+    graph_live: bool,
+    /// The graph's latency, in frames.
+    latency: usize,
+    /// Frames still to go after a reset before the graph's output means
+    /// anything; the fade toward it waits until then.
+    priming: usize,
+    dry: DryLine,
 }
 
 impl<S> FundspSource<S>
@@ -36,9 +83,13 @@ where
 
         unit.reset();
         unit.set_sample_rate(source.sample_rate() as f64);
+        let latency = Self::latency_of(&mut unit);
 
         let input_buffer = BufferVec::new(input_channels);
         let output_buffer = BufferVec::new(Self::OUTPUT_CHANNELS); // Always output stereo
+        // A new track starts wherever the switch already is; there is no
+        // earlier output to fade from.
+        let bypassed = bypass.load(Ordering::Relaxed);
 
         Self {
             source,
@@ -49,7 +100,27 @@ where
             output_queue: Vec::with_capacity(block_size * Self::OUTPUT_CHANNELS),
             current_idx: 0,
             bypass,
+            wet: if bypassed { 0.0 } else { 1.0 },
+            graph_live: !bypassed,
+            latency,
+            priming: 0,
+            dry: DryLine::new(latency),
         }
+    }
+
+    /// How many frames late the graph's output runs behind its input.
+    fn latency_of(unit: &mut Box<dyn AudioUnit>) -> usize {
+        unit.latency()
+            .map_or(0, |frames| frames.round().max(0.0) as usize)
+    }
+
+    /// The unprocessed frame: mono goes to both sides, and anything wider than
+    /// stereo keeps its first two channels.
+    fn dry_frame(input: &BufferRef, input_channels: usize, i: usize) -> [f32; 2] {
+        std::array::from_fn(|ch| {
+            let ch_idx = if ch < input_channels { ch } else { 0 };
+            input.channel_f32(ch_idx)[i]
+        })
     }
 
     fn refill_buffer(&mut self) -> bool {
@@ -83,35 +154,66 @@ where
             return false;
         }
 
-        if self.bypass.load(Ordering::Relaxed) {
-            let input_ref = self.input_buffer.buffer_ref();
+        let want_wet = !self.bypass.load(Ordering::Relaxed);
+        let input_ref = self.input_buffer.buffer_ref();
+
+        if !want_wet && self.wet == 0.0 {
+            self.graph_live = false;
             for i in 0..frames_read {
-                if self.input_channels == 1 {
-                    let sample = input_ref.channel_f32(0)[i];
-                    for _ in 0..Self::OUTPUT_CHANNELS {
-                        self.output_queue.push(sample);
-                    }
-                } else {
-                    for ch in 0..Self::OUTPUT_CHANNELS {
-                        let ch_idx = if ch < self.input_channels { ch } else { 0 };
-                        let sample = input_ref.channel_f32(ch_idx)[i];
-                        self.output_queue.push(sample);
-                    }
-                }
+                let dry = self
+                    .dry
+                    .push(Self::dry_frame(&input_ref, self.input_channels, i));
+                self.output_queue.extend_from_slice(&dry);
             }
             return true;
         }
 
-        let input_ref = self.input_buffer.buffer_ref();
+        if !self.graph_live {
+            // Coming out of bypass. The graph has not run since it went in, so
+            // every delay line in it — reverb, echo, the spatialiser's room —
+            // still holds whatever was playing at that moment: audio from a
+            // different point in the track, which would otherwise be the first
+            // thing out of each of them.
+            self.unit.reset();
+            // And nothing it puts out means anything until its latency has
+            // passed: the limiter's lookahead starts empty, so for those first
+            // milliseconds the processed side is silence rather than music,
+            // and fading toward it then would fade toward a gap.
+            self.priming = self.latency;
+            self.graph_live = true;
+        }
+
         let mut output_mut = self.output_buffer.buffer_mut();
 
         self.unit.process(frames_read, &input_ref, &mut output_mut);
 
         let output_ref = self.output_buffer.buffer_ref();
+        let step = 1.0 / (BYPASS_FADE_SECONDS * self.source.sample_rate() as f32).max(1.0);
 
         for i in 0..frames_read {
-            for ch in 0..Self::OUTPUT_CHANNELS {
-                let sample = output_ref.channel_f32(ch)[i];
+            let dry = self
+                .dry
+                .push(Self::dry_frame(&input_ref, self.input_channels, i));
+            if self.priming > 0 {
+                self.priming -= 1;
+            } else if want_wet {
+                self.wet = (self.wet + step).min(1.0);
+            } else {
+                self.wet = (self.wet - step).max(0.0);
+            }
+            // Smoothstep rather than a straight ramp, so the mix leaves and
+            // arrives with zero slope instead of bending sharply at each end
+            // of the fade. It also keeps the processed side almost silent for
+            // the first few samples after a reset, which is when anything in
+            // the graph starting from empty state settles.
+            let mix = self.wet * self.wet * (3.0 - 2.0 * self.wet);
+            for (ch, dry) in dry.into_iter().enumerate() {
+                let wet = output_ref.channel_f32(ch)[i];
+                let sample = if self.wet >= 1.0 {
+                    wet
+                } else {
+                    dry + (wet - dry) * mix
+                };
                 self.output_queue.push(sample);
             }
         }
@@ -182,6 +284,13 @@ where
         // reset dsp
         self.unit.reset();
         self.unit.set_sample_rate(self.source.sample_rate() as f64);
+        // The dry side starts over from silence too, so that it stays in step
+        // with a graph that has just been emptied.
+        self.latency = Self::latency_of(&mut self.unit);
+        self.dry = DryLine::new(self.latency);
+        if self.graph_live {
+            self.priming = self.latency;
+        }
 
         Ok(())
     }
@@ -267,5 +376,233 @@ mod tests {
         };
         let fs = FundspSource::new(src, unit(), Arc::new(AtomicBool::new(true)));
         assert_eq!(fs.count(), 200, "mono is upmixed to stereo");
+    }
+
+    /// Stereo source playing back a fixed script of frames.
+    struct Script(std::vec::IntoIter<f32>);
+
+    impl Script {
+        fn new(frames: impl IntoIterator<Item = f32>) -> Self {
+            Self(
+                frames
+                    .into_iter()
+                    .flat_map(|v| [v, v])
+                    .collect::<Vec<_>>()
+                    .into_iter(),
+            )
+        }
+    }
+
+    impl Iterator for Script {
+        type Item = f32;
+        fn next(&mut self) -> Option<f32> {
+            self.0.next()
+        }
+    }
+
+    impl Source for Script {
+        fn current_span_len(&self) -> Option<usize> {
+            None
+        }
+        fn channels(&self) -> u16 {
+            2
+        }
+        fn sample_rate(&self) -> u32 {
+            48_000
+        }
+        fn total_duration(&self) -> Option<Duration> {
+            None
+        }
+    }
+
+    /// Pulls `frames` stereo frames.
+    fn take<S: Source<Item = f32>>(fs: &mut FundspSource<S>, frames: usize) -> Vec<(f32, f32)> {
+        (0..frames)
+            .map(|_| {
+                let l = fs.next().expect("source ran dry");
+                let r = fs.next().expect("source ran dry");
+                (l, r)
+            })
+            .collect()
+    }
+
+    /// Pulls `frames` stereo frames, returning the left channel.
+    fn take_left<S: Source<Item = f32>>(fs: &mut FundspSource<S>, frames: usize) -> Vec<f32> {
+        take(fs, frames).into_iter().map(|(l, _)| l).collect()
+    }
+
+    #[test]
+    fn switching_the_effects_on_or_off_is_a_fade_not_a_step() {
+        use std::sync::atomic::Ordering;
+
+        // The worst case for a switch: a graph whose output is the input
+        // upside down, so processed and dry are as far apart as two signals
+        // can be. Swapping one for the other in a single sample is a step of
+        // twice the signal, which is a click however brief.
+        let bypass = Arc::new(AtomicBool::new(true));
+        let mut fs = FundspSource::new(
+            Script::new(std::iter::repeat_n(0.25, 48_000)),
+            Box::new((pass() * -1.0) | (pass() * -1.0)),
+            bypass.clone(),
+        );
+
+        let mut out = take_left(&mut fs, 4_800);
+        bypass.store(false, Ordering::Relaxed);
+        out.extend(take_left(&mut fs, 4_800));
+        bypass.store(true, Ordering::Relaxed);
+        out.extend(take_left(&mut fs, 4_800));
+
+        assert!((out[4_799] - 0.25).abs() < 1e-6, "bypassed: dry");
+        assert!((out[9_599] + 0.25).abs() < 1e-6, "engaged: processed");
+        assert!((out[14_399] - 0.25).abs() < 1e-6, "bypassed again: dry");
+        let worst = out
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f32::max);
+        assert!(
+            worst < 0.01,
+            "the output jumped by {worst:.3} in one sample at a switch"
+        );
+    }
+
+    #[test]
+    fn effects_come_back_without_replaying_what_they_held() {
+        use fundsp::hacker32::delay;
+        use std::sync::atomic::Ordering;
+
+        // Bypassing stops the graph, so every delay line in it — reverb,
+        // echo, the spatialiser's room — stays holding whatever was playing at
+        // that moment. Switching back on must not play that out: it is audio
+        // from a different point in the track.
+        let bypass = Arc::new(AtomicBool::new(false));
+        let loud = std::iter::repeat_n(0.5, 9_600);
+        let quiet = std::iter::repeat_n(0.0, 9_600);
+        let mut fs = FundspSource::new(
+            Script::new(loud.chain(quiet)),
+            Box::new(delay(0.01) | delay(0.01)),
+            bypass.clone(),
+        );
+
+        // Loud with the effects on, filling the delay line, then switched off
+        // while it is still loud.
+        take_left(&mut fs, 4_800);
+        bypass.store(true, Ordering::Relaxed);
+        take_left(&mut fs, 4_800);
+
+        // The track goes quiet, still bypassed, and the effects come back on.
+        take_left(&mut fs, 4_800);
+        bypass.store(false, Ordering::Relaxed);
+        let worst = take_left(&mut fs, 4_800)
+            .into_iter()
+            .fold(0.0f32, |a, v| a.max(v.abs()));
+        assert!(
+            worst < 1e-6,
+            "switching back on replayed {worst:.3} of audio held from before the bypass"
+        );
+    }
+
+    #[test]
+    fn the_spatialiser_switches_on_and_off_cleanly_through_the_real_graph() {
+        use crate::effects::{AudioParams, create_audio_graph};
+        use std::sync::atomic::Ordering;
+
+        // End to end, the way the worker drives it. With every other control
+        // at its default, turning the orbit on takes the whole graph out of
+        // bypass and turning it off puts it back, so the switch, the graph
+        // reset and the spatialiser's own glide all land at once.
+        const SR: usize = 48_000;
+        // Block boundaries a quarter-cycle from a zero crossing of the tone,
+        // so whatever happens at a switch happens with the signal near a peak.
+        const ON: usize = 24_064;
+        const OFF: usize = 72_064;
+
+        let tone = |i: usize| (i as f32 / SR as f32 * 150.0 * std::f32::consts::TAU).sin() * 0.5;
+        let params = AudioParams::new();
+        let bypass = Arc::new(AtomicBool::new(params.is_all_default()));
+        let mut fs = FundspSource::new(
+            Script::new((0..2 * SR).map(tone)),
+            create_audio_graph(2, &params),
+            bypass.clone(),
+        );
+        let set = |depth: f32, rate: f32| {
+            params.auto_pan_depth.set_value(depth);
+            params.auto_pan_rate.set_value(rate);
+            bypass.store(params.is_all_default(), Ordering::Relaxed);
+        };
+        // The limiter's 5 ms lookahead, which the dry side is held back by.
+        let latency = fs.latency;
+        assert_eq!(latency, 240, "the graph reports the limiter's lookahead");
+
+        let mut out = take(&mut fs, ON);
+        set(0.9, 0.1);
+        out.extend(take(&mut fs, OFF - ON));
+        set(0.0, 0.0);
+        out.extend(take(&mut fs, 2 * SR - OFF));
+
+        // Largest second difference in either channel: a click is a spike in
+        // it that a smooth signal does not have.
+        let roughness = |range: std::ops::Range<usize>| {
+            let d2 = |a: f32, b: f32, c: f32| (c - 2.0 * b + a).abs();
+            out[range]
+                .windows(3)
+                .map(|w| d2(w[0].0, w[1].0, w[2].0).max(d2(w[0].1, w[1].1, w[2].1)))
+                .fold(0.0, f32::max)
+        };
+        let dry = roughness(SR / 4..ON).max(roughness(7 * SR / 4..2 * SR));
+        let engaged = roughness(ON + SR / 3..OFF);
+        let steady = dry.max(engaged);
+        for (name, range) in [
+            ("switching on", ON - 2..ON + SR / 3),
+            ("switching off", OFF - 2..OFF + SR / 3),
+        ] {
+            let ratio = roughness(range) / steady;
+            assert!(
+                ratio < 4.0,
+                "{name}: {ratio:.1}x rougher than the steady signal either side"
+            );
+        }
+        assert!(
+            (out[2 * SR - 1].0 - tone(2 * SR - 1 - latency)).abs() < 1e-6,
+            "switched off, the output is the dry signal again"
+        );
+    }
+
+    #[test]
+    fn the_bypass_runs_exactly_as_late_as_the_graph() {
+        use crate::effects::limiter::LinkedLimiter;
+        use std::sync::atomic::Ordering;
+
+        // A graph that does nothing but run late: the limiter alone, fed a
+        // signal too quiet for it to touch, is its 5 ms lookahead and nothing
+        // else. Through it, switching in and out of bypass should be
+        // inaudible — the output is the input delayed by the graph's latency,
+        // sample for sample, before, during and after each switch. A bypass
+        // that skipped the delay would jump the music by that much at every
+        // switch, and a fade that started before a freshly reset graph had
+        // filled would fade toward silence.
+        const SR: usize = 48_000;
+        let tone = |i: usize| (i as f32 / SR as f32 * 440.0 * std::f32::consts::TAU).sin() * 0.5;
+        let bypass = Arc::new(AtomicBool::new(true));
+        let mut fs = FundspSource::new(
+            Script::new((0..SR).map(tone)),
+            Box::new(LinkedLimiter::new(SR as f32)),
+            bypass.clone(),
+        );
+        let latency = fs.latency;
+        assert_eq!(latency, 240, "the lookahead is reported as latency");
+
+        let mut out = take_left(&mut fs, 12_000);
+        bypass.store(false, Ordering::Relaxed);
+        out.extend(take_left(&mut fs, 12_000));
+        bypass.store(true, Ordering::Relaxed);
+        out.extend(take_left(&mut fs, 12_000));
+
+        let worst = (latency..out.len())
+            .map(|i| (out[i] - tone(i - latency)).abs())
+            .fold(0.0, f32::max);
+        assert!(
+            worst < 1e-5,
+            "the output strayed {worst:.4} from the input delayed by the graph's latency"
+        );
     }
 }
