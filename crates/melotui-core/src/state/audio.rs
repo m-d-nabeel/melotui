@@ -25,7 +25,7 @@ pub struct AudioState {
     pub volume: f32,         // range 0.0 to 1.5
     pub speed: f32,          // range 0.5 to 2.0
     pub bass: f32,           // range 0.1 to 5.0
-    pub treble: f32,         // range 0.0 to 5.0
+    pub treble: f32,         // range 0.1 to 5.0
     pub reverb: f32,         // range 0.0 to 1.0
     pub echo: f32,           // range 0.0 to 0.9
     pub pan: f32,            // range -1.0 (full left) to 1.0 (full right)
@@ -75,7 +75,7 @@ impl AudioState {
         self.volume = clamp_finite(self.volume, defaults.volume, 0.0, 1.5);
         self.speed = clamp_finite(self.speed, defaults.speed, 0.5, 2.0);
         self.bass = clamp_finite(self.bass, defaults.bass, 0.1, 5.0);
-        self.treble = clamp_finite(self.treble, defaults.treble, 0.0, 5.0);
+        self.treble = clamp_finite(self.treble, defaults.treble, 0.1, 5.0);
         self.reverb = clamp_finite(self.reverb, defaults.reverb, 0.0, 1.0);
         self.echo = clamp_finite(self.echo, defaults.echo, 0.0, 0.9);
         self.pan = clamp_finite(self.pan, defaults.pan, -1.0, 1.0);

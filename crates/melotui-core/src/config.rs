@@ -76,7 +76,7 @@ pub struct AudioConfig {
     pub default_speed: f32,
     /// Default bass level (0.1–5.0)
     pub default_bass: f32,
-    /// Default treble level (0.0–5.0)
+    /// Default treble level (0.1–5.0)
     pub default_treble: f32,
     /// Default reverb level (0.0–1.0)
     pub default_reverb: f32,
@@ -253,7 +253,7 @@ impl AppConfig {
         self.ui.scrolloff = self.ui.scrolloff.clamp(0, 20);
         self.audio.default_speed = self.audio.default_speed.clamp(0.5, 2.0);
         self.audio.default_bass = self.audio.default_bass.clamp(0.1, 5.0);
-        self.audio.default_treble = self.audio.default_treble.clamp(0.0, 5.0);
+        self.audio.default_treble = self.audio.default_treble.clamp(0.1, 5.0);
         self.audio.default_reverb = self.audio.default_reverb.clamp(0.0, 1.0);
         self.audio.default_echo = self.audio.default_echo.clamp(0.0, 0.9);
         self.audio.default_pan = self.audio.default_pan.clamp(-1.0, 1.0);
