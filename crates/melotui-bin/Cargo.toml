@@ -1,10 +1,34 @@
 [package]
-name = "melotui-bin"
+name = "melotui"
 version = "0.4.0"
 authors = ["m-d-nabeel"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/m-d-nabeel/melotui"
+description = "A terminal music player with a spectrum visualizer, DSP effects, synced lyrics and YouTube downloads"
+readme = "../../README.md"
+keywords = ["music", "player", "tui", "audio", "terminal"]
+categories = ["multimedia::audio", "command-line-utilities"]
 edition = "2024"
+
+# Where `cargo binstall` finds the prebuilt binaries: the archives the
+# release workflow attaches to each GitHub release, which hold the binary
+# alone at their root.
+[package.metadata.binstall]
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/melotui-linux-x86_64.tar.gz"
+
+[package.metadata.binstall.overrides.x86_64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/melotui-macos-x86_64.tar.gz"
+
+[package.metadata.binstall.overrides.aarch64-apple-darwin]
+pkg-url = "{ repo }/releases/download/v{ version }/melotui-macos-aarch64.tar.gz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/melotui-windows-x86_64.zip"
+pkg-fmt = "zip"
 
 [dependencies]
 melotui-core = { path = "../melotui-core" }

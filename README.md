@@ -48,9 +48,21 @@ To use the in-app YouTube download feature (`:dl <query>`), you must have `yt-dl
 
 - [yt-dlp installation guide](https://github.com/yt-dlp/yt-dlp/wiki/Installation)
 
-### 3. Build and Run
+### 3. Install
 
-Make sure you have [Rust installed](https://rustup.rs/). Then, clone the repository and build in release mode:
+**Prebuilt binary** — download the archive for your platform from the [latest release](https://github.com/m-d-nabeel/melotui/releases/latest) (Linux x86_64, macOS Intel and Apple Silicon, Windows x86_64), or let [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) fetch it:
+
+```bash
+cargo binstall --git https://github.com/m-d-nabeel/melotui melotui
+```
+
+**From source** — with [Rust installed](https://rustup.rs/):
+
+```bash
+cargo install --git https://github.com/m-d-nabeel/melotui melotui
+```
+
+or clone the repository and build it:
 
 ```bash
 git clone https://github.com/m-d-nabeel/melotui.git
@@ -58,7 +70,7 @@ cd melotui
 cargo build --release
 ```
 
-The compiled binary will be available at `./target/release/melotui-bin`.
+The compiled binary will be at `./target/release/melotui`.
 
 ---
 
@@ -67,7 +79,7 @@ The compiled binary will be available at `./target/release/melotui-bin`.
 Start the player:
 
 ```bash
-./target/release/melotui-bin
+melotui
 ```
 
 > [!TIP]
