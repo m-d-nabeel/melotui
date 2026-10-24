@@ -186,7 +186,10 @@ fn draw_overlays(
         frame.render_widget(dim_block.clone(), area);
         let [_, overlay] = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(command_view::HEIGHT)])
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(command_view::height(state)),
+            ])
             .areas(area);
         frame.render_widget(Clear, overlay);
         command_view::draw(frame, overlay, state);

@@ -1,6 +1,11 @@
 //! The command bar: what is being typed, the completions of it in a strip
 //! beneath, and what the highlighted one does along the bottom border — all
 //! inside the bar, so nothing else on screen is covered.
+//!
+//! Completions are drawn as virtual text, dim and grey as shell
+//! autosuggestions and editors' inline hints are, so they read as offers
+//! rather than as part of what was typed; only the one Tab has chosen takes
+//! the accent colour.
 
 use ratatui::{
     Frame,
@@ -13,15 +18,36 @@ use ratatui::{
 use melotui_core::AppState;
 use melotui_core::autocomplete::{self, Suggestion};
 
-/// Rows the bar takes: its borders, the input, and the completions.
-pub const HEIGHT: u16 = 4;
+/// What the completions are for — what was typed before Tab started cycling,
+/// or what is typed — and the completions: none until something is typed or
+/// Tab is pressed, so an empty bar stays empty.
+fn suggestions(state: &AppState) -> (String, Vec<Suggestion>) {
+    let (prefix, _) = state.ui_autocomplete();
+    let typed = prefix
+        .unwrap_or(state.ui_command_buffer().value())
+        .to_string();
+    if typed.is_empty() && prefix.is_none() {
+        return (typed, Vec::new());
+    }
+    let suggestions = autocomplete::complete(&typed, &state.completion_names());
+    (typed, suggestions)
+}
+
+/// Rows the bar takes: its borders and the input, and a row for the
+/// completions when there are any.
+pub fn height(state: &AppState) -> u16 {
+    if suggestions(state).1.is_empty() {
+        3
+    } else {
+        4
+    }
+}
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let t = crate::theme::get_theme(state);
     let (prefix, cycle) = state.ui_autocomplete();
-    let value = state.ui_command_buffer().value();
-    let typed = prefix.unwrap_or(value);
-    let suggestions = autocomplete::complete(typed, &state.completion_names());
+    let (typed, suggestions) = suggestions(state);
+    let typed = typed.as_str();
     // The completion Tab has chosen, while cycling through them.
     let chosen = (prefix.is_some() && cycle > 0).then(|| cycle - 1);
 
@@ -33,11 +59,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     if let Some(about) = about(typed, &suggestions, chosen) {
         block = block.title_bottom(Line::from(vec![
             Span::raw(" "),
-            Span::styled(about.0, Style::default().fg(t.accent_primary)),
-            Span::styled(
-                format!("  {} ", about.1),
-                Style::default().fg(t.fg_secondary),
-            ),
+            Span::styled(about.0, Style::default().fg(t.fg_secondary)),
+            Span::styled(format!("  {} ", about.1), Style::default().fg(t.fg_muted)),
         ]));
     }
     let inner = block.inner(area);
@@ -153,11 +176,10 @@ fn strip_line<'a>(
     for (i, s) in suggestions.iter().enumerate().skip(start).take(shown) {
         let style = if Some(i) == chosen {
             Style::default()
-                .fg(t.bg_input)
-                .bg(t.accent_primary)
+                .fg(t.accent_primary)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(t.fg_secondary)
+            Style::default().fg(t.fg_muted)
         };
         spans.push(Span::styled(s.label.as_str(), style));
         spans.push(Span::raw(" ".repeat(GAP)));
@@ -190,10 +212,6 @@ fn about(
     }
     match suggestions {
         [only] => Some(describe(only)),
-        _ if typed.trim().is_empty() => Some((
-            "Tab".to_string(),
-            "completes · Enter runs · Esc closes · :help lists every command".to_string(),
-        )),
         _ => None,
     }
 }
@@ -221,15 +239,20 @@ mod tests {
         state
     }
 
+    fn screen_of(state: &AppState) -> Vec<String> {
+        screen(state)
+    }
+
     /// The screen, 80 × 10, with the bar drawn at its bottom.
     fn screen(state: &AppState) -> Vec<String> {
         let mut terminal = Terminal::new(TestBackend::new(80, 10)).unwrap();
         let frame = terminal
             .draw(|f| {
                 let area = f.area();
+                let height = height(state);
                 let bar = Rect {
-                    y: area.bottom() - HEIGHT,
-                    height: HEIGHT,
+                    y: area.bottom() - height,
+                    height,
                     ..area
                 };
                 draw(f, bar, state);
@@ -298,23 +321,58 @@ mod tests {
 
     #[test]
     fn a_command_with_nothing_to_complete_says_what_it_takes() {
-        let screen = screen(&typing("vol "));
+        let state = typing("vol ");
+        assert_eq!(
+            height(&state),
+            3,
+            "no row for completions there are none of"
+        );
+        let screen = screen(&state);
+        assert!(screen[8].contains(": vol"), "{:?}", screen[8]);
         assert!(screen[9].contains(":vol <0-150|+n|-n>"), "{:?}", screen[9]);
         assert!(screen[9].contains("Volume in percent"));
-        assert!(
-            screen[8].trim_matches(['│', ' ']).is_empty(),
-            "nothing to complete"
-        );
     }
 
     #[test]
-    fn with_nothing_typed_it_says_how_to_use_it() {
-        let screen = screen(&typing(""));
+    fn with_nothing_typed_the_bar_is_just_the_input() {
+        let state = typing("");
+        assert_eq!(height(&state), 3);
+        let screen = screen(&state);
+        assert!(screen[8].contains(": █"), "{:?}", screen[8]);
         assert!(
-            screen[9].contains("Tab") && screen[9].contains("Enter runs"),
+            screen[9].trim_matches(['╰', '─', '╯']).is_empty(),
             "{:?}",
             screen[9]
         );
-        assert!(screen[8].contains("play") && screen[8].contains("pause"));
+        // Tab still offers every command.
+        let mut tabbed = state;
+        reducer::reduce(&mut tabbed, AppMsg::UI(UIMsg::Autocomplete));
+        assert_eq!(height(&tabbed), 4);
+        assert!(screen_of(&tabbed)[8].contains("pause"));
+    }
+
+    #[test]
+    fn completions_are_dim_like_virtual_text_and_the_chosen_one_is_accented() {
+        let mut state = typing("lyrics ");
+        let t = crate::theme::get_theme(&state);
+        let (muted, accent) = (t.fg_muted, t.accent_primary);
+        let colour = |state: &AppState, word: &str| {
+            let mut terminal = Terminal::new(TestBackend::new(80, 4)).unwrap();
+            let frame = terminal.draw(|f| draw(f, f.area(), state)).unwrap();
+            let buffer = frame.buffer.clone();
+            let row: Vec<String> = (0..80)
+                .map(|x| buffer[(x, 2)].symbol().to_string())
+                .collect();
+            let x = row.concat().find(word).unwrap();
+            // Every cell in the strip is one character wide.
+            let column = row.concat()[..x].chars().count() as u16;
+            buffer[(column, 2)].fg
+        };
+        assert_eq!(colour(&state, "zoom"), muted);
+        for _ in 0..4 {
+            reducer::reduce(&mut state, AppMsg::UI(UIMsg::Autocomplete));
+        }
+        assert_eq!(colour(&state, "zoom"), accent);
+        assert_eq!(colour(&state, "show"), muted);
     }
 }
