@@ -1,14 +1,14 @@
 [package]
 name = "melotui"
-version = "0.5.0"
-authors = ["m-d-nabeel"]
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/m-d-nabeel/melotui"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "A terminal music player with a spectrum visualizer, DSP effects, synced lyrics and YouTube downloads"
 readme = "../../README.md"
 keywords = ["music", "player", "tui", "audio", "terminal"]
 categories = ["multimedia::audio", "command-line-utilities"]
-edition = "2024"
+edition.workspace = true
 
 # Where `cargo binstall` finds the prebuilt binaries: the archives the
 # release workflow attaches to each GitHub release, which hold the binary
@@ -31,10 +31,10 @@ pkg-url = "{ repo }/releases/download/v{ version }/melotui-windows-x86_64.zip"
 pkg-fmt = "zip"
 
 [dependencies]
-melotui-core = { path = "../melotui-core" }
-melotui-tui = { path = "../melotui-tui" }
-melotui-bus = { path = "../melotui-bus" }
-melotui-engine = { path = "../melotui-engine" }
+melotui-core.workspace = true
+melotui-tui.workspace = true
+melotui-bus.workspace = true
+melotui-engine.workspace = true
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }

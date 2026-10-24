@@ -1,0 +1,41 @@
+# cargo-deny: what dependencies the project accepts. Run with `cargo deny check`.
+
+[graph]
+all-features = false
+
+[advisories]
+# Vulnerabilities and unsound code anywhere in the tree fail the check;
+# crates that are only unmaintained do so when the workspace depends on them
+# directly, since a transitive one is for its dependent to replace.
+unmaintained = "workspace"
+ignore = []
+
+[licenses]
+# The licenses the dependencies may be under: all permissive, plus MPL-2.0,
+# whose copyleft stays within the crate's own files.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "0BSD",
+    "BSL-1.0",
+    "CC0-1.0",
+    "Unlicense",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "MPL-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
