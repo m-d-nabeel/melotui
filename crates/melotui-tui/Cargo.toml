@@ -21,7 +21,7 @@ ratatui-image = { version = "10.0.4", default-features = false }
 image.workspace = true
 unicode-width = "0.2"
 unicode-segmentation = "1"
-base64 = "0.22"
+base64 = "0.23"
 terminal-colorsaurus = "1.0"
 unicode-bidi = "0.3"
 ar-reshaper = "1.5"
