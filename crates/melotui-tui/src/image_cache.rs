@@ -1,3 +1,4 @@
+use crate::lyrics::LyricsRenderer;
 use image::DynamicImage;
 use melotui_core::{AppState, UIMode};
 use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
@@ -90,18 +91,24 @@ pub struct ImageCache {
     pub picker: Picker,
     pub album_art: ImageState,
     pub track_info: ImageState,
+    pub lyrics: LyricsRenderer,
     was_obscured: bool,
+    /// What was drawn over the panels last frame: any notification, the UI
+    /// mode, the help screen.
+    overlay: Option<(bool, UIMode, bool)>,
 }
 
 impl ImageCache {
-    pub fn new() -> Self {
+    pub fn new(lyrics_shaping: bool) -> Self {
         let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
 
         Self {
             picker,
             album_art: ImageState::new(),
             track_info: ImageState::new(),
+            lyrics: LyricsRenderer::new(lyrics_shaping),
             was_obscured: false,
+            overlay: None,
         }
     }
 
@@ -111,7 +118,9 @@ impl ImageCache {
             picker: Picker::halfblocks(),
             album_art: ImageState::new(),
             track_info: ImageState::new(),
+            lyrics: LyricsRenderer::new(false),
             was_obscured: false,
+            overlay: None,
         }
     }
 
@@ -122,6 +131,22 @@ impl ImageCache {
 
         let popup_just_closed = self.was_obscured && !is_obscured;
         self.was_obscured = is_obscured;
+
+        // A lyric image is redrawn only when the first cell of its row changes,
+        // so whatever was drawn over it would be left behind when it went.
+        // When something that could have covered the lyrics goes away, they
+        // are drawn afresh; something arriving just draws over them.
+        let overlay = (
+            state.current_notification().is_some(),
+            state.ui_mode().clone(),
+            state.ui_show_help(),
+        );
+        if let Some(previous) = self.overlay.replace(overlay.clone())
+            && previous != overlay
+            && (previous.0 || previous.1 != UIMode::Normal || previous.2)
+        {
+            self.lyrics.clear();
+        }
 
         if state.ui_show_help() {
             self.album_art.reset();
@@ -191,6 +216,53 @@ mod tests {
         assert_eq!(state.height, 0);
         assert!(state.source.is_none());
         assert!(state.protocol.is_none());
+    }
+
+    #[test]
+    fn lyric_images_are_redrawn_when_something_drawn_over_them_goes_away() {
+        use melotui_core::{AppMsg, message::ui::UIMsg, reducer};
+        use ratatui::style::Color;
+        use ratatui_image::picker::ProtocolType;
+
+        let mut cache = ImageCache::empty();
+        cache.picker.set_protocol_type(ProtocolType::Kitty);
+        cache.lyrics = LyricsRenderer::new(true);
+        cache.lyrics.wait_for_fonts();
+        let mut state = AppState::new(
+            Library::new(
+                vec![PathBuf::from("/")],
+                vec![],
+                std::collections::HashMap::new(),
+            ),
+            &melotui_core::config::AppConfig::default(),
+        );
+        cache.update(&state);
+        cache.lyrics.begin();
+        let line = cache
+            .lyrics
+            .line(&cache.picker, "तुम ही हो", Color::Rgb(137, 180, 250), 30);
+        assert!(line.is_some());
+        cache.lyrics.end();
+        assert_eq!(cache.lyrics.rendered_lines(), 1);
+
+        // Help opening draws over the lyrics; nothing needs redrawing for that.
+        reducer::reduce(&mut state, AppMsg::UI(UIMsg::OpenHelp));
+        cache.update(&state);
+        assert_eq!(
+            cache.lyrics.rendered_lines(),
+            1,
+            "redrawn for an overlay arriving"
+        );
+
+        // Help closing would leave its cells over the lyrics, so they are
+        // drawn afresh.
+        reducer::reduce(&mut state, AppMsg::UI(UIMsg::CloseHelp));
+        cache.update(&state);
+        assert_eq!(
+            cache.lyrics.rendered_lines(),
+            0,
+            "not redrawn when the overlay went"
+        );
     }
 
     #[test]

@@ -30,7 +30,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libasound2-dev libdbus-1-dev pkg-config
+          # fonts-lohit-deva: a Devanagari font, so the lyrics shaping tests
+          # have something to shape with (macOS and Windows ship one).
+          sudo apt-get install -y --no-install-recommends libasound2-dev libdbus-1-dev pkg-config fonts-lohit-deva
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2

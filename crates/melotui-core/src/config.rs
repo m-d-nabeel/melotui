@@ -54,6 +54,12 @@ pub struct UiConfig {
     pub playlist_picker_max_visible: usize,
     /// Whether to automatically restore last session on startup
     pub restore_session: bool,
+    /// Draw lyrics in scripts the terminal grid cannot render — Hindi and the
+    /// other Indic scripts, Urdu, Arabic, Hebrew — with a real text engine, as
+    /// images, on terminals with kitty's or iTerm2's graphics protocol (kitty,
+    /// Ghostty, WezTerm, iTerm2 and others). Turn off to keep them as
+    /// terminal text.
+    pub lyrics_shaping: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -125,6 +131,7 @@ impl Default for UiConfig {
             fps_limit: 60,
             playlist_picker_max_visible: 10,
             restore_session: true,
+            lyrics_shaping: true,
         }
     }
 }
