@@ -36,6 +36,11 @@ impl DryLine {
         self.idx = (self.idx + 1) % self.frames.len();
         self.frames[self.idx]
     }
+
+    fn clear(&mut self) {
+        self.frames.fill([0.0; 2]);
+        self.idx = 0;
+    }
 }
 
 /// FunDSP -> Rodio adapter
@@ -62,6 +67,8 @@ pub struct FundspSource<S> {
     /// Whether the graph has been running since it was last reset, i.e.
     /// whether its state follows the music rather than some earlier moment.
     graph_live: bool,
+    /// The sample rate the graph is configured for.
+    sample_rate: u32,
     /// The graph's latency, in frames.
     latency: usize,
     /// Frames still to go after a reset before the graph's output means
@@ -81,8 +88,9 @@ where
         let mut unit = unit;
         let block_size = 64;
 
+        let sample_rate = source.sample_rate();
         unit.reset();
-        unit.set_sample_rate(source.sample_rate() as f64);
+        unit.set_sample_rate(sample_rate as f64);
         let latency = Self::latency_of(&mut unit);
 
         let input_buffer = BufferVec::new(input_channels);
@@ -102,9 +110,25 @@ where
             bypass,
             wet: if bypassed { 0.0 } else { 1.0 },
             graph_live: !bypassed,
+            sample_rate,
             latency,
             priming: 0,
             dry: DryLine::new(latency),
+        }
+    }
+
+    /// Retunes the graph for a new sample rate, and the dry side with it.
+    ///
+    /// This reallocates, so it is kept for genuine rate changes: a seek within
+    /// a stream, which runs on the audio thread, only resets.
+    fn configure(&mut self, sample_rate: u32) {
+        self.sample_rate = sample_rate;
+        self.unit.reset();
+        self.unit.set_sample_rate(sample_rate as f64);
+        self.latency = Self::latency_of(&mut self.unit);
+        self.dry = DryLine::new(self.latency);
+        if self.graph_live {
+            self.priming = self.latency;
         }
     }
 
@@ -152,6 +176,13 @@ where
 
         if frames_read == 0 {
             return false;
+        }
+
+        // A stream can change rate between spans; the graph has to follow,
+        // or every filter and delay in it is tuned for the wrong one.
+        let sample_rate = self.source.sample_rate();
+        if sample_rate != self.sample_rate {
+            self.configure(sample_rate);
         }
 
         let want_wet = !self.bypass.load(Ordering::Relaxed);
@@ -281,15 +312,19 @@ where
         self.output_queue.clear();
         self.current_idx = 0;
 
-        // reset dsp
-        self.unit.reset();
-        self.unit.set_sample_rate(self.source.sample_rate() as f64);
-        // The dry side starts over from silence too, so that it stays in step
-        // with a graph that has just been emptied.
-        self.latency = Self::latency_of(&mut self.unit);
-        self.dry = DryLine::new(self.latency);
-        if self.graph_live {
-            self.priming = self.latency;
+        // reset dsp. The dry side starts over from silence too, so that it
+        // stays in step with a graph that has just been emptied. With the rate
+        // unchanged there is nothing to reallocate, and a seek runs on the
+        // audio thread, so it does not.
+        let sample_rate = self.source.sample_rate();
+        if sample_rate == self.sample_rate {
+            self.unit.reset();
+            self.dry.clear();
+            if self.graph_live {
+                self.priming = self.latency;
+            }
+        } else {
+            self.configure(sample_rate);
         }
 
         Ok(())
@@ -603,6 +638,108 @@ mod tests {
         assert!(
             worst < 1e-5,
             "the output strayed {worst:.4} from the input delayed by the graph's latency"
+        );
+    }
+
+    /// Stereo source that can seek, and that switches sample rate partway
+    /// through, the way a chained stream can.
+    struct Tape {
+        frames: Vec<f32>,
+        frame: usize,
+        channel: usize,
+        rate_change_at: usize,
+    }
+
+    impl Iterator for Tape {
+        type Item = f32;
+        fn next(&mut self) -> Option<f32> {
+            let v = *self.frames.get(self.frame)?;
+            self.channel += 1;
+            if self.channel == 2 {
+                self.channel = 0;
+                self.frame += 1;
+            }
+            Some(v)
+        }
+    }
+
+    impl Source for Tape {
+        fn current_span_len(&self) -> Option<usize> {
+            None
+        }
+        fn channels(&self) -> u16 {
+            2
+        }
+        fn sample_rate(&self) -> u32 {
+            if self.frame < self.rate_change_at {
+                48_000
+            } else {
+                44_100
+            }
+        }
+        fn total_duration(&self) -> Option<Duration> {
+            None
+        }
+        fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+            self.frame = (pos.as_secs_f64() * 48_000.0) as usize;
+            self.channel = 0;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_seek_starts_the_graph_and_the_dry_side_over_from_silence() {
+        use crate::effects::limiter::LinkedLimiter;
+
+        // Loud for the first half second, silent after. Seek from the loud
+        // part into the silent one, processed and then bypassed: nothing
+        // from before the seek may come out after it.
+        for bypassed in [false, true] {
+            let frames = (0..96_000)
+                .map(|i| if i < 24_000 { 0.5 } else { 0.0 })
+                .collect();
+            let tape = Tape {
+                frames,
+                frame: 0,
+                channel: 0,
+                rate_change_at: usize::MAX,
+            };
+            let bypass = Arc::new(AtomicBool::new(bypassed));
+            let mut fs = FundspSource::new(tape, Box::new(LinkedLimiter::new(48_000.0)), bypass);
+            take_left(&mut fs, 12_000);
+            fs.try_seek(Duration::from_secs(1)).unwrap();
+            let after = take_left(&mut fs, 4_800);
+            let worst = after.iter().fold(0.0f32, |a, &v| a.max(v.abs()));
+            assert!(
+                worst == 0.0,
+                "bypassed {bypassed}: {worst} of pre-seek audio came out after the seek"
+            );
+            assert_eq!(fs.latency, 240, "a seek at the same rate retunes nothing");
+        }
+    }
+
+    #[test]
+    fn the_graph_follows_a_change_of_sample_rate_mid_stream() {
+        use crate::effects::limiter::LinkedLimiter;
+
+        let tape = Tape {
+            frames: vec![0.25; 48_000],
+            frame: 0,
+            channel: 0,
+            rate_change_at: 24_000,
+        };
+        let mut fs = FundspSource::new(
+            tape,
+            Box::new(LinkedLimiter::new(48_000.0)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        take_left(&mut fs, 12_000);
+        assert_eq!((fs.sample_rate, fs.latency), (48_000, 240));
+        take_left(&mut fs, 20_000);
+        assert_eq!(
+            (fs.sample_rate, fs.latency),
+            (44_100, 220),
+            "the graph is still tuned for the old rate"
         );
     }
 }

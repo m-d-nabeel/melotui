@@ -19,7 +19,7 @@ pub fn handle_adjust_bass(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
 }
 
 pub fn handle_adjust_treble(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
-    let new_treble = (state.treble() + delta).clamp(0.0, 5.0);
+    let new_treble = (state.treble() + delta).clamp(0.1, 5.0);
     state.session.audio.treble = new_treble;
     vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(new_treble))]
 }
@@ -385,5 +385,21 @@ mod tests {
                 .find(|msg| matches!(msg, AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(_)))),
             Some(AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(0.10)))
         ));
+    }
+
+    #[test]
+    fn treble_bottoms_out_at_a_deep_cut_rather_than_zero() {
+        // Treble is an amplitude gain on a shelf, and zero is not one a shelf
+        // can apply: the DSP froze there and played silence. It now stops at
+        // 0.1, -20 dB, where bass already did.
+        let mut state = test_state();
+        for _ in 0..30 {
+            handle_adjust_treble(&mut state, -0.1);
+        }
+        assert!(
+            (state.session.audio.treble - 0.1).abs() < 1e-6,
+            "treble went down to {}",
+            state.session.audio.treble
+        );
     }
 }

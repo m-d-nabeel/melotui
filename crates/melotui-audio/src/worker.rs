@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use fundsp::hacker32::AudioUnit;
+use fundsp::hacker32::{AudioUnit, Shared, shared};
 
 use crate::{
     clock::TimeKeeper,
@@ -20,6 +20,7 @@ use crate::{
     source::FundspSource,
     tap::SpectrumSniffer,
     visualizer::VisualizerManager,
+    volume::VolumeRamp,
 };
 
 /// Output stream settings, plumbed through from `[audio]` in the user's config.
@@ -139,6 +140,9 @@ struct AudioEngine {
     time_keeper: TimeKeeper,
     vis_manager: VisualizerManager,
     dsp_params: AudioParams,
+    /// The volume setting, applied by a `VolumeRamp` on the playing source
+    /// rather than by the sink, whose own control steps rather than glides.
+    volume: Shared,
     seek_epoch: u64,
     bypass: Arc<AtomicBool>,
     reaper: Reaper,
@@ -152,6 +156,7 @@ impl AudioEngine {
             time_keeper: TimeKeeper::new(),
             vis_manager: VisualizerManager::new(fft_size),
             dsp_params: AudioParams::new(),
+            volume: shared(1.0),
             seek_epoch: 0,
             bypass: Arc::new(AtomicBool::new(true)),
             reaper: Reaper::spawn(),
@@ -174,7 +179,7 @@ impl AudioEngine {
                 Some(s) => self.vis_manager.set_style(s),
                 None => self.vis_manager.set_enabled(false),
             },
-            AudioCommand::SetVolume(v) => self.sink.set_volume(v),
+            AudioCommand::SetVolume(v) => self.volume.set_value(v),
             AudioCommand::SetSpeed(v) => {
                 self.time_keeper.set_speed(v);
                 self.sink.set_speed(v);
@@ -242,12 +247,13 @@ impl AudioEngine {
                 self.vis_manager.attach_source(consumer, sample_rate);
 
                 let source_with_sniffer = SpectrumSniffer::new(dsp_source, producer);
+                let source_with_volume = VolumeRamp::new(source_with_sniffer, self.volume.clone());
 
                 // Box here, on the worker thread, so that when rodio drops this
                 // source on the audio callback thread the handoff to the reaper
                 // is a bare pointer move instead of ~1 MB of `free()` calls.
                 self.sink
-                    .append(self.reaper.guard(Box::new(source_with_sniffer)));
+                    .append(self.reaper.guard(Box::new(source_with_volume)));
                 self.sink.play();
                 self.sink.set_speed(self.time_keeper.current_speed);
 
