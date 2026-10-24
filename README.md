@@ -106,7 +106,19 @@ Options: `--config <FILE>` reads another config file, `--no-restore` starts with
 | `:fx slowed`, `:preset load <name>` | Effect macros and presets |
 | `:lyrics zoom 3`, `:lyrics zoom panel 2` | Lyrics size |
 | `:focus lyrics`, `:vis radial`, `:toggle art` | Layout, visualizer and panels |
+| `:device`, `:device <name>`, `:device default` | Audio output device |
 | `:pl add <playlist>`, `:artist <query>` | Playlists and search |
+
+### Audio output
+
+melotui plays through the system's default output unless told otherwise, and keeps playing when a device goes away: unplug the headphones or lose the Bluetooth connection and the track carries on through the default output from where it was. Pick a device with `:device <name>` (Tab completes the names), or for good in `config.toml`:
+
+```toml
+[audio]
+output_device = "USB Audio"   # the name, or part of it
+```
+
+A chosen device that is not there is stood in for by the default until it comes back.
 
 ### Lyrics size
 

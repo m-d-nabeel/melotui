@@ -19,6 +19,9 @@ pub struct EngineConfig {
     pub sample_rate: Option<u32>,
     /// Output buffer size in frames; `None` uses cpal's default.
     pub buffer_size: Option<u32>,
+    /// The output device's name, or part of it; `None` follows the system
+    /// default.
+    pub output_device: Option<String>,
 }
 
 /// Frontend-agnostic engine that owns all worker threads and the event bus.
@@ -55,6 +58,7 @@ impl Engine {
             fft_size: config.fft_size,
             sample_rate: config.sample_rate,
             buffer_size: config.buffer_size,
+            output_device: config.output_device,
         };
         thread::spawn(move || {
             melotui_audio::run(audio_worker, spectrum_producer, audio_config);

@@ -21,6 +21,7 @@ pub struct SessionState {
     pub playback_queue: PlaybackQueueState,
 
     pub audio: AudioState,
+    pub output: crate::state::audio::OutputState,
     pub download: DownloadState,
     pub lyrics: LyricsState,
     pub notification: NotificationState,
@@ -47,6 +48,7 @@ impl Default for SessionState {
             playback_queue: PlaybackQueueState::default(),
 
             audio: AudioState::default(),
+            output: Default::default(),
             download: DownloadState::default(),
             lyrics: LyricsState::default(),
             notification: NotificationState::default(),

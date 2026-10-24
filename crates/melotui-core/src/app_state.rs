@@ -49,6 +49,7 @@ impl AppState {
         // Apply config to session
         session.ui.sidebar_width = config.ui.sidebar_width;
         session.ui.scrolloff = config.ui.scrolloff;
+        session.output.wanted = config.audio.output_device.clone();
         session.ui.lyrics_zoom = crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom, 2.0);
         session.ui.lyrics_zoom_focus =
             crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom_focus, 3.0);
@@ -566,6 +567,9 @@ impl AppState {
                 .map(|playlist| playlist.name.clone())
                 .collect(),
             presets: self.session.ui.command_presets.clone(),
+            devices: std::iter::once("default".to_string())
+                .chain(self.session.output.devices.iter().cloned())
+                .collect(),
         }
     }
 

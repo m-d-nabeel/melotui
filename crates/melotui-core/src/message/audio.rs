@@ -1,5 +1,14 @@
 #[derive(Debug, Clone)]
 pub enum AudioMsg {
+    /// Plays through the device with this name, or part of it; `None`
+    /// follows the system default.
+    SetOutputDevice(Option<String>),
+    /// Asks the audio thread which output devices there are.
+    RequestOutputDevices,
+    /// The output devices there are.
+    OutputDevicesListed(Vec<String>),
+    /// An output device was opened.
+    OutputOpened(String),
     AdjustVolume(f32),
     AdjustSpeed(f32),
     AdjustBass(f32),
@@ -9,7 +18,10 @@ pub enum AudioMsg {
     AdjustPan(f32),
     AdjustLowpass(f32),
     AdjustHighpass(f32),
-    AdjustEqBand { band: usize, delta: f32 },
+    AdjustEqBand {
+        band: usize,
+        delta: f32,
+    },
     AdjustAutoPanRate(f32),
     AdjustAutoPanDepth(f32),
     AdjustWobble(f32),
@@ -28,7 +40,10 @@ pub enum AudioMsg {
     DispatchSetPan(f32),
     DispatchSetLowpass(f32),
     DispatchSetHighpass(f32),
-    DispatchSetEqBand { band: usize, gain: f32 },
+    DispatchSetEqBand {
+        band: usize,
+        gain: f32,
+    },
     DispatchSetAutoPanRate(f32),
     DispatchSetAutoPanDepth(f32),
     DispatchSetWobble(f32),

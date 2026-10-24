@@ -132,6 +132,12 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                 Some(IpcCommand::Audio(AudioCommand::SetPingPong(*v)))
             }
             AudioMsg::DispatchSetPhaser(v) => Some(IpcCommand::Audio(AudioCommand::SetPhaser(*v))),
+            AudioMsg::SetOutputDevice(device) => Some(IpcCommand::Audio(
+                AudioCommand::SetOutputDevice(device.clone()),
+            )),
+            AudioMsg::RequestOutputDevices => {
+                Some(IpcCommand::Audio(AudioCommand::ListOutputDevices))
+            }
             _ => None,
         },
 
@@ -277,6 +283,8 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         }
         // A worker that failed says so, rather than the failure only reaching
         // the log.
+        IpcEvent::AudioOutputOpened { name } => AppMsg::Audio(AudioMsg::OutputOpened(name)),
+        IpcEvent::OutputDevices { names } => AppMsg::Audio(AudioMsg::OutputDevicesListed(names)),
         IpcEvent::Error { message } => AppMsg::UI(UIMsg::Notify {
             kind: NotificationKind::Error,
             message,

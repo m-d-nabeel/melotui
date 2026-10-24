@@ -57,6 +57,8 @@ pub enum Values {
     Playlist,
     /// A saved preset's name.
     Preset,
+    /// An audio output device's name, or `default`.
+    Device,
 }
 
 /// What follows a command's name.
@@ -343,6 +345,12 @@ pub static COMMANDS: &[Spec] = &[
     ),
     spec(&["studio"], "", "Show or hide the DSP studio", NOTHING),
     spec(
+        &["device", "output"],
+        "[name|default]",
+        "Audio output device, or list them",
+        Then::Args(&[Values::Device]),
+    ),
+    spec(
         &["focus", "zen"],
         "<mode>",
         "Layout: full, viz, play, vp or lyrics",
@@ -518,6 +526,10 @@ pub enum Command {
     },
     PresetPicker,
     ToggleStudio,
+    /// Plays through a device — `None` follows the system default.
+    SetOutputDevice(Option<String>),
+    /// Says which device is playing and which there are.
+    ShowOutputDevices,
     Focus {
         mode: FocusMode,
     },
@@ -815,6 +827,11 @@ fn parse(input: &str) -> Result<Command, Command> {
             }
         }
         "studio" => Command::ToggleStudio,
+        "device" => match rest.join(" ").trim() {
+            "" => Command::ShowOutputDevices,
+            "default" => Command::SetOutputDevice(None),
+            name => Command::SetOutputDevice(Some(name.to_string())),
+        },
         "focus" => {
             let arg = rest.first().map_or("", String::as_str);
             let mode = FocusMode::from_str(arg).map_err(|_| {
@@ -1138,6 +1155,15 @@ mod tests {
             Command::TogglePanel(Panel::Art)
         );
         assert_eq!(Command::parse("studio"), Command::ToggleStudio);
+        assert_eq!(Command::parse("device"), Command::ShowOutputDevices);
+        assert_eq!(
+            Command::parse("device default"),
+            Command::SetOutputDevice(None)
+        );
+        assert_eq!(
+            Command::parse("output USB Audio DAC"),
+            Command::SetOutputDevice(Some("USB Audio DAC".into()))
+        );
         assert_eq!(Command::parse("help"), Command::Help);
     }
 

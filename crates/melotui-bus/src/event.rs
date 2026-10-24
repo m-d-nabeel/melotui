@@ -48,6 +48,16 @@ pub enum IpcEvent {
         message: String,
     },
 
+    // audio output
+    /// An output device was opened, at start or after the last one went.
+    AudioOutputOpened {
+        name: String,
+    },
+    /// The output devices there are.
+    OutputDevices {
+        names: Vec<String>,
+    },
+
     // database
     LibraryLoaded {
         snapshot: Box<Library>,
