@@ -31,6 +31,7 @@ pkg-url = "{ repo }/releases/download/v{ version }/melotui-windows-x86_64.zip"
 pkg-fmt = "zip"
 
 [dependencies]
+clap = { version = "4", features = ["derive"] }
 melotui-core.workspace = true
 melotui-tui.workspace = true
 melotui-bus.workspace = true

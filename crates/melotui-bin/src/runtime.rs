@@ -20,10 +20,9 @@ use std::{
 
 use crate::input_processor::InputProcessor;
 
-pub fn run() -> Result<()> {
+pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
     tracing::info!("Starting melotui application");
 
-    let config = melotui_core::config::AppConfig::load();
     let (db_path, music_roots) = resolve_paths(&config)?;
 
     // start empty library - data loads async

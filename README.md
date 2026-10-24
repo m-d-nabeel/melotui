@@ -82,6 +82,8 @@ Start the player:
 melotui
 ```
 
+Options: `--config <FILE>` reads another config file, `--no-restore` starts without the last session, `--paths` prints where melotui keeps its config, library, presets, logs and caches, and `--help` and `--version` do what they say.
+
 > [!TIP]
 > **Need help?**
 > Once inside the app, simply press `?` to open the Help Overlay and see a complete list of all available keybindings and commands!
