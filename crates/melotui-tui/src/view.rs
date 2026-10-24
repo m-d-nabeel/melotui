@@ -184,13 +184,15 @@ fn draw_overlays(
 
     if *state.ui_mode() == UIMode::Command {
         frame.render_widget(dim_block.clone(), area);
-        let [above, overlay] = Layout::default()
+        let [_, overlay] = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(3)])
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(command_view::height(state)),
+            ])
             .areas(area);
         frame.render_widget(Clear, overlay);
         command_view::draw(frame, overlay, state);
-        command_view::draw_suggestions(frame, above, state);
     }
 
     if *state.ui_mode() == UIMode::PlaylistPicker {
