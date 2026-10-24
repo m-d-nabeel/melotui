@@ -9,7 +9,7 @@ edition.workspace = true
 [dependencies]
 melotui-core.workspace = true
 melotui-bus.workspace = true
-rodio = { version = "0.21", default-features = false, features = [
+rodio = { version = "0.22", default-features = false, features = [
   "symphonia-all",
   "playback",
 ] }
