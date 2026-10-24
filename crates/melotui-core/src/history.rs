@@ -1,5 +1,5 @@
 use std::fs::{self};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 
 const MAX_HISTORY: usize = 100;
@@ -79,14 +79,13 @@ impl CommandHistory {
             None => return,
         };
 
-        if let Some(parent) = path.parent() {
-            let _ = fs::create_dir_all(parent);
+        let mut contents = String::new();
+        for entry in &self.entries {
+            contents.push_str(entry);
+            contents.push('\n');
         }
-
-        if let Ok(mut file) = fs::File::create(&path) {
-            for entry in &self.entries {
-                let _ = writeln!(file, "{}", entry);
-            }
+        if let Err(e) = crate::utils::fs::write_atomically(&path, contents.as_bytes()) {
+            tracing::warn!("Failed to save command history: {e}");
         }
     }
 }

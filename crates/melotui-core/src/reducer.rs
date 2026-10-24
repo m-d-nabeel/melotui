@@ -180,6 +180,10 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         } => ui_action::handle_show_confirm(state, message, on_confirm),
         UIMsg::ConfirmYes => ui_action::handle_confirm_yes(state),
         UIMsg::ConfirmNo => ui_action::handle_confirm_no(state),
+        UIMsg::Notify { kind, message } => {
+            state.set_notification(kind, message);
+            vec![]
+        }
         UIMsg::CycleFocusMode => ui_action::handle_cycle_focus_mode(state),
         UIMsg::SetFocusMode(mode) => ui_action::handle_set_focus_mode(state, mode),
         UIMsg::SetSidebarWidth(w) => ui_action::handle_set_sidebar_width(state, w),

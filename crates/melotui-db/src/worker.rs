@@ -19,8 +19,22 @@ use crate::migrations::run_migrations;
 const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "m4a", "wav", "ogg", "opus"];
 
 pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
-    let conn = rusqlite::Connection::open(&db_path).expect("Failed to open DB");
-    run_migrations(&conn).expect("Failed to run migrations");
+    // A database that cannot be opened — corrupt, locked, unreadable — is
+    // reported rather than panicked over: a panic here left the app showing
+    // "Loading library..." for good, with the reason only in the log.
+    let conn = match open(&db_path) {
+        Ok(conn) => conn,
+        Err(e) => {
+            tracing::error!("Cannot open the library database {:?}: {:?}", db_path, e);
+            worker.send(IpcEvent::Error {
+                message: format!(
+                    "Cannot open the library database {}: {e}",
+                    db_path.display()
+                ),
+            });
+            return;
+        }
+    };
     info!("Database worker initialized");
 
     while let Some(cmd) = worker.recv() {
@@ -32,6 +46,12 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
             cmd => handle_command(&conn, &worker, cmd),
         }
     }
+}
+
+fn open(db_path: &Path) -> Result<rusqlite::Connection> {
+    let conn = rusqlite::Connection::open(db_path)?;
+    run_migrations(&conn)?;
+    Ok(conn)
 }
 
 fn handle_command(
@@ -655,4 +675,29 @@ fn increment_play_count(conn: &rusqlite::Connection, track_id: TrackId) -> Resul
         params![track_id.0 as i64, 0], // Note: duration_s is 0 for now, could be passed later
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use melotui_bus::channel::inprocess;
+    use std::sync::mpsc;
+
+    #[test]
+    fn a_database_that_cannot_be_opened_is_reported_not_panicked_over() {
+        // A directory where the database file should be cannot be opened.
+        let dir = tempfile::tempdir().unwrap();
+        let (bus_tx, bus_rx) = mpsc::channel();
+        let (_commands, worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx);
+        run(worker, dir.path().to_path_buf());
+        match bus_rx.try_recv() {
+            Ok(IpcEvent::Error { message }) => {
+                assert!(
+                    message.starts_with("Cannot open the library database"),
+                    "{message}"
+                )
+            }
+            other => panic!("expected an error event, got {other:?}"),
+        }
+    }
 }

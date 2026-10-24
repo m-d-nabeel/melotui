@@ -114,7 +114,7 @@ where
             let mut max_val = 0.0;
 
             // find start index
-            let start_idx = match freqs.binary_search_by(|f| f.partial_cmp(&start_f).unwrap()) {
+            let start_idx = match freqs.binary_search_by(|f| f.total_cmp(&start_f)) {
                 Ok(idx) => idx,
                 Err(idx) => idx,
             };

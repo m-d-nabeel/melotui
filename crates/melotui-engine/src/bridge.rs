@@ -14,8 +14,9 @@ use melotui_core::{
     AppMsg,
     message::{
         audio::AudioMsg, cover::CoverMsg, database::DatabaseMsg, download::DownloadMsg,
-        library::LibraryMsg, playback::PlaybackMsg,
+        library::LibraryMsg, playback::PlaybackMsg, ui::UIMsg,
     },
+    state::NotificationKind,
 };
 
 /// Translate an AppMsg into an IpcCommand to dispatch to a worker.
@@ -274,6 +275,12 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::SearchResults { query, results } => {
             AppMsg::Library(LibraryMsg::SetSearchResults { query, results })
         }
+        // A worker that failed says so, rather than the failure only reaching
+        // the log.
+        IpcEvent::Error { message } => AppMsg::UI(UIMsg::Notify {
+            kind: NotificationKind::Error,
+            message,
+        }),
         _ => AppMsg::Noop,
     }
 }
@@ -283,6 +290,20 @@ mod tests {
     use super::*;
     use melotui_core::domain::TrackId;
     use std::path::PathBuf;
+
+    #[test]
+    fn a_workers_error_reaches_the_screen() {
+        let msg = ipc_to_appmsg(IpcEvent::Error {
+            message: "No audio output available".into(),
+        });
+        match msg {
+            AppMsg::UI(UIMsg::Notify { kind, message }) => {
+                assert_eq!(kind, NotificationKind::Error);
+                assert_eq!(message, "No audio output available");
+            }
+            other => panic!("dropped: {other:?}"),
+        }
+    }
 
     #[test]
     fn test_ipc_to_appmsg_translation() {
