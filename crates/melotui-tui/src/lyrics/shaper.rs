@@ -220,13 +220,19 @@ mod tests {
 
     #[test]
     fn a_line_too_wide_for_the_panel_is_shrunk_to_fit() {
-        let text = "तुम्हारी क्षत्रिय हिन्दी प्रेम नमस्ते तुम्हारी";
+        let text = "तुम्हारी क्षत्रिय हिन्दी प्रेम नमस्ते";
         let Some(s) = shaper() else { return };
-        let image = s.render(text, [255, 255, 255], 260, 40).unwrap();
+        // A panel a tenth narrower than the line comes out at full size: too
+        // narrow for it, but well within how far a line may be shrunk. Taken
+        // from the line as drawn, since fonts differ in width — Windows'
+        // Devanagari font is a good deal wider than Linux's.
+        let (l, r) = ink(&s.render(text, [255, 255, 255], 2000, 40).unwrap()).unwrap();
+        let width = (r - l) * 9 / 10;
+        let image = s.render(text, [255, 255, 255], width, 40).unwrap();
         let (left, right) = ink(&image).unwrap();
         assert!(
-            left > 0 && right < 259,
-            "ran off the edges: ink from {left} to {right}"
+            left > 0 && right < width - 1,
+            "ran off the edges of {width}px: ink from {left} to {right}"
         );
     }
 }
