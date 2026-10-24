@@ -52,12 +52,22 @@
 //!   failure (image collapse) the previous rewrite existed to fix.
 //! * Its two tap patterns are **mutually decorrelated** (no shared delay
 //!   times), so the bed widens the image rather than filling the middle of it.
+//!
+//! # Controls glide, and switching off is a fade
+//!
+//! Every control scales something in the signal path, so a setting that moves
+//! in one step — a keypress, a preset, a reset — is a gain step unless it is
+//! smoothed, and a gain step is a click. Measured before the controls were
+//! smoothed, switching the orbit off produced a discontinuity some 900 times
+//! rougher than the music around it. So every control is followed rather than
+//! jumped to, switching off is a glide to zero, and the unit only drops into its
+//! bit-transparent bypass once everything has arrived there.
 
 use fundsp::DEFAULT_SR;
 use fundsp::buffer::{BufferMut, BufferRef};
 use fundsp::hacker32::*;
 use fundsp::signal::SignalFrame;
-use std::f32::consts::TAU;
+use std::f32::consts::{PI, SQRT_2, TAU};
 
 use super::AudioParams;
 
@@ -72,14 +82,24 @@ const MAX_CROSSFEED: f32 = 0.28;
 /// Crossfeed floor once the spatialiser is engaged at all. Crossfeed is a
 /// property of having a head, not of how far the source is off-centre, so
 /// scaling it all the way down to nothing at small pan angles was wrong; it
-/// only ever reached its useful range at extreme settings.
+/// only ever reached its useful range at extreme settings. Engaging takes the
+/// crossfeed's target straight from nothing to this floor; the glide in
+/// [`Amounts`] is what makes that a fade rather than a step.
 const MIN_CROSSFEED_SCALE: f32 = 0.5;
-/// How far a control has to travel for the crossfeed floor to be fully faded
-/// in. Short enough that crossfeed is present for any real setting, long enough
-/// that reaching it is a fade and not a step.
-const CROSSFEED_RAMP_TRAVEL: f32 = 0.05;
-/// How fast the pan position follows its target, per sample at 48 kHz.
-const PAN_SMOOTHING_HZ: f32 = 12.0;
+
+/// How fast every control follows its target. About 30 ms to cover most of a
+/// change: quick enough to feel immediate, slow enough to be a glide rather
+/// than a discontinuity.
+const CONTROL_SMOOTHING_HZ: f32 = 12.0;
+/// Below this, an amount heading for zero counts as having arrived, and the
+/// unit may drop into bypass. Low enough that the room has drained as well —
+/// its line still holds 50 ms of what it was fed while its level was higher —
+/// so cutting the processed path off here is a step over 100 dB down. Getting
+/// here from full scale takes about 200 ms.
+const SETTLED: f32 = 1e-7;
+/// Below this, a recursive filter's state is rounded to zero; see
+/// [`flush_denormal`].
+const DENORMAL_FLOOR: f32 = 1e-20;
 
 /// Split point between "the head is not in the way" and "the head is in the
 /// way". Below roughly this frequency a wavelength is longer than a head and
@@ -103,24 +123,22 @@ const MAX_HF_SHADOW: f32 = 0.90;
 /// rather than "the source went behind me".
 const PINNA_FRONT_HZ: f32 = 9_000.0;
 const PINNA_REAR_HZ: f32 = 6_500.0;
-/// Half-width of the notch as a ratio either side of centre. Narrow enough
-/// that the skirt does not reach down into the presence region — a notch that
-/// bled into 3 kHz would dull vocals every time the image swung behind the
-/// head, which is exactly the complaint the previous front/back cue earned.
-const PINNA_Q_SPREAD: f32 = 1.45;
-/// Ceiling on the band-pass normalisation.
-///
-/// The normalisation is the reciprocal of the band's peak gain, so a band that
-/// came out near-zero — a degenerate spread, or a centre frequency crowding
-/// Nyquist at a low sample rate — would otherwise ask for unbounded gain.
-const MAX_PINNA_BAND_GAIN: f32 = 6.0;
+/// Sharpness of the notch. 1.2 puts its -3 dB points at about centre ÷ 1.45
+/// and centre × 1.45 at full depth, which keeps even the rear notch under 1 dB
+/// down at 3 kHz. A notch that bled into the presence region would dull vocals
+/// every time the image swung behind the head, which is exactly the complaint
+/// the previous front/back cue earned.
+const PINNA_Q: f32 = 1.2;
+/// The notch filter's damping, `1 / PINNA_Q` — and so also the factor that
+/// scales its band-pass output to unity at the centre.
+const PINNA_K: f32 = 1.0 / PINNA_Q;
 /// Depth of the notch at full orbit depth, as a fraction of the band.
 ///
 /// Real pinna notches are deeper than this. It is kept at 0.7 (about -10 dB)
 /// because the centre frequency sweeps continuously with the orbit, and a
 /// deeper moving notch stops reading as a direction and starts reading as a
-/// wah pedal. Bounded below 1.0 regardless, so the subtraction can never invert
-/// the band into a phase-flipped peak.
+/// wah pedal. Bounded below 1.0 regardless: at 1.0 the centre would be a
+/// complete null, and beyond it the band would come back phase-inverted.
 const MAX_PINNA_DEPTH: f32 = 0.7;
 
 /// Longest early reflection, and therefore the room delay line length.
@@ -135,9 +153,9 @@ const ER_DAMPING_HZ: f32 = 4_500.0;
 
 /// Early reflections for one ear, as (delay in seconds, gain).
 ///
-/// The two patterns share no delay time and no common divisor, so the beds are
-/// decorrelated and add width instead of a phantom centre. Gains fall roughly
-/// as 1/distance, as reflections off a small room's surfaces do.
+/// The two patterns share no delay time, so the beds are decorrelated and add
+/// width instead of a phantom centre. Gains fall roughly as 1/distance, as
+/// reflections off a small room's surfaces do.
 const ER_TAPS_L: [(f32, f32); 5] = [
     (0.0113, 0.70),
     (0.0179, 0.52),
@@ -172,6 +190,151 @@ const ER_ENERGY: f32 = {
     if l > r { l } else { r }
 };
 
+/// Rounds a recursive filter's state to zero once it is far below audibility.
+///
+/// A recursive filter fed digital silence — a pause, the gap between two
+/// tracks — decays geometrically toward zero and, without this, spends that
+/// time in subnormal floats, which the CPU handles in microcode. Engaged on
+/// silence, this unit measured four times its cost on music, on the thread
+/// where a stall is a dropout.
+fn flush_denormal(x: f32) -> f32 {
+    if x.abs() < DENORMAL_FLOOR { 0.0 } else { x }
+}
+
+/// The three parameters as the listener has set them, read once per sample.
+#[derive(Clone, Copy)]
+struct Settings {
+    pan: f32,
+    rate: f32,
+    depth: f32,
+}
+
+impl Settings {
+    /// Whether anything is asked of the unit at all.
+    fn engaged(self) -> bool {
+        self.pan.abs() >= 0.001 || self.depth >= 0.001
+    }
+
+    fn orbiting(self) -> bool {
+        self.depth > 0.001 && self.rate > 0.001
+    }
+
+    /// Where every amount is heading, with the orbit at `orbit_sin`.
+    ///
+    /// All zero when nothing is engaged, so that switching off is a glide to a
+    /// stop rather than a cut.
+    fn targets(self, orbit_sin: f32) -> Amounts {
+        if !self.engaged() {
+            return Amounts::default();
+        }
+        let orbiting = self.orbiting();
+        let auto = if orbiting {
+            orbit_sin * self.depth
+        } else {
+            0.0
+        };
+        let engagement = self.depth.max(self.pan.abs());
+        Amounts {
+            pan: (self.pan + auto).clamp(-1.0, 1.0),
+            crossfeed: MAX_CROSSFEED
+                * (MIN_CROSSFEED_SCALE + (1.0 - MIN_CROSSFEED_SCALE) * engagement),
+            // Tied to orbit depth rather than to `engagement`, because a
+            // listener nudging the balance control wants a balance control,
+            // not a room; asking for the orbit is asking to be put somewhere.
+            room: MAX_ROOM * self.depth,
+            // Front and back only mean something while the source is going
+            // round, so a stopped orbit fades the cue out rather than dropping
+            // it.
+            pinna: if orbiting {
+                MAX_PINNA_DEPTH * self.depth
+            } else {
+                0.0
+            },
+        }
+    }
+}
+
+/// How hard each part of the processing is driven.
+///
+/// Every sample the unit works out one of these for where the controls are
+/// heading, moves a second one a little of the way toward it, and only ever
+/// applies the second to the signal.
+#[derive(Clone, Copy, Default)]
+struct Amounts {
+    /// Image position, -1 (left) to 1 (right): the static pan plus the orbit.
+    pan: f32,
+    /// Crossfeed gain, up to [`MAX_CROSSFEED`].
+    crossfeed: f32,
+    /// Early-reflection level, up to [`MAX_ROOM`].
+    room: f32,
+    /// Pinna notch depth, up to [`MAX_PINNA_DEPTH`].
+    pinna: f32,
+}
+
+impl Amounts {
+    /// Moves every amount one sample's worth of the way toward `target`.
+    fn glide_toward(&mut self, target: Amounts, coeff: f32) {
+        let glide = |from: f32, to: f32| flush_denormal(from + (to - from) * coeff);
+        self.pan = glide(self.pan, target.pan);
+        self.crossfeed = glide(self.crossfeed, target.crossfeed);
+        self.room = glide(self.room, target.room);
+        self.pinna = glide(self.pinna, target.pinna);
+    }
+
+    /// Whether every amount is close enough to zero that cutting the
+    /// processed path off now could not be heard.
+    fn has_settled(&self) -> bool {
+        self.pan.abs() < SETTLED
+            && self.crossfeed < SETTLED
+            && self.room < SETTLED
+            && self.pinna < SETTLED
+    }
+}
+
+/// Coefficients of the trapezoidal state-variable filter the pinna notch is
+/// cut with — the topology-preserving form, after Zavalishin and Simper.
+///
+/// The notch is the input minus a band-pass of itself, and this band-pass is
+/// chosen for one property: at its own centre its response is exactly 1, real,
+/// with no phase shift. So the notch there is exactly `1 - depth`, at every
+/// sample rate, and that is also its deepest point.
+///
+/// The version before this built the band as the difference of two cascaded
+/// one-pole low-passes, whose phase at the centre is not zero and moves with
+/// sample rate. It solved for the gain that made the centre the right depth,
+/// which got the centre right and left the rest of the shape to chance: at
+/// 48 kHz the rear notch's real minimum sat at 5.4 kHz with 3 kHz already 5 dB
+/// down, and at 96 kHz it had become a 41 dB hole at 4.5 kHz.
+///
+/// It also keeps the property the low-pass construction was chosen for. The
+/// orbit retunes the notch every sample, and the trapezoidal state-variable
+/// filter stays stable under modulation, which a direct-form biquad re-tuned
+/// per sample does not guarantee.
+#[derive(Clone, Copy)]
+struct NotchCoeffs {
+    a1: f32,
+    a2: f32,
+    a3: f32,
+}
+
+impl NotchCoeffs {
+    /// `g` is the prewarped integrator gain, `tan(π·f/fs)`; see [`notch_g`].
+    fn from_g(g: f32) -> Self {
+        let a1 = 1.0 / (1.0 + g * (g + PINNA_K));
+        let a2 = g * a1;
+        Self { a1, a2, a3: g * a2 }
+    }
+}
+
+/// Prewarped integrator gain for a notch centred on `centre_hz`.
+///
+/// The centre is kept clear of Nyquist, so a sample rate too low to hold it
+/// puts the notch near the top of the band instead of asking `tan` for
+/// infinity.
+fn notch_g(centre_hz: f32, sample_rate: f32) -> f32 {
+    (PI * centre_hz.min(sample_rate * 0.45) / sample_rate).tan()
+}
+
 #[derive(Clone)]
 pub struct StereoSpatializer {
     pan: Shared,
@@ -180,13 +343,33 @@ pub struct StereoSpatializer {
     sample_rate: f32,
 
     phase: f32,
-    smoothed_pan: f32,
-    pan_coeff: f32,
+    /// Where every control has got to; see [`Amounts`].
+    amounts: Amounts,
+    smoothing_coeff: f32,
+    /// Whether the unit is fully bypassed: every amount is exactly zero and
+    /// the signal path is empty, so a sample can go straight through.
+    at_rest: bool,
+
+    /// One-pole coefficients, worked out once per sample rate rather than
+    /// paying for an `exp` per filter per sample.
+    shadow_alpha: f32,
+    ild_alpha: f32,
+    er_damping_alpha: f32,
+    /// Prewarped notch gains at the two ends of its travel. The notch sweeps
+    /// between them by interpolating the gain rather than the frequency,
+    /// which keeps the sweep to a few multiplies per sample; the centre still
+    /// moves monotonically between the two, within 1% of a straight line in
+    /// hertz at 44.1 kHz and above.
+    pinna_g_front: f32,
+    pinna_g_rear: f32,
 
     /// One delay line per channel: the whole point is that they stay separate.
     delay_l: Vec<f32>,
     delay_r: Vec<f32>,
     write_idx: usize,
+    /// How many samples have been written to the delay lines since they were
+    /// last emptied, up to their length.
+    history: usize,
 
     /// One-pole states for the shadowing low-pass on each crossfeed path.
     shadow_l: f32,
@@ -199,13 +382,9 @@ pub struct StereoSpatializer {
     /// difference.
     ild_l: f32,
     ild_r: f32,
-    /// Cascaded one-pole states forming the pinna notch's band-pass. Two poles
-    /// per edge give the band 12 dB/octave skirts, which is enough for the
-    /// subtraction to cut a real notch rather than a shallow dip.
-    pinna_lo_l: [f32; 2],
-    pinna_hi_l: [f32; 2],
-    pinna_lo_r: [f32; 2],
-    pinna_hi_r: [f32; 2],
+    /// State-variable filter states for each ear's pinna notch.
+    pinna_l: [f32; 2],
+    pinna_r: [f32; 2],
 
     /// Room delay lines, fed from the post-pan output of each ear.
     er_l: Vec<f32>,
@@ -217,15 +396,6 @@ pub struct StereoSpatializer {
     /// `ER_TAPS_*` converted to sample offsets for the current sample rate.
     er_offsets_l: [usize; 5],
     er_offsets_r: [usize; 5],
-    /// Whether the room line currently holds live audio, so that bypassing can
-    /// clear it exactly once instead of on every sample.
-    room_is_live: bool,
-    /// Band-pass normalisation at the two extremes of the notch's travel.
-    /// Computed when the sample rate is set rather than per sample: it costs
-    /// transcendentals, and the orbit moves the centre frequency far too slowly
-    /// for the difference to matter.
-    pinna_gain_front: f32,
-    pinna_gain_rear: f32,
 }
 
 impl StereoSpatializer {
@@ -236,21 +406,26 @@ impl StereoSpatializer {
             auto_pan_depth: params.auto_pan_depth.clone(),
             sample_rate: DEFAULT_SR as f32,
             phase: 0.0,
-            smoothed_pan: 0.0,
-            pan_coeff: 0.0,
+            amounts: Amounts::default(),
+            smoothing_coeff: 0.0,
+            at_rest: true,
+            shadow_alpha: 0.0,
+            ild_alpha: 0.0,
+            er_damping_alpha: 0.0,
+            pinna_g_front: 0.0,
+            pinna_g_rear: 0.0,
             delay_l: Vec::new(),
             delay_r: Vec::new(),
             write_idx: 0,
+            history: 0,
             shadow_l: 0.0,
             shadow_r: 0.0,
             own_low_l: 0.0,
             own_low_r: 0.0,
             ild_l: 0.0,
             ild_r: 0.0,
-            pinna_lo_l: [0.0; 2],
-            pinna_hi_l: [0.0; 2],
-            pinna_lo_r: [0.0; 2],
-            pinna_hi_r: [0.0; 2],
+            pinna_l: [0.0; 2],
+            pinna_r: [0.0; 2],
             er_l: Vec::new(),
             er_r: Vec::new(),
             er_idx: 0,
@@ -258,9 +433,6 @@ impl StereoSpatializer {
             er_damp_r: 0.0,
             er_offsets_l: [0; 5],
             er_offsets_r: [0; 5],
-            room_is_live: false,
-            pinna_gain_front: 1.0,
-            pinna_gain_rear: 1.0,
         };
         s.reconfigure();
         s
@@ -271,7 +443,11 @@ impl StereoSpatializer {
         self.delay_l = vec![0.0; len];
         self.delay_r = vec![0.0; len];
         self.write_idx = 0;
-        self.pan_coeff = 1.0 - (-TAU * PAN_SMOOTHING_HZ / self.sample_rate).exp();
+
+        self.smoothing_coeff = Self::lowpass_alpha(CONTROL_SMOOTHING_HZ, self.sample_rate);
+        self.shadow_alpha = Self::lowpass_alpha(SHADOW_CUTOFF_HZ, self.sample_rate);
+        self.ild_alpha = Self::lowpass_alpha(ILD_SPLIT_HZ, self.sample_rate);
+        self.er_damping_alpha = Self::lowpass_alpha(ER_DAMPING_HZ, self.sample_rate);
 
         // The room line has to hold the longest tap, plus a sample of slack so
         // the newest write is never the one being read back.
@@ -286,14 +462,23 @@ impl StereoSpatializer {
         self.er_offsets_l = std::array::from_fn(|i| to_offset(ER_TAPS_L[i].0));
         self.er_offsets_r = std::array::from_fn(|i| to_offset(ER_TAPS_R[i].0));
 
-        self.pinna_gain_front = Self::pinna_notch_scale(PINNA_FRONT_HZ, self.sample_rate);
-        self.pinna_gain_rear = Self::pinna_notch_scale(PINNA_REAR_HZ, self.sample_rate);
+        self.pinna_g_front = notch_g(PINNA_FRONT_HZ, self.sample_rate);
+        self.pinna_g_rear = notch_g(PINNA_REAR_HZ, self.sample_rate);
+    }
+
+    fn settings(&self) -> Settings {
+        Settings {
+            pan: self.pan.value().clamp(-1.0, 1.0),
+            rate: self.auto_pan_rate.value().clamp(0.0, 2.0),
+            depth: self.auto_pan_depth.value().clamp(0.0, 1.0),
+        }
     }
 
     /// Constant-power balance, so sweeping across centre does not dip.
     fn balance_gains(pan: f32) -> (f32, f32) {
         let angle = (pan.clamp(-1.0, 1.0) + 1.0) * 0.25 * TAU * 0.5; // 0..π/2
-        (angle.cos(), angle.sin())
+        let (sin, cos) = angle.sin_cos();
+        (cos, sin)
     }
 
     fn read(line: &[f32], write_idx: usize, delay_samples: f32) -> f32 {
@@ -309,19 +494,16 @@ impl StereoSpatializer {
         line[i0] * (1.0 - frac) + line[i1] * frac
     }
 
-    /// One-pole low-pass; the head's shadow on the far ear.
-    fn shadow(state: &mut f32, sample: f32, cutoff_hz: f32, sample_rate: f32) -> f32 {
-        let alpha = 1.0 - (-TAU * cutoff_hz / sample_rate).exp();
-        *state += alpha * (sample - *state);
-        *state
+    /// The coefficient [`Self::lowpass`] needs for `cutoff_hz`.
+    fn lowpass_alpha(cutoff_hz: f32, sample_rate: f32) -> f32 {
+        1.0 - (-TAU * cutoff_hz / sample_rate).exp()
     }
 
-    /// Two cascaded one-poles, for a 12 dB/octave edge.
-    fn shadow2(state: &mut [f32; 2], sample: f32, cutoff_hz: f32, sample_rate: f32) -> f32 {
-        let alpha = 1.0 - (-TAU * cutoff_hz / sample_rate).exp();
-        state[0] += alpha * (sample - state[0]);
-        state[1] += alpha * (state[0] - state[1]);
-        state[1]
+    /// One-pole low-pass: the head's shadow on the far ear, and every band
+    /// split and absorption filter here besides.
+    fn lowpass(state: &mut f32, sample: f32, alpha: f32) -> f32 {
+        *state = flush_denormal(*state + alpha * (sample - *state));
+        *state
     }
 
     /// Splits `sample` at [`ILD_SPLIT_HZ`] and attenuates only the high band.
@@ -329,315 +511,203 @@ impl StereoSpatializer {
     /// The broadband balance law is left to apply on top of this, so the low
     /// band comes through exactly as it did before this stage existed and only
     /// the high band gains the extra head shadow.
-    fn hf_shadow(state: &mut f32, sample: f32, keep_high: f32, sample_rate: f32) -> f32 {
-        let low = Self::shadow(state, sample, ILD_SPLIT_HZ, sample_rate);
+    fn hf_shadow(state: &mut f32, sample: f32, keep_high: f32, alpha: f32) -> f32 {
+        let low = Self::lowpass(state, sample, alpha);
         low + (sample - low) * keep_high
     }
 
-    /// The one-pole coefficient for `cutoff_hz`, and the pair of edge cutoffs
-    /// the notch's band-pass is built from.
-    ///
-    /// Shared by the filter and by its normalisation so the two can never be
-    /// calibrated against different frequencies.
-    fn pinna_edges(centre_hz: f32, sample_rate: f32) -> (f32, f32) {
-        // Nyquist guard: at low sample rates the upper edge could otherwise be
-        // asked for a cutoff it cannot represent, where the one-pole's response
-        // stops being a low-pass.
-        let nyquist = sample_rate * 0.5;
-        let upper = (centre_hz * PINNA_Q_SPREAD).min(nyquist * 0.9);
-        let lower = (centre_hz / PINNA_Q_SPREAD).min(upper * 0.99);
-        (lower, upper)
-    }
-
-    /// The scalar the band must be multiplied by for the subtraction to reach
-    /// [`MAX_PINNA_DEPTH`] of attenuation at the centre frequency.
-    ///
-    /// Not simply the reciprocal of the band's peak gain, which is the obvious
-    /// answer and the wrong one: the band-pass has a phase shift at its own
-    /// centre, so `1 - k*H` is a *complex* subtraction. Scaling `H` to unit
-    /// magnitude leaves `|1 - k*H|` anywhere between `1 - k` and `1 + k`
-    /// depending on that phase, and the phase moves with sample rate — which is
-    /// exactly how a notch calibrated by measurement at 48 kHz came out 3 dB
-    /// shallower at 96 kHz.
-    ///
-    /// So solve for it instead. Writing `A` for the wanted residual and `H` for
-    /// the band's complex response at the centre:
-    ///
-    /// ```text
-    /// |1 - k*H|^2 = A^2   =>   k^2|H|^2 - 2k*Re(H) + 1 - A^2 = 0
-    /// ```
-    ///
-    /// whose smaller positive root is the least gain that gets there.
-    fn pinna_notch_scale(centre_hz: f32, sample_rate: f32) -> f32 {
-        let (lower, upper) = Self::pinna_edges(centre_hz, sample_rate);
-        let theta = TAU * centre_hz / sample_rate;
-        let (sin_t, cos_t) = (-theta).sin_cos();
-
-        // Two cascaded one-poles: H(z) = (a / (1 - (1-a) z^-1))^2, on the unit
-        // circle at the centre frequency.
-        let response = |cutoff: f32| -> (f32, f32) {
-            let a = 1.0 - (-TAU * cutoff / sample_rate).exp();
-            let (re, im) = (1.0 - (1.0 - a) * cos_t, -(1.0 - a) * sin_t);
-            let den = re * re + im * im;
-            if den < 1e-20 {
-                return (0.0, 0.0);
-            }
-            let (r1, i1) = (a * re / den, -a * im / den);
-            (r1 * r1 - i1 * i1, 2.0 * r1 * i1)
-        };
-
-        let (ur, ui) = response(upper);
-        let (lr, li) = response(lower);
-        let (hr, hi) = (ur - lr, ui - li);
-        let mag_sq = hr * hr + hi * hi;
-        if mag_sq < 1e-12 {
-            return 0.0;
-        }
-
-        let residual = 1.0 - MAX_PINNA_DEPTH;
-        let disc = hr * hr - mag_sq * (1.0 - residual * residual);
-        let k = if disc < 0.0 {
-            // The phase makes the wanted depth unreachable at any gain. Fall
-            // back to the projection, which is the deepest notch this band can
-            // cut — a shallower cue, never a boost.
-            hr / mag_sq
-        } else {
-            (hr - disc.sqrt()) / mag_sq
-        };
-        k.clamp(0.0, MAX_PINNA_BAND_GAIN)
-    }
-
-    /// Cuts a notch centred on `centre_hz` by subtracting a band-pass of the
-    /// input from it.
-    ///
-    /// Built from low-passes rather than a resonant biquad on purpose: the
-    /// centre frequency is swept continuously by the orbit, and a resonant
-    /// section re-tuned every sample can ring or go unstable. A difference of
-    /// two cascaded one-poles cannot — it has no feedback path around the
-    /// modulated coefficient — and `depth` is bounded below 1.0 so the
-    /// subtraction cannot overshoot into a phase-inverted peak.
-    fn pinna_notch(
-        lo_state: &mut [f32; 2],
-        hi_state: &mut [f32; 2],
-        sample: f32,
-        centre_hz: f32,
-        scale: f32,
-        sample_rate: f32,
-    ) -> f32 {
-        let (lower, upper) = Self::pinna_edges(centre_hz, sample_rate);
-        let band = Self::shadow2(hi_state, sample, upper, sample_rate)
-            - Self::shadow2(lo_state, sample, lower, sample_rate);
-        sample - band * scale
+    /// One sample of the pinna notch: the input minus `depth` of its
+    /// band-pass. See [`NotchCoeffs`].
+    fn pinna_notch(state: &mut [f32; 2], sample: f32, coeffs: NotchCoeffs, depth: f32) -> f32 {
+        let [ic1, ic2] = *state;
+        let v3 = sample - ic2;
+        let band = coeffs.a1 * ic1 + coeffs.a2 * v3;
+        let low = ic2 + coeffs.a2 * ic1 + coeffs.a3 * v3;
+        *state = [
+            flush_denormal(2.0 * band - ic1),
+            flush_denormal(2.0 * low - ic2),
+        ];
+        // `PINNA_K * band` is the band-pass scaled to unity at its centre.
+        sample - depth * PINNA_K * band
     }
 
     fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
-        let rate = self.auto_pan_rate.value().clamp(0.0, 2.0);
-        let depth = self.auto_pan_depth.value().clamp(0.0, 1.0);
-        let static_pan = self.pan.value().clamp(-1.0, 1.0);
+        let settings = self.settings();
+        let engaged = settings.engaged();
 
-        let orbiting = depth > 0.001 && rate > 0.001;
-        let auto = if orbiting {
-            self.phase = (self.phase + rate / self.sample_rate).fract();
-            (self.phase * TAU).sin() * depth
-        } else {
-            0.0
-        };
-
-        let target_pan = (static_pan + auto).clamp(-1.0, 1.0);
-        self.smoothed_pan += (target_pan - self.smoothed_pan) * self.pan_coeff;
-        let pan = self.smoothed_pan;
-        let (gain_l, gain_r) = Self::balance_gains(pan);
-
-        // Nothing asked for: stay bit-transparent rather than paying for a
-        // spatialiser that is not doing anything.
-        if !orbiting && static_pan.abs() < 0.001 && depth < 0.001 {
-            // Empty the signal path on the way out. Every delay line here is
-            // written only while the effect is engaged, so a line left full
-            // during bypass is a recording of whatever was playing when it was
-            // last switched on, waiting to be read straight back out the moment
-            // it is switched on again — the interaural lines feed the crossfeed,
-            // the crossfeed feeds the room, and the room holds it for a further
-            // 50 ms, so leaving any one of them behind is audible. Clearing on
-            // the transition rather than every sample keeps the bypass path
-            // free.
-            if self.room_is_live {
-                self.clear_signal_state();
-                self.room_is_live = false;
-            }
+        // Nothing asked for and nothing still fading out: stay bit-transparent
+        // rather than paying for a spatialiser that is not doing anything.
+        if !engaged && self.at_rest {
             return (left, right);
         }
-        self.room_is_live = true;
+
+        if settings.orbiting() {
+            self.phase = (self.phase + settings.rate / self.sample_rate).fract();
+        }
+        let (orbit_sin, orbit_cos) = (self.phase * TAU).sin_cos();
+        self.amounts
+            .glide_toward(settings.targets(orbit_sin), self.smoothing_coeff);
+
+        // Switched off: the amounts are now gliding to zero, and the processed
+        // path keeps running until they arrive. Cutting straight over to the
+        // dry signal instead is a step from whatever the effect was doing to
+        // nothing, which is a click every time.
+        if !engaged && self.amounts.has_settled() {
+            self.come_to_rest();
+            return (left, right);
+        }
+        self.at_rest = false;
+
+        let Amounts {
+            pan,
+            crossfeed,
+            room,
+            pinna,
+        } = self.amounts;
 
         self.delay_l[self.write_idx] = left;
         self.delay_r[self.write_idx] = right;
+        self.history = Ord::min(self.history + 1, self.delay_l.len());
+        // No read reaches back past what has been written since the lines were
+        // last emptied. Beyond that is silence, and a path that reads silence
+        // until the signal arrives starts with a hard edge in the middle of a
+        // waveform; holding the oldest sample instead starts it smoothly.
+        let reach = (self.history - 1) as f32;
 
         // The ear further from the source hears it later.
         let itd = self.sample_rate * MAX_ITD_SECONDS;
-        let delay_l = pan.max(0.0) * itd;
-        let delay_r = (-pan).max(0.0) * itd;
-        let direct_l = Self::read(&self.delay_l, self.write_idx, delay_l);
-        let direct_r = Self::read(&self.delay_r, self.write_idx, delay_r);
+        let direct_l = Self::read(
+            &self.delay_l,
+            self.write_idx,
+            (pan.max(0.0) * itd).min(reach),
+        );
+        let direct_r = Self::read(
+            &self.delay_r,
+            self.write_idx,
+            ((-pan).max(0.0) * itd).min(reach),
+        );
 
         // Interaural level difference, the part the balance law cannot express.
         // The far ear loses its high band to the head; the near ear keeps
-        // everything. At centre this is identity in both ears.
+        // everything. At centre this is identity in both ears. Both band splits
+        // run on every sample, so neither is holding stale state when the image
+        // swings across and makes its ear the far one.
         let hf_shadow = pan.abs() * MAX_HF_SHADOW;
-        let (direct_l, direct_r) = if hf_shadow > 0.001 {
-            let (keep_l, keep_r) = if pan > 0.0 {
-                (1.0 - hf_shadow, 1.0) // source right: the left ear is shadowed
-            } else {
-                (1.0, 1.0 - hf_shadow)
-            };
-            (
-                Self::hf_shadow(&mut self.ild_l, direct_l, keep_l, self.sample_rate),
-                Self::hf_shadow(&mut self.ild_r, direct_r, keep_r, self.sample_rate),
-            )
+        let (keep_l, keep_r) = if pan > 0.0 {
+            (1.0 - hf_shadow, 1.0) // source right: the left ear is shadowed
         } else {
-            (direct_l, direct_r)
+            (1.0, 1.0 - hf_shadow)
         };
+        let direct_l = Self::hf_shadow(&mut self.ild_l, direct_l, keep_l, self.ild_alpha);
+        let direct_r = Self::hf_shadow(&mut self.ild_r, direct_r, keep_r, self.ild_alpha);
 
         // Crossfeed carries the *opposite* channel, delayed by the full head
         // width and shadowed. Because it is low-passed, separation above the
         // cutoff is untouched — which is what preserves the stereo image.
-        let engagement = depth.max(static_pan.abs());
-        // The floor is faded in across the first sliver of travel rather than
-        // applied as a step. Without the ramp, nudging a control from 0.000 to
-        // 0.002 would take the crossfeed from nothing to half its range between
-        // one sample and the next, which is a discontinuity in the output and
-        // therefore a click.
-        let floor_ramp = (engagement / CROSSFEED_RAMP_TRAVEL).min(1.0);
-        let crossfeed = MAX_CROSSFEED
-            * (MIN_CROSSFEED_SCALE * floor_ramp + (1.0 - MIN_CROSSFEED_SCALE) * engagement);
-        let (mut out_l, mut out_r) = if crossfeed > 0.001 {
-            let cross_r = Self::shadow(
-                &mut self.shadow_l,
-                Self::read(&self.delay_r, self.write_idx, itd),
-                SHADOW_CUTOFF_HZ,
-                self.sample_rate,
-            );
-            let cross_l = Self::shadow(
-                &mut self.shadow_r,
-                Self::read(&self.delay_l, self.write_idx, itd),
-                SHADOW_CUTOFF_HZ,
-                self.sample_rate,
-            );
-            // A shuffler, not a blend: each ear gives up as much of its *own*
-            // low band as it receives of the other's, so the crossfeed moves
-            // bass toward the centre instead of adding it.
-            //
-            // The obvious alternative — mix the crossfeed in and divide by
-            // `1 + crossfeed` — was what this did before, and it is wrong in a
-            // way that is easy to miss and easy to hear. The crossfeed is
-            // low-passed, so it only adds energy below the shadow cutoff, but
-            // that normalisation is broadband: it paid for two octaves of added
-            // bass by attenuating the entire spectrum, and engaging the
-            // spatialiser measured 2.1 dB quieter than bypassing it. An effect
-            // that turns the music down loses every A/B it is ever given,
-            // however good the rest of it is.
-            let own_low_l = Self::shadow(
-                &mut self.own_low_l,
-                direct_l,
-                SHADOW_CUTOFF_HZ,
-                self.sample_rate,
-            );
-            let own_low_r = Self::shadow(
-                &mut self.own_low_r,
-                direct_r,
-                SHADOW_CUTOFF_HZ,
-                self.sample_rate,
-            );
-            (
-                direct_l + (cross_r - own_low_l) * crossfeed,
-                direct_r + (cross_l - own_low_r) * crossfeed,
-            )
-        } else {
-            (direct_l, direct_r)
-        };
+        let cross_delay = itd.min(reach);
+        let cross_r = Self::lowpass(
+            &mut self.shadow_l,
+            Self::read(&self.delay_r, self.write_idx, cross_delay),
+            self.shadow_alpha,
+        );
+        let cross_l = Self::lowpass(
+            &mut self.shadow_r,
+            Self::read(&self.delay_l, self.write_idx, cross_delay),
+            self.shadow_alpha,
+        );
+        // A shuffler, not a blend: each ear gives up as much of its *own* low
+        // band as it receives of the other's, so the crossfeed moves bass
+        // toward the centre instead of adding it.
+        //
+        // The obvious alternative — mix the crossfeed in and divide by
+        // `1 + crossfeed` — was what this did before, and it is wrong in a way
+        // that is easy to miss and easy to hear. The crossfeed is low-passed,
+        // so it only adds energy below the shadow cutoff, but that
+        // normalisation is broadband: it paid for two octaves of added bass by
+        // attenuating the entire spectrum, and engaging the spatialiser
+        // measured 2.1 dB quieter than bypassing it. An effect that turns the
+        // music down loses every A/B it is ever given, however good the rest
+        // of it is.
+        let own_low_l = Self::lowpass(&mut self.own_low_l, direct_l, self.shadow_alpha);
+        let own_low_r = Self::lowpass(&mut self.own_low_r, direct_r, self.shadow_alpha);
+        let mut out_l = direct_l + (cross_r - own_low_l) * crossfeed;
+        let mut out_r = direct_r + (cross_l - own_low_r) * crossfeed;
 
         self.write_idx = (self.write_idx + 1) % self.delay_l.len();
 
         // Front/back is cued by the pinna notch sliding down the spectrum as
         // the source passes behind the head. Applied per channel to its own
         // signal, so unlike a rear-centre cue it costs no separation.
-        if orbiting {
+        if pinna > SETTLED {
             // 0 in front, 1 directly behind. `phase` is the orbit angle, so
             // this stays coherent with the ITD and the balance rather than
-            // being an independent wobble.
-            let behind = ((self.phase * TAU).cos() + 1.0) * 0.5;
-            let centre = PINNA_FRONT_HZ + (PINNA_REAR_HZ - PINNA_FRONT_HZ) * behind;
-            // The normalisation is smooth and monotonic between the two
-            // endpoints, so tracking the centre with the same interpolation
-            // keeps the notch the depth it claims all the way round the orbit.
-            let solved =
-                self.pinna_gain_front + (self.pinna_gain_rear - self.pinna_gain_front) * behind;
-            // `solved` reaches full depth; the orbit depth scales the cue down
-            // from there.
-            let scale = solved * depth;
-            if scale > 0.001 {
-                out_l = Self::pinna_notch(
-                    &mut self.pinna_lo_l,
-                    &mut self.pinna_hi_l,
-                    out_l,
-                    centre,
-                    scale,
-                    self.sample_rate,
-                );
-                out_r = Self::pinna_notch(
-                    &mut self.pinna_lo_r,
-                    &mut self.pinna_hi_r,
-                    out_r,
-                    centre,
-                    scale,
-                    self.sample_rate,
-                );
-            }
+            // being an independent wobble. Phase 0 is straight ahead, so the
+            // orbit starts — and restarts after every seek — in front of the
+            // listener rather than behind them.
+            let behind = (1.0 - orbit_cos) * 0.5;
+            let g = self.pinna_g_front + (self.pinna_g_rear - self.pinna_g_front) * behind;
+            let coeffs = NotchCoeffs::from_g(g);
+            out_l = Self::pinna_notch(&mut self.pinna_l, out_l, coeffs, pinna);
+            out_r = Self::pinna_notch(&mut self.pinna_r, out_r, coeffs, pinna);
         }
 
-        let mut out_l = out_l * gain_l * std::f32::consts::SQRT_2;
-        let mut out_r = out_r * gain_r * std::f32::consts::SQRT_2;
+        let (gain_l, gain_r) = Self::balance_gains(pan);
+        let out_l = out_l * gain_l * SQRT_2;
+        let out_r = out_r * gain_r * SQRT_2;
 
-        // The room. Tied to orbit depth rather than to `engagement`, because a
-        // listener nudging the balance control wants a balance control, not a
-        // room; asking for the orbit is asking to be put somewhere.
-        //
-        // The bed is driven unconditionally and only *mixed* conditionally: a
-        // line that is written only while it is audible is stale the instant it
-        // becomes audible again, which is the same trap as bypassing without
-        // clearing, one level down.
-        let room = MAX_ROOM * depth;
-        let (wet_l, wet_r) = self.early_reflections(out_l, out_r);
-        if room > 0.001 {
-            // Equal-power, using the bed's own energy sum: the taps are
-            // decorrelated, so their contributions add in power, not amplitude.
-            // Normalising by the amplitude sum instead would make the mix
-            // quieter the more room was asked for.
-            let norm = 1.0 / (1.0 + room * room * ER_ENERGY).sqrt();
-            out_l = (out_l + wet_l * room) * norm;
-            out_r = (out_r + wet_r * room) * norm;
-        }
+        // The room is fed the output at its current level, so the reflections
+        // carry whatever level the room had when that sound was made. Turning
+        // it up therefore fills it from silence, where scaling the reflections
+        // on the way out would open onto an empty line whose first reflection
+        // arrives 11 ms later as a hard edge in the middle of a waveform; and
+        // turning it down lets the reflections already in flight die away
+        // instead of cutting them. The line is fed on every engaged sample,
+        // zeros included, because a line written only while it is audible is
+        // stale the instant it becomes audible again — the same trap as
+        // bypassing without clearing, one level down.
+        let (wet_l, wet_r) = self.early_reflections(out_l * room, out_r * room);
+        // Equal-power, using the bed's own energy sum: the taps are
+        // decorrelated, so their contributions add in power, not amplitude.
+        // Normalising by the amplitude sum instead would make the mix quieter
+        // the more room was asked for.
+        let norm = 1.0 / (1.0 + room * room * ER_ENERGY).sqrt();
+        ((out_l + wet_l) * norm, (out_r + wet_r) * norm)
+    }
 
-        (out_l, out_r)
+    /// Drops into bypass: empties the signal path and pins every amount at
+    /// exactly zero.
+    ///
+    /// Every delay line here is written only while the effect is engaged, so a
+    /// line left full during bypass is a recording of whatever was playing
+    /// when the effect was switched off, waiting to be read straight back out
+    /// the moment it is switched on again — the interaural lines feed the
+    /// crossfeed, the crossfeed feeds the room, and the room holds it for a
+    /// further 50 ms, so leaving any one of them behind is audible. Clearing
+    /// here, once, on the way in keeps the bypass itself free.
+    fn come_to_rest(&mut self) {
+        self.clear_signal_state();
+        self.amounts = Amounts::default();
+        self.at_rest = true;
     }
 
     /// Empties every delay line and filter state, leaving the orbit phase and
-    /// the smoothed pan position alone.
+    /// the amounts alone.
     ///
-    /// Those two are position, not signal: zeroing them would snap the image
-    /// back to centre, which is a jump rather than the silence this is for.
+    /// Those are position, not signal, and each caller decides where they
+    /// should be.
     fn clear_signal_state(&mut self) {
         self.delay_l.fill(0.0);
         self.delay_r.fill(0.0);
         self.write_idx = 0;
+        self.history = 0;
         self.shadow_l = 0.0;
         self.shadow_r = 0.0;
         self.own_low_l = 0.0;
         self.own_low_r = 0.0;
         self.ild_l = 0.0;
         self.ild_r = 0.0;
-        self.pinna_lo_l = [0.0; 2];
-        self.pinna_hi_l = [0.0; 2];
-        self.pinna_lo_r = [0.0; 2];
-        self.pinna_hi_r = [0.0; 2];
+        self.pinna_l = [0.0; 2];
+        self.pinna_r = [0.0; 2];
         self.er_l.fill(0.0);
         self.er_r.fill(0.0);
         self.er_idx = 0;
@@ -669,8 +739,8 @@ impl StereoSpatializer {
         self.er_idx = (self.er_idx + 1) % len;
 
         (
-            Self::shadow(&mut self.er_damp_l, wet_l, ER_DAMPING_HZ, self.sample_rate),
-            Self::shadow(&mut self.er_damp_r, wet_r, ER_DAMPING_HZ, self.sample_rate),
+            Self::lowpass(&mut self.er_damp_l, wet_l, self.er_damping_alpha),
+            Self::lowpass(&mut self.er_damp_r, wet_r, self.er_damping_alpha),
         )
     }
 }
@@ -678,9 +748,17 @@ impl StereoSpatializer {
 impl AudioUnit for StereoSpatializer {
     fn reset(&mut self) {
         self.phase = 0.0;
-        self.smoothed_pan = self.pan.value().clamp(-1.0, 1.0);
+        let settings = self.settings();
         self.clear_signal_state();
-        self.room_is_live = false;
+        // A fresh stream has no earlier output to be continuous with, so the
+        // image starts where it is heading rather than gliding there. The room
+        // is the exception: its line has just been emptied, and it fills from
+        // silence for the reason given where it is fed.
+        self.amounts = Amounts {
+            room: 0.0,
+            ..settings.targets(0.0)
+        };
+        self.at_rest = !settings.engaged();
     }
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -738,7 +816,7 @@ mod tests {
         );
     }
 
-    pub(super) fn spatializer(setup: impl Fn(&AudioParams)) -> StereoSpatializer {
+    fn spatializer(setup: impl Fn(&AudioParams)) -> StereoSpatializer {
         let params = AudioParams::new();
         setup(&params);
         let mut s = StereoSpatializer::new(&params);
@@ -1036,67 +1114,97 @@ mod tests {
 
     // ── Pinna / front-back cue ────────────────────────────
 
-    /// Gain of the notch alone at `f`, in dB, with the notch centred on
-    /// `centre`.
+    /// Sample rates the notch is checked at: the common ones, up to the hi-res
+    /// rates where the notch before this one came apart.
+    const RATES: [f32; 5] = [44_100.0, 48_000.0, 88_200.0, 96_000.0, 192_000.0];
+
+    /// Gain of the notch alone at `f`, in dB, centred on `centre` at full
+    /// depth.
+    ///
+    /// Read off the impulse response rather than by playing a tone through it:
+    /// with the centre held still the notch is a fixed linear filter, so the
+    /// transform of its impulse response is its exact frequency response.
     fn notch_db(centre: f32, f: f32, sample_rate: f32) -> f32 {
-        let (mut lo, mut hi) = ([0.0; 2], [0.0; 2]);
-        let n = Ord::max(sample_rate as usize, 4_000) / 2;
-        let out: Vec<f32> = (0..n)
-            .map(|i| {
-                let x = (i as f32 / sample_rate * f * TAU).sin();
-                StereoSpatializer::pinna_notch(
-                    &mut lo,
-                    &mut hi,
-                    x,
-                    centre,
-                    StereoSpatializer::pinna_notch_scale(centre, sample_rate),
-                    sample_rate,
-                )
-            })
-            .collect();
-        let s = &out[n / 3..];
+        let coeffs = NotchCoeffs::from_g(notch_g(centre, sample_rate));
+        let mut state = [0.0; 2];
         let (mut re, mut im) = (0.0f64, 0.0f64);
-        for (i, &v) in s.iter().enumerate() {
-            let ph = i as f64 / sample_rate as f64 * f as f64 * std::f64::consts::TAU;
-            re += v as f64 * ph.cos();
-            im += v as f64 * ph.sin();
+        for n in 0..2_048 {
+            let impulse = if n == 0 { 1.0 } else { 0.0 };
+            let h = StereoSpatializer::pinna_notch(&mut state, impulse, coeffs, MAX_PINNA_DEPTH);
+            let ph = n as f64 * f as f64 / sample_rate as f64 * std::f64::consts::TAU;
+            re += h as f64 * ph.cos();
+            im -= h as f64 * ph.sin();
         }
-        20.0 * ((2.0 * (re * re + im * im).sqrt() / s.len() as f64) as f32)
-            .max(1e-12)
-            .log10()
+        10.0 * (re * re + im * im).max(1e-24).log10() as f32
     }
 
     #[test]
     fn the_notch_removes_the_fraction_of_the_band_it_says_it_does() {
         // `depth` is meant to mean "this fraction of the band is removed", so
-        // depth 0.7 must measure as roughly -10 dB at the centre. It only does
-        // if `pinna_notch_scale` solves for the band-pass's actual response;
-        // get that wrong and every other constant here is being tuned against a
-        // notch that is quietly a different depth than it claims.
+        // depth 0.7 must measure as -10.5 dB at the centre, at every sample
+        // rate. Get that wrong and every other constant here is being tuned
+        // against a notch that is quietly a different depth than it claims.
         let expected = 20.0 * (1.0 - MAX_PINNA_DEPTH).log10();
-        for sr in [44_100.0f32, 48_000.0, 96_000.0] {
+        for sr in RATES {
             for centre in [PINNA_FRONT_HZ, PINNA_REAR_HZ] {
                 let got = notch_db(centre, centre, sr);
                 assert!(
-                    (got - expected).abs() < 2.0,
-                    "sr {sr}, centre {centre}: notch is {got:.1} dB, expected about {expected:.1} dB"
+                    (got - expected).abs() < 0.1,
+                    "sr {sr}, centre {centre}: notch is {got:.2} dB, expected {expected:.2} dB"
                 );
             }
         }
     }
 
     #[test]
-    fn the_notch_leaves_the_midrange_alone() {
-        // The whole reason the previous front/back cue was unusable: it dulled
-        // vocals and guitars every time the image swung behind the head. A cue
-        // the listener hears as "the tone changed" is not a direction cue.
-        for centre in [PINNA_FRONT_HZ, PINNA_REAR_HZ] {
-            for f in [200.0f32, 500.0, 1_000.0] {
-                let g = notch_db(centre, f, 48_000.0);
+    fn the_notch_is_deepest_where_it_claims_to_be() {
+        // Being the right depth at the centre is not enough. The notch before
+        // this one was solved to be exactly -10.5 dB at its nominal centre and
+        // had its real minimum somewhere else entirely: at 96 kHz the rear
+        // notch was a 41 dB hole at 4.5 kHz. A notch in the wrong place is a
+        // different cue, and a deep one that moves is a wah pedal.
+        let expected = 20.0 * (1.0 - MAX_PINNA_DEPTH).log10();
+        for sr in RATES {
+            for centre in [PINNA_FRONT_HZ, PINNA_REAR_HZ] {
+                // Half an octave either side, in 1% steps.
+                let (deepest, at) = (0..=70)
+                    .map(|i| centre * 0.7 * 1.01f32.powi(i))
+                    .map(|f| (notch_db(centre, f, sr), f))
+                    .fold((f32::MAX, 0.0), |a, b| if b.0 < a.0 { b } else { a });
                 assert!(
-                    g.abs() < 1.0,
-                    "centre {centre}: {g:.2} dB at {f} Hz — the midrange is being touched"
+                    (at / centre - 1.0).abs() < 0.02,
+                    "sr {sr}, centre {centre}: the deepest point is at {at:.0} Hz"
                 );
+                assert!(
+                    deepest > expected - 0.1,
+                    "sr {sr}, centre {centre}: {deepest:.1} dB deep, more than the \
+                     {expected:.1} dB it claims"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_notch_leaves_the_midrange_and_presence_alone() {
+        // The whole reason the previous front/back cues were unusable: they
+        // dulled vocals and guitars every time the image swung behind the head.
+        // A cue the listener hears as "the tone changed" is not a direction
+        // cue. 3 kHz is where that is heard first, and where the notch before
+        // this one was already 5 dB down.
+        for sr in RATES {
+            for centre in [PINNA_FRONT_HZ, PINNA_REAR_HZ] {
+                for (f, budget) in [
+                    (200.0f32, 0.1f32),
+                    (500.0, 0.1),
+                    (1_000.0, 0.2),
+                    (3_000.0, 1.0),
+                ] {
+                    let g = notch_db(centre, f, sr);
+                    assert!(
+                        g.abs() < budget,
+                        "sr {sr}, centre {centre}: {g:.2} dB at {f} Hz"
+                    );
+                }
             }
         }
     }
@@ -1108,31 +1216,101 @@ mod tests {
         // and the same source behind identically. The notch moving is the only
         // thing carrying that information, so the two positions must produce
         // genuinely different spectra, not a token difference.
-        let mut best: f32 = 0.0;
-        for f in [3_500.0f32, 5_000.0, 6_500.0, 9_000.0] {
-            let front = notch_db(PINNA_FRONT_HZ, f, 48_000.0);
-            let rear = notch_db(PINNA_REAR_HZ, f, 48_000.0);
-            best = best.max((front - rear).abs());
+        for sr in RATES {
+            for f in [PINNA_REAR_HZ, PINNA_FRONT_HZ] {
+                let apart =
+                    (notch_db(PINNA_FRONT_HZ, f, sr) - notch_db(PINNA_REAR_HZ, f, sr)).abs();
+                assert!(
+                    apart > 5.0,
+                    "sr {sr}: front and back differ by only {apart:.1} dB at {f} Hz"
+                );
+            }
         }
-        assert!(
-            best > 3.0,
-            "front and back differ by at most {best:.1} dB — too little to cue anything"
-        );
     }
 
     #[test]
     fn the_notch_never_boosts() {
-        // The notch is a subtraction, so an over-large depth or a mis-set band
-        // gain would not merely be wrong — it would flip the band's phase and
-        // turn the notch into a peak. Nothing anywhere may come out louder.
-        for centre in [PINNA_FRONT_HZ, PINNA_REAR_HZ] {
-            for f in [
-                100.0f32, 400.0, 1_500.0, 3_000.0, 6_000.0, 9_000.0, 15_000.0,
-            ] {
-                let g = notch_db(centre, f, 48_000.0);
-                assert!(g < 0.5, "centre {centre}: {f} Hz is boosted by {g:.2} dB");
+        // A notch that comes out louder anywhere is a peak, not a notch. The
+        // normalised band-pass makes that impossible by construction; this is
+        // here so it stays impossible if the construction changes.
+        for sr in RATES {
+            for centre in [PINNA_FRONT_HZ, PINNA_REAR_HZ] {
+                for i in 0..70 {
+                    let f = 50.0 * 1.1f32.powi(i);
+                    if f < sr * 0.49 {
+                        let g = notch_db(centre, f, sr);
+                        assert!(
+                            g < 0.01,
+                            "sr {sr}, centre {centre}: {f:.0} Hz is boosted by {g:.2} dB"
+                        );
+                    }
+                }
             }
         }
+    }
+
+    /// Level of a tone at `f` in the left output with the orbit parked at
+    /// `phase` (0 in front, 0.5 behind), relative to the same tone with the
+    /// orbit stopped, in dB.
+    ///
+    /// Stopping the orbit changes nothing but the notch: the depth — and with
+    /// it the room and the crossfeed — is the same either way, and parked dead
+    /// ahead or dead behind the source is centred either way. So the ratio is
+    /// the notch's own response, as the real signal path applies it.
+    fn orbit_notch_db(phase: f32, f: f32) -> f32 {
+        const SR: f32 = 48_000.0;
+        let level = |rate: f32| {
+            let mut s = spatializer(|p| {
+                p.auto_pan_depth.set_value(1.0);
+                p.auto_pan_rate.set_value(rate);
+            });
+            s.phase = phase;
+            let mut out = [0.0; 2];
+            let left: Vec<f32> = (0..24_000)
+                .map(|i| {
+                    let v = (i as f32 / SR * f * TAU).sin() * 0.3;
+                    s.tick(&[v, v], &mut out);
+                    out[0]
+                })
+                .collect();
+            // A whole number of cycles of both probe tones, so neither leaks.
+            let (mut re, mut im) = (0.0f64, 0.0f64);
+            for (i, &v) in left[8_064..].iter().enumerate() {
+                let ph = i as f64 / SR as f64 * f as f64 * std::f64::consts::TAU;
+                re += v as f64 * ph.cos();
+                im += v as f64 * ph.sin();
+            }
+            (re * re + im * im).sqrt()
+        };
+        // Just fast enough to count as orbiting: the source moves by under a
+        // thousandth of a turn while it is measured.
+        20.0 * (level(0.0015) / level(0.0)).log10() as f32
+    }
+
+    #[test]
+    fn the_orbit_puts_the_notch_where_the_source_is() {
+        // The tests above exercise the notch on its own. This checks that the
+        // signal path really applies it, at the depth it claims, and that it
+        // follows the orbit: the front notch with the source dead ahead, the
+        // rear one with it dead behind.
+        let expected = 20.0 * (1.0 - MAX_PINNA_DEPTH).log10();
+        let ahead_front = orbit_notch_db(0.0, PINNA_FRONT_HZ);
+        let ahead_rear = orbit_notch_db(0.0, PINNA_REAR_HZ);
+        let behind_front = orbit_notch_db(0.5, PINNA_FRONT_HZ);
+        let behind_rear = orbit_notch_db(0.5, PINNA_REAR_HZ);
+        assert!(
+            (ahead_front - expected).abs() < 1.0,
+            "source ahead: {ahead_front:.1} dB at {PINNA_FRONT_HZ} Hz, expected about {expected:.1}"
+        );
+        assert!(
+            (behind_rear - expected).abs() < 1.0,
+            "source behind: {behind_rear:.1} dB at {PINNA_REAR_HZ} Hz, expected about {expected:.1}"
+        );
+        assert!(
+            ahead_rear - behind_rear > 4.0 && behind_front - ahead_front > 4.0,
+            "the notch did not follow the source: ahead {ahead_front:.1}/{ahead_rear:.1} dB, \
+             behind {behind_front:.1}/{behind_rear:.1} dB (front/rear frequency)"
+        );
     }
 
     // ── The room ──────────────────────────────────────────
@@ -1142,7 +1320,8 @@ mod tests {
     ///
     /// The windows are chosen from the tap layout: every reflection lands after
     /// 11 ms, and everything before 5 ms is direct sound plus the crossfeed's
-    /// short low-passed tail.
+    /// short low-passed tail. The impulse comes after half a second of
+    /// silence, by which time the room has filled to its full level.
     fn impulse_windows(depth: f32, pan: f32) -> ((f64, f64), (f64, f64)) {
         let mut s = spatializer(|p| {
             p.auto_pan_depth.set_value(depth);
@@ -1151,6 +1330,9 @@ mod tests {
         });
         let (mut l, mut r) = (Vec::new(), Vec::new());
         let mut out = [0.0; 2];
+        for _ in 0..24_000 {
+            s.tick(&[0.0, 0.0], &mut out);
+        }
         for i in 0..6_000 {
             s.tick(&[if i == 0 { 1.0 } else { 0.0 }, 0.0], &mut out);
             l.push(out[0]);
@@ -1246,12 +1428,241 @@ mod tests {
         );
     }
 
+    // ── Transitions ───────────────────────────────────────
+
+    /// Largest second difference in either channel over `range`.
+    ///
+    /// A click is a discontinuity, and a discontinuity is a spike in the second
+    /// difference that a smooth signal does not have. Measuring that rather
+    /// than the first difference keeps this blind to slow gain changes — the
+    /// image sweeping, the balance gliding — which change the output's slope
+    /// without being anything anyone would hear as a click.
+    fn roughness(out: &[(f32, f32)], range: std::ops::Range<usize>) -> f32 {
+        let d2 = |a: f32, b: f32, c: f32| (c - 2.0 * b + a).abs();
+        out[range]
+            .windows(3)
+            .map(|w| d2(w[0].0, w[1].0, w[2].0).max(d2(w[0].1, w[1].1, w[2].1)))
+            .fold(0.0, f32::max)
+    }
+
+    /// Plays a steady tone, applies `change` half a second in, and returns how
+    /// much rougher the output gets across the change than in the steadier of
+    /// the stretches either side of it.
+    ///
+    /// The change lands on a peak of the tone. Anything that opens onto an
+    /// empty delay line starts with a step the size of the signal at that
+    /// moment, so a change at a zero crossing would hide exactly the failure
+    /// this is looking for.
+    fn click_ratio(setup: impl Fn(&AudioParams), change: impl Fn(&StereoSpatializer)) -> f32 {
+        const SR: usize = 48_000;
+        const AT: usize = SR / 2 + 80; // a quarter-cycle past a zero crossing
+        let mut s = spatializer(setup);
+        let tone = |i: usize| (i as f32 / SR as f32 * 150.0 * TAU).sin() * 0.5;
+        let mut o = [0.0; 2];
+        let out: Vec<(f32, f32)> = (0..2 * SR)
+            .map(|i| {
+                if i == AT {
+                    change(&s);
+                }
+                s.tick(&[tone(i), tone(i) * 0.7], &mut o);
+                (o[0], o[1])
+            })
+            .collect();
+        let before = roughness(&out, SR / 4..AT);
+        let across = roughness(&out, AT - 2..SR);
+        let after = roughness(&out, 7 * SR / 4..2 * SR);
+        across / before.max(after)
+    }
+
+    #[test]
+    fn changing_a_control_is_a_glide_not_a_click() {
+        // Every control scales something in the signal path, so a setting that
+        // moves in one step — a keypress, a preset, a reset — is a gain step
+        // unless the unit smooths it. Measured here before the controls were
+        // smoothed, every one of these was between 20 and 1,800 times rougher
+        // across the change than either side of it.
+        //
+        // The bound is 4 rather than 1 because a glide is not perfectly smooth
+        // either: it starts at its fastest, so the gain bends where the change
+        // lands, and at the peak of a full-scale tone that bend reads at about
+        // twice the tone's own roughness. That is a corner in a gain, not a
+        // step in the signal, and nothing anyone can hear.
+        let orbit = |p: &AudioParams| {
+            p.auto_pan_depth.set_value(0.9);
+            p.auto_pan_rate.set_value(0.1);
+        };
+        let cases = [
+            (
+                "switching the orbit off",
+                click_ratio(orbit, |s| s.auto_pan_depth.set_value(0.0)),
+            ),
+            (
+                "stopping the orbit",
+                click_ratio(orbit, |s| s.auto_pan_rate.set_value(0.0)),
+            ),
+            (
+                "turning the depth down",
+                click_ratio(orbit, |s| s.auto_pan_depth.set_value(0.6)),
+            ),
+            (
+                "switching the orbit on",
+                click_ratio(
+                    |_| {},
+                    |s| {
+                        s.auto_pan_depth.set_value(0.9);
+                        s.auto_pan_rate.set_value(0.1);
+                    },
+                ),
+            ),
+            (
+                "re-centring the balance",
+                click_ratio(|p| p.pan.set_value(0.8), |s| s.pan.set_value(0.0)),
+            ),
+            (
+                "moving the balance",
+                click_ratio(|p| p.pan.set_value(0.3), |s| s.pan.set_value(0.5)),
+            ),
+        ];
+        for (name, ratio) in cases {
+            assert!(
+                ratio < 4.0,
+                "{name}: {ratio:.1}x rougher across the change than either side of it"
+            );
+        }
+    }
+
+    #[test]
+    fn switching_on_opens_no_path_onto_silence() {
+        // Coming out of rest every delay line is empty, and a path that reads
+        // further back than has been written since reads silence until the
+        // signal reaches it, then starts with a hard edge. The crossfeed reads
+        // a whole head-width back from its very first sample. A steady input
+        // makes any such edge stand out, because nothing else in it moves.
+        //
+        // Not quite nothing: the room fills from silence, so each reflection
+        // arrives as a ramp up from zero, and the start of a ramp is a corner.
+        // Those measure around 7e-5. The crossfeed's edge, when it was there,
+        // measured over six times that.
+        let mut s = spatializer(|_| {});
+        let mut out = [0.0; 2];
+        let mut tick = |s: &mut StereoSpatializer| {
+            s.tick(&[0.5, 0.5], &mut out);
+            (out[0], out[1])
+        };
+        let mut trace: Vec<(f32, f32)> = (0..4_800).map(|_| tick(&mut s)).collect();
+        s.auto_pan_depth.set_value(0.9);
+        trace.extend((0..4_800).map(|_| tick(&mut s)));
+        let worst = roughness(&trace, 4_000..trace.len());
+        assert!(
+            worst < 2e-4,
+            "switching on put a {worst:.1e} edge into a steady signal"
+        );
+    }
+
+    #[test]
+    fn re_engaging_does_not_replay_stale_audio() {
+        // Every line here is written only while the effect is engaged. If one is
+        // left holding whatever was playing when the effect was switched off,
+        // switching it back on reads that back out — up to 50 ms of audio from
+        // an entirely different part of the track, arriving as a burst out of
+        // nowhere.
+        let mut s = spatializer(|p| {
+            p.auto_pan_depth.set_value(1.0);
+            p.auto_pan_rate.set_value(0.0);
+        });
+        let mut out = [0.0; 2];
+        let loud = |i: usize| (i as f32 / 48_000.0 * 300.0 * TAU).sin() * 0.9;
+
+        // A loud passage with the effect on, filling every line.
+        for i in 0..4_000 {
+            s.tick(&[loud(i), loud(i)], &mut out);
+        }
+
+        // Switched off while the music carries on: the effect fades out and
+        // drops into bypass with the loud passage still in its lines.
+        s.auto_pan_depth.set_value(0.0);
+        for i in 4_000..20_000 {
+            s.tick(&[loud(i), loud(i)], &mut out);
+        }
+        assert!(
+            s.at_rest,
+            "a third of a second is ample to fade out and drop into bypass"
+        );
+        s.tick(&[0.3, -0.6], &mut out);
+        assert_eq!(out, [0.3, -0.6], "at rest, the bypass is bit-transparent");
+
+        // The track goes quiet, still bypassed, and the effect comes back on.
+        for _ in 0..2_000 {
+            s.tick(&[0.0, 0.0], &mut out);
+        }
+        s.auto_pan_depth.set_value(1.0);
+        let mut worst = 0.0f32;
+        for _ in 0..4_000 {
+            s.tick(&[0.0, 0.0], &mut out);
+            worst = worst.max(out[0].abs()).max(out[1].abs());
+        }
+        assert!(
+            worst < 1e-4,
+            "re-engaging replayed {worst:.4} of stale audio into silence"
+        );
+    }
+
+    #[test]
+    fn silence_never_leaves_a_filter_in_subnormal_floats() {
+        // Subnormal arithmetic runs in microcode. Engaged on digital silence —
+        // a pause, the gap between tracks — this unit measured four times its
+        // cost on music, on the thread where a stall is a dropout. This is the
+        // deterministic stand-in for a timing test: once the music stops and
+        // the filters have decayed, every state has to be exactly zero or a
+        // normal float.
+        let mut s = spatializer(|p| {
+            p.auto_pan_depth.set_value(1.0);
+            p.auto_pan_rate.set_value(0.35);
+            p.pan.set_value(0.2);
+        });
+        let mut out = [0.0; 2];
+        for i in 0..24_000 {
+            let v = (i as f32 / 48_000.0 * 220.0 * TAU).sin() * 0.5;
+            s.tick(&[v, v * 0.8], &mut out);
+        }
+        for _ in 0..96_000 {
+            s.tick(&[0.0, 0.0], &mut out);
+        }
+
+        let subnormal = |x: &f32| *x != 0.0 && !x.is_normal();
+        let states = [
+            s.shadow_l,
+            s.shadow_r,
+            s.own_low_l,
+            s.own_low_r,
+            s.ild_l,
+            s.ild_r,
+            s.er_damp_l,
+            s.er_damp_r,
+            s.pinna_l[0],
+            s.pinna_l[1],
+            s.pinna_r[0],
+            s.pinna_r[1],
+        ];
+        assert!(
+            !states.iter().any(subnormal),
+            "filter states left subnormal: {states:?}"
+        );
+        for line in [&s.delay_l, &s.delay_r, &s.er_l, &s.er_r] {
+            assert!(
+                !line.iter().any(subnormal),
+                "a delay line is holding subnormal samples"
+            );
+        }
+    }
+
     /// Not a pass/fail test — a measuring tool, kept because this crate's
     /// history is a bug report about audio dropping out under CPU pressure,
     /// and every cue added here costs per-sample work in the callback.
     ///
-    /// Measured on the machine this was written on: 0.13% of one core
-    /// bypassed, 0.77% fully engaged. Run with
+    /// Measured on the machine this was written on: 0.05% of one core
+    /// bypassed, 0.64% fully engaged, and 0.68% engaged on digital silence —
+    /// which, before `flush_denormal`, was 3.0%. Run with
     /// `cargo test --release -p melotui-audio -- --ignored --nocapture`.
     #[test]
     #[ignore = "measurement, not a regression guard; timing-dependent"]
@@ -1259,15 +1670,25 @@ mod tests {
         use std::time::Instant;
         const SR: f32 = 48_000.0;
         const N: usize = 48_000 * 20; // 20 seconds of audio
-        for (name, depth, rate) in [("bypass", 0.0, 0.0), ("engaged", 1.0, 0.35)] {
+        let tone = |i: usize| (i as f32 / SR * 220.0 * TAU).sin() * 0.3;
+        for (name, depth, rate, level) in [
+            ("bypass", 0.0, 0.0, 1.0),
+            ("engaged", 1.0, 0.35, 1.0),
+            ("silence", 1.0, 0.35, 0.0),
+        ] {
             let mut s = spatializer(|p| {
                 p.auto_pan_depth.set_value(depth);
                 p.auto_pan_rate.set_value(rate);
             });
             let mut out = [0.0; 2];
+            // Silence only costs anything once the filters have decayed into
+            // it, so every run starts from music.
+            for i in 0..48_000 {
+                s.tick(&[tone(i), tone(i) * 0.8], &mut out);
+            }
             let t = Instant::now();
             for i in 0..N {
-                let v = (i as f32 / SR * 220.0 * TAU).sin() * 0.3;
+                let v = tone(i) * level;
                 s.tick(&[v, v * 0.8], &mut out);
             }
             let el = t.elapsed().as_secs_f64();
@@ -1278,43 +1699,5 @@ mod tests {
             );
             std::hint::black_box(out);
         }
-    }
-
-    #[test]
-    fn re_engaging_the_room_does_not_replay_stale_audio() {
-        // The room line is only written while the room is mixed in. If it is
-        // left holding whatever was playing the last time the effect was on,
-        // then turning the orbit back up reads that back — up to 50 ms of
-        // audio from an entirely different part of the track, arriving as a
-        // burst out of nowhere.
-        let mut s = spatializer(|_| {});
-        let mut out = [0.0; 2];
-
-        // Loud passage with the effect engaged, filling the room line.
-        s.pan.set_value(0.0);
-        s.auto_pan_depth.set_value(1.0);
-        s.auto_pan_rate.set_value(0.0);
-        for i in 0..4_000 {
-            let v = (i as f32 / 48_000.0 * 300.0 * TAU).sin() * 0.9;
-            s.tick(&[v, v], &mut out);
-        }
-
-        // Effect off, and the track goes silent.
-        s.auto_pan_depth.set_value(0.0);
-        for _ in 0..2_000 {
-            s.tick(&[0.0, 0.0], &mut out);
-        }
-
-        // Effect back on, still silent. Nothing may come out.
-        s.auto_pan_depth.set_value(1.0);
-        let mut worst = 0.0f32;
-        for _ in 0..4_000 {
-            s.tick(&[0.0, 0.0], &mut out);
-            worst = worst.max(out[0].abs()).max(out[1].abs());
-        }
-        assert!(
-            worst < 1e-4,
-            "re-engaging the room replayed {worst:.4} of stale audio into silence"
-        );
     }
 }
