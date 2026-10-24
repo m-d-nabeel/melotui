@@ -2,13 +2,16 @@ use melotui_bus::{
     channel::IpcWorker, command::AudioCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
 };
 use ringbuf::{HeapRb, traits::Split};
-use rodio::{Decoder, Sink, Source};
+use rodio::{Decoder, Player, Source};
 use std::{
     fs::File,
     path::PathBuf,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use fundsp::hacker32::{AudioUnit, Shared, shared};
@@ -16,6 +19,7 @@ use fundsp::hacker32::{AudioUnit, Shared, shared};
 use crate::{
     clock::TimeKeeper,
     effects::{AudioParams, create_audio_graph},
+    output::{self, Output},
     reaper::Reaper,
     source::FundspSource,
     tap::SpectrumSniffer,
@@ -31,26 +35,131 @@ pub struct AudioRunConfig {
     /// Output buffer in frames; `None` leaves cpal on its default
     /// (25 ms period inside a 100 ms buffer).
     pub buffer_size: Option<u32>,
+    /// The output device's name, or part of it; `None` follows the system
+    /// default.
+    pub output_device: Option<String>,
 }
 
-/// Opens the output stream, honouring the configured rate and buffer size.
-///
-/// Both settings matter for dropout resistance. The ALSA "default" PCM usually
-/// reports 44100 even when the sound server runs at 48000, which costs us a
-/// resample in each direction; and cpal's default buffer only leaves ~75 ms of
-/// slack for the callback thread to miss its deadline in. On failure rodio
-/// retries every config the device advertises before giving up.
-fn open_output_stream(config: &AudioRunConfig) -> Result<rodio::OutputStream, rodio::StreamError> {
-    let mut builder = rodio::OutputStreamBuilder::from_default_device()?;
+/// How long to wait before trying an output device again after it could not
+/// be opened.
+const RETRY_EVERY: Duration = Duration::from_secs(2);
+/// How often a chosen device that could not be opened is tried again, while
+/// the default plays instead.
+const RETRY_CHOSEN_EVERY: Duration = Duration::from_secs(5);
 
-    if let Some(rate) = config.sample_rate {
-        builder = builder.with_sample_rate(rate);
-    }
-    if let Some(frames) = config.buffer_size {
-        builder = builder.with_buffer_size(rodio::cpal::BufferSize::Fixed(frames));
+/// The output device as the worker sees it: open, or waiting to be tried
+/// again.
+struct OutputSlot {
+    output: Option<Output>,
+    /// Set by the stream's error callback when its device goes away.
+    lost: Arc<AtomicBool>,
+    /// The device asked for; `None` follows the system default.
+    wanted: Option<String>,
+    /// Whether the default is playing in place of the device asked for.
+    standing_in: bool,
+    sample_rate: Option<u32>,
+    buffer_size: Option<u32>,
+    /// When to try again after a failure, and whether the failure was said.
+    retry_at: Option<Instant>,
+    failure_reported: bool,
+}
+
+impl OutputSlot {
+    fn open(&self, device: Option<&str>) -> Result<Output, String> {
+        self.lost.store(false, Ordering::SeqCst);
+        // Rate and buffer size are honoured for dropout resistance: the ALSA
+        // "default" PCM usually reports 44100 even when the sound server runs
+        // at 48000, and cpal's default buffer leaves little slack. rodio
+        // retries every config the device advertises before giving up.
+        output::open(
+            device,
+            self.sample_rate,
+            self.buffer_size,
+            Arc::clone(&self.lost),
+        )
     }
 
-    builder.open_stream_or_fallback()
+    /// Whether the output has to be opened (again) now.
+    fn needs_opening(&self) -> bool {
+        if self.lost.load(Ordering::SeqCst) {
+            return true;
+        }
+        let due = self.retry_at.is_none_or(|at| Instant::now() >= at);
+        (self.output.is_none() || self.standing_in) && due
+    }
+
+    /// Opens the device asked for, or the default in its place if it cannot
+    /// be, reporting a failure the first time and quietly retrying after
+    /// that. `Some` with a newly opened output.
+    fn try_open(&mut self, worker: &mut impl IpcWorker<AudioCommand>) -> Option<&Output> {
+        let wanted = self.wanted.clone();
+        let opened = match self.open(wanted.as_deref()) {
+            Ok(output) => {
+                self.standing_in = false;
+                Ok(output)
+            }
+            // A device asked for that cannot be opened — unplugged, or held
+            // by the sound server — gives way to the default until it can.
+            Err(e) if wanted.is_some() => {
+                let name = wanted.as_deref().unwrap_or_default();
+                if self.standing_in && self.output.is_some() && !self.lost.load(Ordering::SeqCst) {
+                    // Something is playing already: keep it, say so once,
+                    // and try again later.
+                    if !self.failure_reported {
+                        let current = self.output.as_ref().map_or("", |o| o.name.as_str());
+                        worker.send(IpcEvent::Error {
+                            message: format!(
+                                "Cannot play through {name} ({e}); staying on {current}"
+                            ),
+                        });
+                        self.failure_reported = true;
+                    }
+                    self.retry_at = Some(Instant::now() + RETRY_CHOSEN_EVERY);
+                    return None;
+                }
+                match self.open(None) {
+                    Ok(output) => {
+                        worker.send(IpcEvent::Error {
+                            message: format!(
+                                "Cannot play through {name} ({e}); using {} until it can",
+                                output.name
+                            ),
+                        });
+                        self.standing_in = true;
+                        self.retry_at = Some(Instant::now() + RETRY_CHOSEN_EVERY);
+                        Ok(output)
+                    }
+                    Err(default_error) => Err(format!("{e}; the default: {default_error}")),
+                }
+            }
+            Err(e) => Err(e),
+        };
+        match opened {
+            Ok(output) => {
+                if !self.standing_in {
+                    self.retry_at = None;
+                }
+                self.failure_reported = false;
+                worker.send(IpcEvent::AudioOutputOpened {
+                    name: output.name.clone(),
+                });
+                self.output = Some(output);
+                self.output.as_ref()
+            }
+            Err(e) => {
+                tracing::warn!("Cannot open audio output: {e}");
+                if !self.failure_reported {
+                    worker.send(IpcEvent::Error {
+                        message: format!("No audio output ({e}); trying again"),
+                    });
+                    self.failure_reported = true;
+                }
+                self.output = None;
+                self.retry_at = Some(Instant::now() + RETRY_EVERY);
+                None
+            }
+        }
+    }
 }
 
 pub fn run(
@@ -58,40 +167,54 @@ pub fn run(
     spectrum_producer: SpectrumProducer,
     config: AudioRunConfig,
 ) {
-    let mut stream_handle = match open_output_stream(&config) {
-        Ok(handle) => handle,
-        Err(e) => {
-            // Previously this was `.expect(...)`, which panicked this thread and
-            // left the app running with no audio and no explanation. Tell the UI
-            // and stop; `Engine::dispatch` ignores sends to a dead worker.
-            tracing::error!("Failed to open audio output stream: {e}");
-            worker.send(IpcEvent::Error {
-                message: format!("No audio output available: {e}"),
-            });
-            return;
-        }
+    let mut slot = OutputSlot {
+        output: None,
+        lost: Arc::new(AtomicBool::new(false)),
+        wanted: config.output_device.clone(),
+        standing_in: false,
+        sample_rate: config.sample_rate,
+        buffer_size: config.buffer_size,
+        retry_at: None,
+        failure_reported: false,
     };
-    stream_handle.log_on_drop(false);
 
-    tracing::info!(
-        "Audio output opened: {} Hz, {} ch, buffer {:?}",
-        stream_handle.config().sample_rate(),
-        stream_handle.config().channel_count(),
-        stream_handle.config().buffer_size(),
-    );
-
-    let mut engine = AudioEngine::new(
-        Sink::connect_new(stream_handle.mixer()),
-        spectrum_producer,
-        config.fft_size,
-    );
+    // A player until there is a device to play through: commands arriving
+    // meanwhile are kept, and take effect once one is open.
+    let (detached, _queue) = Player::new();
+    let mut engine = AudioEngine::new(detached, spectrum_producer, config.fft_size);
 
     loop {
-        let commands = fetch_and_coalesce_commands(&mut worker);
+        if slot.lost.load(Ordering::SeqCst) {
+            // The device is gone and nothing drives the player any more.
+            engine.live = false;
+        }
+        if slot.needs_opening()
+            && let Some(output) = slot.try_open(&mut worker)
+        {
+            // Whatever was playing carries on through the new device, from
+            // where it was.
+            engine.reconnect(Player::connect_new(output.sink.mixer()), &mut worker);
+        }
 
+        let commands = fetch_and_coalesce_commands(&mut worker);
         for cmd in commands {
-            if !engine.handle_command(cmd, &mut worker) {
-                return;
+            match cmd {
+                AudioCommand::SetOutputDevice(device) => {
+                    // Opened on the next pass, the current one playing until
+                    // then; what is playing carries on through the new one.
+                    slot.wanted = device;
+                    slot.standing_in = slot.output.is_some();
+                    slot.retry_at = None;
+                    slot.failure_reported = false;
+                }
+                AudioCommand::ListOutputDevices => worker.send(IpcEvent::OutputDevices {
+                    names: output::device_names(),
+                }),
+                cmd => {
+                    if !engine.handle_command(cmd, &mut worker) {
+                        return;
+                    }
+                }
             }
         }
 
@@ -135,7 +258,7 @@ fn fetch_and_coalesce_commands(worker: &mut impl IpcWorker<AudioCommand>) -> Vec
 }
 
 struct AudioEngine {
-    sink: Sink,
+    sink: Player,
     producer: SpectrumProducer,
     time_keeper: TimeKeeper,
     vis_manager: VisualizerManager,
@@ -146,10 +269,15 @@ struct AudioEngine {
     seek_epoch: u64,
     bypass: Arc<AtomicBool>,
     reaper: Reaper,
+    /// The file playing or paused, to carry on with on another device.
+    current: Option<PathBuf>,
+    /// Whether the player is connected to a device that is running. Without
+    /// one nothing answers a seek, which rodio waits for.
+    live: bool,
 }
 
 impl AudioEngine {
-    pub fn new(sink: Sink, spectrum_producer: SpectrumProducer, fft_size: usize) -> Self {
+    pub fn new(sink: Player, spectrum_producer: SpectrumProducer, fft_size: usize) -> Self {
         Self {
             sink,
             producer: spectrum_producer,
@@ -160,6 +288,37 @@ impl AudioEngine {
             seek_epoch: 0,
             bypass: Arc::new(AtomicBool::new(true)),
             reaper: Reaper::spawn(),
+            current: None,
+            live: false,
+        }
+    }
+
+    /// Plays through `player` from now on — a new output device — carrying
+    /// on with whatever was playing or paused, from where it was.
+    fn reconnect<W: IpcWorker<AudioCommand>>(&mut self, player: Player, worker: &mut W) {
+        let resume = self.current.clone().map(|path| {
+            (
+                path,
+                self.time_keeper.get_position(),
+                self.time_keeper.is_playing,
+            )
+        });
+        self.sink.stop();
+        self.sink = player;
+        self.live = true;
+        if let Some((path, position, playing)) = resume {
+            self.time_keeper.stop();
+            self.vis_manager.detach_source();
+            if let Err(e) = self.start(&path) {
+                worker.send(IpcEvent::Error { message: e });
+                return;
+            }
+            let epoch = self.seek_epoch;
+            self.do_seek(position.as_millis() as u64, epoch);
+            if !playing {
+                self.sink.pause();
+                self.time_keeper.pause();
+            }
         }
     }
 
@@ -205,6 +364,8 @@ impl AudioEngine {
             AudioCommand::SetExciter(v) => self.dsp_params.exciter.set_value(v),
             AudioCommand::SetPingPong(v) => self.dsp_params.ping_pong.set_value(v),
             AudioCommand::SetPhaser(v) => self.dsp_params.phaser.set_value(v),
+            // The device is the run loop's business, which takes these first.
+            AudioCommand::SetOutputDevice(_) | AudioCommand::ListOutputDevices => {}
             AudioCommand::Shutdown => {
                 if !self.sink.empty() {
                     self.sink.stop();
@@ -233,43 +394,50 @@ impl AudioEngine {
         self.time_keeper.stop();
         self.vis_manager.detach_source();
 
-        match File::open(&path).and_then(|f| Decoder::try_from(f).map_err(std::io::Error::other)) {
-            Ok(decoder) => {
-                self.time_keeper.start();
-
-                let channels = decoder.channels();
-                let sample_rate = decoder.sample_rate();
-                let unit: Box<dyn AudioUnit> = create_audio_graph(channels, &self.dsp_params);
-                let dsp_source = FundspSource::new(decoder, unit, self.bypass.clone());
-
-                let ring = HeapRb::<f32>::new(8192);
-                let (producer, consumer) = ring.split();
-                self.vis_manager.attach_source(consumer, sample_rate);
-
-                let source_with_sniffer = SpectrumSniffer::new(dsp_source, producer);
-                let source_with_volume = VolumeRamp::new(source_with_sniffer, self.volume.clone());
-
-                // Box here, on the worker thread, so that when rodio drops this
-                // source on the audio callback thread the handoff to the reaper
-                // is a bare pointer move instead of ~1 MB of `free()` calls.
-                self.sink
-                    .append(self.reaper.guard(Box::new(source_with_volume)));
-                self.sink.play();
-                self.sink.set_speed(self.time_keeper.current_speed);
-
-                worker.send(IpcEvent::PlaybackStarted {
-                    path: path.to_string_lossy().to_string(),
-                });
-            }
-            Err(_) => {
-                worker.send(IpcEvent::Error {
-                    message: "Failed to open file".into(),
-                });
-            }
+        match self.start(&path) {
+            Ok(()) => worker.send(IpcEvent::PlaybackStarted {
+                path: path.to_string_lossy().to_string(),
+            }),
+            Err(message) => worker.send(IpcEvent::Error { message }),
         }
     }
 
+    /// Decodes `path` and starts it playing through the effects.
+    fn start(&mut self, path: &std::path::Path) -> Result<(), String> {
+        let name = path
+            .file_name()
+            .unwrap_or(path.as_os_str())
+            .to_string_lossy();
+        let decoder = File::open(path)
+            .map_err(|e| format!("Cannot play {name}: {e}"))
+            .and_then(|f| Decoder::try_from(f).map_err(|e| format!("Cannot play {name}: {e}")))?;
+        self.current = Some(path.to_path_buf());
+        self.time_keeper.start();
+
+        let channels = decoder.channels().get();
+        let sample_rate = decoder.sample_rate().get();
+        let unit: Box<dyn AudioUnit> = create_audio_graph(channels, &self.dsp_params);
+        let dsp_source = FundspSource::new(decoder, unit, self.bypass.clone());
+
+        let ring = HeapRb::<f32>::new(8192);
+        let (producer, consumer) = ring.split();
+        self.vis_manager.attach_source(consumer, sample_rate);
+
+        let source_with_sniffer = SpectrumSniffer::new(dsp_source, producer);
+        let source_with_volume = VolumeRamp::new(source_with_sniffer, self.volume.clone());
+
+        // Box here, on the worker thread, so that when rodio drops this
+        // source on the audio callback thread the handoff to the reaper
+        // is a bare pointer move instead of ~1 MB of `free()` calls.
+        self.sink
+            .append(self.reaper.guard(Box::new(source_with_volume)));
+        self.sink.play();
+        self.sink.set_speed(self.time_keeper.current_speed);
+        Ok(())
+    }
+
     fn do_stop(&mut self) {
+        self.current = None;
         self.sink.stop();
         self.time_keeper.stop();
         self.vis_manager.detach_source();
@@ -291,6 +459,13 @@ impl AudioEngine {
 
     fn do_seek(&mut self, ms: u64, epoch: u64) {
         let dur = Duration::from_millis(ms);
+        // With no device running, nothing would answer the seek; the clock
+        // moves, and playback picks up from there on the next device.
+        if !self.live {
+            self.time_keeper.seek(dur);
+            self.seek_epoch = epoch;
+            return;
+        }
         // rodio's Speed wrapper multiplies the seek duration by its speed factor,
         // assuming the duration is in 'output time'. Since we track and provide
         // absolute 'file time', we divide by the speed to counteract the multiplication.
@@ -357,5 +532,139 @@ impl AudioCommandExt for AudioCommand {
                 | AudioCommand::SetPhaser(_)
                 | AudioCommand::SetVisualizer { .. }
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use melotui_bus::{channel::inprocess, command::AudioCommand, spectrum_bridge};
+    use std::sync::mpsc;
+
+    /// Ten seconds of quiet stereo at 44.1 kHz, as a WAV file.
+    fn wav(dir: &std::path::Path) -> PathBuf {
+        let path = dir.join("quiet.wav");
+        let frames: u32 = 44_100 * 10;
+        let data_len = frames * 4;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        bytes.extend_from_slice(&2u16.to_le_bytes()); // channels
+        bytes.extend_from_slice(&44_100u32.to_le_bytes());
+        bytes.extend_from_slice(&(44_100u32 * 4).to_le_bytes());
+        bytes.extend_from_slice(&4u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        bytes.resize(bytes.len() + data_len as usize, 0);
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    fn engine() -> AudioEngine {
+        let (producer, _consumer) = spectrum_bridge::create_bridge();
+        AudioEngine::new(Player::new().0, producer, 2048)
+    }
+
+    /// A player with a thread pulling its samples, as a device's callback
+    /// would, so that seeks are answered.
+    fn live_player() -> Player {
+        let (mixer, source) = rodio::mixer::mixer(rodio::nz!(2), rodio::nz!(44_100));
+        std::thread::spawn(move || {
+            for _ in source {
+                std::hint::spin_loop();
+            }
+        });
+        Player::connect_new(&mixer)
+    }
+
+    #[test]
+    fn a_new_device_carries_on_with_the_track_from_where_it_was() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = wav(dir.path());
+        let (bus_tx, bus_rx) = mpsc::channel();
+        let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+        let mut engine = engine();
+        engine.reconnect(live_player(), &mut worker);
+
+        engine.do_play(path.clone(), &mut worker);
+        engine.do_seek(4_000, 1);
+        engine.reconnect(live_player(), &mut worker);
+
+        assert_eq!(engine.current.as_deref(), Some(path.as_path()));
+        assert!(engine.time_keeper.is_playing);
+        let at = engine.time_keeper.get_position().as_millis();
+        assert!((4_000..4_500).contains(&at), "resumed at {at} ms");
+        assert!(!engine.sink.empty(), "nothing queued on the new device");
+        // The track carrying on is not a new track starting.
+        let started = bus_rx
+            .try_iter()
+            .filter(|e| matches!(e, IpcEvent::PlaybackStarted { .. }))
+            .count();
+        assert_eq!(started, 1);
+    }
+
+    #[test]
+    fn a_paused_track_stays_paused_on_the_new_device() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = wav(dir.path());
+        let (bus_tx, _bus_rx) = mpsc::channel();
+        let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+        let mut engine = engine();
+        engine.reconnect(live_player(), &mut worker);
+
+        engine.do_play(path, &mut worker);
+        engine.do_pause(&mut worker);
+        engine.reconnect(live_player(), &mut worker);
+
+        assert!(!engine.time_keeper.is_playing);
+        assert!(engine.sink.is_paused());
+    }
+
+    #[test]
+    fn with_nothing_playing_a_new_device_is_just_taken_up() {
+        let (bus_tx, _bus_rx) = mpsc::channel();
+        let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+        let mut engine = engine();
+        engine.reconnect(live_player(), &mut worker);
+        assert!(engine.current.is_none());
+        assert!(engine.sink.empty());
+    }
+
+    #[test]
+    fn a_seek_with_no_device_running_does_not_wait_for_one() {
+        // rodio waits for the device to answer a seek; with none open, or one
+        // just lost, that wait was for ever. The position is kept instead, for
+        // the next device to pick up.
+        let dir = tempfile::tempdir().unwrap();
+        let path = wav(dir.path());
+        let (bus_tx, _bus_rx) = mpsc::channel();
+        let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+        let mut engine = engine();
+        engine.do_play(path.clone(), &mut worker);
+        engine.do_seek(3_000, 2);
+        assert!((3_000..3_200).contains(&engine.time_keeper.get_position().as_millis()));
+
+        engine.reconnect(live_player(), &mut worker);
+        let at = engine.time_keeper.get_position().as_millis();
+        assert!((3_000..3_500).contains(&at), "picked up at {at} ms");
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_played_is_named_in_the_error() {
+        let (bus_tx, bus_rx) = mpsc::channel();
+        let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+        let mut engine = engine();
+        engine.do_play(PathBuf::from("/nonexistent/song.flac"), &mut worker);
+        match bus_rx.try_recv() {
+            Ok(IpcEvent::Error { message }) => {
+                assert!(message.starts_with("Cannot play song.flac:"), "{message}")
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(engine.current.is_none());
     }
 }

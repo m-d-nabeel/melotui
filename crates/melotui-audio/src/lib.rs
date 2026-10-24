@@ -2,6 +2,7 @@ mod cava;
 mod clock;
 mod effects;
 mod fft;
+mod output;
 mod reaper;
 mod source;
 mod tap;

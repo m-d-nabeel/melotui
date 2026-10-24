@@ -34,7 +34,7 @@ where
     P: Producer<Item = f32>,
 {
     pub fn new(input: I, producer: P) -> Self {
-        let channels = input.channels().max(1);
+        let channels = input.channels().get();
         Self {
             input,
             producer,
@@ -94,10 +94,10 @@ where
     fn current_span_len(&self) -> Option<usize> {
         self.input.current_span_len()
     }
-    fn channels(&self) -> u16 {
+    fn channels(&self) -> rodio::ChannelCount {
         self.input.channels()
     }
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> rodio::SampleRate {
         self.input.sample_rate()
     }
     fn total_duration(&self) -> Option<Duration> {
@@ -146,11 +146,11 @@ mod tests {
         fn current_span_len(&self) -> Option<usize> {
             None
         }
-        fn channels(&self) -> u16 {
-            2
+        fn channels(&self) -> rodio::ChannelCount {
+            rodio::nz!(2)
         }
-        fn sample_rate(&self) -> u32 {
-            48_000
+        fn sample_rate(&self) -> rodio::SampleRate {
+            rodio::nz!(48_000)
         }
         fn total_duration(&self) -> Option<Duration> {
             None
