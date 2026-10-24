@@ -11,6 +11,7 @@ use crate::{
 };
 
 pub fn handle_request_scan_library(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.scan_quietly = false;
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
         "Scanning Library...",
@@ -24,6 +25,9 @@ pub fn handle_update_scan_progress(
     skipped: u32,
     _total: u32,
 ) -> Vec<AppMsg> {
+    if state.session.scan_quietly {
+        return vec![];
+    }
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
         format!(
@@ -585,8 +589,26 @@ fn collect_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{domain::TrackMeta, library::snapshot::Library};
+    use crate::{domain::TrackMeta, library::snapshot::Library, message::library::LibraryMsg};
     use std::collections::HashMap;
+
+    #[test]
+    fn a_background_scan_shows_no_progress_and_a_requested_one_does() {
+        let mut state = test_state();
+        crate::reducer::reduce(
+            &mut state,
+            AppMsg::Library(LibraryMsg::RequestBackgroundScan),
+        );
+        assert!(state.is_scanning_quietly());
+        handle_update_scan_progress(&mut state, 50, 10, 0);
+        assert!(state.session.notification.current.is_none());
+
+        crate::reducer::reduce(&mut state, AppMsg::Library(LibraryMsg::RequestScanLibrary));
+        assert!(!state.is_scanning_quietly());
+        handle_update_scan_progress(&mut state, 50, 10, 0);
+        let message = &state.session.notification.current.as_ref().unwrap().message;
+        assert!(message.starts_with("Scanning Library..."), "{message}");
+    }
 
     fn test_state() -> AppState {
         let mut tracks = HashMap::new();

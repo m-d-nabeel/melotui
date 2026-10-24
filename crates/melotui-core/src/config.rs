@@ -80,6 +80,12 @@ pub struct LibraryConfig {
     pub max_cover_resolution: u32,
     /// Max visible items in the playlist picker viewport
     pub picker_viewport_size: usize,
+    /// Scan the music folders in the background at start, picking up music
+    /// added while melotui was closed. Only new and changed files are read.
+    pub scan_on_startup: bool,
+    /// Watch the music folders while running, and scan again a few seconds
+    /// after they change. Turn off for folders on a slow network share.
+    pub watch: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -156,6 +162,8 @@ impl Default for LibraryConfig {
             db_path: None,
             max_cover_resolution: 512,
             picker_viewport_size: 20,
+            scan_on_startup: true,
+            watch: true,
         }
     }
 }

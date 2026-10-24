@@ -80,32 +80,41 @@ fn handle_command(
         DatabaseCommand::ScanLibrary { roots } => {
             tracing::info!("Starting Library Scan for {} directories...", roots.len());
             let mut scan_failed = false;
+            let mut changed = 0;
             for root in &roots {
                 tracing::info!("Scanning {:?}...", root);
-                if let Err(e) = handle_scan_library(conn, worker, root) {
-                    tracing::error!("Failed to scan {:?}: {:?}", root, e);
-                    worker.send(IpcEvent::Error {
-                        message: format!("Failed to scan {:?}: {}", root, e),
-                    });
-                    scan_failed = true;
+                match handle_scan_library(conn, worker, root) {
+                    Ok(processed) => changed += processed,
+                    Err(e) => {
+                        tracing::error!("Failed to scan {:?}: {:?}", root, e);
+                        worker.send(IpcEvent::Error {
+                            message: format!("Failed to scan {}: {}", root.display(), e),
+                        });
+                        scan_failed = true;
+                    }
                 }
             }
+            // Pruning after a failed scan would drop every track under the
+            // folder that failed — an unplugged drive, say — so it waits for a
+            // scan that went through.
             if !scan_failed {
-                // auto-prune after scan
                 let pruned = prune_library(conn).unwrap_or(0);
                 if pruned > 0 {
                     tracing::info!("Pruned {} dead tracks", pruned);
                 }
-                tracing::info!("Library Scan Complete.");
-                worker.send(IpcEvent::LibraryRescanned);
+                changed += pruned;
             }
+            tracing::info!("Library Scan Complete: {changed} changed");
+            worker.send(IpcEvent::LibraryRescanned {
+                changed: changed > 0,
+            });
         }
         DatabaseCommand::PruneLibrary => {
             info!("Manual prune requested");
             match prune_library(conn) {
                 Ok(count) => {
                     info!("Pruned {} dead tracks", count);
-                    worker.send(IpcEvent::LibraryRescanned);
+                    worker.send(IpcEvent::LibraryRescanned { changed: count > 0 });
                 }
                 Err(e) => {
                     tracing::error!("Failed to prune: {:?}", e);
@@ -237,7 +246,7 @@ fn handle_scan_library(
     conn: &rusqlite::Connection,
     worker: &impl IpcWorker<DatabaseCommand>,
     root: &Path,
-) -> Result<()> {
+) -> Result<usize> {
     info!("Scanning library at: {:?}", root);
 
     // do not delete all tracks
@@ -280,7 +289,7 @@ fn handle_scan_library(
         conn.execute("COMMIT", [])?;
     } else {
         conn.execute("ROLLBACK", [])?;
-        return res;
+        res?;
     }
 
     let scan_elapsed = scan_start.elapsed();
@@ -291,7 +300,7 @@ fn handle_scan_library(
         scan_elapsed
     );
 
-    Ok(())
+    Ok(count)
 }
 
 /// remove non-existent tracks
@@ -682,6 +691,97 @@ mod tests {
     use super::*;
     use melotui_bus::channel::inprocess;
     use std::sync::mpsc;
+
+    /// A second of silent mono 8 kHz audio, as a WAV file.
+    fn wav(path: &Path) {
+        let data_len: u32 = 8_000 * 2;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&8_000u32.to_le_bytes());
+        bytes.extend_from_slice(&16_000u32.to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_len.to_le_bytes());
+        bytes.resize(bytes.len() + data_len as usize, 0);
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    /// Runs the worker on `commands`, returning what it sent.
+    fn run_commands(db: &Path, commands: Vec<DatabaseCommand>) -> Vec<IpcEvent> {
+        let (bus_tx, bus_rx) = mpsc::channel();
+        let (tx, worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx);
+        for command in commands {
+            tx.send(command).unwrap();
+        }
+        tx.send(DatabaseCommand::Shutdown).unwrap();
+        run(worker, db.to_path_buf());
+        bus_rx.try_iter().collect()
+    }
+
+    fn rescanned(events: &[IpcEvent]) -> Option<bool> {
+        events.iter().find_map(|e| match e {
+            IpcEvent::LibraryRescanned { changed } => Some(*changed),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn a_scan_says_whether_it_changed_the_library() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        let db = dir.path().join("library.db");
+        let scan = || DatabaseCommand::ScanLibrary {
+            roots: vec![music.clone()],
+        };
+
+        // Nothing there yet: nothing changed.
+        assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(false));
+
+        // A new file is a change; scanning again with nothing new is not.
+        wav(&music.join("song.wav"));
+        assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(true));
+        assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(false));
+
+        // Removing it is a change again.
+        std::fs::remove_file(music.join("song.wav")).unwrap();
+        assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(true));
+    }
+
+    #[test]
+    fn a_folder_that_fails_to_scan_still_ends_the_scan_but_prunes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        wav(&music.join("song.wav"));
+        let db = dir.path().join("library.db");
+        run_commands(
+            &db,
+            vec![DatabaseCommand::ScanLibrary {
+                roots: vec![music.clone()],
+            }],
+        );
+
+        // The folder goes missing — an unplugged drive.
+        let events = run_commands(
+            &db,
+            vec![DatabaseCommand::ScanLibrary {
+                roots: vec![dir.path().join("unplugged"), music.clone()],
+            }],
+        );
+        assert!(events.iter().any(|e| matches!(e, IpcEvent::Error { .. })));
+        assert_eq!(
+            rescanned(&events),
+            Some(false),
+            "pruned after a failed scan"
+        );
+    }
 
     #[test]
     fn a_database_that_cannot_be_opened_is_reported_not_panicked_over() {

@@ -19,6 +19,9 @@ pub enum LibraryMsg {
     SearchPrev,
     ClearSearch,
     RequestScanLibrary,
+    /// A scan nobody asked for — at start, or after the music folders
+    /// changed — that says nothing unless it finds something.
+    RequestBackgroundScan,
     RequestCreatePlaylist(String),
     RequestDeletePlaylist(String),
     RequestAddToPlaylist {

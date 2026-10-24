@@ -31,6 +31,9 @@ pub struct SessionState {
     pub spectrum_style: SpectrumStyle,
 
     pub seek_epoch: u64,
+    /// Whether the scan under way is a background one, which shows no
+    /// progress.
+    pub scan_quietly: bool,
 
     pub last_play_time: Option<std::time::Instant>,
 }
@@ -54,6 +57,7 @@ impl Default for SessionState {
             visualizer_mode: VisualizerMode::AlbumArt,
             spectrum_style: SpectrumStyle::default(),
             seek_epoch: 0,
+            scan_quietly: false,
             last_play_time: None,
         }
     }
