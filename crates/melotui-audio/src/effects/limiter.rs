@@ -115,7 +115,14 @@ impl LinkedLimiter {
 
 impl AudioUnit for LinkedLimiter {
     fn reset(&mut self) {
-        self.reconfigure();
+        // Cleared in place rather than through `reconfigure`: the graph is
+        // reset on the audio thread every time the effects come out of bypass,
+        // and with the sample rate unchanged there is nothing to reallocate.
+        self.delay_l.fill(0.0);
+        self.delay_r.fill(0.0);
+        self.write_idx = 0;
+        self.envelope = 0.0;
+        self.gain = 1.0;
     }
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -146,9 +153,13 @@ impl AudioUnit for LinkedLimiter {
     }
 
     fn route(&mut self, input: &SignalFrame, _frequency: f64) -> SignalFrame {
+        // The lookahead is latency, and has to be reported as such: the
+        // bypass in `FundspSource` lines the dry signal up with the processed
+        // one by asking the graph how late it runs.
+        let latency = self.lookahead as f64;
         let mut output = SignalFrame::new(2);
-        output.set(0, input.at(0).distort(0.0));
-        output.set(1, input.at(1).distort(0.0));
+        output.set(0, input.at(0).distort(latency));
+        output.set(1, input.at(1).distort(latency));
         output
     }
 
