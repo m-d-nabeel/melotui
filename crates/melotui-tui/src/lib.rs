@@ -2,6 +2,7 @@ mod image_cache;
 mod input;
 pub mod key_parser;
 pub mod keybinding;
+mod lyrics;
 pub mod theme;
 mod tui;
 mod view;

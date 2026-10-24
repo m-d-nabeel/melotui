@@ -40,7 +40,7 @@ impl Tui {
         Ok((
             Self {
                 terminal,
-                image_cache: ImageCache::new(),
+                image_cache: ImageCache::new(config.ui.lyrics_shaping),
                 key_registry,
             },
             errors,
@@ -52,6 +52,11 @@ impl Tui {
             self.image_cache.update(state);
             view::draw(frame, state, &mut self.image_cache, &self.key_registry);
         })?;
+        // Lyric images that left the screen in that frame are freed now, with
+        // the frame written and nothing else going to the terminal.
+        self.image_cache
+            .lyrics
+            .flush_retired(self.terminal.backend_mut())?;
         Ok(())
     }
 
