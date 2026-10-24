@@ -25,7 +25,7 @@ pub fn init() -> tracing_appender::non_blocking::WorkerGuard {
     guard
 }
 
-fn log_dir() -> PathBuf {
+pub fn log_dir() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap())
         .join("melotui")

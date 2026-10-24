@@ -183,35 +183,47 @@ impl AppConfig {
     /// Config path: `~/.config/melotui/config.toml`
     /// If the file doesn't exist or can't be parsed, returns defaults
     /// with a log warning.
+    /// The configuration from its usual place, or the defaults if there is no
+    /// file there. A file that does not parse also gives the defaults, with
+    /// the error kept in `startup_errors` to be shown once the app is up.
     pub fn load() -> Self {
         let path = Self::config_path();
-
         match std::fs::read_to_string(&path) {
-            Ok(contents) => match toml::from_str::<AppConfig>(&contents) {
-                Ok(mut config) => {
-                    tracing::info!("Loaded config from {:?}", path);
-                    // Attempt to load external theme
-                    config.load_external_theme();
-                    config.load_external_keymaps();
-                    config.validated()
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to parse config {:?}: {}", path, e);
-                    let mut config = Self::default();
-                    config.startup_errors.push(format!("Config Error: {}", e));
-                    config.load_external_theme();
-                    config.load_external_keymaps();
-                    config.validated()
-                }
-            },
+            Ok(contents) => Self::parse(&path, &contents),
             Err(_) => {
                 tracing::debug!("No config file at {:?}, using defaults", path);
-                let mut config = Self::default();
-                config.load_external_theme();
-                config.load_external_keymaps();
-                config.validated()
+                Self::default().finished()
             }
         }
+    }
+
+    /// The configuration from `path`, which unlike the usual place has to
+    /// exist: it was asked for by name.
+    pub fn load_from(path: &std::path::Path) -> std::io::Result<Self> {
+        let contents = std::fs::read_to_string(path)?;
+        Ok(Self::parse(path, &contents))
+    }
+
+    fn parse(path: &std::path::Path, contents: &str) -> Self {
+        match toml::from_str::<AppConfig>(contents) {
+            Ok(config) => {
+                tracing::info!("Loaded config from {:?}", path);
+                config.finished()
+            }
+            Err(e) => {
+                tracing::warn!("Failed to parse config {:?}: {}", path, e);
+                let mut config = Self::default();
+                config.startup_errors.push(format!("Config Error: {}", e));
+                config.finished()
+            }
+        }
+    }
+
+    /// With the external theme and keymaps read in, and every value in range.
+    fn finished(mut self) -> Self {
+        self.load_external_theme();
+        self.load_external_keymaps();
+        self.validated()
     }
 
     fn load_external_theme(&mut self) {
@@ -302,25 +314,42 @@ impl AppConfig {
         }
     }
 
-    /// Resolve database path from config, falling back to OS data dir.
-    pub fn resolve_db_path(&self) -> anyhow::Result<PathBuf> {
+    /// Where the library database is: the configured path, or the data
+    /// directory.
+    pub fn db_path(&self) -> PathBuf {
         match &self.library.db_path {
-            Some(p) => Ok(expand_tilde(p)),
-            None => {
-                let db_root = dirs::data_dir()
-                    .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?
-                    .join("melotui");
-                std::fs::create_dir_all(&db_root)?;
-                Ok(db_root.join("library.db"))
-            }
+            Some(p) => expand_tilde(p),
+            None => Self::data_dir().join("library.db"),
         }
     }
 
-    fn config_path() -> PathBuf {
+    /// [`Self::db_path`], with the directory it goes in created.
+    pub fn resolve_db_path(&self) -> anyhow::Result<PathBuf> {
+        let path = self.db_path();
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        Ok(path)
+    }
+
+    /// Where the configuration is read from unless another file is named.
+    pub fn config_path() -> PathBuf {
+        Self::config_dir().join("config.toml")
+    }
+
+    /// melotui's configuration directory: the config file, themes, keymaps
+    /// and presets.
+    pub fn config_dir() -> PathBuf {
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("melotui")
-            .join("config.toml")
+    }
+
+    /// melotui's data directory: the library, session, history and logs.
+    pub fn data_dir() -> PathBuf {
+        dirs::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("melotui")
     }
 }
 
