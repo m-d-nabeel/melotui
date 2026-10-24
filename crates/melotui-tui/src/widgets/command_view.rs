@@ -56,12 +56,16 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(t.border_inactive))
         .style(Style::default().bg(t.bg_input));
-    if let Some(about) = about(typed, &suggestions, chosen) {
-        block = block.title_bottom(Line::from(vec![
-            Span::raw(" "),
-            Span::styled(about.0, Style::default().fg(t.fg_secondary)),
-            Span::styled(format!("  {} ", about.1), Style::default().fg(t.fg_muted)),
-        ]));
+    // What the chosen or typed command still takes and what it does, as
+    // virtual text like the completions: the command itself is in the input
+    // already.
+    if let Some((usage, help)) = about(typed, &suggestions, chosen) {
+        let text = if usage.is_empty() {
+            format!(" {help} ")
+        } else {
+            format!(" {usage} · {help} ")
+        };
+        block = block.title_bottom(Span::styled(text, Style::default().fg(t.fg_muted)));
     }
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -193,25 +197,20 @@ fn strip_line<'a>(
 
 /// What to say about the command along the bottom: the completion chosen
 /// with Tab, or the command typed so far, or the only one it could become —
-/// as how it is typed, and what it does.
+/// as what it still takes, and what it does.
 fn about(
     typed: &str,
     suggestions: &[Suggestion],
     chosen: Option<usize>,
-) -> Option<(String, String)> {
-    let describe = |s: &Suggestion| {
-        let words: Vec<&str> = s.text.split_whitespace().collect();
-        let syntax = format!(":{} {}", words.join(" "), s.usage);
-        (syntax.trim_end().to_string(), s.help.to_string())
-    };
+) -> Option<(&'static str, &'static str)> {
     if let Some(chosen) = chosen.and_then(|i| suggestions.get(i)) {
-        return Some(describe(chosen));
+        return Some((chosen.usage, chosen.help));
     }
-    if let Some((syntax, help)) = autocomplete::describe(typed) {
-        return Some((syntax, help.to_string()));
+    if let Some(described) = autocomplete::describe(typed) {
+        return Some(described);
     }
     match suggestions {
-        [only] => Some(describe(only)),
+        [only] => Some((only.usage, only.help)),
         _ => None,
     }
 }
@@ -287,8 +286,7 @@ mod tests {
         let screen = screen(&state);
         assert!(screen[7].contains(": lyrics zoom"), "{:?}", screen[7]);
         assert!(
-            screen[9].contains(":lyrics zoom [panel|focus] <1-4>")
-                && screen[9].contains("Lyrics size"),
+            screen[9].contains(" [panel|focus] <1-4> · Lyrics size") && !screen[9].contains(':'),
             "{:?}",
             screen[9]
         );
@@ -316,7 +314,7 @@ mod tests {
     fn the_rest_of_the_first_completion_shows_in_the_input() {
         let screen = screen(&typing("pau"));
         assert!(screen[7].contains(": pause"), "{:?}", screen[7]);
-        assert!(screen[9].contains(":pause") && screen[9].contains("Pause"));
+        assert!(screen[9].contains(" Pause "), "{:?}", screen[9]);
     }
 
     #[test]
@@ -329,8 +327,11 @@ mod tests {
         );
         let screen = screen(&state);
         assert!(screen[8].contains(": vol"), "{:?}", screen[8]);
-        assert!(screen[9].contains(":vol <0-150|+n|-n>"), "{:?}", screen[9]);
-        assert!(screen[9].contains("Volume in percent"));
+        assert!(
+            screen[9].contains(" <0-150|+n|-n> · Volume in percent "),
+            "{:?}",
+            screen[9]
+        );
     }
 
     #[test]
@@ -374,5 +375,19 @@ mod tests {
         }
         assert_eq!(colour(&state, "zoom"), accent);
         assert_eq!(colour(&state, "show"), muted);
+    }
+
+    #[test]
+    fn the_description_is_dim_like_the_completions() {
+        let state = typing("vol ");
+        let t = crate::theme::get_theme(&state);
+        let mut terminal = Terminal::new(TestBackend::new(80, 3)).unwrap();
+        let frame = terminal.draw(|f| draw(f, f.area(), &state)).unwrap();
+        let buffer = frame.buffer.clone();
+        let row: String = (0..80).map(|x| buffer[(x, 2)].symbol()).collect();
+        let x = row.find("Volume").unwrap();
+        let column = row[..x].chars().count() as u16;
+        assert_eq!(buffer[(column, 2)].fg, t.fg_muted);
+        assert_eq!(buffer[(column - 4, 2)].fg, t.fg_muted, "the usage too");
     }
 }

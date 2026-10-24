@@ -135,18 +135,14 @@ pub fn complete(input: &str, names: &Names) -> Vec<Suggestion> {
     }
 }
 
-/// The command being typed, as help shows it — `:vol <0-150|+n|-n>` — and
-/// what it does, once its name is typed in full.
-pub fn describe(input: &str) -> Option<(String, &'static str)> {
+/// What the command being typed still takes, as help shows it —
+/// `<0-150|+n|-n>` — and what it does, once its name is typed in full.
+pub fn describe(input: &str) -> Option<(&'static str, &'static str)> {
     let (done, _) = split(input);
-    let Place::Arguments(spec, _, typed) = walk(&done)? else {
-        return None;
-    };
-    let path = done[..done.len() - typed.len()].join(" ");
-    Some((
-        format!(":{path} {}", spec.usage).trim_end().to_string(),
-        spec.help,
-    ))
+    match walk(&done)? {
+        Place::Arguments(spec, _, _) => Some((spec.usage, spec.help)),
+        Place::Choosing(_) => None,
+    }
 }
 
 #[cfg(test)]
@@ -234,11 +230,11 @@ mod tests {
         assert!(labels("vol ").is_empty());
         assert_eq!(
             describe("vol 8"),
-            Some((":vol <0-150|+n|-n>".to_string(), "Volume in percent"))
+            Some(("<0-150|+n|-n>", "Volume in percent"))
         );
         assert_eq!(
             describe("fx eq 3 "),
-            Some((":fx eq <1-10> <-12-12>".to_string(), "EQ band gain in dB"))
+            Some(("<1-10> <-12-12>", "EQ band gain in dB"))
         );
         assert_eq!(describe("fx"), None);
     }
