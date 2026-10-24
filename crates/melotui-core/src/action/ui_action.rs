@@ -331,9 +331,10 @@ pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.command_buffer.reset();
     state.session.ui.autocomplete_cycle = 0;
     state.session.ui.autocomplete_prefix = None;
-    // Read once here rather than on every keystroke, for completing them.
+    // Read once here rather than on every keystroke, for completing them;
+    // the output devices come from the audio thread.
     state.session.ui.command_presets = crate::state::DspPreset::list().unwrap_or_default();
-    vec![]
+    vec![AppMsg::Audio(AudioMsg::RequestOutputDevices)]
 }
 
 pub fn handle_exit_command_mode(state: &mut AppState) -> Vec<AppMsg> {
@@ -691,6 +692,33 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         }
         Command::Macro(Macro::Spatial) => crate::action::audio_action::handle_macro_spatial(state),
         Command::ToggleStudio => handle_toggle_dsp_studio(state),
+        Command::SetOutputDevice(device) => {
+            tell(
+                state,
+                match &device {
+                    Some(name) => format!("Switching output to {name}"),
+                    None => "Following the system's default output".to_string(),
+                },
+            );
+            vec![AppMsg::Audio(AudioMsg::SetOutputDevice(device))]
+        }
+        Command::ShowOutputDevices => {
+            let output = &state.session.output;
+            let current = output.current.as_deref().unwrap_or("none");
+            let others = output
+                .devices
+                .iter()
+                .filter(|d| d.as_str() != current)
+                .count();
+            let message = match others {
+                0 => format!("Output: {current}"),
+                1 => format!("Output: {current} (1 other device)"),
+                n => format!("Output: {current} ({n} other devices)"),
+            };
+            state.session.notification.current =
+                Some(Notification::new(NotificationKind::Info, message).with_duration(6));
+            vec![]
+        }
         Command::TogglePanel(panel) => match panel {
             Panel::Playback => handle_toggle_playback_panel(state),
             Panel::Lyrics => handle_toggle_lyrics(state),
@@ -1360,7 +1388,11 @@ mod tests {
 
         let effects = handle_enter_command_mode(&mut state);
         assert_eq!(state.session.ui.mode, UIMode::Command);
-        assert!(effects.is_empty());
+        // The output devices are asked for, to complete `:device` with.
+        assert!(matches!(
+            effects.as_slice(),
+            [AppMsg::Audio(AudioMsg::RequestOutputDevices)]
+        ));
 
         let effects = handle_exit_command_mode(&mut state);
         assert_eq!(state.session.ui.mode, UIMode::Normal);
@@ -1489,6 +1521,45 @@ mod tests {
         run(&mut state, "fx bass loud");
         let message = &state.session.notification.current.as_ref().unwrap().message;
         assert_eq!(message, "Fx bass needs a number: <0.1-5>");
+    }
+
+    #[test]
+    fn output_devices_are_listed_chosen_and_reported_when_they_change() {
+        let mut state = test_state();
+        // The device opened at start is not news.
+        crate::reducer::reduce(
+            &mut state,
+            AppMsg::Audio(AudioMsg::OutputOpened("Built-in Speakers".into())),
+        );
+        assert!(state.session.notification.current.is_none());
+        crate::reducer::reduce(
+            &mut state,
+            AppMsg::Audio(AudioMsg::OutputDevicesListed(vec![
+                "Built-in Speakers".into(),
+                "USB Audio DAC".into(),
+            ])),
+        );
+        run(&mut state, "device");
+        let message = state.session.notification.current.clone().unwrap().message;
+        assert_eq!(message, "Output: Built-in Speakers (1 other device)");
+
+        let msgs = run(&mut state, "device usb");
+        assert!(msgs.iter().any(|m| matches!(
+            m,
+            AppMsg::Audio(AudioMsg::SetOutputDevice(Some(d))) if d == "usb"
+        )));
+        assert_eq!(state.session.output.wanted.as_deref(), Some("usb"));
+
+        // A replacement — the DAC opened, or the default after it went — is.
+        crate::reducer::reduce(
+            &mut state,
+            AppMsg::Audio(AudioMsg::OutputOpened("USB Audio DAC".into())),
+        );
+        let message = state.session.notification.current.clone().unwrap().message;
+        assert_eq!(message, "Audio output: USB Audio DAC");
+
+        run(&mut state, "device default");
+        assert_eq!(state.session.output.wanted, None);
     }
 
     #[test]

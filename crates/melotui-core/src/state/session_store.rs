@@ -43,6 +43,9 @@ pub struct PersistedSession {
     pub visualizer_mode: VisualizerMode,
     pub spectrum_style: SpectrumStyle,
     pub dsp: PersistedDspParams,
+    /// The output device chosen with `:device`; `None` leaves the config's.
+    #[serde(default)]
+    pub output_device: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -262,6 +265,7 @@ impl PersistedSession {
             visualizer_mode: state.session.visualizer_mode.clone(),
             spectrum_style: state.session.spectrum_style.clone(),
             dsp: PersistedDspParams::from_audio_state(&state.session.audio),
+            output_device: state.session.output.wanted.clone(),
         }
     }
 
@@ -424,6 +428,9 @@ impl PersistedSession {
         state.session.visualizer_mode = self.visualizer_mode.clone();
         state.session.spectrum_style = self.spectrum_style.clone();
         self.dsp.apply_to_audio_state(&mut state.session.audio);
+        if self.output_device.is_some() {
+            state.session.output.wanted = self.output_device.clone();
+        }
         state.session.audio.sanitize();
 
         valid_queue.len()
@@ -502,6 +509,7 @@ mod tests {
             visualizer_mode: crate::state::VisualizerMode::Spectrum,
             spectrum_style: crate::state::SpectrumStyle::Bar,
             dsp: PersistedDspParams::default(),
+            output_device: Some("USB Audio DAC".to_string()),
         };
 
         let toml_str = toml::to_string_pretty(&session).expect("Failed to serialize");
@@ -511,6 +519,7 @@ mod tests {
         assert_eq!(deserialized.selected_node, Some(selected));
         assert_eq!(deserialized.active_node, Some(active));
         assert_eq!(deserialized.left_panel, LeftPanelMode::Queue);
+        assert_eq!(deserialized.output_device.as_deref(), Some("USB Audio DAC"));
         assert!(deserialized.show_track_info);
         assert_eq!(
             deserialized.repeat_mode,

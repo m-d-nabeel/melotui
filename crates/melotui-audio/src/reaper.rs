@@ -119,12 +119,12 @@ impl Source for ReapOnDrop {
     }
 
     #[inline]
-    fn channels(&self) -> u16 {
+    fn channels(&self) -> rodio::ChannelCount {
         self.inner().channels()
     }
 
     #[inline]
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> rodio::SampleRate {
         self.inner().sample_rate()
     }
 

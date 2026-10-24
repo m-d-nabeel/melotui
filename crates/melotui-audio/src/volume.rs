@@ -28,13 +28,13 @@ pub struct VolumeRamp<S> {
 
 impl<S: Source<Item = f32>> VolumeRamp<S> {
     pub fn new(source: S, volume: Shared) -> Self {
-        let sample_rate = source.sample_rate();
+        let sample_rate = source.sample_rate().get();
         Self {
             // A new track starts at the current volume, not faded up from
             // silence.
             gain: Glide::new(volume.value()),
             coeff: glide_coeff(sample_rate as f32),
-            channels: source.channels().max(1),
+            channels: source.channels().get(),
             sample_rate,
             source,
             volume,
@@ -49,7 +49,7 @@ impl<S: Source<Item = f32>> Iterator for VolumeRamp<S> {
     fn next(&mut self) -> Option<f32> {
         let sample = self.source.next()?;
         if self.position == 0 {
-            let sample_rate = self.source.sample_rate();
+            let sample_rate = self.source.sample_rate().get();
             if sample_rate != self.sample_rate {
                 self.sample_rate = sample_rate;
                 self.coeff = glide_coeff(sample_rate as f32);
@@ -70,11 +70,11 @@ impl<S: Source<Item = f32>> Source for VolumeRamp<S> {
         self.source.current_span_len()
     }
 
-    fn channels(&self) -> u16 {
-        self.channels
+    fn channels(&self) -> rodio::ChannelCount {
+        self.source.channels()
     }
 
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> rodio::SampleRate {
         self.source.sample_rate()
     }
 
@@ -108,11 +108,11 @@ mod tests {
         fn current_span_len(&self) -> Option<usize> {
             None
         }
-        fn channels(&self) -> u16 {
-            2
+        fn channels(&self) -> rodio::ChannelCount {
+            rodio::nz!(2)
         }
-        fn sample_rate(&self) -> u32 {
-            48_000
+        fn sample_rate(&self) -> rodio::SampleRate {
+            rodio::nz!(48_000)
         }
         fn total_duration(&self) -> Option<Duration> {
             None

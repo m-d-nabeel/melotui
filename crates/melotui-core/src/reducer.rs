@@ -139,6 +139,27 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
             audio_action::handle_dispatch_set_ping_pong(state, val)
         }
         AudioMsg::DispatchSetPhaser(val) => audio_action::handle_dispatch_set_phaser(state, val),
+        AudioMsg::SetOutputDevice(device) => {
+            state.session.output.wanted = device;
+            vec![]
+        }
+        AudioMsg::RequestOutputDevices => vec![],
+        AudioMsg::OutputDevicesListed(names) => {
+            state.session.output.devices = names;
+            vec![]
+        }
+        AudioMsg::OutputOpened(name) => {
+            // Said only when it changes: the device opened at start is not
+            // news, a replacement for one that went is.
+            let previous = state.session.output.current.replace(name.clone());
+            if previous.is_some_and(|previous| previous != name) {
+                state.set_notification(
+                    crate::state::NotificationKind::Info,
+                    format!("Audio output: {name}"),
+                );
+            }
+            vec![]
+        }
     }
 }
 

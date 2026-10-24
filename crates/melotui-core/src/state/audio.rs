@@ -249,3 +249,16 @@ impl Effect {
         msg(value)
     }
 }
+
+/// The audio output device.
+#[derive(Debug, Clone, Default)]
+pub struct OutputState {
+    /// The device asked for, by `:device` or the config; `None` follows the
+    /// system default.
+    pub wanted: Option<String>,
+    /// The device playing through now.
+    pub current: Option<String>,
+    /// The devices there are, for completing `:device`; asked for each time
+    /// the command bar opens.
+    pub devices: Vec<String>,
+}

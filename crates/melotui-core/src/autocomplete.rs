@@ -7,6 +7,8 @@ use crate::command::{COMMANDS, Spec, Then, Values, find};
 pub struct Names {
     pub playlists: Vec<String>,
     pub presets: Vec<String>,
+    /// Audio output devices, `default` among them.
+    pub devices: Vec<String>,
 }
 
 /// One way to complete what has been typed.
@@ -90,7 +92,7 @@ pub fn complete(input: &str, names: &Names) -> Vec<Suggestion> {
         Some(Place::Arguments(spec, args, typed)) => {
             // A name is the only argument and may run to several words.
             let index = match args.first() {
-                Some(Values::Playlist | Values::Preset) => 0,
+                Some(Values::Playlist | Values::Preset | Values::Device) => 0,
                 _ => typed.len(),
             };
             let Some(values) = args.get(index) else {
@@ -109,16 +111,16 @@ pub fn complete(input: &str, names: &Names) -> Vec<Suggestion> {
                         help: spec.help,
                     })
                     .collect(),
-                Values::Playlist | Values::Preset => {
+                Values::Playlist | Values::Preset | Values::Device => {
                     // Names can have spaces in them, so everything after the
                     // command is the name being typed.
                     let words = done.len() - typed.len();
                     let command: String = done[..words].iter().map(|w| format!("{w} ")).collect();
                     let typed = after_words(input, words);
-                    let (pool, help) = if *values == Values::Playlist {
-                        (&names.playlists, "playlist")
-                    } else {
-                        (&names.presets, "preset")
+                    let (pool, help) = match values {
+                        Values::Playlist => (&names.playlists, "playlist"),
+                        Values::Preset => (&names.presets, "preset"),
+                        _ => (&names.devices, "output device"),
                     };
                     pool.iter()
                         .filter(|name| starts_with(name, typed))
@@ -167,6 +169,11 @@ mod tests {
         Names {
             playlists: vec!["Road Trip".into(), "Rainy days".into(), "Gym".into()],
             presets: vec!["Night drive".into()],
+            devices: vec![
+                "default".into(),
+                "Built-in Speakers".into(),
+                "USB Audio DAC".into(),
+            ],
         }
     }
 
@@ -221,6 +228,11 @@ mod tests {
         assert_eq!(texts("pl add r"), ["pl add Road Trip", "pl add Rainy days"]);
         assert_eq!(texts("pl rm Road T"), ["pl rm Road Trip"]);
         assert_eq!(texts("preset load ni"), ["preset load Night drive"]);
+        assert_eq!(texts("device us"), ["device USB Audio DAC"]);
+        assert_eq!(
+            labels("device "),
+            ["default", "Built-in Speakers", "USB Audio DAC"]
+        );
         // Creating one has nothing to offer.
         assert!(labels("pl create ").is_empty());
     }

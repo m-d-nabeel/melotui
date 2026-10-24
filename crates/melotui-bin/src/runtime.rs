@@ -48,6 +48,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         max_cover_resolution: config.library.max_cover_resolution,
         sample_rate: config.audio.sample_rate,
         buffer_size: config.audio.buffer_size,
+        output_device: config.audio.output_device.clone(),
     });
 
     // request async library load
@@ -304,6 +305,14 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                     ctx.session_restored = true;
                     if let Ok(session) = melotui_core::PersistedSession::load() {
                         let count = session.apply_to_app_state(state);
+                        // A device chosen with :device last time is chosen again.
+                        if let Some(device) = session.output_device.clone() {
+                            ctx.effect_queue.push_back(AppMsg::Audio(
+                                melotui_core::message::audio::AudioMsg::SetOutputDevice(Some(
+                                    device,
+                                )),
+                            ));
+                        }
                         if let Some(active_id) = state.get_playing_track_id()
                             && let Some(track) = state.library.tracks.get(&active_id)
                         {

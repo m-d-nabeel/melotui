@@ -124,6 +124,10 @@ pub struct AudioConfig {
     /// ~171 ms buffer. Larger is more robust under load and adds latency;
     /// since melotui is not a live-monitoring tool, robustness wins.
     pub buffer_size: Option<u32>,
+    /// The output device to play through, by name or part of it (see
+    /// `:device` for the names). Unset follows the system default, and a
+    /// device that goes away is replaced by the default until it is back.
+    pub output_device: Option<String>,
 }
 
 impl Default for UiConfig {
@@ -173,6 +177,7 @@ impl Default for AudioConfig {
             default_highpass: 20.0,
             sample_rate: Some(48_000),
             buffer_size: Some(8192),
+            output_device: None,
         }
     }
 }

@@ -9,7 +9,7 @@ edition.workspace = true
 [dependencies]
 melotui-core.workspace = true
 melotui-bus.workspace = true
-rodio = { version = "0.21", default-features = false, features = [
+rodio = { version = "0.23", default-features = false, features = [
   "symphonia-all",
   "playback",
 ] }
@@ -25,5 +25,8 @@ fundsp = "0.20"
 # caused dropouts whenever another app competed for CPU. With it, the thread is
 # promoted to SCHED_RR via RTKit (no limits.conf change needed).
 [target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
-cpal = { version = "0.16", features = ["audio_thread_priority"] }
+cpal = { version = "0.18", features = ["realtime"] }
 
+
+[dev-dependencies]
+tempfile = "3.12"

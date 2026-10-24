@@ -84,11 +84,11 @@ where
     const OUTPUT_CHANNELS: usize = 2;
 
     pub fn new(source: S, unit: Box<dyn AudioUnit>, bypass: Arc<AtomicBool>) -> Self {
-        let input_channels = source.channels() as usize;
+        let input_channels = usize::from(source.channels().get());
         let mut unit = unit;
         let block_size = 64;
 
-        let sample_rate = source.sample_rate();
+        let sample_rate = source.sample_rate().get();
         unit.reset();
         unit.set_sample_rate(sample_rate as f64);
         let latency = Self::latency_of(&mut unit);
@@ -180,7 +180,7 @@ where
 
         // A stream can change rate between spans; the graph has to follow,
         // or every filter and delay in it is tuned for the wrong one.
-        let sample_rate = self.source.sample_rate();
+        let sample_rate = self.source.sample_rate().get();
         if sample_rate != self.sample_rate {
             self.configure(sample_rate);
         }
@@ -219,7 +219,7 @@ where
         self.unit.process(frames_read, &input_ref, &mut output_mut);
 
         let output_ref = self.output_buffer.buffer_ref();
-        let step = 1.0 / (BYPASS_FADE_SECONDS * self.source.sample_rate() as f32).max(1.0);
+        let step = 1.0 / (BYPASS_FADE_SECONDS * self.source.sample_rate().get() as f32).max(1.0);
 
         for i in 0..frames_read {
             let dry = self
@@ -292,12 +292,12 @@ where
         })
     }
 
-    fn channels(&self) -> u16 {
+    fn channels(&self) -> rodio::ChannelCount {
         // The DSP graph always outputs stereo even for mono sources.
-        Self::OUTPUT_CHANNELS as u16
+        rodio::nz!(2)
     }
 
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> rodio::SampleRate {
         self.source.sample_rate()
     }
 
@@ -316,7 +316,7 @@ where
         // stays in step with a graph that has just been emptied. With the rate
         // unchanged there is nothing to reallocate, and a seek runs on the
         // audio thread, so it does not.
-        let sample_rate = self.source.sample_rate();
+        let sample_rate = self.source.sample_rate().get();
         if sample_rate == self.sample_rate {
             self.unit.reset();
             self.dry.clear();
@@ -362,11 +362,11 @@ mod tests {
         fn current_span_len(&self) -> Option<usize> {
             Some(self.span_samples)
         }
-        fn channels(&self) -> u16 {
-            self.channels
+        fn channels(&self) -> rodio::ChannelCount {
+            rodio::ChannelCount::new(self.channels).unwrap()
         }
-        fn sample_rate(&self) -> u32 {
-            48_000
+        fn sample_rate(&self) -> rodio::SampleRate {
+            rodio::nz!(48_000)
         }
         fn total_duration(&self) -> Option<Duration> {
             None
@@ -386,7 +386,7 @@ mod tests {
             remaining: 4096,
         };
         let fs = FundspSource::new(src, unit(), Arc::new(AtomicBool::new(true)));
-        assert_eq!(fs.channels(), 2);
+        assert_eq!(fs.channels().get(), 2);
         assert_eq!(fs.current_span_len(), Some(2304));
     }
 
@@ -439,11 +439,11 @@ mod tests {
         fn current_span_len(&self) -> Option<usize> {
             None
         }
-        fn channels(&self) -> u16 {
-            2
+        fn channels(&self) -> rodio::ChannelCount {
+            rodio::nz!(2)
         }
-        fn sample_rate(&self) -> u32 {
-            48_000
+        fn sample_rate(&self) -> rodio::SampleRate {
+            rodio::nz!(48_000)
         }
         fn total_duration(&self) -> Option<Duration> {
             None
@@ -667,14 +667,14 @@ mod tests {
         fn current_span_len(&self) -> Option<usize> {
             None
         }
-        fn channels(&self) -> u16 {
-            2
+        fn channels(&self) -> rodio::ChannelCount {
+            rodio::nz!(2)
         }
-        fn sample_rate(&self) -> u32 {
+        fn sample_rate(&self) -> rodio::SampleRate {
             if self.frame < self.rate_change_at {
-                48_000
+                rodio::nz!(48_000)
             } else {
-                44_100
+                rodio::nz!(44_100)
             }
         }
         fn total_duration(&self) -> Option<Duration> {

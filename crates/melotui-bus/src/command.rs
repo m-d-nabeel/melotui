@@ -39,6 +39,11 @@ pub enum AudioCommand {
     SetExciter(f32),
     SetPingPong(f32),
     SetPhaser(f32),
+    /// Plays through the device with this name, or part of it; `None`
+    /// follows the system default.
+    SetOutputDevice(Option<String>),
+    /// Asks for `IpcEvent::OutputDevices`.
+    ListOutputDevices,
     Shutdown,
 }
 
