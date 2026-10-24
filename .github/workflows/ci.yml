@@ -25,7 +25,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -34,8 +34,10 @@ jobs:
           # have something to shape with (macOS and Windows ship one).
           sudo apt-get install -y --no-install-recommends libasound2-dev libdbus-1-dev pkg-config fonts-lohit-deva
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, for stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Test (workspace)
         run: cargo test --workspace --locked
 
@@ -43,34 +45,49 @@ jobs:
     name: Lint (fmt + clippy)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libasound2-dev libdbus-1-dev pkg-config
       - name: Install Rust (fmt + clippy)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, for stable
         with:
+          toolchain: stable
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Check formatting
         run: cargo fmt --all --check
       - name: Clippy (default features)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+  deny:
+    name: Dependencies (cargo deny)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # Known vulnerabilities, licenses outside deny.toml's allow-list, and
+      # crates from anywhere but crates.io all fail the build.
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          arguments: --workspace
+          command: check
+
   build:
     name: Build (release)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libasound2-dev libdbus-1-dev pkg-config
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master, for stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - name: Build release
         run: cargo build --workspace --release --locked

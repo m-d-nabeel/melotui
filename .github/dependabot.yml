@@ -1,0 +1,26 @@
+# Keeps the dependencies current: a weekly pull request each for the Rust
+# crates and the GitHub Actions, with minor and patch updates grouped so they
+# land together. Security fixes come as soon as they are published,
+# regardless of this schedule.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(ci)"

@@ -1,16 +1,16 @@
 [package]
 name = "melotui-engine"
-version = "0.5.0"
-authors = ["m-d-nabeel"]
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/m-d-nabeel/melotui"
-edition = "2024"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
 
 [dependencies]
-melotui-core = { path = "../melotui-core" }
-melotui-bus = { path = "../melotui-bus" }
-melotui-audio = { path = "../melotui-audio" }
-melotui-db = { path = "../melotui-db" }
-melotui-download = { path = "../melotui-download" }
-melotui-cover = { path = "../melotui-cover" }
+melotui-core.workspace = true
+melotui-bus.workspace = true
+melotui-audio.workspace = true
+melotui-db.workspace = true
+melotui-download.workspace = true
+melotui-cover.workspace = true
 tracing = "0.1"
