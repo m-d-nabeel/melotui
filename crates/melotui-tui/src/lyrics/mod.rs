@@ -460,6 +460,7 @@ fn rgb(color: Color) -> [u8; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::buffer::CellDiffOption;
     use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
     fn picker(protocol: ProtocolType) -> Picker {
@@ -567,7 +568,10 @@ mod tests {
         assert!(first.contains("f=100"), "not sent as PNG");
         for y in 0..6 {
             assert!(buffer[(0, y)].symbol().contains('\u{10EEEE}'), "row {y}");
-            assert!(buffer[(1, y)].skip, "row {y}");
+            assert!(
+                (buffer[(1, y)].diff_option == CellDiffOption::Skip),
+                "row {y}"
+            );
         }
         let id = r.panel.as_ref().unwrap().kitty_id;
 

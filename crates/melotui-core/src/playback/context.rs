@@ -27,7 +27,7 @@
 //! (or that does not care) passes one group id for every track, which makes
 //! this degenerate exactly to a plain Fisher-Yates shuffle.
 
-use rand::Rng;
+use rand::RngExt;
 use rand::seq::SliceRandom;
 use std::collections::HashMap;
 

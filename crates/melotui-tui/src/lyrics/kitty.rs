@@ -13,7 +13,11 @@ use std::io::Cursor;
 use base64::Engine;
 use image::RgbaImage;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
-use ratatui::{buffer::Buffer, layout::Rect, widgets::Widget};
+use ratatui::{
+    buffer::{Buffer, CellDiffOption},
+    layout::Rect,
+    widgets::Widget,
+};
 
 /// An image kitty holds under `id`, shown `cols` × `rows` cells large wherever
 /// it is drawn.
@@ -112,7 +116,7 @@ impl Widget for &KittyImage {
             }
             for x in 1..width {
                 if let Some(cell) = buf.cell_mut((area.left() + x, area.top() + y)) {
-                    cell.set_skip(true);
+                    cell.set_diff_option(CellDiffOption::Skip);
                 }
             }
         }
@@ -447,7 +451,11 @@ mod tests {
         );
         assert!(first.contains("\x1b[38;2;10;11;12m\u{10EEEE}\u{305}\u{305}"));
         assert_eq!(first.matches('\u{10EEEE}').count(), 4);
-        assert!(buf[(2, 0)].skip && buf[(4, 1)].skip && !buf[(5, 0)].skip);
+        assert!(
+            (buf[(2, 0)].diff_option == CellDiffOption::Skip)
+                && (buf[(4, 1)].diff_option == CellDiffOption::Skip)
+                && !(buf[(5, 0)].diff_option == CellDiffOption::Skip)
+        );
         assert!(
             buf[(1, 1)].symbol().contains("\u{10EEEE}\u{30D}\u{305}"),
             "second row"
