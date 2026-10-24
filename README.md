@@ -8,7 +8,7 @@
 
 ## Core Features
 
-- **Local Library & Playlists**: Automatic scanning and organization of your music files.
+- **Local Library & Playlists**: Your music folders are scanned at start and watched while running, so new music appears by itself.
 - **Audio Playback**: Support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
 - **Spectrum Visualizer**: Real-time audio spectrum visualization (supports CAVA).
 - **Synced Lyrics**: Time-synced lyrics from `.lrc` files or LRCLIB. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).

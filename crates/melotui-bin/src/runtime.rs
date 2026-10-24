@@ -5,6 +5,7 @@ use melotui_core::{
     library::Library,
     message::{
         cover::{CoverContext, CoverMsg},
+        library::LibraryMsg,
         ui::UIMsg,
     },
     reducer,
@@ -87,7 +88,29 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         session_restored: false,
         library_loaded: false,
         last_saved: Instant::now(),
+        startup_scan_requested: false,
     };
+
+    // Changes in the music folders while running are scanned for a few
+    // seconds after they settle.
+    let (folder_tx, folder_rx) = std::sync::mpsc::channel();
+    let _watcher = if config.library.watch && !runtime.music_roots.is_empty() {
+        match watch_folders(&runtime.music_roots, folder_tx) {
+            Ok(watcher) => Some(watcher),
+            Err(e) => {
+                tracing::warn!("Cannot watch the music folders: {e}");
+                state.set_notification_with_duration(
+                    NotificationKind::Warning,
+                    format!("Not watching the music folders ({e}); use :rescan after adding music"),
+                    8,
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let mut folders_changed_at: Option<Instant> = None;
 
     // Closing the terminal (SIGHUP), `kill` (SIGTERM) or Ctrl+C outside raw
     // mode (SIGINT), and closing the console on Windows, quit the way `:q`
@@ -201,6 +224,20 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
             should_render = true;
         }
 
+        while folder_rx.try_recv().is_ok() {
+            folders_changed_at = Some(Instant::now());
+        }
+        if let Some(at) = folders_changed_at
+            && at.elapsed() >= FOLDERS_SETTLE
+            && runtime.library_loaded
+        {
+            folders_changed_at = None;
+            tracing::info!("Music folders changed, scanning");
+            runtime
+                .effect_queue
+                .push_back(AppMsg::Library(LibraryMsg::RequestBackgroundScan));
+        }
+
         if runtime.library_loaded && runtime.last_saved.elapsed() >= AUTOSAVE_EVERY {
             save_session(&state);
             runtime.last_saved = Instant::now();
@@ -262,6 +299,37 @@ struct RuntimeContext {
     /// saved session in it, and saving would overwrite that with nothing.
     library_loaded: bool,
     last_saved: Instant,
+    /// Whether the scan at start has been asked for.
+    startup_scan_requested: bool,
+}
+
+/// How long the music folders have to be still after a change before they
+/// are scanned: a copy in progress keeps changing them.
+const FOLDERS_SETTLE: Duration = Duration::from_secs(3);
+
+/// Watches `roots` for files added, removed, renamed or rewritten, sending on
+/// `changed` for each.
+fn watch_folders(
+    roots: &[PathBuf],
+    changed: std::sync::mpsc::Sender<()>,
+) -> notify::Result<notify::RecommendedWatcher> {
+    use notify::{EventKind, RecursiveMode, Watcher, event::ModifyKind};
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        if let Ok(event) = event
+            && matches!(
+                event.kind,
+                EventKind::Create(_)
+                    | EventKind::Remove(_)
+                    | EventKind::Modify(ModifyKind::Name(_) | ModifyKind::Data(_))
+            )
+        {
+            let _ = changed.send(());
+        }
+    })?;
+    for root in roots.iter().filter(|root| root.exists()) {
+        watcher.watch(root, RecursiveMode::Recursive)?;
+    }
+    Ok(watcher)
 }
 
 /// The library database, and the music directories — which may be none, in
@@ -338,8 +406,26 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                     } else {
                         state.set_notification(NotificationKind::Info, "Library loaded");
                     }
+                } else if state.take_quiet_scan() {
+                    // A background scan found something.
+                    state.set_notification(NotificationKind::Info, "Library updated");
                 } else {
                     state.set_notification(NotificationKind::Info, "Library loaded");
+                }
+
+                // Music added while melotui was closed is picked up at start;
+                // an empty library is a first run, so that scan shows.
+                if !ctx.startup_scan_requested
+                    && !ctx.music_roots.is_empty()
+                    && state.config.library.scan_on_startup
+                {
+                    ctx.startup_scan_requested = true;
+                    let scan = if state.library.tracks.is_empty() {
+                        LibraryMsg::RequestScanLibrary
+                    } else {
+                        LibraryMsg::RequestBackgroundScan
+                    };
+                    ctx.effect_queue.push_back(AppMsg::Library(scan));
                 }
 
                 state.ensure_library_selection();
@@ -357,10 +443,24 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                         }));
                 }
             }
-            IpcEvent::LibraryRescanned => {
-                // reload after scan
-                ctx.engine.load_library(ctx.music_roots.clone());
-                state.set_notification(NotificationKind::Info, "Scan complete, reloading...");
+            IpcEvent::LibraryRescanned { changed } => {
+                let quiet = state.is_scanning_quietly();
+                if changed {
+                    // Reloaded only when the scan found something, so a
+                    // background scan of an unchanged library disturbs nothing.
+                    ctx.engine.load_library(ctx.music_roots.clone());
+                    if !quiet {
+                        state.set_notification(
+                            NotificationKind::Info,
+                            "Scan complete, reloading...",
+                        );
+                    }
+                } else {
+                    state.take_quiet_scan();
+                    if !quiet {
+                        state.set_notification(NotificationKind::Info, "Library is up to date");
+                    }
+                }
             }
             _ => ctx.effect_queue.push_back(bridge::ipc_to_appmsg(evt)),
         }

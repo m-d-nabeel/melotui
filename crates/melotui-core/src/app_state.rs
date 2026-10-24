@@ -569,6 +569,16 @@ impl AppState {
         }
     }
 
+    /// Whether the scan under way is a background one.
+    pub fn is_scanning_quietly(&self) -> bool {
+        self.session.scan_quietly
+    }
+
+    /// Ends a background scan, returning whether one was under way.
+    pub fn take_quiet_scan(&mut self) -> bool {
+        std::mem::take(&mut self.session.scan_quietly)
+    }
+
     /// Lyrics zoom in the lyrics panel.
     pub fn lyrics_zoom(&self) -> f32 {
         self.session.ui.lyrics_zoom

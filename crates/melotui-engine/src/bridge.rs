@@ -136,7 +136,7 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
         },
 
         // --- Database Controls ---
-        AppMsg::Library(LibraryMsg::RequestScanLibrary) => {
+        AppMsg::Library(LibraryMsg::RequestScanLibrary | LibraryMsg::RequestBackgroundScan) => {
             Some(IpcCommand::Database(DatabaseCommand::ScanLibrary {
                 roots: library_roots.to_vec(),
             }))

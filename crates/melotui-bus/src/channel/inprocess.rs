@@ -71,12 +71,12 @@ mod tests {
         }
 
         // Worker sends an event back
-        worker.send(IpcEvent::LibraryRescanned);
+        worker.send(IpcEvent::LibraryRescanned { changed: true });
 
         // Hub should receive the event
         let evt = bus_rx.try_recv().expect("Hub should receive event");
         match evt {
-            IpcEvent::LibraryRescanned => {}
+            IpcEvent::LibraryRescanned { .. } => {}
             _ => panic!("Expected LibraryRescanned"),
         }
     }

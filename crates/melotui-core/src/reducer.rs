@@ -218,6 +218,10 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
         LibraryMsg::RemoveFromQueue => library_action::handle_remove_from_queue(state),
         LibraryMsg::ClearQueue => library_action::handle_clear_queue(state),
         LibraryMsg::RequestScanLibrary => library_action::handle_request_scan_library(state),
+        LibraryMsg::RequestBackgroundScan => {
+            state.session.scan_quietly = true;
+            vec![]
+        }
         LibraryMsg::RequestToggleFavorite(id) => {
             library_action::handle_request_toggle_favorite(state, id)
         }

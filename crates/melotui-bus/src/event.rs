@@ -52,7 +52,10 @@ pub enum IpcEvent {
     LibraryLoaded {
         snapshot: Box<Library>,
     },
-    LibraryRescanned,
+    /// A scan finished; `changed` if it added, updated or removed tracks.
+    LibraryRescanned {
+        changed: bool,
+    },
     FavoriteToggled {
         track_id: TrackId,
         is_favorite: bool,
