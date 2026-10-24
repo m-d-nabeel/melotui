@@ -102,11 +102,26 @@ impl ImageCache {
     pub fn new(lyrics_shaping: bool) -> Self {
         let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
 
+        let mut lyrics = LyricsRenderer::new(lyrics_shaping);
+        // Sixel has no transparency, so lyrics drawn through it are blended
+        // onto the terminal's background colour — if the terminal will say
+        // what that is. Only asked where it is needed.
+        if lyrics_shaping && picker.protocol_type() == ratatui_image::picker::ProtocolType::Sixel {
+            let options = terminal_colorsaurus::QueryOptions::default();
+            let background = terminal_colorsaurus::background_color(options)
+                .ok()
+                .map(|color| {
+                    let (r, g, b) = color.scale_to_8bit();
+                    [r, g, b]
+                });
+            lyrics.set_background(background);
+        }
+
         Self {
             picker,
             album_art: ImageState::new(),
             track_info: ImageState::new(),
-            lyrics: LyricsRenderer::new(lyrics_shaping),
+            lyrics,
             was_obscured: false,
             overlay: None,
         }
@@ -236,25 +251,30 @@ mod tests {
             ),
             &melotui_core::config::AppConfig::default(),
         );
+        let draw = |cache: &mut ImageCache| {
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 4)).unwrap();
+            terminal
+                .draw(|f| {
+                    let lines = [("तुम ही हो", Color::Rgb(137, 180, 250))];
+                    assert!(
+                        cache
+                            .lyrics
+                            .draw(f, f.area(), &cache.picker, &lines, None, 1.0)
+                    );
+                })
+                .unwrap();
+        };
         cache.update(&state);
-        cache.lyrics.begin();
-        let line = cache.lyrics.line(
-            &cache.picker,
-            "तुम ही हो",
-            Color::Rgb(137, 180, 250),
-            30,
-            1.0,
-        );
-        assert!(line.is_some());
-        cache.lyrics.end();
-        assert_eq!(cache.lyrics.rendered_lines(), 1);
+        draw(&mut cache);
+        assert_eq!(cache.lyrics.shown_lines(), Some(1));
 
         // Help opening draws over the lyrics; nothing needs redrawing for that.
         reducer::reduce(&mut state, AppMsg::UI(UIMsg::OpenHelp));
         cache.update(&state);
         assert_eq!(
-            cache.lyrics.rendered_lines(),
-            1,
+            cache.lyrics.shown_lines(),
+            Some(1),
             "redrawn for an overlay arriving"
         );
 
@@ -263,8 +283,8 @@ mod tests {
         reducer::reduce(&mut state, AppMsg::UI(UIMsg::CloseHelp));
         cache.update(&state);
         assert_eq!(
-            cache.lyrics.rendered_lines(),
-            0,
+            cache.lyrics.shown_lines(),
+            None,
             "not redrawn when the overlay went"
         );
     }

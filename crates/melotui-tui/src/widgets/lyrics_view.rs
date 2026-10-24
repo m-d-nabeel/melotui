@@ -6,11 +6,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Padding, Paragraph},
 };
-use ratatui_image::Image;
 
 use crate::image_cache::ImageCache;
-use crate::lyrics::{LyricsRenderer, bidi};
-use ratatui_image::picker::Picker;
+use crate::lyrics::bidi;
 
 /// Draws the lyrics, `zoom` times the text size where the terminal can show
 /// them as images.
@@ -61,49 +59,11 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let picker = &cache.picker;
     let shaped = &mut cache.lyrics;
 
-    // As images: laid out at the zoom asked for, or less if the line being
-    // sung would not fit the panel at it.
-    let layout = if shaped.should_shape(picker, &texts, zoom) {
-        let anchor = active_index.unwrap_or(0).min(texts.len().saturating_sub(1));
-        let mut zoom = zoom;
-        loop {
-            if let Some(placed) = lay_out(shaped, picker, &texts, anchor, inner, zoom) {
-                break Some((zoom, placed));
-            }
-            if zoom <= 1.0 {
-                break None;
-            }
-            zoom = (zoom - 0.5).max(1.0);
-        }
-    } else {
-        None
-    };
-
-    if let Some((zoom, placed)) = layout {
-        shaped.begin();
-        for (index, y, rows) in placed {
-            let (text, color) = lines[index];
-            if text.trim().is_empty() {
-                continue;
-            }
-            let line_area = Rect {
-                y: inner.y + y,
-                height: rows,
-                ..inner
-            };
-            match shaped.line(picker, text, color, inner.width, zoom) {
-                Some((image, _)) => frame.render_widget(Image::new(image), line_area),
-                None => frame.render_widget(
-                    Paragraph::new(text_line(text, color)).alignment(Alignment::Center),
-                    Rect {
-                        height: 1,
-                        ..line_area
-                    },
-                ),
-            }
-        }
-        shaped.end();
-    } else {
+    // As one image where the terminal can show it; as text where it cannot,
+    // or while the fonts are still loading.
+    let drawn = shaped.should_shape(picker, &texts, zoom)
+        && shaped.draw(frame, inner, picker, &lines, active_index, zoom);
+    if !drawn {
         shaped.clear();
         let viewport_height = inner.height as usize;
         let scroll_offset = active_index.map_or(0, |idx| idx.saturating_sub(viewport_height / 2));
@@ -116,65 +76,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             .scroll((scroll_offset as u16, 0));
         frame.render_widget(paragraph, inner);
     }
-}
-
-/// Where each line that fits goes, as (line, row within `area`, rows), with
-/// line `anchor` — the one being sung — centred, unless that would leave the
-/// panel empty above the first line. Only whole lines are placed, since an
-/// image cannot be cut off at the edge. `None` if `anchor` itself does not
-/// fit.
-fn lay_out(
-    shaped: &mut LyricsRenderer,
-    picker: &Picker,
-    texts: &[&str],
-    anchor: usize,
-    area: Rect,
-    zoom: f32,
-) -> Option<Vec<(usize, u16, u16)>> {
-    let mut rows = |index: usize| {
-        let text = texts[index];
-        if text.trim().is_empty() {
-            (zoom.round() as u16).max(1)
-        } else {
-            shaped.rows(picker, text, area.width, zoom).unwrap_or(1)
-        }
-    };
-    let height = area.height;
-    let anchor_rows = rows(anchor);
-    if anchor_rows > height {
-        return None;
-    }
-
-    let centred = (height - anchor_rows) / 2;
-    let mut above = 0;
-    for index in (0..anchor).rev() {
-        above += rows(index);
-        if above >= centred {
-            break;
-        }
-    }
-    let top = centred.min(above);
-
-    let mut placed = vec![(anchor, top, anchor_rows)];
-    let mut y = top;
-    for index in (0..anchor).rev() {
-        let line_rows = rows(index);
-        if line_rows > y {
-            break;
-        }
-        y -= line_rows;
-        placed.push((index, y, line_rows));
-    }
-    let mut y = top + anchor_rows;
-    for index in anchor + 1..texts.len() {
-        let line_rows = rows(index);
-        if y + line_rows > height {
-            break;
-        }
-        placed.push((index, y, line_rows));
-        y += line_rows;
-    }
-    Some(placed)
 }
 
 /// A lyric line as terminal text, bold, with right-to-left runs in the order
@@ -353,15 +254,15 @@ mod tests {
     }
 
     #[test]
-    fn zoomed_lyrics_take_as_many_rows_each_as_the_zoom() {
+    fn zoomed_lyrics_fill_the_panel_with_as_many_lines_as_fit() {
         let state = state_with_lyrics(LYRICS, "zoomed");
         let mut cache = kitty_cache();
-        // Six rows inside the border, three lines two rows tall.
+        // Six rows inside the border: three lines, two rows apart.
         let buffer = render_at(&state, &mut cache, 8, 2.0);
         for y in 1..=6 {
-            assert!(image_row(&buffer, y), "row {y} is not part of an image");
+            assert!(image_row(&buffer, y), "row {y} is not part of the image");
         }
-        assert_eq!(cache.lyrics.rendered_lines(), 3);
+        assert_eq!(cache.lyrics.shown_lines(), Some(3));
     }
 
     #[test]
@@ -377,12 +278,12 @@ mod tests {
     }
 
     #[test]
-    fn a_panel_too_short_for_the_zoom_draws_the_lyrics_smaller() {
+    fn a_panel_too_short_for_the_zoom_still_shows_the_line_being_sung() {
         let state = state_with_lyrics(LYRICS, "short");
         let mut cache = kitty_cache();
-        // Two rows inside the border: a 4x line would not fit, a 2x one does.
+        // Two rows inside the border: smaller than 4x, but there.
         let buffer = render_at(&state, &mut cache, 4, 4.0);
         assert!(image_row(&buffer, 1) && image_row(&buffer, 2));
-        assert_eq!(cache.lyrics.rendered_lines(), 1);
+        assert_eq!(cache.lyrics.shown_lines(), Some(1));
     }
 }

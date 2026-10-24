@@ -64,30 +64,28 @@ impl Shaper {
         false
     }
 
-    /// How many rows of `cell_h` pixels `text` takes, laid out `width` pixels
-    /// wide at `zoom` times the text size, or `None` while the fonts are still
-    /// loading.
-    pub fn rows(&self, text: &str, width: u32, cell_h: u32, zoom: f32) -> Option<u16> {
+    /// How many lines `text` takes laid out `width` pixels wide, lines
+    /// `pitch` pixels apart — more than one when it has to wrap — or `None`
+    /// while the fonts are still loading.
+    pub fn lines(&self, text: &str, width: u32, pitch: f32) -> Option<usize> {
         let mut engine = self.engine.get()?.lock().ok()?;
-        let buffer = lay_out(&mut engine.fonts, text, width, cell_h, zoom);
-        Some(rows_of(&buffer, zoom))
+        Some(line_count(&lay_out(&mut engine.fonts, text, width, pitch)))
     }
 
-    /// `text` in `color` at `zoom` times the text size, shaped and centred in
-    /// an image `width` pixels wide on a transparent background, with the
-    /// number of `cell_h`-pixel rows it fills — or `None` while the fonts are
-    /// still loading.
+    /// An image `width` × `height` pixels, transparent but for `lines`: each
+    /// text in its colour, shaped and centred, its first line starting
+    /// `pitch` pixels times its slot down. `None` while the fonts are still
+    /// loading.
     pub fn render(
         &self,
-        text: &str,
-        color: [u8; 3],
+        lines: &[(&str, [u8; 3], usize)],
         width: u32,
-        cell_h: u32,
-        zoom: f32,
-    ) -> Option<(RgbaImage, u16)> {
+        height: u32,
+        pitch: f32,
+    ) -> Option<RgbaImage> {
         let mut engine = self.engine.get()?.lock().ok()?;
         let Engine { fonts, glyphs } = &mut *engine;
-        Some(rasterise(fonts, glyphs, text, color, width, cell_h, zoom))
+        Some(rasterise(fonts, glyphs, lines, width, height, pitch))
     }
 
     /// Blocks until the fonts are loaded. For tests.
@@ -134,12 +132,11 @@ fn shape(
     buffer
 }
 
-/// `text` laid out to fit `width` pixels, one line `zoom` rows of `cell_h`
-/// pixels apart: as it is if it fits, shrunk a little if that is enough, and
-/// otherwise wrapped onto as many lines as it needs, `FIT_MARGIN` of the
-/// width wide and centred.
-fn lay_out(fonts: &mut FontSystem, text: &str, width: u32, cell_h: u32, zoom: f32) -> Buffer {
-    let pitch = cell_h as f32 * zoom;
+/// `text` laid out to fit `width` pixels, lines `pitch` pixels apart: as it
+/// is if it fits, shrunk a little if that is enough, and otherwise wrapped
+/// onto as many lines as it needs, `FIT_MARGIN` of the width wide and
+/// centred.
+fn lay_out(fonts: &mut FontSystem, text: &str, width: u32, pitch: f32) -> Buffer {
     let font = pitch * FONT_TO_ROW;
     let room = width as f32 * FIT_MARGIN;
     let natural = shape(fonts, text, font, pitch, None, Wrap::None)
@@ -162,50 +159,51 @@ fn lay_out(fonts: &mut FontSystem, text: &str, width: u32, cell_h: u32, zoom: f3
     }
 }
 
-/// The whole rows a laid-out line fills.
-fn rows_of(buffer: &Buffer, zoom: f32) -> u16 {
-    let lines = buffer.layout_runs().count().max(1) as f32;
-    // A hair under, so 2 lines at 1.5 is 3 rows and not 4 from rounding.
-    ((lines * zoom - 0.01).ceil() as u16).max(1)
+fn line_count(buffer: &Buffer) -> usize {
+    buffer.layout_runs().count().max(1)
 }
 
 fn rasterise(
     fonts: &mut FontSystem,
     glyphs: &mut SwashCache,
-    text: &str,
-    color: [u8; 3],
+    lines: &[(&str, [u8; 3], usize)],
     width: u32,
-    cell_h: u32,
-    zoom: f32,
-) -> (RgbaImage, u16) {
-    let mut buffer = lay_out(fonts, text, width, cell_h, zoom);
-    let rows = rows_of(&buffer, zoom);
-    let height = u32::from(rows) * cell_h;
-
-    // The lines centred in the rows they fill, and the panel's margin either
-    // side of them.
-    let lines = buffer.layout_runs().count().max(1) as f32;
-    let dy = ((height as f32 - lines * cell_h as f32 * zoom) / 2.0).round() as i32;
-    let dx = ((width as f32 * (1.0 - FIT_MARGIN)) / 2.0).round() as i32;
-
+    height: u32,
+    pitch: f32,
+) -> RgbaImage {
     let mut image = RgbaImage::new(width, height);
-    let [r, g, b] = color;
-    buffer.draw(fonts, glyphs, Color::rgb(r, g, b), |x, y, w, h, c| {
-        let coverage = u16::from(c.a());
-        if coverage == 0 {
-            return;
-        }
-        let (x, y) = (x + dx, y + dy);
-        for py in y.max(0)..(y + h as i32).min(height as i32) {
-            for px in x.max(0)..(x + w as i32).min(width as i32) {
-                let pixel = image.get_pixel_mut(px as u32, py as u32);
-                // One colour throughout, so only the coverage accumulates.
-                let alpha = 255 - (255 - u16::from(pixel[3])) * (255 - coverage) / 255;
-                *pixel = Rgba([r, g, b, alpha as u8]);
+    // The panel's margin either side of the text.
+    let dx = ((width as f32 * (1.0 - FIT_MARGIN)) / 2.0).round() as i32;
+    for &(text, [r, g, b], slot) in lines {
+        let mut buffer = lay_out(fonts, text, width, pitch);
+        let dy = (slot as f32 * pitch).round() as i32;
+        buffer.draw(fonts, glyphs, Color::rgb(r, g, b), |x, y, w, h, c| {
+            let coverage = u32::from(c.a());
+            if coverage == 0 {
+                return;
             }
-        }
-    });
-    (image, rows)
+            let (x, y) = (x + dx, y + dy);
+            for py in y.max(0)..(y + h as i32).min(height as i32) {
+                for px in x.max(0)..(x + w as i32).min(width as i32) {
+                    // Over whatever is there: a descender reaching into the
+                    // next line keeps that line's colour beneath it.
+                    let pixel = image.get_pixel_mut(px as u32, py as u32);
+                    let below = u32::from(pixel[3]) * (255 - coverage) / 255;
+                    let alpha = coverage + below;
+                    let mix = |src: u8, dst: u8| {
+                        ((u32::from(src) * coverage + u32::from(dst) * below) / alpha.max(1)) as u8
+                    };
+                    *pixel = Rgba([
+                        mix(r, pixel[0]),
+                        mix(g, pixel[1]),
+                        mix(b, pixel[2]),
+                        alpha as u8,
+                    ]);
+                }
+            }
+        });
+    }
+    image
 }
 
 #[cfg(test)]
@@ -223,6 +221,15 @@ mod tests {
             eprintln!("skipped: no Devanagari font installed");
             None
         }
+    }
+
+    /// `text` drawn alone, lines `pitch` pixels apart, in an image as tall as
+    /// it needs.
+    fn line(s: &Shaper, text: &str, width: u32, pitch: f32) -> RgbaImage {
+        let lines = s.lines(text, width, pitch).unwrap();
+        let height = (lines as f32 * pitch).ceil() as u32;
+        s.render(&[(text, [255, 255, 255], 0)], width, height, pitch)
+            .unwrap()
     }
 
     /// Horizontal extent of the inked pixels, as (first column, last column).
@@ -245,9 +252,8 @@ mod tests {
     fn a_line_is_drawn_centred_in_its_colour_on_a_transparent_background() {
         let Some(s) = shaper() else { return };
         let image = s
-            .render("कभी कभी मेरे दिल में", [137, 180, 250], 600, 40, 1.0)
-            .unwrap()
-            .0;
+            .render(&[("कभी कभी मेरे दिल में", [137, 180, 250], 0)], 600, 40, 40.0)
+            .unwrap();
         assert_eq!((image.width(), image.height()), (600, 40));
         let (left, right) = ink(&image).expect("nothing was drawn");
         let centre = (left + right) / 2;
@@ -269,12 +275,37 @@ mod tests {
     }
 
     #[test]
+    fn lines_go_in_their_slots_each_in_its_own_colour() {
+        let Some(s) = shaper() else { return };
+        let image = s
+            .render(
+                &[
+                    ("तुम ही हो", [255, 0, 0], 0),
+                    ("अब तुम ही हो", [0, 0, 255], 2),
+                ],
+                600,
+                120,
+                40.0,
+            )
+            .unwrap();
+        let colour_in = |rows: std::ops::Range<u32>| {
+            rows.flat_map(|y| (0..600).map(move |x| (x, y)))
+                .map(|(x, y)| *image.get_pixel(x, y))
+                .find(|p| p[3] == 255)
+                .map(|p| [p[0], p[1], p[2]])
+        };
+        assert_eq!(colour_in(0..40), Some([255, 0, 0]));
+        assert_eq!(colour_in(40..80), None, "slot 1 is empty");
+        assert_eq!(colour_in(80..120), Some([0, 0, 255]));
+    }
+
+    #[test]
     fn a_conjunct_is_one_shaped_glyph_not_its_letters() {
         // क्ष drawn as consonant, virama, consonant would be three glyphs side
         // by side; shaped, it is a single ligature, and much narrower.
         let Some(s) = shaper() else { return };
         let width_of = |text: &str| {
-            let (l, r) = ink(&s.render(text, [255, 255, 255], 400, 40, 1.0).unwrap().0).unwrap();
+            let (l, r) = ink(&line(&s, text, 400, 40.0)).unwrap();
             r - l
         };
         let shaped = width_of("क्ष");
@@ -293,11 +324,10 @@ mod tests {
         // narrow for it, but well within how far a line may be shrunk. Taken
         // from the line as drawn, since fonts differ in width — Windows'
         // Devanagari font is a good deal wider than Linux's.
-        let (l, r) = ink(&s.render(text, [255, 255, 255], 2000, 40, 1.0).unwrap().0).unwrap();
+        let (l, r) = ink(&line(&s, text, 2000, 40.0)).unwrap();
         let width = (r - l) * 9 / 10;
-        let (image, rows) = s.render(text, [255, 255, 255], width, 40, 1.0).unwrap();
-        assert_eq!(rows, 1, "shrunk, not wrapped");
-        let (left, right) = ink(&image).unwrap();
+        assert_eq!(s.lines(text, width, 40.0), Some(1), "shrunk, not wrapped");
+        let (left, right) = ink(&line(&s, text, width, 40.0)).unwrap();
         assert!(
             left > 0 && right < width - 1,
             "ran off the edges of {width}px: ink from {left} to {right}"
@@ -305,33 +335,30 @@ mod tests {
     }
 
     #[test]
-    fn a_line_far_too_wide_for_the_panel_wraps_onto_more_rows() {
+    fn a_line_far_too_wide_for_the_panel_wraps() {
         let text = "तुम्हारी क्षत्रिय हिन्दी प्रेम नमस्ते तुम्हारी क्षत्रिय हिन्दी प्रेम नमस्ते";
         let Some(s) = shaper() else { return };
-        let (l, r) = ink(&s.render(text, [255, 255, 255], 4000, 40, 1.0).unwrap().0).unwrap();
+        let (l, r) = ink(&line(&s, text, 4000, 40.0)).unwrap();
         // A third of its width: far more than shrinking may make up for.
         let width = (r - l) / 3;
-        let (image, rows) = s.render(text, [255, 255, 255], width, 40, 1.0).unwrap();
-        assert!(rows >= 3, "{rows} rows");
-        assert_eq!(image.height(), u32::from(rows) * 40);
-        assert_eq!(s.rows(text, width, 40, 1.0), Some(rows));
+        let lines = s.lines(text, width, 40.0).unwrap();
+        assert!(lines >= 3, "{lines} lines");
+        let image = line(&s, text, width, 40.0);
         let (left, right) = ink(&image).unwrap();
         assert!(left > 0 && right < width - 1, "ink from {left} to {right}");
         let (top, bottom) = ink_rows(&image).unwrap();
         assert!(
             top < 40 && bottom > image.height() - 40,
-            "not spread over the rows: ink from {top} to {bottom}"
+            "not spread over the lines: ink from {top} to {bottom}"
         );
     }
 
     #[test]
-    fn zoomed_text_is_larger_and_fills_more_rows() {
+    fn lines_further_apart_are_drawn_larger() {
         let text = "ख़याल आता है";
         let Some(s) = shaper() else { return };
-        let (one, one_rows) = s.render(text, [255, 255, 255], 800, 40, 1.0).unwrap();
-        let (two, two_rows) = s.render(text, [255, 255, 255], 800, 40, 2.0).unwrap();
-        let (_, half_rows) = s.render(text, [255, 255, 255], 800, 40, 1.5).unwrap();
-        assert_eq!((one_rows, half_rows, two_rows), (1, 2, 2));
+        let one = line(&s, text, 800, 40.0);
+        let two = line(&s, text, 800, 80.0);
         let width = |image: &RgbaImage| {
             let (l, r) = ink(image).unwrap();
             (r - l) as f32
@@ -339,9 +366,8 @@ mod tests {
         let ratio = width(&two) / width(&one);
         assert!(
             (1.8..2.2).contains(&ratio),
-            "twice the zoom drew {ratio}x as wide"
+            "twice the pitch drew {ratio}x as wide"
         );
-        // Centred in its two rows.
         let (top, bottom) = ink_rows(&two).unwrap();
         let middle = (top + bottom) / 2;
         assert!((30..=50).contains(&middle), "ink from {top} to {bottom}");
