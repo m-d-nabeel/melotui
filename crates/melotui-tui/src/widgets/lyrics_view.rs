@@ -164,6 +164,7 @@ mod tests {
     use melotui_core::library::snapshot::Library;
     use melotui_core::message::playback::PlaybackMsg;
     use melotui_core::{AppMsg, reducer};
+    use ratatui::buffer::CellDiffOption;
     use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
     use ratatui_image::picker::ProtocolType;
     use std::collections::HashMap;
@@ -233,7 +234,7 @@ mod tests {
                 "row {row} is not an image: {first:?}"
             );
             assert!(
-                buffer[(4, row)].skip,
+                (buffer[(4, row)].diff_option == CellDiffOption::Skip),
                 "row {row}: the rest of the row belongs to the image"
             );
         }
