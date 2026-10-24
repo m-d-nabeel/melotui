@@ -47,6 +47,22 @@ fn handle_playback_message(state: &mut AppState, msg: PlaybackMsg) -> Vec<AppMsg
         PlaybackMsg::RequestTogglePlayback => {
             playback_action::handle_request_toggle_playback(state)
         }
+        PlaybackMsg::RequestPlay => {
+            if state.is_playing() {
+                vec![]
+            } else if state.session.playback.current.is_some() {
+                playback_action::handle_request_toggle_playback(state)
+            } else {
+                playback_action::handle_request_play_selected(state)
+            }
+        }
+        PlaybackMsg::RequestPause => {
+            if state.is_playing() {
+                playback_action::handle_request_toggle_playback(state)
+            } else {
+                vec![]
+            }
+        }
         PlaybackMsg::RequestStop => playback_action::handle_request_stop(state),
         PlaybackMsg::RequestSeekRelative(offset) => {
             playback_action::handle_request_seek_relative(state, offset)

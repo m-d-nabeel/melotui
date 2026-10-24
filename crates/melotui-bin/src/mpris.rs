@@ -1,6 +1,7 @@
 //! MPRIS / System media controls integration via `souvlaki`.
 //!
-//! This module is conditionally compiled on Linux and macOS only.
+//! Compiled on Linux (MPRIS over D-Bus), macOS (the Now Playing centre) and
+//! Windows (the system media controls, which belong to a hidden window).
 //! It exposes the currently playing track to the OS media widget
 //! and translates hardware media key presses into `AppMsg`s.
 
@@ -35,10 +36,20 @@ impl MprisManager {
     /// Initialize the OS media controls.
     /// Returns `(MprisManager, Receiver)` — the receiver yields media key events.
     pub fn new() -> Option<(Self, mpsc::Receiver<MprisEvent>)> {
+        #[cfg(not(target_os = "windows"))]
+        let hwnd = None;
+        #[cfg(target_os = "windows")]
+        let hwnd = match crate::media_window::spawn() {
+            Some(window) => Some(window as *mut std::ffi::c_void),
+            None => {
+                tracing::warn!("No window for the media controls; media keys are off");
+                return None;
+            }
+        };
         let config = PlatformConfig {
             dbus_name: "melotui",
             display_name: "Melotui",
-            hwnd: None,
+            hwnd,
         };
 
         let mut controls = match MediaControls::new(config) {
@@ -53,12 +64,10 @@ impl MprisManager {
 
         let attach_result = controls.attach(move |event: MediaControlEvent| {
             let msg = match event {
-                MediaControlEvent::Play => {
-                    Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))
-                }
-                MediaControlEvent::Pause => {
-                    Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))
-                }
+                // Play and Pause are sent so they are safe to repeat — a
+                // headset's play button pressed while playing must not pause.
+                MediaControlEvent::Play => Some(AppMsg::Playback(PlaybackMsg::RequestPlay)),
+                MediaControlEvent::Pause => Some(AppMsg::Playback(PlaybackMsg::RequestPause)),
                 MediaControlEvent::Toggle => {
                     Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))
                 }
@@ -166,9 +175,7 @@ impl MprisManager {
         // Update metadata (track info + cover art)
         if track_changed || cover_changed {
             if let Some(track) = state.get_playing_track() {
-                let cover_url = current_cover
-                    .as_ref()
-                    .map(|p| format!("file://{}", p.display()));
+                let cover_url = current_cover.as_deref().and_then(file_url);
 
                 let metadata = MediaMetadata {
                     title: Some(&track.title),
@@ -196,5 +203,27 @@ impl MprisManager {
             self.cached.track_id = current_id;
             self.cached.cover_path = current_cover.clone();
         }
+    }
+}
+
+/// `path` as a `file://` URL, escaped as URLs need: a space or `#` in the
+/// path broke the cover in media widgets, and a Windows path is not a URL at
+/// all until it is turned round.
+fn file_url(path: &std::path::Path) -> Option<String> {
+    url::Url::from_file_path(path).ok().map(String::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(unix)]
+    fn cover_paths_become_escaped_file_urls() {
+        assert_eq!(
+            file_url(std::path::Path::new("/home/me/My Music/#1 cover.jpg")).as_deref(),
+            Some("file:///home/me/My%20Music/%231%20cover.jpg")
+        );
+        assert_eq!(file_url(std::path::Path::new("relative.jpg")), None);
     }
 }

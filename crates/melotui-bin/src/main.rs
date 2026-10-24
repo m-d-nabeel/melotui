@@ -1,6 +1,8 @@
 mod input_processor;
 mod logging;
-#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[cfg(target_os = "windows")]
+mod media_window;
+#[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 mod mpris;
 mod runtime;
 
