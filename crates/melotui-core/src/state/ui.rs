@@ -53,7 +53,7 @@ impl std::str::FromStr for FocusMode {
             "viz" | "v" | "visualizer" => Ok(FocusMode::Visualizer),
             "play" | "p" | "playback" => Ok(FocusMode::Playback),
             "vp" | "vizplay" => Ok(FocusMode::VisualizerPlayback),
-            "lp" | "lyricsplay" => Ok(FocusMode::LyricsPlayback),
+            "lyrics" | "l" | "lp" | "lyricsplay" => Ok(FocusMode::LyricsPlayback),
             _ => Err(()),
         }
     }
@@ -104,6 +104,11 @@ pub struct UIState {
     pub terminal_size: (u16, u16),
     pub sidebar_width: u16,
     pub focus_mode: FocusMode,
+    /// Lyrics zoom in the lyrics panel, and in the full lyrics view.
+    pub lyrics_zoom: f32,
+    pub lyrics_zoom_focus: f32,
+    /// Saved presets' names, read when the command bar opens, for completion.
+    pub command_presets: Vec<String>,
     pub theme_overrides: std::collections::HashMap<String, String>,
 }
 
@@ -129,6 +134,9 @@ impl Default for UIState {
             terminal_size: (0, 0),
             sidebar_width: 28,
             focus_mode: FocusMode::default(),
+            lyrics_zoom: 2.0,
+            lyrics_zoom_focus: 3.0,
+            command_presets: Vec::new(),
             theme_overrides: std::collections::HashMap::new(),
         }
     }

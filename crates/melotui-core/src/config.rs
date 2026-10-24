@@ -60,6 +60,13 @@ pub struct UiConfig {
     /// Ghostty, WezTerm, iTerm2 and others). Turn off to keep them as
     /// terminal text.
     pub lyrics_shaping: bool,
+    /// How large lyrics are drawn in the lyrics panel, as a multiple of the
+    /// terminal's text size, from 1 to 4. Larger than 1 needs the same
+    /// terminals as `lyrics_shaping`; elsewhere lyrics stay at text size.
+    /// `:lyrics zoom <n>` changes it while running.
+    pub lyrics_zoom: f32,
+    /// The same for the full lyrics view (`:focus lyrics`).
+    pub lyrics_zoom_focus: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -132,6 +139,8 @@ impl Default for UiConfig {
             playlist_picker_max_visible: 10,
             restore_session: true,
             lyrics_shaping: true,
+            lyrics_zoom: 2.0,
+            lyrics_zoom_focus: 3.0,
         }
     }
 }
@@ -258,6 +267,8 @@ impl AppConfig {
     fn validated(mut self) -> Self {
         self.ui.sidebar_width = self.ui.sidebar_width.clamp(28, 80);
         self.ui.scrolloff = self.ui.scrolloff.clamp(0, 20);
+        self.ui.lyrics_zoom = clamp_lyrics_zoom(self.ui.lyrics_zoom, 2.0);
+        self.ui.lyrics_zoom_focus = clamp_lyrics_zoom(self.ui.lyrics_zoom_focus, 3.0);
         self.audio.default_speed = self.audio.default_speed.clamp(0.5, 2.0);
         self.audio.default_bass = self.audio.default_bass.clamp(0.1, 5.0);
         self.audio.default_treble = self.audio.default_treble.clamp(0.1, 5.0);
@@ -310,6 +321,18 @@ impl AppConfig {
             .unwrap_or_else(|| PathBuf::from("."))
             .join("melotui")
             .join("config.toml")
+    }
+}
+
+/// The smallest and largest lyrics zoom.
+pub const LYRICS_ZOOM: std::ops::RangeInclusive<f32> = 1.0..=4.0;
+
+/// `zoom` within [`LYRICS_ZOOM`], or `fallback` if it is not a number.
+pub fn clamp_lyrics_zoom(zoom: f32, fallback: f32) -> f32 {
+    if zoom.is_finite() {
+        zoom.clamp(*LYRICS_ZOOM.start(), *LYRICS_ZOOM.end())
+    } else {
+        fallback
     }
 }
 

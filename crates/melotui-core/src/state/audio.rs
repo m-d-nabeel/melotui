@@ -103,3 +103,149 @@ fn clamp_finite(value: f32, default: f32, min: f32, max: f32) -> f32 {
         default
     }
 }
+
+/// One of the effects `:fx` sets, by the name typed for it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Effect {
+    Bass,
+    Treble,
+    Reverb,
+    Echo,
+    Pan,
+    Lowpass,
+    Highpass,
+    AutoPanRate,
+    AutoPanDepth,
+    Exciter,
+    Bitcrush,
+    Width,
+    Karaoke,
+    Wobble,
+    PingPong,
+    Phaser,
+}
+
+impl Effect {
+    pub const ALL: [Effect; 16] = [
+        Effect::Bass,
+        Effect::Treble,
+        Effect::Reverb,
+        Effect::Echo,
+        Effect::Pan,
+        Effect::Lowpass,
+        Effect::Highpass,
+        Effect::AutoPanRate,
+        Effect::AutoPanDepth,
+        Effect::Exciter,
+        Effect::Bitcrush,
+        Effect::Width,
+        Effect::Karaoke,
+        Effect::Wobble,
+        Effect::PingPong,
+        Effect::Phaser,
+    ];
+
+    /// The name typed for it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Effect::Bass => "bass",
+            Effect::Treble => "treble",
+            Effect::Reverb => "reverb",
+            Effect::Echo => "echo",
+            Effect::Pan => "pan",
+            Effect::Lowpass => "lowpass",
+            Effect::Highpass => "highpass",
+            Effect::AutoPanRate => "autopan-rate",
+            Effect::AutoPanDepth => "autopan-depth",
+            Effect::Exciter => "exciter",
+            Effect::Bitcrush => "bitcrush",
+            Effect::Width => "width",
+            Effect::Karaoke => "karaoke",
+            Effect::Wobble => "wobble",
+            Effect::PingPong => "pingpong",
+            Effect::Phaser => "phaser",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|effect| effect.name().eq_ignore_ascii_case(name))
+    }
+
+    /// The values it takes — the same as [`AudioState::sanitize`] allows.
+    pub fn range(self) -> (f32, f32) {
+        match self {
+            Effect::Bass | Effect::Treble => (0.1, 5.0),
+            Effect::Echo => (0.0, 0.9),
+            Effect::Pan => (-1.0, 1.0),
+            Effect::Lowpass => (200.0, 20000.0),
+            Effect::Highpass => (20.0, 5000.0),
+            Effect::AutoPanRate => (0.0, 2.0),
+            Effect::Exciter => (0.0, 5.0),
+            Effect::Width => (0.0, 3.0),
+            Effect::Reverb
+            | Effect::AutoPanDepth
+            | Effect::Bitcrush
+            | Effect::Karaoke
+            | Effect::Wobble
+            | Effect::PingPong
+            | Effect::Phaser => (0.0, 1.0),
+        }
+    }
+
+    /// Its current value in `audio`.
+    pub fn get(self, audio: &AudioState) -> f32 {
+        match self {
+            Effect::Bass => audio.bass,
+            Effect::Treble => audio.treble,
+            Effect::Reverb => audio.reverb,
+            Effect::Echo => audio.echo,
+            Effect::Pan => audio.pan,
+            Effect::Lowpass => audio.lowpass,
+            Effect::Highpass => audio.highpass,
+            Effect::AutoPanRate => audio.auto_pan_rate,
+            Effect::AutoPanDepth => audio.auto_pan_depth,
+            Effect::Exciter => audio.exciter,
+            Effect::Bitcrush => audio.bitcrush,
+            Effect::Width => audio.width,
+            Effect::Karaoke => audio.karaoke,
+            Effect::Wobble => audio.wobble,
+            Effect::PingPong => audio.ping_pong,
+            Effect::Phaser => audio.phaser,
+        }
+    }
+
+    /// Its value with nothing applied.
+    pub fn neutral(self) -> f32 {
+        self.get(&AudioState::default())
+    }
+
+    /// Sets it in `audio`, within its range, and returns the message that
+    /// makes the audio thread follow.
+    pub fn set(self, audio: &mut AudioState, value: f32) -> crate::message::audio::AudioMsg {
+        use crate::message::audio::AudioMsg;
+        let (min, max) = self.range();
+        let value = clamp_finite(value, self.get(audio), min, max);
+        let (slot, msg): (&mut f32, fn(f32) -> AudioMsg) = match self {
+            Effect::Bass => (&mut audio.bass, AudioMsg::DispatchSetBass),
+            Effect::Treble => (&mut audio.treble, AudioMsg::DispatchSetTreble),
+            Effect::Reverb => (&mut audio.reverb, AudioMsg::DispatchSetReverb),
+            Effect::Echo => (&mut audio.echo, AudioMsg::DispatchSetEcho),
+            Effect::Pan => (&mut audio.pan, AudioMsg::DispatchSetPan),
+            Effect::Lowpass => (&mut audio.lowpass, AudioMsg::DispatchSetLowpass),
+            Effect::Highpass => (&mut audio.highpass, AudioMsg::DispatchSetHighpass),
+            Effect::AutoPanRate => (&mut audio.auto_pan_rate, AudioMsg::DispatchSetAutoPanRate),
+            Effect::AutoPanDepth => (&mut audio.auto_pan_depth, AudioMsg::DispatchSetAutoPanDepth),
+            Effect::Exciter => (&mut audio.exciter, AudioMsg::DispatchSetExciter),
+            Effect::Bitcrush => (&mut audio.bitcrush, AudioMsg::DispatchSetBitcrush),
+            Effect::Width => (&mut audio.width, AudioMsg::DispatchSetWidth),
+            Effect::Karaoke => (&mut audio.karaoke, AudioMsg::DispatchSetKaraoke),
+            Effect::Wobble => (&mut audio.wobble, AudioMsg::DispatchSetWobble),
+            Effect::PingPong => (&mut audio.ping_pong, AudioMsg::DispatchSetPingPong),
+            Effect::Phaser => (&mut audio.phaser, AudioMsg::DispatchSetPhaser),
+        };
+        *slot = value;
+        msg(value)
+    }
+}

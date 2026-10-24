@@ -49,6 +49,9 @@ impl AppState {
         // Apply config to session
         session.ui.sidebar_width = config.ui.sidebar_width;
         session.ui.scrolloff = config.ui.scrolloff;
+        session.ui.lyrics_zoom = crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom, 2.0);
+        session.ui.lyrics_zoom_focus =
+            crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom_focus, 3.0);
         session.ui.theme_overrides = config.theme_overrides.clone();
 
         // Apply audio defaults from config
@@ -543,6 +546,37 @@ impl AppState {
 
     pub fn focus_mode(&self) -> crate::state::ui::FocusMode {
         self.session.ui.focus_mode
+    }
+
+    /// What was typed before Tab started cycling through completions, and
+    /// which completion it is on (counted from 1; 0 before the first Tab).
+    pub fn ui_autocomplete(&self) -> (Option<&str>, usize) {
+        let ui = &self.session.ui;
+        (ui.autocomplete_prefix.as_deref(), ui.autocomplete_cycle)
+    }
+
+    /// The playlists' and presets' names, for completing commands.
+    pub fn completion_names(&self) -> crate::autocomplete::Names {
+        crate::autocomplete::Names {
+            playlists: self
+                .library
+                .playlist_order
+                .iter()
+                .filter_map(|id| self.library.playlists.get(id))
+                .map(|playlist| playlist.name.clone())
+                .collect(),
+            presets: self.session.ui.command_presets.clone(),
+        }
+    }
+
+    /// Lyrics zoom in the lyrics panel.
+    pub fn lyrics_zoom(&self) -> f32 {
+        self.session.ui.lyrics_zoom
+    }
+
+    /// Lyrics zoom in the full lyrics view.
+    pub fn lyrics_zoom_focus(&self) -> f32 {
+        self.session.ui.lyrics_zoom_focus
     }
 
     pub fn ui_show_dsp_studio(&self) -> bool {

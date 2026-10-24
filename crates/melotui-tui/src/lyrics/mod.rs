@@ -19,7 +19,9 @@
 //! So lyrics containing any such script are drawn by a real text engine —
 //! cosmic-text, shaping with a port of HarfBuzz and doing its own bidi — into
 //! images shown through the terminal's graphics protocol, where the grid no
-//! longer constrains anything. Without a graphics protocol that can draw them
+//! longer constrains anything. The same goes for lyrics in any script once
+//! they are zoomed (`ui.lyrics_zoom`), since only an image can draw text
+//! larger than the terminal's. Without a graphics protocol that can draw them
 //! over the terminal's own background, or with `ui.lyrics_shaping` turned off,
 //! lyrics stay text, with right-to-left lines put into visual order for the
 //! terminal.
@@ -48,11 +50,26 @@ struct LineKey {
     color: [u8; 3],
     columns: u16,
     cell: (u16, u16),
+    /// The zoom's bits, so it can be hashed.
+    zoom: u32,
 }
+
+/// What a line's height depends on.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct HeightKey {
+    text: String,
+    columns: u16,
+    cell: (u16, u16),
+    zoom: u32,
+}
+
+/// Heights remembered before the cache is started afresh; a few songs' worth.
+const MAX_HEIGHTS: usize = 2048;
 
 /// One rendered line, kept for as long as it stays on screen.
 struct Rendered {
     protocol: Protocol,
+    rows: u16,
     /// The image's id in kitty's store, so it can be freed when it goes.
     kitty_id: Option<u32>,
     frame: u64,
@@ -63,6 +80,7 @@ pub struct LyricsRenderer {
     enabled: bool,
     shaper: Shaper,
     lines: HashMap<LineKey, Rendered>,
+    heights: HashMap<HeightKey, u16>,
     frame: u64,
     /// kitty images that have left the screen, freed once the frame is drawn.
     retired: Vec<u32>,
@@ -82,6 +100,7 @@ impl LyricsRenderer {
             enabled,
             shaper: Shaper::new(),
             lines: HashMap::new(),
+            heights: HashMap::new(),
             frame: 0,
             retired: Vec::new(),
             next_id: seed | 1,
@@ -89,13 +108,15 @@ impl LyricsRenderer {
         }
     }
 
-    /// Whether lyrics made of `lines` should be drawn by the text engine.
+    /// Whether lyrics made of `lines`, at `zoom` times the text size, should
+    /// be drawn by the text engine: when some script in them needs it, or
+    /// when they are zoomed, which only an image can do.
     ///
     /// Only through a protocol that keeps the image's transparency (kitty's
     /// and iTerm2's), since the lyrics sit on the terminal's own background
     /// and the theme does not say what colour that is. The fonts load the
     /// first time this answers yes; until they are in, it answers no.
-    pub fn should_shape(&mut self, picker: &Picker, lines: &[&str]) -> bool {
+    pub fn should_shape(&mut self, picker: &Picker, lines: &[&str], zoom: f32) -> bool {
         let (cell_w, cell_h) = picker.font_size();
         self.enabled
             && matches!(
@@ -104,7 +125,7 @@ impl LyricsRenderer {
             )
             && cell_w > 0
             && cell_h > 0
-            && lines.iter().any(|line| needs_shaping(line))
+            && (zoom > 1.0 || lines.iter().any(|line| needs_shaping(line)))
             && self.shaper.ready()
     }
 
@@ -113,31 +134,61 @@ impl LyricsRenderer {
         self.frame += 1;
     }
 
-    /// The image of one line, `columns` cells wide and one row tall, in
-    /// `color`. Rendered once and reused for as long as it stays on screen.
+    /// How many rows one line takes, `columns` cells wide at `zoom` times
+    /// the text size — more than one when zoomed, or when it has to wrap.
+    pub fn rows(&mut self, picker: &Picker, text: &str, columns: u16, zoom: f32) -> Option<u16> {
+        let (cell_w, cell_h) = picker.font_size();
+        let key = HeightKey {
+            text: text.to_owned(),
+            columns,
+            cell: (cell_w, cell_h),
+            zoom: zoom.to_bits(),
+        };
+        if let Some(&rows) = self.heights.get(&key) {
+            return Some(rows);
+        }
+        let rows = self.shaper.rows(
+            text,
+            u32::from(columns) * u32::from(cell_w),
+            u32::from(cell_h),
+            zoom,
+        )?;
+        if self.heights.len() >= MAX_HEIGHTS {
+            self.heights.clear();
+        }
+        self.heights.insert(key, rows);
+        Some(rows)
+    }
+
+    /// The image of one line, `columns` cells wide, in `color` at `zoom`
+    /// times the text size, with the number of rows it fills. Rendered once
+    /// and reused for as long as it stays on screen.
     pub fn line(
         &mut self,
         picker: &Picker,
         text: &str,
         color: Color,
         columns: u16,
-    ) -> Option<&Protocol> {
+        zoom: f32,
+    ) -> Option<(&Protocol, u16)> {
         let (cell_w, cell_h) = picker.font_size();
         let key = LineKey {
             text: text.to_owned(),
             color: rgb(color),
             columns,
             cell: (cell_w, cell_h),
+            zoom: zoom.to_bits(),
         };
         if !self.lines.contains_key(&key) {
-            let image = self.shaper.render(
+            let (image, rows) = self.shaper.render(
                 text,
                 key.color,
                 u32::from(columns) * u32::from(cell_w),
                 u32::from(cell_h),
+                zoom,
             )?;
             let image = DynamicImage::ImageRgba8(image);
-            let area = Rect::new(0, 0, columns, 1);
+            let area = Rect::new(0, 0, columns, rows);
             let (protocol, kitty_id) = if picker.protocol_type() == ProtocolType::Kitty {
                 let id = self.allocate_id();
                 let kitty = Kitty::new(image, area, id, self.is_tmux).ok()?;
@@ -150,6 +201,7 @@ impl LyricsRenderer {
                 key.clone(),
                 Rendered {
                     protocol,
+                    rows,
                     kitty_id,
                     frame: self.frame,
                 },
@@ -157,7 +209,7 @@ impl LyricsRenderer {
         }
         let rendered = self.lines.get_mut(&key)?;
         rendered.frame = self.frame;
-        Some(&rendered.protocol)
+        Some((&rendered.protocol, rendered.rows))
     }
 
     /// Ends the frame: lines that were not drawn in it are dropped, and their
@@ -313,9 +365,11 @@ mod tests {
     fn complex_scripts_are_shaped_and_everything_else_is_left_as_text() {
         let mut r = ready(true);
         let picker = kitty_picker();
-        assert!(r.should_shape(&picker, &["Never gonna", "तुम ही हो"]));
-        assert!(r.should_shape(&picker, &["تمہارے بغیر"]));
-        assert!(!r.should_shape(&picker, &["Never gonna give you up", "君の名は"]));
+        assert!(r.should_shape(&picker, &["Never gonna", "तुम ही हो"], 1.0));
+        assert!(r.should_shape(&picker, &["تمہارے بغیر"], 1.0));
+        assert!(!r.should_shape(&picker, &["Never gonna give you up", "君の名は"], 1.0));
+        // Zoomed, anything is drawn as images: the terminal cannot enlarge text.
+        assert!(r.should_shape(&picker, &["Never gonna give you up"], 2.0));
     }
 
     #[test]
@@ -326,14 +380,14 @@ mod tests {
         for protocol in [ProtocolType::Halfblocks, ProtocolType::Sixel] {
             let mut picker = Picker::halfblocks();
             picker.set_protocol_type(protocol);
-            assert!(!r.should_shape(&picker, &["तुम ही हो"]), "{protocol:?}");
+            assert!(!r.should_shape(&picker, &["तुम ही हो"], 2.0), "{protocol:?}");
         }
     }
 
     #[test]
     fn turned_off_means_text() {
         let mut r = ready(false);
-        assert!(!r.should_shape(&kitty_picker(), &["तुम ही हो"]));
+        assert!(!r.should_shape(&kitty_picker(), &["तुम ही हो"], 2.0));
     }
 
     #[test]
@@ -343,11 +397,11 @@ mod tests {
 
         r.begin();
         assert!(
-            r.line(&picker, "तुम ही हो", Color::Rgb(137, 180, 250), 40)
+            r.line(&picker, "तुम ही हो", Color::Rgb(137, 180, 250), 40, 1.0)
                 .is_some()
         );
         assert!(
-            r.line(&picker, "अब तुम ही हो", Color::Rgb(186, 194, 222), 40)
+            r.line(&picker, "अब तुम ही हो", Color::Rgb(186, 194, 222), 40, 1.0)
                 .is_some()
         );
         r.end();
@@ -357,7 +411,7 @@ mod tests {
         // is a new image; the old colour and the other line have gone.
         r.begin();
         assert!(
-            r.line(&picker, "तुम ही हो", Color::Rgb(108, 112, 134), 40)
+            r.line(&picker, "तुम ही हो", Color::Rgb(108, 112, 134), 40, 1.0)
                 .is_some()
         );
         r.end();
@@ -377,12 +431,12 @@ mod tests {
         let picker = kitty_picker();
         let id_of = |r: &LyricsRenderer| r.lines.values().next().and_then(|l| l.kitty_id);
         r.begin();
-        r.line(&picker, "तुम ही हो", Color::Rgb(137, 180, 250), 40);
+        r.line(&picker, "तुम ही हो", Color::Rgb(137, 180, 250), 40, 1.0);
         r.end();
         let first = id_of(&r);
         for _ in 0..3 {
             r.begin();
-            r.line(&picker, "तुम ही हो", Color::Rgb(137, 180, 250), 40);
+            r.line(&picker, "तुम ही हो", Color::Rgb(137, 180, 250), 40, 1.0);
             r.end();
         }
         assert_eq!(id_of(&r), first, "re-rendered instead of reused");
@@ -395,5 +449,36 @@ mod tests {
         assert_eq!(rgb(Color::Indexed(196)), [255, 0, 0]);
         assert_eq!(rgb(Color::Indexed(244)), [128, 128, 128]);
         assert_eq!(rgb(Color::DarkGray), [127, 127, 127]);
+    }
+
+    #[test]
+    fn a_zoomed_line_is_as_many_rows_tall_as_its_zoom() {
+        let mut r = ready(true);
+        let picker = kitty_picker();
+        r.begin();
+        let (_, rows) = r
+            .line(
+                &picker,
+                "Never gonna give you up",
+                Color::Rgb(137, 180, 250),
+                60,
+                3.0,
+            )
+            .unwrap();
+        r.end();
+        assert_eq!(rows, 3);
+        assert_eq!(r.rows(&picker, "Never gonna give you up", 60, 3.0), Some(3));
+        assert_eq!(r.rows(&picker, "Never gonna give you up", 60, 1.0), Some(1));
+        // Each zoom is an image of its own.
+        r.begin();
+        r.line(
+            &picker,
+            "Never gonna give you up",
+            Color::Rgb(137, 180, 250),
+            60,
+            2.0,
+        );
+        r.end();
+        assert_eq!(r.retired.len(), 1, "the 3x image was not freed");
     }
 }

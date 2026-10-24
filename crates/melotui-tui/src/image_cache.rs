@@ -238,9 +238,13 @@ mod tests {
         );
         cache.update(&state);
         cache.lyrics.begin();
-        let line = cache
-            .lyrics
-            .line(&cache.picker, "तुम ही हो", Color::Rgb(137, 180, 250), 30);
+        let line = cache.lyrics.line(
+            &cache.picker,
+            "तुम ही हो",
+            Color::Rgb(137, 180, 250),
+            30,
+            1.0,
+        );
         assert!(line.is_some());
         cache.lyrics.end();
         assert_eq!(cache.lyrics.rendered_lines(), 1);

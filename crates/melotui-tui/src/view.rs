@@ -81,7 +81,13 @@ fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut 
     visualizer_view::draw(frame, right_vertical[0], state, image_cache);
 
     if state.ui_show_lyrics() {
-        crate::widgets::lyrics_view::draw(frame, control_chunks[0], state, image_cache);
+        crate::widgets::lyrics_view::draw(
+            frame,
+            control_chunks[0],
+            state,
+            image_cache,
+            state.lyrics_zoom(),
+        );
     } else {
         sound_control_view::draw(frame, control_chunks[0], state);
     }
@@ -151,7 +157,13 @@ fn draw_lyrics_playback(
         .constraints([Constraint::Fill(1), Constraint::Length(playback_height)])
         .split(area);
 
-    crate::widgets::lyrics_view::draw(frame, layout[0], state, image_cache);
+    crate::widgets::lyrics_view::draw(
+        frame,
+        layout[0],
+        state,
+        image_cache,
+        state.lyrics_zoom_focus(),
+    );
     if state.ui_show_playback() {
         playback_view::draw(frame, layout[1], state);
     }
@@ -172,12 +184,13 @@ fn draw_overlays(
 
     if *state.ui_mode() == UIMode::Command {
         frame.render_widget(dim_block.clone(), area);
-        let overlay = Layout::default()
+        let [above, overlay] = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Min(0), Constraint::Length(3)])
-            .split(area)[1];
+            .areas(area);
         frame.render_widget(Clear, overlay);
         command_view::draw(frame, overlay, state);
+        command_view::draw_suggestions(frame, above, state);
     }
 
     if *state.ui_mode() == UIMode::PlaylistPicker {

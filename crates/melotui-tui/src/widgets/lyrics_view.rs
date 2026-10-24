@@ -9,9 +9,12 @@ use ratatui::{
 use ratatui_image::Image;
 
 use crate::image_cache::ImageCache;
-use crate::lyrics::bidi;
+use crate::lyrics::{LyricsRenderer, bidi};
+use ratatui_image::picker::Picker;
 
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache) {
+/// Draws the lyrics, `zoom` times the text size where the terminal can show
+/// them as images.
+pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache, zoom: f32) {
     let t = crate::theme::get_theme(state);
 
     // Minimalist Sound Control Panel Lyrics
@@ -54,40 +57,56 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         melotui_core::state::lyrics::LyricsData::None => vec![("No lyrics found.", t.fg_muted)],
     };
 
-    let viewport_height = inner.height as usize;
-    let scroll_offset = active_index.map_or(0, |idx| idx.saturating_sub(viewport_height / 2));
-
     let texts: Vec<&str> = lines.iter().map(|(text, _)| *text).collect();
     let picker = &cache.picker;
     let shaped = &mut cache.lyrics;
 
-    if shaped.should_shape(picker, &texts) {
+    // As images: laid out at the zoom asked for, or less if the line being
+    // sung would not fit the panel at it.
+    let layout = if shaped.should_shape(picker, &texts, zoom) {
+        let anchor = active_index.unwrap_or(0).min(texts.len().saturating_sub(1));
+        let mut zoom = zoom;
+        loop {
+            if let Some(placed) = lay_out(shaped, picker, &texts, anchor, inner, zoom) {
+                break Some((zoom, placed));
+            }
+            if zoom <= 1.0 {
+                break None;
+            }
+            zoom = (zoom - 0.5).max(1.0);
+        }
+    } else {
+        None
+    };
+
+    if let Some((zoom, placed)) = layout {
         shaped.begin();
-        for (row, (text, color)) in lines
-            .iter()
-            .skip(scroll_offset)
-            .take(viewport_height)
-            .enumerate()
-        {
+        for (index, y, rows) in placed {
+            let (text, color) = lines[index];
             if text.trim().is_empty() {
                 continue;
             }
-            let row_area = Rect {
-                y: inner.y + row as u16,
-                height: 1,
+            let line_area = Rect {
+                y: inner.y + y,
+                height: rows,
                 ..inner
             };
-            match shaped.line(picker, text, *color, inner.width) {
-                Some(image) => frame.render_widget(Image::new(image), row_area),
+            match shaped.line(picker, text, color, inner.width, zoom) {
+                Some((image, _)) => frame.render_widget(Image::new(image), line_area),
                 None => frame.render_widget(
-                    Paragraph::new(text_line(text, *color)).alignment(Alignment::Center),
-                    row_area,
+                    Paragraph::new(text_line(text, color)).alignment(Alignment::Center),
+                    Rect {
+                        height: 1,
+                        ..line_area
+                    },
                 ),
             }
         }
         shaped.end();
     } else {
         shaped.clear();
+        let viewport_height = inner.height as usize;
+        let scroll_offset = active_index.map_or(0, |idx| idx.saturating_sub(viewport_height / 2));
         let text_lines: Vec<Line> = lines
             .iter()
             .map(|(text, color)| text_line(text, *color))
@@ -97,6 +116,65 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             .scroll((scroll_offset as u16, 0));
         frame.render_widget(paragraph, inner);
     }
+}
+
+/// Where each line that fits goes, as (line, row within `area`, rows), with
+/// line `anchor` — the one being sung — centred, unless that would leave the
+/// panel empty above the first line. Only whole lines are placed, since an
+/// image cannot be cut off at the edge. `None` if `anchor` itself does not
+/// fit.
+fn lay_out(
+    shaped: &mut LyricsRenderer,
+    picker: &Picker,
+    texts: &[&str],
+    anchor: usize,
+    area: Rect,
+    zoom: f32,
+) -> Option<Vec<(usize, u16, u16)>> {
+    let mut rows = |index: usize| {
+        let text = texts[index];
+        if text.trim().is_empty() {
+            (zoom.round() as u16).max(1)
+        } else {
+            shaped.rows(picker, text, area.width, zoom).unwrap_or(1)
+        }
+    };
+    let height = area.height;
+    let anchor_rows = rows(anchor);
+    if anchor_rows > height {
+        return None;
+    }
+
+    let centred = (height - anchor_rows) / 2;
+    let mut above = 0;
+    for index in (0..anchor).rev() {
+        above += rows(index);
+        if above >= centred {
+            break;
+        }
+    }
+    let top = centred.min(above);
+
+    let mut placed = vec![(anchor, top, anchor_rows)];
+    let mut y = top;
+    for index in (0..anchor).rev() {
+        let line_rows = rows(index);
+        if line_rows > y {
+            break;
+        }
+        y -= line_rows;
+        placed.push((index, y, line_rows));
+    }
+    let mut y = top + anchor_rows;
+    for index in anchor + 1..texts.len() {
+        let line_rows = rows(index);
+        if y + line_rows > height {
+            break;
+        }
+        placed.push((index, y, line_rows));
+        y += line_rows;
+    }
+    Some(placed)
 }
 
 /// A lyric line as terminal text, bold, with right-to-left runs in the order
@@ -214,18 +292,34 @@ mod tests {
     /// The frame as drawn, skipped cells included — the backend's copy only
     /// has what was actually written to the terminal.
     fn render(state: &AppState, cache: &mut ImageCache) -> Buffer {
-        let mut terminal = Terminal::new(TestBackend::new(50, 8)).unwrap();
-        let frame = terminal.draw(|f| draw(f, f.area(), state, cache)).unwrap();
+        render_at(state, cache, 8, 1.0)
+    }
+
+    fn render_at(state: &AppState, cache: &mut ImageCache, height: u16, zoom: f32) -> Buffer {
+        let mut terminal = Terminal::new(TestBackend::new(50, height)).unwrap();
+        let frame = terminal
+            .draw(|f| draw(f, f.area(), state, cache, zoom))
+            .unwrap();
         frame.buffer.clone()
+    }
+
+    fn kitty_cache() -> ImageCache {
+        let mut cache = ImageCache::empty();
+        cache.picker.set_protocol_type(ProtocolType::Kitty);
+        cache.lyrics = LyricsRenderer::new(true);
+        cache.lyrics.wait_for_fonts();
+        cache
+    }
+
+    /// Whether row `y` of the panel shows an image.
+    fn image_row(buffer: &Buffer, y: u16) -> bool {
+        buffer[(3, y)].symbol().contains('\u{10EEEE}')
     }
 
     #[test]
     fn complex_script_lyrics_are_drawn_as_images_on_kitty() {
         let state = state_with_lyrics(LYRICS, "kitty");
-        let mut cache = ImageCache::empty();
-        cache.picker.set_protocol_type(ProtocolType::Kitty);
-        cache.lyrics = LyricsRenderer::new(true);
-        cache.lyrics.wait_for_fonts();
+        let mut cache = kitty_cache();
 
         let buffer = render(&state, &mut cache);
         // Inside the border and the two-column padding, each lyric row is one
@@ -256,5 +350,39 @@ mod tests {
         let expected = crate::lyrics::bidi::for_terminal("تمہارے بغیر ہم");
         assert!(row(2).contains(&*expected), "{:?}", row(2));
         assert!(row(3).contains("Never gonna give you up"));
+    }
+
+    #[test]
+    fn zoomed_lyrics_take_as_many_rows_each_as_the_zoom() {
+        let state = state_with_lyrics(LYRICS, "zoomed");
+        let mut cache = kitty_cache();
+        // Six rows inside the border, three lines two rows tall.
+        let buffer = render_at(&state, &mut cache, 8, 2.0);
+        for y in 1..=6 {
+            assert!(image_row(&buffer, y), "row {y} is not part of an image");
+        }
+        assert_eq!(cache.lyrics.rendered_lines(), 3);
+    }
+
+    #[test]
+    fn zoomed_lyrics_in_any_script_are_images_and_unzoomed_latin_stays_text() {
+        let state = state_with_lyrics("[00:01.00]Never gonna give you up\n", "latin");
+        let mut cache = kitty_cache();
+        let text = render_at(&state, &mut cache, 8, 1.0);
+        let row = (0..50).map(|x| text[(x, 1)].symbol()).collect::<String>();
+        assert!(row.contains("Never gonna give you up"), "{row:?}");
+
+        let zoomed = render_at(&state, &mut cache, 8, 2.0);
+        assert!(image_row(&zoomed, 1) && image_row(&zoomed, 2));
+    }
+
+    #[test]
+    fn a_panel_too_short_for_the_zoom_draws_the_lyrics_smaller() {
+        let state = state_with_lyrics(LYRICS, "short");
+        let mut cache = kitty_cache();
+        // Two rows inside the border: a 4x line would not fit, a 2x one does.
+        let buffer = render_at(&state, &mut cache, 4, 4.0);
+        assert!(image_row(&buffer, 1) && image_row(&buffer, 2));
+        assert_eq!(cache.lyrics.rendered_lines(), 1);
     }
 }

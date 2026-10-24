@@ -94,7 +94,7 @@ pub fn draw(
         );
     }
     if sections.len() >= 4 {
-        render_command_section(frame, sections[3], " Commands ", t);
+        render_command_section(frame, sections[3], " Commands (: then Tab) ", t);
     }
 }
 
@@ -117,16 +117,24 @@ fn render_command_section(frame: &mut Frame, area: Rect, title: &str, t: &Theme)
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let mut rows = Vec::with_capacity(melotui_core::Command::help_entries().len());
-    for (syntax, desc) in melotui_core::Command::help_entries() {
-        let row = ratatui::widgets::Row::new(vec![
-            ratatui::widgets::Cell::from(Span::styled(*syntax, Style::default().fg(t.help_key))),
-            ratatui::widgets::Cell::from(Span::styled(*desc, Style::default().fg(t.help_text))),
-        ]);
-        rows.push(row);
-    }
+    let entries = melotui_core::Command::help_entries();
+    let syntax_width = entries
+        .iter()
+        .map(|(syntax, _)| syntax.chars().count() as u16)
+        .max()
+        .unwrap_or(0)
+        .min(inner.width / 2);
+    let rows = entries.into_iter().map(|(syntax, desc)| {
+        ratatui::widgets::Row::new(vec![
+            ratatui::widgets::Cell::from(Span::styled(syntax, Style::default().fg(t.help_key))),
+            ratatui::widgets::Cell::from(Span::styled(desc, Style::default().fg(t.help_text))),
+        ])
+    });
 
-    let table = ratatui::widgets::Table::new(rows, [Constraint::Length(15), Constraint::Min(10)]);
+    let table = ratatui::widgets::Table::new(
+        rows,
+        [Constraint::Length(syntax_width), Constraint::Min(10)],
+    );
     frame.render_widget(table, inner);
 }
 

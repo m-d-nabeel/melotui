@@ -1,7 +1,11 @@
 use crate::{
     AppMsg, AppState, Command, UIMode,
+    command::{LyricsView, Macro, Panel, Reset},
     domain::PlaylistMeta,
-    message::{download::DownloadMsg, library::LibraryMsg, playback::PlaybackMsg, ui::UIMsg},
+    message::{
+        audio::AudioMsg, download::DownloadMsg, library::LibraryMsg, navigation::NavigationMsg,
+        playback::PlaybackMsg, ui::UIMsg,
+    },
     navigation::ids::SidebarNodeId,
     state::{
         Notification, NotificationKind, VisualizerMode,
@@ -325,6 +329,10 @@ pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     tracing::debug!("Enter Command Mode");
     state.session.ui.mode = UIMode::Command;
     state.session.ui.command_buffer.reset();
+    state.session.ui.autocomplete_cycle = 0;
+    state.session.ui.autocomplete_prefix = None;
+    // Read once here rather than on every keystroke, for completing them.
+    state.session.ui.command_presets = crate::state::DspPreset::list().unwrap_or_default();
     vec![]
 }
 
@@ -522,13 +530,174 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 track_id,
             })]
         }
-        Command::Unknown(reason) => {
-            state.session.notification.current = Some(Notification::new(
-                NotificationKind::Error,
-                format!("Unknown command: {}", reason),
-            ));
+        Command::Invalid(why) => {
+            let mut chars = why.chars();
+            let why = chars
+                .next()
+                .map(|first| first.to_uppercase().chain(chars).collect::<String>())
+                .unwrap_or_default();
+            state.session.notification.current =
+                Some(Notification::new(NotificationKind::Error, why));
             vec![]
         }
+        Command::Help => handle_open_help(state),
+        Command::Play => {
+            if state.is_playing() {
+                vec![]
+            } else if state.session.playback.current.is_some() {
+                vec![AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)]
+            } else {
+                vec![AppMsg::Playback(PlaybackMsg::RequestPlaySelected)]
+            }
+        }
+        Command::Pause => {
+            if state.is_playing() {
+                vec![AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)]
+            } else {
+                vec![]
+            }
+        }
+        Command::Stop => vec![AppMsg::Playback(PlaybackMsg::RequestStop)],
+        Command::Next => vec![AppMsg::Playback(PlaybackMsg::RequestPlayNext)],
+        Command::Prev => vec![AppMsg::Playback(PlaybackMsg::RequestPlayPrev)],
+        Command::Volume(amount) => {
+            let current = state.volume();
+            let volume = amount.applied_to(current).clamp(0.0, 1.5);
+            tell(state, format!("Volume: {:.0}%", volume * 100.0));
+            vec![AppMsg::Audio(AudioMsg::AdjustVolume(volume - current))]
+        }
+        Command::Speed(amount) => {
+            let current = state.speed();
+            let speed = amount.applied_to(current).clamp(0.5, 2.0);
+            tell(state, format!("Speed: {speed:.2}x"));
+            vec![AppMsg::Audio(AudioMsg::AdjustSpeed(speed - current))]
+        }
+        Command::Shuffle(on) => {
+            if on.is_none_or(|on| on != state.shuffle_active()) {
+                vec![AppMsg::Library(LibraryMsg::ToggleShuffle)]
+            } else {
+                tell(
+                    state,
+                    format!(
+                        "Shuffle is already {}",
+                        if state.shuffle_active() { "on" } else { "off" }
+                    ),
+                );
+                vec![]
+            }
+        }
+        Command::Repeat(mode) => {
+            let Some(mode) = mode else {
+                return vec![AppMsg::Library(LibraryMsg::ToggleRepeatMode)];
+            };
+            // Stepped round to through the toggle, which also says what it is.
+            let mut current = state.repeat_mode().clone();
+            let mut msgs = Vec::new();
+            while current != mode && msgs.len() < 4 {
+                msgs.push(AppMsg::Library(LibraryMsg::ToggleRepeatMode));
+                current = current.next();
+            }
+            if msgs.is_empty() {
+                tell(state, "Repeat mode unchanged");
+            }
+            msgs
+        }
+        Command::Sort => vec![AppMsg::Library(LibraryMsg::ToggleSort)],
+        Command::ClearQueue => vec![AppMsg::Library(LibraryMsg::ClearQueue)],
+        Command::ShowLyrics(show) => {
+            state.session.ui.show_lyrics = show.unwrap_or(!state.session.ui.show_lyrics);
+            vec![]
+        }
+        Command::LyricsZoom { view, zoom } => {
+            let view = view.unwrap_or(
+                if state.session.ui.focus_mode == FocusMode::LyricsPlayback {
+                    LyricsView::Focus
+                } else {
+                    LyricsView::Panel
+                },
+            );
+            match zoom {
+                Some(zoom) => {
+                    let (slot, name) = match view {
+                        LyricsView::Panel => (&mut state.session.ui.lyrics_zoom, "panel"),
+                        LyricsView::Focus => (&mut state.session.ui.lyrics_zoom_focus, "full view"),
+                    };
+                    *slot = zoom;
+                    tell(state, format!("Lyrics zoom ({name}): {zoom}x"));
+                }
+                None => {
+                    let ui = &state.session.ui;
+                    let message = format!(
+                        "Lyrics zoom: panel {}x, full view {}x",
+                        ui.lyrics_zoom, ui.lyrics_zoom_focus
+                    );
+                    tell(state, message);
+                }
+            }
+            vec![]
+        }
+        Command::SetEffect { effect, amount } => {
+            let value = amount.applied_to(effect.get(&state.session.audio));
+            let msg = effect.set(&mut state.session.audio, value);
+            tell(
+                state,
+                format!(
+                    "{}: {}",
+                    effect.name(),
+                    round(effect.get(&state.session.audio))
+                ),
+            );
+            vec![AppMsg::Audio(msg)]
+        }
+        Command::SetEq { band, amount } => {
+            let current = state.eq_band(band);
+            let gain = amount.applied_to(current).clamp(-12.0, 12.0);
+            tell(state, format!("EQ band {}: {gain:+.1} dB", band + 1));
+            vec![AppMsg::Audio(AudioMsg::AdjustEqBand {
+                band,
+                delta: gain - current,
+            })]
+        }
+        Command::ResetEffects(reset) => match reset {
+            Reset::All => {
+                // The effects, not the volume or speed.
+                let audio = &mut state.session.audio;
+                *audio = crate::state::AudioState {
+                    volume: audio.volume,
+                    speed: audio.speed,
+                    ..Default::default()
+                };
+                tell(state, "Effects reset");
+                sync_audio_msgs(&state.session.audio)
+            }
+            Reset::Eq => {
+                state.session.audio.eq_bands = [0.0; 10];
+                tell(state, "EQ reset");
+                (0..10)
+                    .map(|band| AppMsg::Audio(AudioMsg::DispatchSetEqBand { band, gain: 0.0 }))
+                    .collect()
+            }
+            Reset::Effect(effect) => {
+                let msg = effect.set(&mut state.session.audio, effect.neutral());
+                tell(state, format!("{} reset", effect.name()));
+                vec![AppMsg::Audio(msg)]
+            }
+        },
+        Command::Macro(Macro::SlowedReverb) => {
+            crate::action::audio_action::handle_macro_slowed_reverb(state)
+        }
+        Command::Macro(Macro::BassBoosted) => {
+            crate::action::audio_action::handle_macro_bass_boosted(state)
+        }
+        Command::Macro(Macro::Spatial) => crate::action::audio_action::handle_macro_spatial(state),
+        Command::ToggleStudio => handle_toggle_dsp_studio(state),
+        Command::TogglePanel(panel) => match panel {
+            Panel::Playback => handle_toggle_playback_panel(state),
+            Panel::Lyrics => handle_toggle_lyrics(state),
+            Panel::Art => vec![AppMsg::Navigation(NavigationMsg::ToggleArt)],
+            Panel::Info => vec![AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)],
+            Panel::Studio => handle_toggle_dsp_studio(state),
+        },
         Command::Focus { mode } => handle_set_focus_mode(state, mode),
         Command::Sidebar { width } => handle_set_sidebar_width(state, width),
         Command::PresetSave { name } => {
@@ -583,6 +752,18 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         }
         Command::PresetPicker => handle_enter_preset_picker(state),
     }
+}
+
+/// A short note of what a command did.
+fn tell(state: &mut AppState, message: impl Into<String>) {
+    state.session.notification.current =
+        Some(Notification::new(NotificationKind::Info, message).with_duration(2));
+}
+
+/// `value` to two decimal places, without trailing zeros.
+fn round(value: f32) -> String {
+    let text = format!("{value:.2}");
+    text.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 pub fn handle_dispatch_set_visualizer(
@@ -651,60 +832,46 @@ pub fn handle_adjust_sidebar_width(state: &mut AppState, delta: i16) -> Vec<AppM
     vec![]
 }
 
-pub fn handle_autocomplete(state: &mut AppState) -> Vec<AppMsg> {
-    if state.session.ui.autocomplete_prefix.is_none() {
-        state.session.ui.autocomplete_prefix =
-            Some(state.session.ui.command_buffer.value().to_string());
+/// Steps through the completions of what was typed before Tab was first
+/// pressed, forwards or backwards; one completion is simply taken, ready for
+/// the next Tab to complete what follows it.
+fn cycle_completions(state: &mut AppState, forwards: bool) -> Vec<AppMsg> {
+    let ui = &mut state.session.ui;
+    let typed = ui
+        .autocomplete_prefix
+        .get_or_insert_with(|| ui.command_buffer.value().to_string())
+        .clone();
+    let suggestions = crate::autocomplete::complete(&typed, &state.completion_names());
+    let ui = &mut state.session.ui;
+    let count = suggestions.len();
+    if count == 0 {
+        ui.autocomplete_prefix = None;
+        return vec![];
     }
-
-    let prefix = state.session.ui.autocomplete_prefix.as_ref().unwrap();
-
-    let (suggestion, _) = crate::autocomplete::suggest(prefix, state.session.ui.autocomplete_cycle);
-    if let Some(suggestion) = suggestion {
-        state.session.ui.command_buffer =
-            tui_input::Input::new(suggestion.clone()).with_cursor(suggestion.len());
-        state.session.ui.autocomplete_cycle += 1;
+    // `autocomplete_cycle` is the chosen completion plus one, 0 for none yet.
+    let chosen = match (ui.autocomplete_cycle, forwards) {
+        (0, true) => 0,
+        (0, false) => count - 1,
+        (cycle, true) => cycle % count,
+        (cycle, false) => (cycle - 1 + count - 1) % count,
+    };
+    let text = suggestions[chosen].text.clone();
+    ui.command_buffer = tui_input::Input::new(text.clone()).with_cursor(text.chars().count());
+    if count == 1 {
+        ui.autocomplete_prefix = None;
+        ui.autocomplete_cycle = 0;
+    } else {
+        ui.autocomplete_cycle = chosen + 1;
     }
     vec![]
 }
 
+pub fn handle_autocomplete(state: &mut AppState) -> Vec<AppMsg> {
+    cycle_completions(state, true)
+}
+
 pub fn handle_autocomplete_reverse(state: &mut AppState) -> Vec<AppMsg> {
-    if state.session.ui.autocomplete_prefix.is_none() {
-        state.session.ui.autocomplete_prefix =
-            Some(state.session.ui.command_buffer.value().to_string());
-    }
-
-    let prefix = state.session.ui.autocomplete_prefix.as_ref().unwrap();
-
-    let (_, count) = crate::autocomplete::suggest(prefix, 0);
-    if count > 0 {
-        let current_cycle = state.session.ui.autocomplete_cycle;
-
-        let prev_index = if count == 1 {
-            0
-        } else if (current_cycle % count) < 2 {
-            (current_cycle % count) + count - 2
-        } else {
-            (current_cycle % count) - 2
-        };
-
-        let new_cycle = if count == 1 {
-            0
-        } else if (current_cycle % count) < 1 {
-            (current_cycle % count) + count - 1
-        } else {
-            (current_cycle % count) - 1
-        };
-
-        state.session.ui.autocomplete_cycle = new_cycle;
-
-        let (suggestion, _) = crate::autocomplete::suggest(prefix, prev_index);
-        if let Some(suggestion) = suggestion {
-            state.session.ui.command_buffer =
-                tui_input::Input::new(suggestion.clone()).with_cursor(suggestion.len());
-        }
-    }
-    vec![]
+    cycle_completions(state, false)
 }
 
 pub fn handle_command_history_prev(state: &mut AppState) -> Vec<AppMsg> {
@@ -1231,45 +1398,145 @@ mod tests {
         ));
     }
 
+    /// Runs `:input`, then every message it leads to, as the app would.
+    fn run(state: &mut AppState, input: &str) -> Vec<AppMsg> {
+        let mut pending = handle_submit_command(state, input.to_string());
+        let mut seen = Vec::new();
+        while let Some(msg) = pending.pop() {
+            pending.extend(crate::reducer::reduce(state, msg.clone()));
+            seen.push(msg);
+        }
+        seen
+    }
+
     #[test]
-    fn test_handle_autocomplete_cycle() {
+    fn lyrics_zoom_goes_to_the_view_on_screen_unless_one_is_named() {
         let mut state = test_state();
+        run(&mut state, "lyrics zoom 2.5");
+        assert_eq!(state.lyrics_zoom(), 2.5);
+        state.session.ui.focus_mode = FocusMode::LyricsPlayback;
+        run(&mut state, "lyrics zoom 4");
+        assert_eq!((state.lyrics_zoom(), state.lyrics_zoom_focus()), (2.5, 4.0));
+        run(&mut state, "lyrics zoom panel 1");
+        assert_eq!(state.lyrics_zoom(), 1.0);
+        // The defaults, from the config.
+        let fresh = test_state();
+        assert_eq!((fresh.lyrics_zoom(), fresh.lyrics_zoom_focus()), (2.0, 3.0));
+    }
 
-        // Initial input "pl" has matches: "pl add", "pl create", "pl del", "pl rm", "playlist add", "playlist create", "playlist del", "playlist rm"
-        state.session.ui.command_buffer = tui_input::Input::new("pl".to_string());
+    #[test]
+    fn effects_are_set_within_their_range_and_sent_to_the_audio_thread() {
+        let mut state = test_state();
+        let msgs = run(&mut state, "fx bass 9");
+        assert_eq!(state.session.audio.bass, 5.0);
+        assert!(
+            msgs.iter()
+                .any(|m| matches!(m, AppMsg::Audio(AudioMsg::DispatchSetBass(v)) if *v == 5.0))
+        );
+        run(&mut state, "fx bass -1.5");
+        assert_eq!(state.session.audio.bass, 3.5);
+        run(&mut state, "fx eq 2 +20");
+        assert_eq!(state.session.audio.eq_bands[1], 12.0);
+        run(&mut state, "fx reset bass");
+        assert_eq!(state.session.audio.bass, 1.0);
+        run(&mut state, "fx echo 0.5");
+        run(&mut state, "vol 50");
+        run(&mut state, "fx reset");
+        assert_eq!(state.session.audio.echo, 0.0);
+        assert_eq!(state.session.audio.eq_bands, [0.0; 10]);
+        assert_eq!(state.volume(), 0.5, "resetting the effects kept the volume");
+    }
 
-        // Forward 1: cycle 0 -> 1. Should show "pl add "
+    #[test]
+    fn volume_and_speed() {
+        let mut state = test_state();
+        run(&mut state, "vol 80");
+        assert!((state.volume() - 0.8).abs() < 1e-6);
+        run(&mut state, "vol +100");
+        assert_eq!(state.volume(), 1.5, "held at its maximum");
+        run(&mut state, "speed 1.25");
+        assert_eq!(state.speed(), 1.25);
+    }
+
+    #[test]
+    fn repeat_and_shuffle_can_be_set_and_not_only_toggled() {
+        let mut state = test_state();
+        run(&mut state, "repeat playlist");
+        assert_eq!(
+            *state.repeat_mode(),
+            crate::playback::state::RepeatMode::Playlist
+        );
+        run(&mut state, "repeat playlist");
+        assert_eq!(
+            *state.repeat_mode(),
+            crate::playback::state::RepeatMode::Playlist
+        );
+        run(&mut state, "repeat");
+        assert_eq!(
+            *state.repeat_mode(),
+            crate::playback::state::RepeatMode::Off
+        );
+        run(&mut state, "shuffle on");
+        run(&mut state, "shuffle on");
+        assert!(state.shuffle_active());
+        run(&mut state, "shuffle");
+        assert!(!state.shuffle_active());
+    }
+
+    #[test]
+    fn an_invalid_command_says_why() {
+        let mut state = test_state();
+        run(&mut state, "fx bass loud");
+        let message = &state.session.notification.current.as_ref().unwrap().message;
+        assert_eq!(message, "Fx bass needs a number: <0.1-5>");
+    }
+
+    #[test]
+    fn tab_cycles_through_completions_both_ways() {
+        let mut state = test_state();
+        let value = |state: &AppState| state.session.ui.command_buffer.value().to_string();
+
+        // "p": play, pause, prev, pl, preset — in the command table's order.
+        state.session.ui.command_buffer = tui_input::Input::new("p".to_string());
         handle_autocomplete(&mut state);
-        assert_eq!(state.session.ui.autocomplete_cycle, 1);
-        assert_eq!(state.session.ui.autocomplete_prefix.as_deref(), Some("pl"));
-        let val1 = state.session.ui.command_buffer.value().to_string();
-        assert_eq!(val1, "pl add ");
-
-        // Forward 2: cycle 1 -> 2. Should show "pl create "
+        assert_eq!(value(&state), "play");
+        assert_eq!(state.session.ui.autocomplete_prefix.as_deref(), Some("p"));
         handle_autocomplete(&mut state);
-        assert_eq!(state.session.ui.autocomplete_cycle, 2);
-        assert_eq!(state.session.ui.autocomplete_prefix.as_deref(), Some("pl"));
-        let val2 = state.session.ui.command_buffer.value().to_string();
-        assert_eq!(val2, "pl create ");
-
-        // Reverse 1: cycle 2 -> 1. Should show "pl add " again
+        assert_eq!(value(&state), "pause");
         handle_autocomplete_reverse(&mut state);
-        assert_eq!(state.session.ui.autocomplete_cycle, 1);
-        assert_eq!(state.session.ui.autocomplete_prefix.as_deref(), Some("pl"));
-        let val3 = state.session.ui.command_buffer.value().to_string();
-        assert_eq!(val3, "pl add ");
-
-        // Reverse 2: cycle 1 -> 0. Should wrap around backwards to the LAST element, "playlist rm "
+        assert_eq!(value(&state), "play");
         handle_autocomplete_reverse(&mut state);
-        assert_eq!(state.session.ui.autocomplete_cycle, 0); // 0 or whatever the last element's cycle is... actually wait! If length is 8, reverse from 1 goes to 0 (which shows the last element). Wait! If cycle is 0, the next is 0. We should test that it returns the last element.
-        let val4 = state.session.ui.command_buffer.value().to_string();
-        assert_eq!(val4, "playlist rm ");
+        assert_eq!(
+            value(&state),
+            "preset ",
+            "backwards from the first wraps to the last"
+        );
+        handle_autocomplete(&mut state);
+        assert_eq!(
+            value(&state),
+            "play",
+            "forwards from the last wraps to the first"
+        );
 
-        // Clear prefix explicitly
+        // Typing starts afresh.
         use tui_input::InputRequest;
-        crate::action::ui_action::handle_command_input(&mut state, InputRequest::InsertChar('x'));
+        handle_command_input(&mut state, InputRequest::InsertChar('x'));
         assert_eq!(state.session.ui.autocomplete_cycle, 0);
         assert_eq!(state.session.ui.autocomplete_prefix, None);
+    }
+
+    #[test]
+    fn a_single_completion_is_taken_and_the_next_tab_completes_what_follows() {
+        let mut state = test_state();
+        let value = |state: &AppState| state.session.ui.command_buffer.value().to_string();
+        state.session.ui.command_buffer = tui_input::Input::new("lyr".to_string());
+        handle_autocomplete(&mut state);
+        assert_eq!(value(&state), "lyrics ");
+        assert_eq!(state.session.ui.autocomplete_prefix, None);
+        handle_autocomplete(&mut state);
+        assert_eq!(value(&state), "lyrics show");
+        handle_autocomplete(&mut state);
+        assert_eq!(value(&state), "lyrics hide");
     }
 
     #[test]
