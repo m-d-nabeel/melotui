@@ -11,7 +11,7 @@
 - **Local Library & Playlists**: Automatic scanning and organization of your music files.
 - **Audio Playback**: Support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
 - **Spectrum Visualizer**: Real-time audio spectrum visualization (supports CAVA).
-- **Synced Lyrics**: Time-synced lyrics from `.lrc` files or LRCLIB. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2).
+- **Synced Lyrics**: Time-synced lyrics from `.lrc` files or LRCLIB. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
 - **DSP Studio**: Real-time audio processing (Speed, Bass, Treble, Reverb, Echo) with a symmetric 8-band EQ.
 - **System Integration**: Syncs with Linux/macOS desktop media widgets and supports hardware media keys.
 - **Download Support**: Integrated YouTube downloads via `yt-dlp`.
@@ -78,7 +78,31 @@ Start the player:
 
 - Use `h`/`j`/`k`/`l` or the `Arrow Keys` to navigate.
 - Press `Tab` to switch between panels.
-- Press `:` to enter the command bar (e.g., `:dl lofi hip hop` or `:quit`).
+- Press `:` to enter the command bar (e.g., `:dl lofi hip hop` or `:quit`). It lists every command as you type; `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names.
+
+### Commands
+
+| Command | What it does |
+| --- | --- |
+| `:play`, `:pause`, `:stop`, `:next`, `:prev` | Playback |
+| `:seek +10`, `:seek 1:30` | Seek by or to a position |
+| `:vol 80`, `:vol +10`, `:speed 1.25` | Volume (in percent) and speed |
+| `:shuffle on`, `:repeat track` | Shuffle and repeat |
+| `:fx bass 2`, `:fx eq 3 -4`, `:fx reset` | Effects, the EQ, and resetting them |
+| `:fx slowed`, `:preset load <name>` | Effect macros and presets |
+| `:lyrics zoom 3`, `:lyrics zoom panel 2` | Lyrics size |
+| `:focus lyrics`, `:vis radial`, `:toggle art` | Layout, visualizer and panels |
+| `:pl add <playlist>`, `:artist <query>` | Playlists and search |
+
+### Lyrics size
+
+On terminals that can show images (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole), lyrics are drawn larger than the terminal's text: twice the size in the lyrics panel and three times in the full lyrics view (`:focus lyrics`) by default. Change them for the session with `:lyrics zoom <1-4>`, or for good in `config.toml` (`~/.config/melotui/config.toml` on Linux):
+
+```toml
+[ui]
+lyrics_zoom = 2.0        # lyrics panel
+lyrics_zoom_focus = 3.0  # full lyrics view
+```
 
 ## License
 
