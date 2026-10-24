@@ -282,7 +282,7 @@ pub static COMMANDS: &[Spec] = &[
             spec(
                 &["zoom"],
                 "[panel|focus] <1-4>",
-                "Lyrics size, in the panel or the full lyrics view",
+                "Lyrics size (panel or full view)",
                 Then::Args(&[Values::Words(LYRICS_VIEWS), Values::Free]),
             ),
             spec(
