@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NotificationKind {
     Info,
     Progress,

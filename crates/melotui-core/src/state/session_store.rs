@@ -219,7 +219,7 @@ impl PersistedSession {
     pub fn save(&self) -> Result<()> {
         let path = Self::file_path()?;
         let content = toml::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
+        crate::utils::fs::write_atomically(&path, content.as_bytes())?;
         Ok(())
     }
 

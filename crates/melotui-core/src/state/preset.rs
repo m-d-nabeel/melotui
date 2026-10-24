@@ -51,7 +51,7 @@ impl DspPreset {
     pub fn save(&self) -> Result<()> {
         let path = Self::preset_path(&self.name)?;
         let content = toml::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
+        crate::utils::fs::write_atomically(&path, content.as_bytes())?;
         Ok(())
     }
 

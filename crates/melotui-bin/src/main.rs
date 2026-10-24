@@ -4,7 +4,7 @@ mod logging;
 mod mpris;
 mod runtime;
 
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -65,8 +65,12 @@ fn main() -> ExitCode {
     let log_guard = logging::init();
     std::panic::set_hook(Box::new(|panic| {
         let _ = melotui_tui::restore_terminal();
-        tracing::error!("panic: {}", panic);
-        eprintln!("panic: {}", panic);
+        tracing::error!(
+            "panic: {panic}\n{}",
+            std::backtrace::Backtrace::force_capture()
+        );
+        // Not eprintln!, which panics itself if the terminal has gone.
+        let _ = writeln!(std::io::stderr(), "panic: {panic}");
     }));
 
     let mut config = match load() {

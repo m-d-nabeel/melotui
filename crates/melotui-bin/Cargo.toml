@@ -32,6 +32,7 @@ pkg-fmt = "zip"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+ctrlc = { version = "3", features = ["termination"] }
 melotui-core.workspace = true
 melotui-tui.workspace = true
 melotui-bus.workspace = true

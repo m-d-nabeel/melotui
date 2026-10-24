@@ -7,7 +7,8 @@ use ratatui::crossterm::terminal::{
 use ratatui::crossterm::{cursor, event, execute, terminal};
 use ratatui::{Terminal, crossterm::terminal::EnterAlternateScreen};
 use std::io::{Stdout, stdout};
-use std::time::Duration;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use crate::image_cache::ImageCache;
 use crate::{input::InputHandler, view};
@@ -23,6 +24,31 @@ pub struct Tui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     pub image_cache: ImageCache,
     pub key_registry: crate::keybinding::KeyRegistry,
+    /// Terminal events, read on a thread of their own.
+    events: mpsc::Receiver<std::io::Result<Event>>,
+}
+
+/// Reads terminal events on a thread of its own, so the app's loop only ever
+/// waits on a channel.
+///
+/// crossterm's reader never returns once the terminal hangs up — it retries
+/// the failing read forever — and the loop blocked in it then never got round
+/// to quitting. With the reading here, the loop keeps its own time whatever
+/// happens to the terminal.
+fn spawn_input_thread() -> std::io::Result<mpsc::Receiver<std::io::Result<Event>>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("terminal-input".into())
+        .spawn(move || {
+            loop {
+                let event = event::read();
+                let failed = event.is_err();
+                if tx.send(event).is_err() || failed {
+                    break;
+                }
+            }
+        })?;
+    Ok(rx)
 }
 
 impl Tui {
@@ -37,11 +63,17 @@ impl Tui {
         let mut key_registry = crate::keybinding::KeyRegistry::default();
         let errors = key_registry.apply_overrides(&config.keymap_overrides);
 
+        // The image cache asks the terminal about itself and reads the replies
+        // from stdin, so input is only read from here on.
+        let image_cache = ImageCache::new(config.ui.lyrics_shaping);
+        let events = spawn_input_thread()?;
+
         Ok((
             Self {
                 terminal,
-                image_cache: ImageCache::new(config.ui.lyrics_shaping),
+                image_cache,
                 key_registry,
+                events,
             },
             errors,
         ))
@@ -60,7 +92,14 @@ impl Tui {
         Ok(())
     }
 
-    pub fn shutdown(self) -> anyhow::Result<()> {
+    pub fn shutdown(mut self) -> anyhow::Result<()> {
+        // A terminal that has gone cannot be restored, and ratatui's own clean
+        // up would eprintln! about the cursor — a panic, with stderr gone too.
+        if self.terminal.show_cursor().is_err() {
+            tracing::info!("Terminal gone; nothing to restore");
+            std::mem::forget(self);
+            return Ok(());
+        }
         // Drop self first to release the terminal backend,
         // then restore_terminal() handles the rest via Drop.
         drop(self);
@@ -73,33 +112,37 @@ impl Tui {
         Ok((size.width, size.height))
     }
 
+    /// The next event that means something to the app, waiting at most
+    /// `timeout` for one. An error means the terminal is gone.
     pub fn poll_event(
         &self,
         state: &AppState,
         timeout: Duration,
     ) -> anyhow::Result<Option<AppMsg>> {
-        let start = std::time::Instant::now();
-        let mut current_timeout = timeout;
-
-        while event::poll(current_timeout)? {
-            let msg = match event::read()? {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            let event = match self.events.recv_timeout(left) {
+                Ok(event) => event?,
+                Err(mpsc::RecvTimeoutError::Timeout) => return Ok(None),
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    anyhow::bail!("the terminal input closed")
+                }
+            };
+            let msg = match event {
                 Event::Key(key) => InputHandler::handle(key, state, &self.key_registry),
                 Event::Resize(w, h) => Some(AppMsg::UI(UIMsg::Resize(w, h))),
                 _ => None,
             };
-
+            // An event that means nothing — an unmapped key, a key release, the
+            // mouse — is passed over, and the wait goes on for the time left.
             if msg.is_some() {
                 return Ok(msg);
             }
-
-            // We consumed an event but it resulted in no AppMsg (e.g. unmapped key,
-            // key release, or mouse event). We must keep polling so we don't falsely
-            // return Ok(None) and break the coalescing drain loop in runtime.rs.
-            let elapsed = start.elapsed();
-            current_timeout = timeout.saturating_sub(elapsed);
+            if left.is_zero() {
+                return Ok(None);
+            }
         }
-
-        Ok(None)
     }
 }
 

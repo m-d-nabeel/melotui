@@ -37,6 +37,11 @@ pub enum UIMsg {
     },
     ConfirmYes,
     ConfirmNo,
+    /// A notification from outside the reducer: a worker's error, say.
+    Notify {
+        kind: crate::state::NotificationKind,
+        message: String,
+    },
     // Focus mode
     CycleFocusMode,
     SetFocusMode(FocusMode),

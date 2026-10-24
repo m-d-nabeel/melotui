@@ -30,7 +30,7 @@ impl Cava {
 
         let mut process = Command::new("cava")
             .arg("-p")
-            .arg(config_path.to_str().unwrap())
+            .arg(&config_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .stdin(Stdio::null())

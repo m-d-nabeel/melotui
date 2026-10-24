@@ -15,8 +15,16 @@ use melotui_tui::Tui;
 use std::{
     collections::{HashMap, VecDeque},
     path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
+
+/// How often the session is saved while running, so a crash or a killed
+/// terminal loses at most this much.
+const AUTOSAVE_EVERY: Duration = Duration::from_secs(30);
 
 use crate::input_processor::InputProcessor;
 
@@ -49,7 +57,16 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
     let mut startup_errors = config.startup_errors.clone();
     startup_errors.extend(keymap_errors);
 
-    if !startup_errors.is_empty() {
+    if music_roots.is_empty() {
+        state.set_notification_with_duration(
+            NotificationKind::Warning,
+            format!(
+                "No music folder found. Set music_directories in {}",
+                melotui_core::config::AppConfig::config_path().display()
+            ),
+            15,
+        );
+    } else if !startup_errors.is_empty() {
         let msg = format!(
             "Config Errors ({}). Check logs for details: {}",
             startup_errors.len(),
@@ -68,7 +85,23 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         input_processor: InputProcessor::new(),
         music_roots,
         session_restored: false,
+        library_loaded: false,
+        last_saved: Instant::now(),
     };
+
+    // Closing the terminal (SIGHUP), `kill` (SIGTERM) or Ctrl+C outside raw
+    // mode (SIGINT), and closing the console on Windows, quit the way `:q`
+    // does — session saved — instead of killing the process where it stands.
+    let quit_requested = Arc::new(AtomicBool::new(false));
+    {
+        let quit_requested = Arc::clone(&quit_requested);
+        if let Err(e) = ctrlc::set_handler(move || quit_requested.store(true, Ordering::SeqCst)) {
+            tracing::warn!("Cannot handle termination signals: {e}");
+        }
+    }
+    // Set once the terminal itself has gone, so shutting down does not fail
+    // trying to restore it.
+    let mut terminal_lost = false;
 
     // Initialize MPRIS / system media controls (Linux/macOS only)
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -100,17 +133,28 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         // drain up to 50 events - non-blocking after first
         let mut events = Vec::with_capacity(10);
 
-        // blocking poll for first event
-        if let Some(msg) = tui.poll_event(&state, timeout)? {
-            events.push(msg);
+        if quit_requested.swap(false, Ordering::SeqCst) {
+            tracing::info!("Termination signal received, quitting");
+            runtime.effect_queue.push_back(AppMsg::RequestQuit);
+        }
 
-            // non-blocking poll for next events
-            for _ in 0..50 {
-                if let Some(msg) = tui.poll_event(&state, Duration::ZERO)? {
-                    events.push(msg);
-                } else {
-                    break;
+        // blocking poll for first event, then whatever else is waiting. A
+        // terminal that has gone away quits, session saved.
+        match tui.poll_event(&state, timeout) {
+            Ok(Some(msg)) => {
+                events.push(msg);
+                for _ in 0..50 {
+                    match tui.poll_event(&state, Duration::ZERO) {
+                        Ok(Some(msg)) => events.push(msg),
+                        _ => break,
+                    }
                 }
+            }
+            Ok(None) => {}
+            Err(e) => {
+                tracing::warn!("Lost the terminal ({e}), quitting");
+                terminal_lost = true;
+                runtime.effect_queue.push_back(AppMsg::RequestQuit);
             }
         }
 
@@ -157,8 +201,18 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
             should_render = true;
         }
 
+        if runtime.library_loaded && runtime.last_saved.elapsed() >= AUTOSAVE_EVERY {
+            save_session(&state);
+            runtime.last_saved = Instant::now();
+        }
+
         if should_render && runtime.running {
-            tui.draw(&state)?;
+            if let Err(e) = tui.draw(&state) {
+                tracing::warn!("Lost the terminal ({e}), quitting");
+                terminal_lost = true;
+                runtime.effect_queue.push_back(AppMsg::RequestQuit);
+                continue;
+            }
             should_render = false;
 
             // Sync MPRIS metadata/status after render (Linux/macOS only)
@@ -178,7 +232,22 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         std::mem::forget(mgr);
     }
 
-    tui.shutdown()
+    match tui.shutdown() {
+        Err(e) if terminal_lost => {
+            tracing::debug!("Not restoring a terminal that is gone: {e}");
+            Ok(())
+        }
+        result => result,
+    }
+}
+
+/// Saves the session, logging rather than failing if it cannot.
+fn save_session(state: &AppState) {
+    let session = melotui_core::PersistedSession::from_app_state(state);
+    match session.save() {
+        Ok(()) => tracing::debug!("Session saved"),
+        Err(e) => tracing::warn!("Failed to save session: {}", e),
+    }
 }
 
 struct RuntimeContext {
@@ -189,19 +258,17 @@ struct RuntimeContext {
     input_processor: InputProcessor,
     music_roots: Vec<PathBuf>,
     session_restored: bool,
+    /// Whether the library is in. Until it is, the state has none of the
+    /// saved session in it, and saving would overwrite that with nothing.
+    library_loaded: bool,
+    last_saved: Instant,
 }
 
+/// The library database, and the music directories — which may be none, in
+/// which case the app starts with an empty library and says how to set them.
 fn resolve_paths(config: &melotui_core::config::AppConfig) -> Result<(PathBuf, Vec<PathBuf>)> {
     let db_path = config.resolve_db_path()?;
     let music_roots = config.resolve_music_dirs();
-
-    if music_roots.is_empty() {
-        return Err(anyhow::anyhow!(
-            "No music directories configured and OS audio directory not found. \
-             Set music_directories in ~/.config/melotui/config.toml"
-        ));
-    }
-
     Ok((db_path, music_roots))
 }
 
@@ -232,6 +299,7 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
             IpcEvent::LibraryLoaded { snapshot } => {
                 tracing::info!("Library loaded with {} tracks", snapshot.tracks.len());
                 state.library = *snapshot;
+                ctx.library_loaded = true;
                 if !ctx.session_restored && state.config.ui.restore_session {
                     ctx.session_restored = true;
                     if let Ok(session) = melotui_core::PersistedSession::load() {
@@ -306,11 +374,8 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
         changed = true;
         // lifecycle
         if matches!(msg, AppMsg::RequestQuit) {
-            let session = melotui_core::PersistedSession::from_app_state(state);
-            if let Err(e) = session.save() {
-                tracing::warn!("Failed to save session: {}", e);
-            } else {
-                tracing::info!("Session saved successfully");
+            if ctx.library_loaded {
+                save_session(state);
             }
 
             if ctx.engine_alive {
