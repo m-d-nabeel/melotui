@@ -70,6 +70,7 @@ use fundsp::signal::SignalFrame;
 use std::f32::consts::{PI, SQRT_2, TAU};
 
 use super::AudioParams;
+use super::dsp::flush_denormal;
 
 /// Maximum interaural time difference, i.e. the head's width in seconds.
 const MAX_ITD_SECONDS: f32 = 0.000_65;
@@ -97,9 +98,6 @@ const CONTROL_SMOOTHING_HZ: f32 = 12.0;
 /// so cutting the processed path off here is a step over 100 dB down. Getting
 /// here from full scale takes about 200 ms.
 const SETTLED: f32 = 1e-7;
-/// Below this, a recursive filter's state is rounded to zero; see
-/// [`flush_denormal`].
-const DENORMAL_FLOOR: f32 = 1e-20;
 
 /// Split point between "the head is not in the way" and "the head is in the
 /// way". Below roughly this frequency a wavelength is longer than a head and
@@ -189,17 +187,6 @@ const ER_ENERGY: f32 = {
     let r = tap_energy(&ER_TAPS_R);
     if l > r { l } else { r }
 };
-
-/// Rounds a recursive filter's state to zero once it is far below audibility.
-///
-/// A recursive filter fed digital silence — a pause, the gap between two
-/// tracks — decays geometrically toward zero and, without this, spends that
-/// time in subnormal floats, which the CPU handles in microcode. Engaged on
-/// silence, this unit measured four times its cost on music, on the thread
-/// where a stall is a dropout.
-fn flush_denormal(x: f32) -> f32 {
-    if x.abs() < DENORMAL_FLOOR { 0.0 } else { x }
-}
 
 /// The three parameters as the listener has set them, read once per sample.
 #[derive(Clone, Copy)]
