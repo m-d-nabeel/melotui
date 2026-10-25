@@ -127,14 +127,15 @@ const BAR_RISE_AT_60_FPS: f32 = 0.6;
 const BAR_GRAVITY: f32 = 40.0;
 const BAR_GRAVITY_CAVA: f32 = 90.0;
 
-/// Caps hold this long at their highest, then fall ever faster, as dropped
-/// things do. Gravity is in spectrum units per second squared: the
-/// analyser's bands rarely pass 0.45, cava's run to 1, so cava's caps fall
-/// with gravity scaled to match. From a typical tall bar either way, a cap
-/// lands about a third of a second after it lets go.
-const CAP_HOLD_SECS: f32 = 0.12;
-const CAP_GRAVITY: f32 = 5.0;
-const CAP_GRAVITY_CAVA: f32 = 11.0;
+/// Caps hold this long at their highest, then fall ever faster, a little
+/// slower than their bars so they trail them down rather than hang above
+/// them. Over real songs this keeps them as close to their bars as they were
+/// when the bars eased down: floating clear of them about a quarter of the
+/// time. Gravity is in spectrum units per second squared, scaled up for
+/// cava's bands as for its bars.
+const CAP_HOLD_SECS: f32 = 0.08;
+const CAP_GRAVITY: f32 = 30.0;
+const CAP_GRAVITY_CAVA: f32 = 68.0;
 
 /// Moves the bars and caps on by `dt` seconds. Returns whether anything is
 /// still moving or showing, so frames are worth drawing: once the music has
@@ -352,7 +353,7 @@ mod tests {
         );
         let falling = (landed - hold) as f32 / 60.0;
         assert!(
-            (0.25..0.45).contains(&falling),
+            (0.08..0.25).contains(&falling),
             "a cap from {top} fell for {falling} s"
         );
     }
@@ -369,7 +370,7 @@ mod tests {
         let hold = (CAP_HOLD_SECS * 60.0) as usize;
         let landed = frames.iter().position(|f| f.1 == 0.0).unwrap();
         let falling = (landed - hold) as f32 / 60.0;
-        assert!((0.25..0.45).contains(&falling), "{falling} s");
+        assert!((0.08..0.25).contains(&falling), "{falling} s");
     }
 
     #[test]

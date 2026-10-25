@@ -2,10 +2,7 @@ use ringbuf::traits::Consumer;
 use spectrum_analyzer::{
     FrequencyLimit, samples_fft_to_spectrum, scaling::divide_by_N, windows::hann_window,
 };
-use std::{
-    collections::{BTreeMap, VecDeque},
-    time::Instant,
-};
+use std::{collections::VecDeque, time::Instant};
 
 const NUM_BINS: usize = 512;
 const MIN_FREQ: f32 = 30.0; // catch sub-bass
@@ -171,7 +168,13 @@ where
         );
 
         if let Ok(spectrum) = spectrum_result {
-            let data = spectrum.to_map();
+            // Exact frequencies: `to_map` keys them by whole hertz, which
+            // moved bins out of the narrow bass bands they belonged in.
+            let data: Vec<(f32, f32)> = spectrum
+                .data()
+                .iter()
+                .map(|(freq, value)| (freq.val(), value.val()))
+                .collect();
             // map linear spectrum to log bins for UI
             let output = self.fill_log_bins(&data, NUM_BINS);
             return Some(output);
@@ -185,7 +188,8 @@ where
         self.playhead.max(0.0) as u64
     }
 
-    fn fill_log_bins(&self, data: &BTreeMap<u32, f32>, bin_count: usize) -> Vec<f32> {
+    fn fill_log_bins(&self, data: &[(f32, f32)], bin_count: usize) -> Vec<f32> {
+        let bin_hz = self.sample_rate as f32 / self.fft_size as f32;
         let mut output = vec![0.0; bin_count];
 
         let log_min = MIN_FREQ.ln();
@@ -193,8 +197,8 @@ where
         let log_range = log_max - log_min;
 
         // sparse map to dense vectors
-        let freqs: Vec<f32> = data.keys().map(|&k| k as f32).collect();
-        let vals: Vec<f32> = data.values().copied().collect();
+        let freqs: Vec<f32> = data.iter().map(|&(freq, _)| freq).collect();
+        let vals: Vec<f32> = data.iter().map(|&(_, value)| value).collect();
 
         if freqs.is_empty() {
             return output;
@@ -206,7 +210,10 @@ where
             let target_freq = (log_min + norm_pos * log_range).exp();
 
             // frequency window
-            let window_width = (target_freq * 0.05).max(11.0);
+            // At least a bin wide, or a bass band can fall between two bins
+            // and read nothing ever: at 48 kHz, bins are 11.7 Hz apart, and
+            // six bands from 52 to 228 Hz were always empty.
+            let window_width = (target_freq * 0.05).max(11.0).max(bin_hz * 1.01);
             let start_f = target_freq - window_width / 2.0;
             let end_f = target_freq + window_width / 2.0;
 
@@ -360,6 +367,26 @@ mod tests {
             1.0,
         );
         assert!(ends[50..].iter().all(Option::is_some));
+    }
+
+    #[test]
+    fn no_band_is_left_empty_at_48_khz() {
+        let (mut prod, cons) = HeapRb::<f32>::new(RATE as usize).split();
+        let mut analyzer = SpectrumAnalyzer::new(cons, 4096, RATE);
+        // White noise: something at every frequency.
+        let mut seed = 0x2545_F491_u32;
+        let noise: Vec<f32> = (0..16384)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as f32 / u32::MAX as f32 - 0.5
+            })
+            .collect();
+        prod.push_slice(&noise);
+        let bands = analyzer.next_spectrum_at(Instant::now()).unwrap();
+        let empty: Vec<usize> = (0..bands.len()).filter(|&i| bands[i] == 0.0).collect();
+        assert!(empty.is_empty(), "bands that read nothing: {empty:?}");
     }
 
     #[test]
