@@ -11,7 +11,7 @@
 - **Local Library & Playlists**: Your music folders are scanned at start and watched while running, so new music appears by itself.
 - **Audio Playback**: Support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
 - **Spectrum Visualizer**: Real-time audio spectrum visualization (supports CAVA).
-- **Synced Lyrics**: Time-synced lyrics from `.lrc` files or LRCLIB. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
+- **Synced Lyrics**: Time-synced lyrics from `.lrc` files, the lyrics in your files' own tags, or LRCLIB. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
 - **DSP Studio**: Real-time audio processing (Speed, Bass, Treble, Reverb, Echo) with a symmetric 8-band EQ.
 - **System Integration**: Syncs with Linux/macOS desktop media widgets and supports hardware media keys.
 - **Download Support**: Integrated YouTube downloads via `yt-dlp`.
