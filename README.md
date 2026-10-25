@@ -122,7 +122,7 @@ Volume, speed and effects changed out of sight of the mixer are shown in a notif
 | `:shuffle on`, `:repeat track` | Shuffle and repeat |
 | `:fx bass 2`, `:fx eq 3 -4`, `:fx reset` | Effects, the EQ, and resetting them |
 | `:fx slowed`, `:preset load <name>` | Effect macros and presets |
-| `:lyrics fetch`, `:lyrics search <query>` | Fetch or look up lyrics |
+| `:lyrics fetch`, `:lyrics search [query]` | Fetch lyrics, or pick them from a search (for the song playing without a query) |
 | `:lyrics zoom 3`, `:lyrics zoom panel 2` | Lyrics size |
 | `:focus lyrics`, `:vis nova`, `:toggle art` | Layout, visualizer and panels |
 | `:device`, `:device <name>`, `:device default` | Audio output device |
