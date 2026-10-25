@@ -15,12 +15,13 @@ const COLUMNS: usize = 72;
 /// A band this loud, in the analyser's units, throws droplets to the top.
 const FULL: f32 = 0.45;
 /// A column throwing to the top throws this many droplets a second; quieter
-/// ones fewer, falling off faster than how high they throw.
-const RATE: f32 = 40.0;
+/// ones fewer, falling off a little faster than how high they throw.
+const RATE: f32 = 120.0;
+const RATE_CURVE: f32 = 1.2;
 /// In half heights per second squared: a droplet thrown to the top is back
 /// in under a second, one thrown a third of the way in under half a second.
 const GRAVITY: f32 = 12.0;
-const MAX_DROPS: usize = 1500;
+const MAX_DROPS: usize = 4000;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Drop {
@@ -65,7 +66,7 @@ impl Fountain {
                 let start = column * bands.len() / COLUMNS;
                 let end = ((column + 1) * bands.len() / COLUMNS).max(start + 1);
                 let height = (mean(bands, start..end) / FULL).min(1.0);
-                self.owed[column] += RATE * height.powf(1.5) * dt;
+                self.owed[column] += RATE * height.powf(RATE_CURVE) * dt;
                 while self.owed[column] >= 1.0 {
                     self.owed[column] -= 1.0;
                     let peak = (height * (0.85 + 0.3 * self.random())).min(1.0);

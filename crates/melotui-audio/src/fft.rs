@@ -235,12 +235,44 @@ where
                 }
             }
 
+            // In the bass, bands lie closer together than the FFT's bins, and
+            // taking the loudest bin in reach gave runs of bands the same bin:
+            // flat tops ending in a sudden step. Where a band's window holds a
+            // bin or so, it reads a smooth curve through the bins at its own
+            // frequency instead, blending into the loudest-bin reading by
+            // where windows hold three.
+            let bins_in_reach = window_width / bin_hz;
+            let curve = ((3.0 - bins_in_reach) / 2.0).clamp(0.0, 1.0);
+            let value = if curve > 0.0 {
+                let between = curve_through_bins(&vals, (target_freq - freqs[0]) / bin_hz);
+                between * curve + max_val * (1.0 - curve)
+            } else {
+                max_val
+            };
+
             // scale value based on position (highs usually quieter)
-            output[i] = max_val.sqrt() * (1.0 + norm_pos);
+            output[i] = value.sqrt() * (1.0 + norm_pos);
         });
 
         output
     }
+}
+
+/// The value at `at`, counted in bins, on a Catmull–Rom curve through the
+/// bins' `values`: it passes through every bin, and rounds over a peak
+/// that falls between two rather than meeting it in a corner.
+fn curve_through_bins(values: &[f32], at: f32) -> f32 {
+    let last = values.len().saturating_sub(1) as isize;
+    let k = at.floor() as isize;
+    let t = at - k as f32;
+    let v = |i: isize| values[i.clamp(0, last) as usize];
+    let (p0, p1, p2, p3) = (v(k - 1), v(k), v(k + 1), v(k + 2));
+    let value = 0.5
+        * (2.0 * p1
+            + (p2 - p0) * t
+            + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t
+            + (3.0 * p1 - p0 - 3.0 * p2 + p3) * t * t * t);
+    value.max(0.0)
 }
 
 #[cfg(test)]
