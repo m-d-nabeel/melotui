@@ -17,6 +17,15 @@ pub struct Output {
     pub name: String,
 }
 
+/// The period to ask cpal for so the whole buffer comes out at `frames`.
+/// cpal 0.18 takes `BufferSize::Fixed` as the period and allocates two of
+/// them; handing it the whole buffer doubled it and had the device pull a
+/// buffer's worth at a time, every 171 ms at 8192 frames, which the
+/// visualizer drew as a burst followed by a freeze.
+fn period_for(frames: u32) -> u32 {
+    (frames / 2).max(1)
+}
+
 /// Errors after which the stream is gone and has to be opened again. A
 /// rerouted default device (`DeviceChanged`) carries on by itself, and an
 /// underrun is a glitch, not a loss.
@@ -118,7 +127,7 @@ pub fn open(
         builder = builder.with_sample_rate(rate);
     }
     if let Some(frames) = buffer_size {
-        builder = builder.with_buffer_size(cpal::BufferSize::Fixed(frames));
+        builder = builder.with_buffer_size(cpal::BufferSize::Fixed(period_for(frames)));
     }
     let builder = builder.with_error_callback(move |error: cpal::Error| {
         if is_loss(error.kind()) {
@@ -153,6 +162,12 @@ mod tests {
             !is_loss(ErrorKind::DeviceChanged),
             "a rerouted default carries on"
         );
+    }
+
+    #[test]
+    fn the_configured_size_is_the_whole_buffer_not_the_period() {
+        assert_eq!(period_for(8192), 4096);
+        assert_eq!(period_for(1), 1);
     }
 
     #[test]

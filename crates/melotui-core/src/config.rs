@@ -125,9 +125,9 @@ pub struct AudioConfig {
     /// Output buffer size in frames. `None` uses cpal's default
     /// (25 ms period / 100 ms buffer).
     ///
-    /// This is the dropout safety margin: cpal derives a period of
-    /// `buffer_size / 4`, so 8192 @ 48 kHz gives a ~46 ms period inside a
-    /// ~171 ms buffer. Larger is more robust under load and adds latency;
+    /// This is the dropout safety margin: the device gets two periods of
+    /// `buffer_size / 2`, so 8192 @ 48 kHz gives a ~171 ms buffer refilled
+    /// ~85 ms at a time. Larger is more robust under load and adds latency;
     /// since melotui is not a live-monitoring tool, robustness wins.
     pub buffer_size: Option<u32>,
     /// The output device to play through, by name or part of it (see
