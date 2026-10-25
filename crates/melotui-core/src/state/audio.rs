@@ -41,6 +41,8 @@ pub struct AudioState {
     pub wobble: f32,         // range 0.0 to 1.0
     pub ping_pong: f32,      // range 0.0 to 1.0
     pub phaser: f32,         // range 0.0 to 1.0
+    /// The volume before muting, while muted.
+    pub muted_from: Option<f32>,
 }
 
 impl Default for AudioState {
@@ -65,6 +67,7 @@ impl Default for AudioState {
             wobble: 0.0,
             ping_pong: 0.0,
             phaser: 0.0,
+            muted_from: None,
         }
     }
 }
@@ -261,4 +264,18 @@ pub struct OutputState {
     /// The devices there are, for completing `:device`; asked for each time
     /// the command bar opens.
     pub devices: Vec<String>,
+    /// What the music comes out of, as far as can be told.
+    pub kind: OutputKind,
+}
+
+/// What the music comes out of, for the playback bar's icon.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum OutputKind {
+    #[default]
+    Unknown,
+    Speakers,
+    Headphones,
+    Headset,
+    /// A monitor or television, over HDMI or DisplayPort.
+    Display,
 }

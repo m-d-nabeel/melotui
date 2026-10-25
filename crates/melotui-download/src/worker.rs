@@ -24,7 +24,10 @@ enum InternalEvent {
     Finished,
     Failed(String),
     LyricsFetched(PathBuf),
-    LyricsFailed(String),
+    LyricsFailed {
+        save_path: PathBuf,
+        error: String,
+    },
     LyricsSearchResults {
         lrclib_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,
         ovh_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,
@@ -146,8 +149,8 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                 InternalEvent::LyricsFetched(save_path) => {
                     worker.send(IpcEvent::LyricsFetched { save_path });
                 }
-                InternalEvent::LyricsFailed(error) => {
-                    worker.send(IpcEvent::LyricsFetchFailed { error });
+                InternalEvent::LyricsFailed { save_path, error } => {
+                    worker.send(IpcEvent::LyricsFetchFailed { save_path, error });
                 }
                 InternalEvent::LyricsSearchResults {
                     lrclib_results,
@@ -315,6 +318,64 @@ fn save_lyrics(path: &std::path::Path, lyrics: &str) -> std::io::Result<()> {
     std::fs::write(path, lyrics)
 }
 
+/// The lyrics in an LRCLIB record: synced if it has them, plain otherwise,
+/// none for an instrumental or a record left empty.
+fn lyrics_of(record: &serde_json::Value) -> Option<String> {
+    ["syncedLyrics", "plainLyrics"].iter().find_map(|key| {
+        record
+            .get(*key)
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty())
+            .map(str::to_string)
+    })
+}
+
+/// LRCLIB's search results worth offering: those with lyrics, synced
+/// first, each song once — it holds many copies of some, and instrumentals
+/// with none, which were offered and then failed to fetch.
+fn candidates(
+    results: Vec<serde_json::Value>,
+) -> Vec<melotui_core::state::lyrics::LyricsCandidate> {
+    use melotui_core::state::lyrics::{LyricsApi, LyricsCandidate};
+    let field = |r: &serde_json::Value, key: &str| {
+        r.get(key)
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown")
+            .trim()
+            .to_string()
+    };
+    let mut offered: Vec<LyricsCandidate> = Vec::new();
+    for record in results.iter().filter(|r| lyrics_of(r).is_some()) {
+        let candidate = LyricsCandidate {
+            api: LyricsApi::Lrclib,
+            track_name: field(record, "trackName"),
+            artist_name: field(record, "artistName"),
+            is_synced: record
+                .get("syncedLyrics")
+                .and_then(|v| v.as_str())
+                .is_some_and(|s| !s.trim().is_empty()),
+            provider_id: record
+                .get("id")
+                .and_then(|v| v.as_i64())
+                .map(|id| id.to_string()),
+        };
+        let same = |c: &LyricsCandidate| {
+            c.is_synced == candidate.is_synced
+                && c.track_name.to_lowercase() == candidate.track_name.to_lowercase()
+                && c.artist_name.to_lowercase() == candidate.artist_name.to_lowercase()
+        };
+        if !offered.iter().any(same) {
+            offered.push(candidate);
+        }
+    }
+    offered.sort_by_key(|c| !c.is_synced);
+    offered.truncate(MAX_CANDIDATES);
+    offered
+}
+
+/// How many results a lyrics search offers from each service.
+const MAX_CANDIDATES: usize = 8;
+
 /// The best of LRCLIB's search results for a song `duration` seconds long:
 /// one with lyrics, synced before plain, nearest in length first, and none
 /// more than `MAX_DRIFT` seconds off — that is another recording, or another
@@ -336,7 +397,7 @@ fn best_match(results: Vec<serde_json::Value>, duration: Option<u64>) -> Option<
     };
     results
         .into_iter()
-        .filter(|r| (text(r, "syncedLyrics") || text(r, "plainLyrics")) && drift(r) <= MAX_DRIFT)
+        .filter(|r| lyrics_of(r).is_some() && drift(r) <= MAX_DRIFT)
         .min_by(|a, b| {
             let rank = |r: &serde_json::Value| (!text(r, "syncedLyrics"), drift(r));
             rank(a)
@@ -364,147 +425,179 @@ fn fetch_lyrics_task(
         provider_id
     );
 
-    let mut json_opt = None;
-
     let try_lrclib = provider.as_deref() == Some("lrclib") || provider.is_none();
     let try_ovh = provider.as_deref() == Some("ovh") || provider.is_none();
 
+    // Why LRCLIB could not be asked, if it could not: told rather than
+    // "no lyrics found" when it was only busy.
+    let trouble = std::cell::RefCell::new(None);
+    let lrclib_get = |url: &str, query: &[(&str, &str)]| -> Option<serde_json::Value> {
+        lrclib(url, query).unwrap_or_else(|e| {
+            *trouble.borrow_mut() = Some(e);
+            None
+        })
+    };
+    let lrclib_search = |q: &str| -> Option<String> {
+        let results = lrclib_get("https://lrclib.net/api/search", &[("q", q)])?;
+        let results = serde_json::from_value::<Vec<serde_json::Value>>(results).ok()?;
+        best_match(results, duration_secs)
+            .as_ref()
+            .and_then(lyrics_of)
+    };
+
     if try_lrclib {
-        if let Some(id) = &provider_id {
-            // We have an exact ID, fetch directly!
-            let req = ureq::get(&format!("https://lrclib.net/api/get/{}", id))
-                .set("User-Agent", USER_AGENT)
-                .timeout(std::time::Duration::from_secs(30));
-            if let Ok(response) = req.call()
-                && response.status() == 200
-            {
-                json_opt = response.into_json::<serde_json::Value>().ok();
-            }
-        } else if !artist_name.is_empty() {
-            let mut req = ureq::get("https://lrclib.net/api/get")
-                .query("track_name", &track_name)
-                .query("artist_name", &artist_name);
-            if let Some(album) = &album_name {
-                req = req.query("album_name", album);
-            }
-            if let Some(duration) = duration_secs {
-                req = req.query("duration", &duration.to_string());
-            }
-            let req = req
-                .set("User-Agent", USER_AGENT)
-                .timeout(std::time::Duration::from_secs(30));
+        let duration = duration_secs.map(|d| d.to_string());
+        let lyrics = if let Some(id) = &provider_id {
+            // Chosen from a search: that record, and no other.
+            lrclib_get(&format!("https://lrclib.net/api/get/{id}"), &[])
+                .as_ref()
+                .and_then(lyrics_of)
+        } else {
+            // The song by its tags; then searched for by artist and title;
+            // then, the length known to tell it from others of the name, by
+            // title alone, for a song whose "artist" is its label or the
+            // channel it was downloaded from.
+            let exact = (!artist_name.is_empty())
+                .then(|| {
+                    let mut query = vec![
+                        ("track_name", track_name.as_str()),
+                        ("artist_name", artist_name.as_str()),
+                    ];
+                    if let Some(album) = &album_name {
+                        query.push(("album_name", album));
+                    }
+                    if let Some(duration) = &duration {
+                        query.push(("duration", duration));
+                    }
+                    lrclib_get("https://lrclib.net/api/get", &query)
+                })
+                .flatten()
+                .as_ref()
+                .and_then(lyrics_of);
+            exact
+                .or_else(|| {
+                    (!artist_name.is_empty())
+                        .then(|| lrclib_search(&format!("{artist_name} {track_name}")))
+                        .flatten()
+                })
+                .or_else(|| {
+                    (artist_name.is_empty() || duration_secs.is_some())
+                        .then(|| lrclib_search(&track_name))
+                        .flatten()
+                })
+        };
 
-            if let Ok(response) = req.call()
-                && response.status() == 200
-            {
-                json_opt = response.into_json::<serde_json::Value>().ok();
-            }
-        }
-
-        if json_opt.is_none() {
-            tracing::debug!("Exact match failed or artist empty, trying search fallback...");
-            let query = if artist_name.is_empty() {
-                track_name.clone()
-            } else {
-                format!("{} {}", artist_name, track_name)
-            };
-
-            let req = ureq::get("https://lrclib.net/api/search")
-                .query("q", &query)
-                .set("User-Agent", USER_AGENT)
-                .timeout(std::time::Duration::from_secs(30));
-
-            if let Ok(response) = req.call()
-                && response.status() == 200
-                && let Ok(results) = response.into_json::<Vec<serde_json::Value>>()
-            {
-                json_opt = best_match(results, duration_secs);
-            }
-        }
-
-        if let Some(json) = json_opt {
-            let mut lyrics = None;
-            if let Some(synced) = json.get("syncedLyrics").and_then(|v| v.as_str())
-                && !synced.trim().is_empty()
-            {
-                lyrics = Some(synced.to_string());
-            }
-            if lyrics.is_none()
-                && let Some(plain) = json.get("plainLyrics").and_then(|v| v.as_str())
-                && !plain.trim().is_empty()
-            {
-                lyrics = Some(plain.to_string());
-            }
-
-            if let Some(l) = lyrics {
-                if let Err(e) = save_lyrics(&save_path, &l) {
-                    tracing::error!("Failed to write lyrics to file: {}", e);
-                    let _ = tx.send(InternalEvent::LyricsFailed(format!(
-                        "Failed to write lyrics file: {}",
-                        e
-                    )));
-                } else {
-                    tracing::info!("Lyrics successfully saved to {:?}", save_path);
-                    let _ = tx.send(InternalEvent::LyricsFetched(save_path));
-                }
-                return;
-            }
+        if let Some(lyrics) = lyrics {
+            save_and_tell(&save_path, &lyrics, &tx);
+            return;
         }
     }
 
-    // Fallback: OVH Lyrics API (Plain lyrics only)
+    // Then lyrics.ovh, which has plain lyrics only.
     if try_ovh && !artist_name.is_empty() {
-        tracing::debug!("LRCLIB failed or skipped, falling back to api.lyrics.ovh...");
-
-        let ovh_artist = artist_name
-            .bytes()
-            .map(|b| match b {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    (b as char).to_string()
-                }
-                _ => format!("%{:02X}", b),
-            })
-            .collect::<String>();
-
-        let ovh_track = track_name
-            .bytes()
-            .map(|b| match b {
-                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                    (b as char).to_string()
-                }
-                _ => format!("%{:02X}", b),
-            })
-            .collect::<String>();
-
-        let ovh_url = format!("https://api.lyrics.ovh/v1/{}/{}", ovh_artist, ovh_track);
-        let req = ureq::get(&ovh_url)
+        let url = format!(
+            "https://api.lyrics.ovh/v1/{}/{}",
+            encode(&artist_name),
+            encode(&track_name)
+        );
+        let req = ureq::get(&url)
             .set("User-Agent", USER_AGENT)
             .timeout(std::time::Duration::from_secs(30));
-
         if let Ok(response) = req.call()
             && response.status() == 200
             && let Ok(json) = response.into_json::<serde_json::Value>()
             && let Some(lyrics) = json.get("lyrics").and_then(|v| v.as_str())
             && !lyrics.trim().is_empty()
         {
-            if let Err(e) = save_lyrics(&save_path, lyrics) {
-                tracing::error!("Failed to write lyrics to file: {}", e);
-                let _ = tx.send(InternalEvent::LyricsFailed(format!(
-                    "Failed to write lyrics file: {}",
-                    e
-                )));
-            } else {
-                tracing::info!("Lyrics successfully saved to {:?}", save_path);
-                let _ = tx.send(InternalEvent::LyricsFetched(save_path));
-            }
+            save_and_tell(&save_path, lyrics, &tx);
             return;
         }
     }
 
-    tracing::error!("No lyrics found on LRCLIB or OVH API for the given query.");
-    let _ = tx.send(InternalEvent::LyricsFailed(
-        "No lyrics found or API error".to_string(),
-    ));
+    let song = if artist_name.is_empty() {
+        track_name
+    } else {
+        format!("{artist_name} – {track_name}")
+    };
+    let error = match trouble.into_inner() {
+        Some(trouble) => format!("{trouble}; try again in a moment"),
+        None => format!("no lyrics found for {song}"),
+    };
+    tracing::info!("No lyrics for {song}: {error}");
+    let _ = tx.send(InternalEvent::LyricsFailed { save_path, error });
+}
+
+/// GETs `url` from LRCLIB with `query`: the answer, or `None` where it has
+/// nothing (404), or why it could not be asked. Busy, LRCLIB turns requests
+/// away, in bursts, with a 503 and a second to wait in Retry-After; they
+/// are made again, waiting a little longer each time as the burst may last,
+/// for up to a quarter of a minute in all before giving up.
+fn lrclib(url: &str, query: &[(&str, &str)]) -> Result<Option<serde_json::Value>, String> {
+    const TRIES: u64 = 6;
+    for attempt in 1..=TRIES {
+        let mut req = ureq::get(url)
+            .set("User-Agent", USER_AGENT)
+            .timeout(Duration::from_secs(30));
+        for (key, value) in query {
+            req = req.query(key, value);
+        }
+        match req.call() {
+            Ok(response) => {
+                return response
+                    .into_json()
+                    .map(Some)
+                    .map_err(|e| format!("LRCLIB's answer could not be read: {e}"));
+            }
+            Err(ureq::Error::Status(404, _)) => return Ok(None),
+            Err(ureq::Error::Status(code, response))
+                if (code == 429 || code >= 500) && attempt < TRIES =>
+            {
+                let wait = response
+                    .header("retry-after")
+                    .and_then(|s| s.trim().parse::<u64>().ok())
+                    .unwrap_or(1)
+                    .max(attempt)
+                    .clamp(1, 5);
+                tracing::debug!("LRCLIB answered {code}, asking again in {wait}s");
+                thread::sleep(Duration::from_secs(wait));
+            }
+            Err(ureq::Error::Status(code, _)) => {
+                return Err(format!("LRCLIB is busy (it answered {code})"));
+            }
+            Err(e) => return Err(format!("LRCLIB could not be reached: {e}")),
+        }
+    }
+    Err("LRCLIB is busy".into())
+}
+
+/// Saves `lyrics` at `save_path` and says how that went.
+fn save_and_tell(save_path: &std::path::Path, lyrics: &str, tx: &mpsc::Sender<InternalEvent>) {
+    let event = match save_lyrics(save_path, lyrics) {
+        Ok(()) => {
+            tracing::info!("Lyrics saved to {save_path:?}");
+            InternalEvent::LyricsFetched(save_path.to_path_buf())
+        }
+        Err(e) => {
+            tracing::error!("Failed to write lyrics to {save_path:?}: {e}");
+            InternalEvent::LyricsFailed {
+                save_path: save_path.to_path_buf(),
+                error: format!("could not write the lyrics file: {e}"),
+            }
+        }
+    };
+    let _ = tx.send(event);
+}
+
+/// `text` as one segment of a URL's path.
+fn encode(text: &str) -> String {
+    text.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
@@ -514,68 +607,28 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
     let mut ovh_results = Vec::new();
 
     // 1. LRCLIB Search
-    let lrclib_req = ureq::get("https://lrclib.net/api/search")
-        .query("q", &query)
-        .set("User-Agent", USER_AGENT)
-        .timeout(std::time::Duration::from_secs(30));
-
-    if let Ok(res) = lrclib_req.call()
-        && res.status() == 200
-        && let Ok(json_arr) = res.into_json::<Vec<serde_json::Value>>()
-    {
-        for item in json_arr.into_iter().take(5) {
-            let id = item
-                .get("id")
-                .and_then(|v| v.as_i64())
-                .map(|v| v.to_string());
-            let track_name = item
-                .get("trackName")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown")
-                .to_string();
-            let artist_name = item
-                .get("artistName")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown")
-                .to_string();
-            let synced = item
-                .get("syncedLyrics")
-                .and_then(|v| v.as_str())
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false);
-
-            lrclib_results.push(melotui_core::state::lyrics::LyricsCandidate {
-                api: melotui_core::state::lyrics::LyricsApi::Lrclib,
-                track_name,
-                artist_name,
-                is_synced: synced,
-                provider_id: id,
-            });
+    match lrclib("https://lrclib.net/api/search", &[("q", &query)]) {
+        Ok(Some(results)) => {
+            lrclib_results = candidates(serde_json::from_value(results).unwrap_or_default());
         }
+        Ok(None) => {}
+        Err(e) => tracing::warn!("Lyrics search on LRCLIB failed: {e}"),
     }
 
     // 2. OVH Suggest
-    let ovh_query = query
-        .bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                (b as char).to_string()
-            }
-            b' ' => "+".to_string(),
-            _ => format!("%{:02X}", b),
-        })
-        .collect::<String>();
-
-    let ovh_req = ureq::get(&format!("https://api.lyrics.ovh/suggest/{}", ovh_query))
-        .set("User-Agent", USER_AGENT)
-        .timeout(std::time::Duration::from_secs(30));
+    let ovh_req = ureq::get(&format!(
+        "https://api.lyrics.ovh/suggest/{}",
+        encode(&query)
+    ))
+    .set("User-Agent", USER_AGENT)
+    .timeout(std::time::Duration::from_secs(30));
 
     if let Ok(res) = ovh_req.call()
         && res.status() == 200
         && let Ok(json) = res.into_json::<serde_json::Value>()
         && let Some(data) = json.get("data").and_then(|v| v.as_array())
     {
-        for item in data.iter().take(5) {
+        for item in data.iter().take(MAX_CANDIDATES) {
             let track_name = item
                 .get("title")
                 .and_then(|v| v.as_str())
@@ -608,6 +661,50 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
 mod lyrics_match_tests {
     use super::best_match;
     use serde_json::json;
+
+    #[test]
+    fn a_search_offers_songs_with_lyrics_synced_first_each_once() {
+        // As LRCLIB answered "Kuch To Hai": copies, and an instrumental
+        // without lyrics where the synced ones should have been.
+        let results = vec![
+            json!({"id": 6670370, "artistName": "Satyam Anandjee", "trackName": "Kuch To Hai Tere Mere Darmiyaan", "plainLyrics": "words", "syncedLyrics": null}),
+            json!({"id": 6670369, "artistName": "Satyam Anandjee", "trackName": "Kuch To Hai Tere Mere Darmiyaan", "plainLyrics": "words", "syncedLyrics": null}),
+            json!({"id": 34354413, "artistName": "Amaal Mallik", "trackName": "Kuch To Hai", "instrumental": true, "plainLyrics": null, "syncedLyrics": null}),
+            json!({"id": 10879685, "artistName": "Jubin Nautiyal", "trackName": "Kuch to Hai", "plainLyrics": "words", "syncedLyrics": "[00:01.00] words"}),
+            json!({"id": 38208616, "artistName": "Armaan Malik", "trackName": "Kuch To Hai", "plainLyrics": "words", "syncedLyrics": "[00:01.00] words"}),
+            json!({"id": 39447653, "artistName": "Armaan Malik", "trackName": "Kuch To Hai", "plainLyrics": "words", "syncedLyrics": "[00:01.00] words"}),
+            json!({"id": 1, "artistName": "Someone", "trackName": "Blank", "plainLyrics": "  ", "syncedLyrics": ""}),
+        ];
+        let offered: Vec<(String, bool)> = super::candidates(results)
+            .into_iter()
+            .map(|c| (format!("{}: {}", c.artist_name, c.track_name), c.is_synced))
+            .collect();
+        assert_eq!(
+            offered,
+            vec![
+                ("Jubin Nautiyal: Kuch to Hai".to_string(), true),
+                ("Armaan Malik: Kuch To Hai".to_string(), true),
+                (
+                    "Satyam Anandjee: Kuch To Hai Tere Mere Darmiyaan".to_string(),
+                    false
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_instrumental_record_has_no_lyrics_to_save() {
+        assert_eq!(
+            super::lyrics_of(&json!({"instrumental": true, "plainLyrics": null})),
+            None
+        );
+        assert_eq!(
+            super::lyrics_of(&json!({"plainLyrics": "plain", "syncedLyrics": "[00:01.00] synced"}))
+                .as_deref(),
+            Some("[00:01.00] synced")
+        );
+        assert_eq!(super::encode("AC/DC & Co"), "AC%2FDC%20%26%20Co");
+    }
 
     #[test]
     fn synced_lyrics_of_the_right_length_win_and_other_songs_lose() {

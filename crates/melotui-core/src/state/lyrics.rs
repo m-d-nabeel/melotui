@@ -24,22 +24,23 @@ impl LyricsData {
         if text.trim().is_empty() {
             return LyricsData::None;
         }
-        match text.parse::<Lyrics>() {
-            Ok(lyrics) if !lyrics.get_timed_lines().is_empty() => LyricsData::Synced(lyrics),
-            _ => LyricsData::Unsynced(text),
+        match parse_lrc(&text) {
+            Some(lyrics) => LyricsData::Synced(lyrics),
+            None => LyricsData::Unsynced(text),
         }
     }
 
     /// The lyrics for the audio file at `audio`, the song `track`: from a
-    /// `.lrc` file beside it, or one in `store` named after the song or after
-    /// the file, or else from the lyrics in its own tags.
+    /// `.lrc` file in `store` named after the song or after the file — where
+    /// lyrics chosen in a search go, so they win — or one beside it, or else
+    /// from the lyrics in its own tags.
     pub fn load_for(audio: &Path, track: Option<&TrackMeta>, store: &Path) -> Self {
         let beside = audio.with_extension("lrc");
         let by_song = track.and_then(|t| stored_path(store, &t.title, t.artist.as_deref()));
         let by_file = audio
             .file_stem()
             .map(|stem| store.join(format!("{}.lrc", stem.to_string_lossy())));
-        for path in [Some(beside), by_song, by_file].into_iter().flatten() {
+        for path in [by_song, by_file, Some(beside)].into_iter().flatten() {
             if let Ok(text) = std::fs::read_to_string(path) {
                 let lyrics = Self::from_text(text);
                 if !matches!(lyrics, LyricsData::None) {
@@ -49,6 +50,43 @@ impl LyricsData {
         }
         embedded_lyrics(audio).map_or(LyricsData::None, Self::from_text)
     }
+}
+
+/// The synced lyrics in `text`, if it has timed lines. A line the parser
+/// refuses — words with `[a: b]` in them — is left out, rather than all the
+/// others losing their timing and showing as text, timestamps and all. An
+/// `[offset:]` is applied as players apply it: a positive one, in
+/// milliseconds, brings every line that much sooner.
+fn parse_lrc(text: &str) -> Option<Lyrics> {
+    let lyrics = text.parse::<Lyrics>().ok().or_else(|| {
+        let taken: Vec<&str> = text
+            .lines()
+            .filter(|line| line.parse::<Lyrics>().is_ok())
+            .collect();
+        taken.join("\n").parse::<Lyrics>().ok()
+    })?;
+    if lyrics.get_timed_lines().is_empty() {
+        return None;
+    }
+    let offset = text
+        .lines()
+        .find_map(|line| {
+            let line = line.trim().to_ascii_lowercase();
+            let value = line.strip_prefix("[offset:")?.strip_suffix(']')?.trim();
+            value.trim_start_matches('+').parse::<i64>().ok()
+        })
+        .unwrap_or(0);
+    if offset == 0 {
+        return Some(lyrics);
+    }
+    let mut shifted = Lyrics::new();
+    for (time, line) in lyrics.get_timed_lines() {
+        let at = (time.get_timestamp() - offset).max(0);
+        shifted
+            .add_timed_line(lrc::TimeTag::new(at), line.to_string())
+            .ok()?;
+    }
+    Some(shifted)
 }
 
 /// Where lyrics are kept, out of the music folders: those melotui fetches,
@@ -130,7 +168,8 @@ pub struct LyricsState {
     /// song that has none is not asked about at every play.
     pub fetched: HashSet<PathBuf>,
     /// Where lyrics fetched unasked are going: they come, or don't, quietly.
-    pub fetching_unasked: Option<PathBuf>,
+    /// More than one, songs skipped through before theirs came.
+    pub fetching_unasked: HashSet<PathBuf>,
     /// The lyrics panel was closed by hand, and stays closed until opened.
     pub panel_closed: bool,
     /// The lyrics panel was opened for a song's lyrics, and closes again for
@@ -146,7 +185,7 @@ impl Default for LyricsState {
             search_state: None,
             store: store_dir(),
             fetched: HashSet::new(),
-            fetching_unasked: None,
+            fetching_unasked: HashSet::new(),
             panel_closed: false,
             panel_opened_for_lyrics: false,
         }
@@ -180,6 +219,41 @@ mod tests {
             LyricsData::from_text("  \n".into()),
             LyricsData::None
         ));
+    }
+
+    fn timed(text: &str) -> Vec<(i64, String)> {
+        match LyricsData::from_text(text.into()) {
+            LyricsData::Synced(lyrics) => lyrics
+                .get_timed_lines()
+                .iter()
+                .map(|(t, l)| (t.get_timestamp(), l.to_string()))
+                .collect(),
+            other => panic!("not synced: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn one_line_the_parser_refuses_does_not_cost_the_rest_their_timing() {
+        let lines = timed("[00:01.00] First\n[00:02.00] Says [x: y] here\n[00:03.00] Third");
+        assert_eq!(
+            lines,
+            vec![(1000, "First".to_string()), (3000, "Third".to_string())]
+        );
+    }
+
+    #[test]
+    fn an_offset_brings_the_lines_sooner_or_later() {
+        let sooner = timed("[offset:+500]\n[00:01.00] One\n[00:02.00] Two");
+        assert_eq!(sooner[0].0, 500);
+        assert_eq!(sooner[1].0, 1500);
+        let later = timed("[Offset: -250]\n[00:01.00] One");
+        assert_eq!(later[0].0, 1250);
+        // Several stamps on a line, each its own moment, in order.
+        let chorus = timed("[00:05.00][00:01.00] Chorus\n[00:03.00] Verse");
+        assert_eq!(
+            chorus.iter().map(|(t, _)| *t).collect::<Vec<_>>(),
+            vec![1000, 3000, 5000]
+        );
     }
 
     /// A second of silent mono 8 kHz audio, as a WAV file.

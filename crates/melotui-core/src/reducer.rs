@@ -31,8 +31,13 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
         NavigationMsg::SwitchToTracks => nav_action::handle_switch_to_tracks(state),
         NavigationMsg::ToggleTrackInfo => nav_action::handle_toggle_track_info(state),
         NavigationMsg::ToggleLibraryQueue => nav_action::handle_toggle_library_queue(state),
+        NavigationMsg::ToggleMixerFocus => nav_action::handle_toggle_mixer_focus(state),
+        NavigationMsg::LeaveMixer => nav_action::handle_leave_mixer(state),
         NavigationMsg::MoveUp => nav_action::handle_move_up(state),
         NavigationMsg::MoveDown => nav_action::handle_move_down(state),
+        NavigationMsg::MoveTop => nav_action::handle_move_to_end(state, false),
+        NavigationMsg::MoveBottom => nav_action::handle_move_to_end(state, true),
+        NavigationMsg::MovePage { down } => nav_action::handle_move_page(state, down),
         NavigationMsg::ToggleArt => playback_action::handle_toggle_art(state),
         NavigationMsg::ToggleTreeExpand => nav_action::handle_toggle_tree_expand(state),
         NavigationMsg::CycleVisualizerStyle => {
@@ -97,6 +102,8 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
     match msg {
         AudioMsg::AdjustVolume(delta) => audio_action::handle_adjust_volume(state, delta),
         AudioMsg::AdjustSpeed(delta) => audio_action::handle_adjust_speed(state, delta),
+        AudioMsg::ToggleMute => audio_action::handle_toggle_mute(state),
+        AudioMsg::ResetSpeed => audio_action::handle_reset_speed(state),
         AudioMsg::AdjustBass(delta) => audio_action::handle_adjust_bass(state, delta),
         AudioMsg::AdjustTreble(delta) => audio_action::handle_adjust_treble(state, delta),
         AudioMsg::AdjustReverb(delta) => audio_action::handle_adjust_reverb(state, delta),
@@ -162,6 +169,10 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::RequestOutputDevices => vec![],
         AudioMsg::OutputDevicesListed(names) => {
             state.session.output.devices = names;
+            vec![]
+        }
+        AudioMsg::OutputKindChanged(kind) => {
+            state.session.output.kind = kind;
             vec![]
         }
         AudioMsg::OutputOpened(name) => {
@@ -240,6 +251,9 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::DspAdjustUp => ui_action::handle_dsp_adjust_up(state),
         UIMsg::DspAdjustDown => ui_action::handle_dsp_adjust_down(state),
         UIMsg::DspResetControl => ui_action::handle_dsp_reset_control(state),
+        UIMsg::MixerSelect { columns, rows } => {
+            ui_action::handle_mixer_select(state, columns, rows)
+        }
         UIMsg::DspMacroSlowedReverb => audio_action::handle_macro_slowed_reverb(state),
         UIMsg::DspMacroBassBoosted => audio_action::handle_macro_bass_boosted(state),
         UIMsg::DspMacroSpatial => audio_action::handle_macro_spatial(state),
@@ -331,8 +345,8 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         DownloadMsg::LyricsFetched { save_path } => {
             download_action::handle_lyrics_fetched(state, save_path)
         }
-        DownloadMsg::LyricsFetchFailed { error } => {
-            download_action::handle_lyrics_fetch_failed(state, error)
+        DownloadMsg::LyricsFetchFailed { save_path, error } => {
+            download_action::handle_lyrics_fetch_failed(state, save_path, error)
         }
         DownloadMsg::RequestSearchLyrics { query } => {
             download_action::handle_request_search_lyrics(state, query)

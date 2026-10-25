@@ -8,7 +8,9 @@ use crate::{
     },
 };
 
+/// The sidebar between the tree and the queue, and the keys to it.
 pub fn handle_toggle_library_queue(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.mixer_focused = false;
     state.session.nav.active_panel = match state.session.nav.active_panel {
         LeftPanelMode::Library => {
             if state.session.nav.queue.selected_queue_id.is_none() {
@@ -18,6 +20,23 @@ pub fn handle_toggle_library_queue(state: &mut AppState) -> Vec<AppMsg> {
         }
         LeftPanelMode::Queue => LeftPanelMode::Library,
     };
+    vec![]
+}
+
+/// Tab: the keys from the sidebar to the mixer, when it is on screen, and
+/// back.
+pub fn handle_toggle_mixer_focus(state: &mut AppState) -> Vec<AppMsg> {
+    let focus = !state.is_mixer_focused() && state.mixer_on_screen();
+    state.session.ui.mixer_focused = focus;
+    if focus {
+        crate::action::ui_action::select_in_mixer(state);
+    }
+    vec![]
+}
+
+/// Esc in the mixer: back to the sidebar.
+pub fn handle_leave_mixer(state: &mut AppState) -> Vec<AppMsg> {
+    state.session.ui.mixer_focused = false;
     vec![]
 }
 
@@ -195,6 +214,56 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
     effects
 }
 
+/// Moves a screenful down the tree or the queue, or up, a row at a time so
+/// the view scrolls as it does for one.
+pub fn handle_move_page(state: &mut AppState, down: bool) -> Vec<AppMsg> {
+    let (_, h) = state.terminal_size();
+    let rows = (h.saturating_sub(3) as usize).max(1);
+    for _ in 0..rows {
+        if down {
+            handle_move_down(state);
+        } else {
+            handle_move_up(state);
+        }
+    }
+    vec![]
+}
+
+/// Selects the first row of the tree or the queue, or with `last` the last,
+/// the tree scrolled to show it.
+pub fn handle_move_to_end(state: &mut AppState, last: bool) -> Vec<AppMsg> {
+    state.last_nav_time = state.time_elapsed;
+    state.session.nav.show_track_info = false;
+    match state.session.nav.active_panel {
+        LeftPanelMode::Library => {
+            let nav = &state.session.nav.library;
+            let total_rows = projector::get_row_count(&state.library, nav);
+            if total_rows == 0 {
+                return vec![];
+            }
+            let index = if last { total_rows - 1 } else { 0 };
+            if let Some(node) = projector::get_node_at_index(&state.library, nav, index) {
+                state.session.nav.library.selected_id = Some(node);
+                let (_, h) = state.terminal_size();
+                let viewport_height = (h.saturating_sub(3) as usize).max(1);
+                state.session.nav.library.scroll_offset = if last {
+                    total_rows.saturating_sub(viewport_height)
+                } else {
+                    0
+                };
+            }
+        }
+        LeftPanelMode::Queue => {
+            let queue = state.queue();
+            let entry = if last { queue.back() } else { queue.front() };
+            if let Some(entry) = entry {
+                state.session.nav.queue.selected_queue_id = Some(entry.id);
+            }
+        }
+    }
+    vec![]
+}
+
 pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
     state.session.nav.show_track_info = false;
@@ -329,15 +398,56 @@ mod tests {
     }
 
     #[test]
-    fn test_toggle_library_queue() {
+    fn backtick_switches_the_sidebar_between_the_tree_and_the_queue() {
         let mut state = test_state();
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Library);
-
         handle_toggle_library_queue(&mut state);
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Queue);
-
         handle_toggle_library_queue(&mut state);
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Library);
+
+        // From the mixer, it hands the keys back to the sidebar.
+        handle_toggle_mixer_focus(&mut state);
+        handle_toggle_library_queue(&mut state);
+        assert!(!state.is_mixer_focused());
+        assert!(state.is_queue_focused());
+    }
+
+    #[test]
+    fn tab_goes_between_the_sidebar_and_the_mixer() {
+        let mut state = test_state();
+        handle_toggle_mixer_focus(&mut state);
+        assert!(state.is_mixer_focused());
+        assert_eq!(
+            state.session.nav.active_panel,
+            LeftPanelMode::Library,
+            "the sidebar stays as it was"
+        );
+        handle_toggle_mixer_focus(&mut state);
+        assert!(!state.is_mixer_focused());
+
+        handle_toggle_mixer_focus(&mut state);
+        handle_leave_mixer(&mut state);
+        assert!(!state.is_mixer_focused());
+    }
+
+    #[test]
+    fn tab_does_nothing_where_the_mixer_is_not_shown() {
+        let mut state = test_state();
+        state.session.ui.show_lyrics = true;
+        handle_toggle_mixer_focus(&mut state);
+        assert!(!state.is_mixer_focused());
+
+        // Focused, then hidden by the lyrics: the keys go to the sidebar,
+        // and Tab brings them back to the mixer once it shows again.
+        state.session.ui.show_lyrics = false;
+        handle_toggle_mixer_focus(&mut state);
+        state.session.ui.show_lyrics = true;
+        assert!(!state.is_mixer_focused());
+        assert!(state.is_library_focused());
+        handle_toggle_mixer_focus(&mut state);
+        state.session.ui.show_lyrics = false;
+        assert!(!state.is_mixer_focused());
     }
 
     #[test]
@@ -383,5 +493,47 @@ mod tests {
 
         handle_toggle_tree_expand(&mut state);
         assert!(!state.session.nav.library.expanded_ids.contains(&node));
+    }
+
+    #[test]
+    fn the_top_and_bottom_of_the_tree_are_a_key_away() {
+        let mut state = test_state();
+        state.session.ui.terminal_size = (80, 6);
+        let rows = projector::get_row_count(&state.library, &state.session.nav.library);
+        assert!(rows > 3, "{rows} rows");
+
+        handle_move_to_end(&mut state, true);
+        let nav = &state.session.nav.library;
+        let at = projector::get_index_of(&state.library, nav, nav.selected_id.as_ref().unwrap());
+        assert_eq!(at, Some(rows - 1));
+        assert_eq!(
+            nav.scroll_offset,
+            rows - 3,
+            "scrolled to show it at the bottom"
+        );
+
+        handle_move_to_end(&mut state, false);
+        let nav = &state.session.nav.library;
+        let at = projector::get_index_of(&state.library, nav, nav.selected_id.as_ref().unwrap());
+        assert_eq!(at, Some(0));
+        assert_eq!(nav.scroll_offset, 0);
+    }
+
+    #[test]
+    fn the_first_and_last_of_the_queue_are_a_key_away() {
+        use crate::{message::library::LibraryMsg, reducer::reduce};
+        let mut state = test_state();
+        let track = crate::domain::ids::TrackId(1);
+        for _ in 0..3 {
+            reduce(&mut state, AppMsg::Library(LibraryMsg::AddToQueue(track)));
+        }
+        state.session.nav.active_panel = LeftPanelMode::Queue;
+        let ids: Vec<_> = state.queue().iter().map(|e| e.id).collect();
+        assert_eq!(ids.len(), 3);
+
+        handle_move_to_end(&mut state, true);
+        assert_eq!(state.session.nav.queue.selected_queue_id, Some(ids[2]));
+        handle_move_to_end(&mut state, false);
+        assert_eq!(state.session.nav.queue.selected_queue_id, Some(ids[0]));
     }
 }

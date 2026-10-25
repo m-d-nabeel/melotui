@@ -61,7 +61,9 @@ impl InputHandler {
         }
 
         // panel contexts
-        if state.is_library_focused() {
+        if state.is_mixer_focused() {
+            contexts.push(KeyContext::Mixer);
+        } else if state.is_library_focused() {
             contexts.push(KeyContext::Library);
         } else if state.is_queue_focused() {
             contexts.push(KeyContext::Queue);
@@ -372,5 +374,229 @@ mod tests {
         let enter_key = KeyEvent::new(KeyCode::Enter, KeyModifiers::empty());
         let msg = InputHandler::handle(enter_key, &state, &registry);
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::SubmitPresetPicker))));
+    }
+
+    /// A key as terminals send it: a capital with shift held.
+    fn typed(c: char) -> KeyEvent {
+        let shift = if c.is_ascii_uppercase() {
+            KeyModifiers::SHIFT
+        } else {
+            KeyModifiers::empty()
+        };
+        KeyEvent::new(KeyCode::Char(c), shift)
+    }
+
+    #[test]
+    fn g_and_capital_g_go_to_the_top_and_bottom_of_the_help() {
+        let mut state = test_state();
+        reduce(&mut state, AppMsg::UI(UIMsg::OpenHelp));
+        let registry = crate::keybinding::KeyRegistry::default();
+        assert!(matches!(
+            InputHandler::handle(typed('g'), &state, &registry),
+            Some(AppMsg::UI(UIMsg::ScrollHelp { by: i32::MIN, .. }))
+        ));
+        assert!(matches!(
+            InputHandler::handle(typed('G'), &state, &registry),
+            Some(AppMsg::UI(UIMsg::ScrollHelp { by: i32::MAX, .. }))
+        ));
+    }
+
+    #[test]
+    fn g_and_capital_g_go_to_the_top_and_bottom_of_the_tree_and_the_queue() {
+        use melotui_core::message::navigation::NavigationMsg;
+        let mut state = test_state();
+        let registry = crate::keybinding::KeyRegistry::default();
+        for _ in 0..2 {
+            assert!(matches!(
+                InputHandler::handle(typed('g'), &state, &registry),
+                Some(AppMsg::Navigation(NavigationMsg::MoveTop))
+            ));
+            assert!(matches!(
+                InputHandler::handle(typed('G'), &state, &registry),
+                Some(AppMsg::Navigation(NavigationMsg::MoveBottom))
+            ));
+            // And the same in the queue.
+            reduce(
+                &mut state,
+                AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue),
+            );
+        }
+    }
+
+    #[test]
+    fn the_keys_do_what_music_players_agree_on() {
+        use melotui_core::message::{
+            audio::AudioMsg, library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg,
+        };
+        let state = test_state();
+        let registry = crate::keybinding::KeyRegistry::default();
+        let press = |code: KeyCode, mods: KeyModifiers| {
+            InputHandler::handle(KeyEvent::new(code, mods), &state, &registry)
+        };
+        let none = KeyModifiers::empty();
+        let shift = KeyModifiers::SHIFT;
+        let step = state.config.audio.seek_step;
+
+        assert!(matches!(
+            press(KeyCode::Char(' '), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('>'), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestPlayNext))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('<'), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestPlayPrev))
+        ));
+        assert!(
+            matches!(press(KeyCode::Right, none), Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(s))) if s == step)
+        );
+        assert!(
+            matches!(press(KeyCode::Left, none), Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(s))) if s == -step)
+        );
+        assert!(matches!(
+            press(KeyCode::Char('.'), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(60)))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char(','), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(-60)))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('s'), none),
+            Some(AppMsg::Library(LibraryMsg::ToggleShuffle))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('S'), shift),
+            Some(AppMsg::Playback(PlaybackMsg::RequestStop))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('r'), none),
+            Some(AppMsg::Library(LibraryMsg::ToggleRepeatMode))
+        ));
+        assert!(
+            matches!(press(KeyCode::Char(']'), none), Some(AppMsg::Audio(AudioMsg::AdjustSpeed(d))) if d > 0.0)
+        );
+        assert!(
+            matches!(press(KeyCode::Char('['), none), Some(AppMsg::Audio(AudioMsg::AdjustSpeed(d))) if d < 0.0)
+        );
+        assert!(matches!(
+            press(KeyCode::Backspace, none),
+            Some(AppMsg::Audio(AudioMsg::ResetSpeed))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('m'), none),
+            Some(AppMsg::Audio(AudioMsg::ToggleMute))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('i'), none),
+            Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('l'), none),
+            Some(AppMsg::UI(UIMsg::ToggleLyrics))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('v'), none),
+            Some(AppMsg::Navigation(NavigationMsg::ToggleArt))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('V'), shift),
+            Some(AppMsg::Navigation(NavigationMsg::CycleVisualizerStyle))
+        ));
+        assert!(matches!(
+            press(KeyCode::PageDown, none),
+            Some(AppMsg::Navigation(NavigationMsg::MovePage { down: true }))
+        ));
+
+        // The old effect, shuffle, repeat, stop and style letters are free.
+        for c in ['b', 't', 'e', 'z', 'c', 'x', 'w'] {
+            assert!(press(KeyCode::Char(c), none).is_none(), "{c} still bound");
+        }
+    }
+
+    #[test]
+    fn no_binding_waits_for_a_key_that_never_comes() {
+        // A capital comes as its small letter with shift held, so a binding
+        // to the capital itself never fires: G, Shift+L and Shift+V did not.
+        let registry = crate::keybinding::KeyRegistry::default();
+        for (context, bindings) in &registry.bindings {
+            for binding in bindings {
+                if let KeyCode::Char(c) = binding.key {
+                    assert!(
+                        !c.is_ascii_uppercase(),
+                        "{context:?}: {c:?} for {:?} can never be pressed",
+                        binding.action
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn in_the_mixer_the_arrows_pick_and_plus_minus_adjust_and_the_rest_still_work() {
+        use melotui_core::message::{navigation::NavigationMsg, playback::PlaybackMsg};
+        let mut state = test_state();
+        // Tab, from the sidebar to the mixer.
+        reduce(
+            &mut state,
+            AppMsg::Navigation(NavigationMsg::ToggleMixerFocus),
+        );
+        let registry = crate::keybinding::KeyRegistry::default();
+        let press = |state: &AppState, key: KeyEvent| InputHandler::handle(key, state, &registry);
+        let arrow = |code| KeyEvent::new(code, KeyModifiers::empty());
+
+        assert!(matches!(
+            press(&state, arrow(KeyCode::Right)),
+            Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 1,
+                rows: 0
+            }))
+        ));
+        assert!(matches!(
+            press(&state, typed('j')),
+            Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 0,
+                rows: 1
+            }))
+        ));
+        assert!(matches!(
+            press(&state, typed('+')),
+            Some(AppMsg::UI(UIMsg::DspAdjustUp))
+        ));
+        assert!(matches!(
+            press(&state, typed('-')),
+            Some(AppMsg::UI(UIMsg::DspAdjustDown))
+        ));
+        assert!(matches!(
+            press(&state, typed('r')),
+            Some(AppMsg::UI(UIMsg::DspResetControl))
+        ));
+        assert!(matches!(
+            press(&state, arrow(KeyCode::Backspace)),
+            Some(AppMsg::UI(UIMsg::DspResetControl))
+        ));
+        assert!(matches!(
+            press(&state, arrow(KeyCode::Esc)),
+            Some(AppMsg::Navigation(NavigationMsg::LeaveMixer))
+        ));
+        assert!(matches!(
+            press(&state, arrow(KeyCode::Tab)),
+            Some(AppMsg::Navigation(NavigationMsg::ToggleMixerFocus))
+        ));
+        assert!(matches!(
+            press(&state, typed('`')),
+            Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue))
+        ));
+        assert!(matches!(
+            press(&state, typed(' ')),
+            Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))
+        ));
+
+        // With the mixer hidden by the lyrics, the keys are the queue's and
+        // the player's again.
+        reduce(&mut state, AppMsg::UI(UIMsg::ToggleLyrics));
+        assert!(matches!(press(&state, typed('+')), Some(AppMsg::Audio(_))));
     }
 }

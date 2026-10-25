@@ -2,7 +2,7 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    widgets::{Block, Clear, Paragraph},
+    widgets::{Block, Paragraph},
 };
 
 use melotui_core::{AppState, UIMode, state::ui::FocusMode};
@@ -213,7 +213,7 @@ fn draw_overlays(
                 Constraint::Length(command_view::height(state)),
             ])
             .areas(area);
-        frame.render_widget(Clear, overlay);
+        crate::widgets::clear_for_popup(frame, overlay);
         command_view::draw(frame, overlay, state);
     }
 

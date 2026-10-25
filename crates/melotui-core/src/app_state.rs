@@ -459,6 +459,14 @@ impl AppState {
         self.session.ui.show_help
     }
 
+    pub fn is_muted(&self) -> bool {
+        self.session.audio.muted_from.is_some()
+    }
+
+    pub fn output_kind(&self) -> crate::state::audio::OutputKind {
+        self.session.output.kind
+    }
+
     pub fn ui_help_scroll(&self) -> u16 {
         self.session.ui.help_scroll
     }
@@ -601,6 +609,18 @@ impl AppState {
 
     pub fn ui_show_dsp_studio(&self) -> bool {
         self.session.ui.show_dsp_studio
+    }
+
+    /// Whether the mixer is on screen: in the full layout, where the lyrics
+    /// panel is not in its place.
+    pub fn mixer_on_screen(&self) -> bool {
+        self.session.ui.focus_mode == crate::state::ui::FocusMode::Full
+            && !self.session.ui.show_lyrics
+    }
+
+    /// Whether keys go to the mixer: moved on to with Tab, and on screen.
+    pub fn is_mixer_focused(&self) -> bool {
+        self.session.ui.mixer_focused && self.mixer_on_screen()
     }
 
     pub fn dsp_selected_control(&self) -> usize {

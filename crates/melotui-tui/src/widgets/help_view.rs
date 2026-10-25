@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -32,6 +32,7 @@ pub fn draw(
         key_section("Global", registry.bindings.get(&KeyContext::Global)),
         key_section("Library", registry.bindings.get(&KeyContext::Library)),
         key_section("Queue", registry.bindings.get(&KeyContext::Queue)),
+        key_section("Mixer  ( Tab )", registry.bindings.get(&KeyContext::Mixer)),
         Section {
             title: "Commands  ( : then Tab )",
             rows: melotui_core::Command::help_entries(),
@@ -91,7 +92,7 @@ pub fn draw(
     scroll_max.set(max);
     let scroll = state.ui_help_scroll().min(max);
 
-    frame.render_widget(Clear, help_area);
+    crate::widgets::clear_for_popup(frame, help_area);
     let hint = Style::default().fg(t.help_subtext);
     let mut block = Block::default()
         .title(
@@ -171,18 +172,19 @@ pub fn draw(
 }
 
 /// The bindings of one context, one row per thing they do, keys that do the
-/// same thing together.
+/// same thing together, in the order they are defined: by kind, not by name.
 fn key_section(title: &'static str, bindings: Option<&Vec<KeyBinding>>) -> Section {
-    let mut grouped: std::collections::BTreeMap<&str, Vec<String>> = Default::default();
+    let mut rows: Vec<(&str, Vec<String>)> = Vec::new();
     for binding in bindings.into_iter().flatten() {
-        grouped
-            .entry(binding.action.description())
-            .or_default()
-            .push(format_key(binding));
+        let desc = binding.action.description();
+        match rows.iter_mut().find(|(d, _)| *d == desc) {
+            Some((_, keys)) => keys.push(format_key(binding)),
+            None => rows.push((desc, vec![format_key(binding)])),
+        }
     }
     Section {
         title,
-        rows: grouped
+        rows: rows
             .into_iter()
             .map(|(desc, keys)| (keys.join(" | "), desc.to_string()))
             .collect(),

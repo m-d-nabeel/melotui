@@ -82,6 +82,28 @@ where
 
     /// Forgets the audio it holds and starts its pacing over, for after a
     /// seek: what was waiting is from before it.
+    /// Keeps up with the audio without drawing it, while the visualizer is
+    /// out of sight: the newest audio is kept, enough to draw from the moment
+    /// it is back, and nothing is analysed. Throwing the analyser away and
+    /// starting a new one instead left it a quarter of a second to gather
+    /// audio each time it came back, and toggled quickly it never caught up.
+    pub fn idle(&mut self) {
+        while let Some(sample) = self.consumer.try_pop() {
+            self.history.push_back(sample);
+            self.received += 1;
+        }
+        let keep = self.fft_size * BASS_SCALE + self.sample_rate as usize / 2;
+        if self.history.len() > keep {
+            let drop = self.history.len() - keep;
+            self.history.drain(..drop);
+            self.first += drop as u64;
+        }
+        self.playhead = self.received as f64;
+        // The next tick picks up from the newest audio.
+        self.last_tick = None;
+        self.arrived_last_tick = 0;
+    }
+
     pub fn restart(&mut self) {
         while self.consumer.try_pop().is_some() {}
         self.history.clear();
@@ -471,6 +493,27 @@ mod tests {
         assert!((curve_through_bins(&line, 1.5) - 1.5).abs() < 1e-6);
         // Never below silence, however the curve swings.
         assert!((0..50).all(|i| curve_through_bins(&bins, i as f32 / 10.0) >= 0.0));
+    }
+
+    #[test]
+    fn out_of_sight_it_keeps_up_and_draws_the_moment_it_is_back() {
+        let (mut prod, mut analyzer) = analyzer();
+        let start = Instant::now();
+        play(&mut prod, &mut analyzer, start, 2048, 1.0, 1.0);
+        // Hidden for two seconds of music: listened to, not drawn.
+        for _ in 0..200 {
+            prod.push_slice(&[0.25; 480]);
+            analyzer.idle();
+        }
+        let kept = analyzer.history.len();
+        assert!(kept <= 4096 * BASS_SCALE + RATE as usize / 2, "{kept} kept");
+        prod.push_slice(&[0.25; 480]);
+        assert!(
+            analyzer
+                .next_spectrum_at(start + Duration::from_secs(3))
+                .is_some(),
+            "drawn on the first tick back"
+        );
     }
 
     #[test]

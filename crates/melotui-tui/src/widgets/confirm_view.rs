@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph},
 };
 
 use melotui_core::AppState;
@@ -22,7 +22,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let popup_area = centered_rect(popup_width, popup_height, area);
 
-    frame.render_widget(Clear, popup_area);
+    crate::widgets::clear_for_popup(frame, popup_area);
 
     let block = Block::default()
         .borders(Borders::ALL)

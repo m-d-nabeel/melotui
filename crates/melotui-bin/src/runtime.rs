@@ -231,9 +231,12 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
                 frame_due = true;
                 should_render = true;
             }
-        } else {
+        } else if !state.is_playing() {
             frames.rest(now);
         }
+        // Hidden while the music plays, the clock runs on: shown again, the
+        // spectrum moves on by the time it was away, and flicked in and out
+        // it keeps the music's pace rather than moving only while seen.
 
         if process_effects(&mut runtime, &mut state) {
             if !runtime.running {

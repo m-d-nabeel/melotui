@@ -259,7 +259,12 @@ impl PersistedSession {
             playing_from_queue: state.session.playback.playing_from_queue,
             scroll_offset: state.session.nav.library.scroll_offset,
             seek_position_ms: state.session.playback.progress_ms,
-            volume: state.session.audio.volume,
+            // Muted, the volume to come back to: a session is not left silent.
+            volume: state
+                .session
+                .audio
+                .muted_from
+                .unwrap_or(state.session.audio.volume),
             speed: state.session.audio.speed,
             focus_mode: state.session.ui.focus_mode,
             visualizer_mode: state.session.visualizer_mode.clone(),

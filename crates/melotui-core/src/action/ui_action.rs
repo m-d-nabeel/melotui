@@ -102,6 +102,12 @@ pub fn handle_lyrics_selector_submit(state: &mut AppState) -> Vec<AppMsg> {
                     return vec![];
                 };
 
+                // LRCLIB, busy, can take some seconds to answer.
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Info,
+                    format!("Fetching lyrics: {} – {}…", c.artist_name, c.track_name),
+                ));
+
                 let provider = match c.api {
                     crate::state::lyrics::LyricsApi::Lrclib => "lrclib".to_string(),
                     crate::state::lyrics::LyricsApi::Ovh => "ovh".to_string(),
@@ -410,20 +416,21 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         }
         Command::FetchLyrics { query } => {
             if let Some(track) = state.get_playing_track() {
-                let (track_name, artist_name) = if let Some(q) = query {
-                    if let Some((a, t)) = q.split_once('-') {
-                        (t.trim().to_string(), a.trim().to_string())
-                    } else {
-                        (q, String::new())
-                    }
-                } else {
-                    let t = track.title.clone();
-                    let a = match track.artist.clone() {
-                        Some(ar) if !ar.is_empty() => ar,
-                        _ => String::new(),
-                    };
-                    (t, a)
+                // `Artist - Title`, split where it is spaced, as Jay-Z is not.
+                let (track_name, artist_name, album_name) = match query {
+                    Some(q) => match q.split_once(" - ") {
+                        Some((a, t)) => (t.trim().to_string(), a.trim().to_string(), None),
+                        None => (q, String::new(), None),
+                    },
+                    None => (
+                        track.title.clone(),
+                        track.artist.clone().unwrap_or_default(),
+                        track.album.clone(),
+                    ),
                 };
+                // The song playing's length, to tell its lyrics from those
+                // of others of the same name.
+                let duration_secs = Some(track.duration_ms / 1000).filter(|&d| d > 0);
 
                 if track_name.is_empty() {
                     state.session.notification.current = Some(Notification::new(
@@ -450,8 +457,8 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 vec![AppMsg::Download(DownloadMsg::RequestFetchLyrics {
                     track_name,
                     artist_name,
-                    album_name: None,
-                    duration_secs: None,
+                    album_name,
+                    duration_secs,
                     save_path,
                     provider: None,
                     provider_id: None,
@@ -483,7 +490,20 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             }
         }
         Command::SearchLyrics { query } => {
-            vec![AppMsg::Download(DownloadMsg::RequestSearchLyrics { query })]
+            // Without a query, the song playing by its title alone: its
+            // artist may be the label or channel it came from, and the
+            // results say whose each is.
+            let query = query.or_else(|| state.get_playing_track().map(|t| t.title.clone()));
+            match query {
+                Some(query) => vec![AppMsg::Download(DownloadMsg::RequestSearchLyrics { query })],
+                None => {
+                    state.session.notification.current = Some(Notification::new(
+                        NotificationKind::Warning,
+                        "Search for what? Nothing is playing",
+                    ));
+                    vec![]
+                }
+            }
         }
         Command::Search { field, query } => {
             vec![AppMsg::Library(LibraryMsg::Search { field, query })]
@@ -677,6 +697,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 *audio = crate::state::AudioState {
                     volume: audio.volume,
                     speed: audio.speed,
+                    muted_from: audio.muted_from,
                     ..Default::default()
                 };
                 tell(state, "Effects reset");
@@ -967,6 +988,39 @@ pub fn handle_toggle_dsp_studio(state: &mut AppState) -> Vec<AppMsg> {
     })]
 }
 
+/// The mixer's controls as it lays them out, column by column, as the DSP
+/// studio numbers them: volume and speed, bass and treble, reverb and echo.
+pub const MIXER: [[usize; 2]; 3] = [[10, 11], [12, 13], [17, 18]];
+
+/// Where the selected control is in the mixer, if it is one of its.
+fn mixer_coords(control: usize) -> Option<(usize, usize)> {
+    MIXER.iter().enumerate().find_map(|(column, rows)| {
+        rows.iter()
+            .position(|&c| c == control)
+            .map(|row| (column, row))
+    })
+}
+
+/// Moved on to the mixer: what is selected in the DSP studio stays selected
+/// if the mixer has it, otherwise the volume is.
+pub fn select_in_mixer(state: &mut AppState) {
+    if mixer_coords(state.session.ui.dsp_selected_control).is_none() {
+        state.session.ui.dsp_selected_control = MIXER[0][0];
+    }
+}
+
+pub fn handle_mixer_select(state: &mut AppState, columns: i8, rows: i8) -> Vec<AppMsg> {
+    let (column, row) = mixer_coords(state.session.ui.dsp_selected_control).unwrap_or((0, 0));
+    let column = column
+        .saturating_add_signed(columns as isize)
+        .min(MIXER.len() - 1);
+    let row = row
+        .saturating_add_signed(rows as isize)
+        .min(MIXER[0].len() - 1);
+    state.session.ui.dsp_selected_control = MIXER[column][row];
+    vec![]
+}
+
 /// Up: move cursor up within current zone (EQ or grid column)
 pub fn handle_dsp_select_up(state: &mut AppState) -> Vec<AppMsg> {
     let idx = state.session.ui.dsp_selected_control;
@@ -1108,6 +1162,7 @@ pub fn handle_dsp_reset_control(state: &mut AppState) -> Vec<AppMsg> {
             })]
         }
         10 => {
+            state.session.audio.muted_from = None;
             state.session.audio.volume = 1.0;
             vec![AppMsg::Audio(AudioMsg::DispatchSetVolume(1.0))]
         }
@@ -1380,6 +1435,52 @@ mod tests {
         let root = std::path::PathBuf::from("/tmp");
         let library = Library::new(vec![root], vec![], HashMap::new());
         AppState::new(library, &crate::config::AppConfig::default())
+    }
+
+    #[test]
+    fn in_the_mixer_the_arrows_pick_a_control_and_plus_minus_adjust_it() {
+        let mut state = test_state();
+        // An EQ band selected in the DSP studio: the mixer starts at the volume.
+        state.session.ui.dsp_selected_control = 3;
+        select_in_mixer(&mut state);
+        assert_eq!(state.session.ui.dsp_selected_control, 10);
+
+        // Right to bass, down to treble; no further than the edges.
+        handle_mixer_select(&mut state, 1, 0);
+        handle_mixer_select(&mut state, 0, 1);
+        assert_eq!(state.session.ui.dsp_selected_control, 13);
+        handle_mixer_select(&mut state, 0, 1);
+        handle_mixer_select(&mut state, 5, 0);
+        assert_eq!(state.session.ui.dsp_selected_control, 18, "echo");
+        handle_mixer_select(&mut state, -9, -9);
+        assert_eq!(state.session.ui.dsp_selected_control, 10, "volume");
+
+        handle_mixer_select(&mut state, 1, 0);
+        let treble = state.treble();
+        handle_dsp_adjust_up(&mut state);
+        assert!((state.bass() - 1.1).abs() < 1e-5);
+        assert_eq!(state.treble(), treble);
+        assert!(
+            state.session.notification.current.is_none(),
+            "the mixer shows it"
+        );
+        handle_dsp_reset_control(&mut state);
+        assert_eq!(state.bass(), 1.0);
+
+        // Reverb, the mixer's own, stays selected.
+        handle_mixer_select(&mut state, 1, 0);
+        select_in_mixer(&mut state);
+        assert_eq!(state.session.ui.dsp_selected_control, 17);
+    }
+
+    #[test]
+    fn resetting_the_volume_unmutes() {
+        let mut state = test_state();
+        crate::action::audio_action::handle_toggle_mute(&mut state);
+        state.session.ui.dsp_selected_control = 10;
+        handle_dsp_reset_control(&mut state);
+        assert_eq!(state.volume(), 1.0);
+        assert!(!state.is_muted());
     }
 
     #[test]

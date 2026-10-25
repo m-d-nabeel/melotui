@@ -222,8 +222,8 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::LyricsFetched { save_path } => {
             AppMsg::Download(DownloadMsg::LyricsFetched { save_path })
         }
-        IpcEvent::LyricsFetchFailed { error } => {
-            AppMsg::Download(DownloadMsg::LyricsFetchFailed { error })
+        IpcEvent::LyricsFetchFailed { save_path, error } => {
+            AppMsg::Download(DownloadMsg::LyricsFetchFailed { save_path, error })
         }
         IpcEvent::LyricsSearchResults {
             lrclib_results,
@@ -288,6 +288,7 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         // A worker that failed says so, rather than the failure only reaching
         // the log.
         IpcEvent::AudioOutputOpened { name } => AppMsg::Audio(AudioMsg::OutputOpened(name)),
+        IpcEvent::AudioOutputKind(kind) => AppMsg::Audio(AudioMsg::OutputKindChanged(kind)),
         IpcEvent::OutputDevices { names } => AppMsg::Audio(AudioMsg::OutputDevicesListed(names)),
         IpcEvent::Error { message } => AppMsg::UI(UIMsg::Notify {
             kind: NotificationKind::Error,

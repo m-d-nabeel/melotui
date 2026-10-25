@@ -1,89 +1,148 @@
 use crate::lyrics::LyricsRenderer;
+use crate::lyrics::kitty::KittyImage;
 use image::DynamicImage;
 use melotui_core::{AppState, UIMode};
-use ratatui_image::{picker::Picker, protocol::StatefulProtocol};
+use ratatui_image::{
+    picker::{Picker, ProtocolType},
+    protocol::StatefulProtocol,
+};
 use std::sync::Arc;
 
 pub struct ImageState {
     pub protocol: Option<StatefulProtocol>,
+    /// The image, in kitty: sent as it is and scaled by kitty to its cells.
+    pub kitty: Option<KittyImage>,
     pub source: Option<Arc<DynamicImage>>,
-    pub width: u32,
-    pub height: u32,
+    /// The cells it was made for.
+    pub width: u16,
+    pub height: u16,
+    kitty_id: Option<u32>,
+    next_id: u32,
+    /// kitty images no longer shown, freed once the frame is drawn.
+    retired: Vec<u32>,
 }
 
 impl ImageState {
     pub fn new() -> Self {
+        // Ids are shared with the lyrics', which start somewhere arbitrary;
+        // these start somewhere else, below 2^24 so a placeholder's colour
+        // carries the whole id.
+        let seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_nanos())
+            .rotate_left(7)
+            ^ std::process::id();
         Self {
             protocol: None,
+            kitty: None,
             source: None,
             width: 0,
             height: 0,
+            kitty_id: None,
+            next_id: (seed & 0xFF_FFFF).max(1),
+            retired: Vec::new(),
         }
     }
 
     pub fn reset(&mut self) {
-        self.protocol = None;
+        self.forget_image();
         self.source = None;
+    }
+
+    /// Drops the image made from the source, to be made again.
+    fn forget_image(&mut self) {
+        self.protocol = None;
+        self.kitty = None;
+        self.retired.extend(self.kitty_id.take());
         self.width = 0;
         self.height = 0;
     }
 
-    /// Resize, crop, and create the rendering protocol for the current terminal area.
-    /// This is the ONLY place where a protocol should be created — never in update_state.
+    /// Makes the image for `area` from the source, unless it is made for it
+    /// already.
+    ///
+    /// The source is cropped to the area's shape and left at its own
+    /// resolution: the terminal, or ratatui-image for terminals that cannot
+    /// scale, enlarges it. It used to be enlarged here to the area's full
+    /// size in pixels first: a 512-pixel cover filling a large panel became
+    /// some 7 MB of pixels, kitty's copy of them as many again, and preparing
+    /// them took 45 MB at the peak.
     pub fn update_protocol(&mut self, picker: &Picker, area: ratatui::layout::Rect) {
         if area.width == 0 || area.height == 0 {
             return;
         }
-
-        let (font_w, font_h) = picker.font_size();
-        let target_w = area.width as u32 * font_w as u32;
-        let target_h = area.height as u32 * font_h as u32;
-
-        // Skip if already rendered at this size
-        if self.width == target_w && self.height == target_h && self.protocol.is_some() {
+        if self.width == area.width
+            && self.height == area.height
+            && (self.protocol.is_some() || self.kitty.is_some())
+        {
             return;
         }
+        let Some(source) = &self.source else {
+            return;
+        };
 
-        if let Some(source) = &self.source {
-            let src_w = source.width();
-            let src_h = source.height();
+        let (font_w, font_h) = picker.font_size();
+        let aspect = (area.width as f32 * font_w as f32) / (area.height as f32 * font_h as f32);
+        let (src_w, src_h) = (source.width().max(1), source.height().max(1));
+        let (crop_w, crop_h) = if src_w as f32 / src_h as f32 > aspect {
+            (
+                ((src_h as f32 * aspect).round() as u32).clamp(1, src_w),
+                src_h,
+            )
+        } else {
+            (
+                src_w,
+                ((src_w as f32 / aspect).round() as u32).clamp(1, src_h),
+            )
+        };
+        let cropped = source
+            .crop_imm((src_w - crop_w) / 2, (src_h - crop_h) / 2, crop_w, crop_h)
+            .to_rgba8();
 
-            // cover logic: scale to fill, then center-crop
-            let scale_w = target_w as f32 / src_w as f32;
-            let scale_h = target_h as f32 / src_h as f32;
-            let scale = scale_w.max(scale_h);
-
-            let new_w = (src_w as f32 * scale).ceil() as u32;
-            let new_h = (src_h as f32 * scale).ceil() as u32;
-
-            let mut resized = image::imageops::resize(
-                source.as_ref(),
-                new_w,
-                new_h,
-                image::imageops::FilterType::Triangle,
-            );
-
-            let off_x = (new_w.saturating_sub(target_w)) / 2;
-            let off_y = (new_h.saturating_sub(target_h)) / 2;
-
-            let cropped =
-                image::imageops::crop(&mut resized, off_x, off_y, target_w, target_h).to_image();
-
-            // Drop the intermediate resize buffer before creating the protocol
-            drop(resized);
-
-            self.protocol =
-                Some(picker.new_resize_protocol(image::DynamicImage::ImageRgba8(cropped)));
-
-            self.width = target_w;
-            self.height = target_h;
-
-            // Do not set self.source = None here!
-            // It's just an Arc pointer, so dropping it doesn't free the 1.4MB image
-            // (AppState still holds it). If we set it to None, update_state() will
-            // think the source changed, delete the protocol, and force a re-resize
-            // on every single frame, causing severe UI stutter!
+        self.forget_image();
+        if picker.protocol_type() == ProtocolType::Kitty {
+            let id = self.next_id;
+            self.next_id = self.next_id % 0xFF_FFFF + 1;
+            let is_tmux = std::env::var_os("TMUX").is_some();
+            self.kitty = KittyImage::new(&cropped, id, area.width, area.height, is_tmux);
+            self.kitty_id = self.kitty.as_ref().map(|_| id);
+        } else {
+            self.protocol = Some(picker.new_resize_protocol(DynamicImage::ImageRgba8(cropped)));
         }
+        self.width = area.width;
+        self.height = area.height;
+    }
+
+    /// Draws the image into `area`, made for it if need be.
+    pub fn draw(
+        &mut self,
+        frame: &mut ratatui::Frame,
+        picker: &Picker,
+        area: ratatui::layout::Rect,
+    ) {
+        self.update_protocol(picker, area);
+        if let Some(kitty) = &self.kitty {
+            frame.render_widget(kitty, area);
+        } else if let Some(protocol) = &mut self.protocol {
+            // The crop fits the area's shape; scaled up as well as down, it
+            // fills the area.
+            let image = ratatui_image::StatefulImage::default().resize(
+                ratatui_image::Resize::Scale(Some(image::imageops::FilterType::Triangle)),
+            );
+            frame.render_stateful_widget(image, area, protocol);
+        }
+    }
+
+    /// Frees, in kitty, the images no longer shown.
+    pub fn flush_retired(&mut self, out: &mut impl std::io::Write) -> std::io::Result<()> {
+        if self.retired.is_empty() {
+            return Ok(());
+        }
+        let is_tmux = std::env::var_os("TMUX").is_some();
+        for id in self.retired.drain(..) {
+            out.write_all(crate::lyrics::kitty::delete(id, is_tmux).as_bytes())?;
+        }
+        out.flush()
     }
 }
 
@@ -144,26 +203,32 @@ impl ImageCache {
             || *state.ui_mode() == UIMode::Command
             || state.ui_show_help();
 
-        let popup_just_closed = self.was_obscured && !is_obscured;
+        // Images drawn as pixels over the cells — Sixel, iTerm2 — stay over
+        // whatever is later drawn on those cells, and are drawn afresh when
+        // something that covered them goes. kitty's placeholders and half
+        // blocks are cells like any other, and need nothing done: making
+        // them again cost a full image's work at every passing notification.
+        let paints_over = matches!(
+            self.picker.protocol_type(),
+            ProtocolType::Sixel | ProtocolType::Iterm2
+        );
+        let popup_just_closed = paints_over && self.was_obscured && !is_obscured;
         self.was_obscured = is_obscured;
 
-        // A lyric image is redrawn only when the first cell of its row changes,
-        // so whatever was drawn over it would be left behind when it went.
-        // When something that could have covered the lyrics goes away, they
-        // are drawn afresh; something arriving just draws over them.
         let overlay = (
             state.current_notification().is_some(),
             state.ui_mode().clone(),
             state.ui_show_help(),
         );
         if let Some(previous) = self.overlay.replace(overlay.clone())
+            && paints_over
             && previous != overlay
             && (previous.0 || previous.1 != UIMode::Normal || previous.2)
         {
             self.lyrics.clear();
         }
 
-        if state.ui_show_help() {
+        if paints_over && state.ui_show_help() {
             self.album_art.reset();
             self.track_info.reset();
             return;
@@ -176,6 +241,13 @@ impl ImageCache {
             &state.track_info_cover,
             popup_just_closed,
         );
+    }
+
+    /// Frees, in kitty, the images that left the screen this frame.
+    pub fn flush_retired(&mut self, out: &mut impl std::io::Write) -> std::io::Result<()> {
+        self.lyrics.flush_retired(out)?;
+        self.album_art.flush_retired(out)?;
+        self.track_info.flush_retired(out)
     }
 
     /// Update the image source reference only.
@@ -205,10 +277,8 @@ impl ImageCache {
 
         // Source changed — update reference and invalidate the protocol.
         // The protocol will be created by update_protocol() on the next render.
+        local.forget_image();
         local.source = core_cover.clone(); // Arc clone = ref count increment only
-        local.width = 0;
-        local.height = 0;
-        local.protocol = None;
     }
 }
 
@@ -234,83 +304,81 @@ mod tests {
     }
 
     #[test]
-    fn lyric_images_are_redrawn_when_something_drawn_over_them_goes_away() {
+    fn lyrics_are_drawn_afresh_after_an_overlay_only_where_they_paint_over_it() {
         use melotui_core::{AppMsg, message::ui::UIMsg, reducer};
         use ratatui::style::Color;
-        use ratatui_image::picker::ProtocolType;
 
-        let mut cache = ImageCache::empty();
-        cache.picker.set_protocol_type(ProtocolType::Kitty);
-        cache.lyrics = LyricsRenderer::new(true);
-        cache.lyrics.wait_for_fonts();
-        let mut state = AppState::new(
-            Library::new(
-                vec![PathBuf::from("/")],
-                vec![],
-                std::collections::HashMap::new(),
-            ),
-            &melotui_core::config::AppConfig::default(),
-        );
-        let draw = |cache: &mut ImageCache| {
-            let mut terminal =
-                ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 4)).unwrap();
-            terminal
-                .draw(|f| {
-                    let lines = [("तुम ही हो", Color::Rgb(137, 180, 250))];
-                    assert!(
-                        cache
-                            .lyrics
-                            .draw(f, f.area(), &cache.picker, &lines, None, 1.0)
-                    );
-                })
-                .unwrap();
-        };
-        cache.update(&state);
-        draw(&mut cache);
-        assert_eq!(cache.lyrics.shown_lines(), Some(1));
+        for (protocol, redrawn) in [(ProtocolType::Kitty, false), (ProtocolType::Iterm2, true)] {
+            let mut cache = ImageCache::empty();
+            cache.picker.set_protocol_type(protocol);
+            cache.lyrics = LyricsRenderer::new(true);
+            cache.lyrics.wait_for_fonts();
+            let mut state = AppState::new(
+                Library::new(
+                    vec![PathBuf::from("/")],
+                    vec![],
+                    std::collections::HashMap::new(),
+                ),
+                &melotui_core::config::AppConfig::default(),
+            );
+            let draw = |cache: &mut ImageCache| {
+                let mut terminal =
+                    ratatui::Terminal::new(ratatui::backend::TestBackend::new(40, 4)).unwrap();
+                terminal
+                    .draw(|f| {
+                        let lines = [("तुम ही हो", Color::Rgb(137, 180, 250))];
+                        assert!(
+                            cache
+                                .lyrics
+                                .draw(f, f.area(), &cache.picker, &lines, None, 1.0)
+                        );
+                    })
+                    .unwrap();
+            };
+            cache.update(&state);
+            draw(&mut cache);
+            assert_eq!(cache.lyrics.shown_lines(), Some(1));
 
-        // Help opening draws over the lyrics; nothing needs redrawing for that.
-        reducer::reduce(&mut state, AppMsg::UI(UIMsg::OpenHelp));
-        cache.update(&state);
-        assert_eq!(
-            cache.lyrics.shown_lines(),
-            Some(1),
-            "redrawn for an overlay arriving"
-        );
+            // Help opening draws over the lyrics; nothing needs redrawing.
+            reducer::reduce(&mut state, AppMsg::UI(UIMsg::OpenHelp));
+            cache.update(&state);
+            assert_eq!(cache.lyrics.shown_lines(), Some(1), "{protocol:?}: opening");
 
-        // Help closing would leave its cells over the lyrics, so they are
-        // drawn afresh.
-        reducer::reduce(&mut state, AppMsg::UI(UIMsg::CloseHelp));
-        cache.update(&state);
-        assert_eq!(
-            cache.lyrics.shown_lines(),
-            None,
-            "not redrawn when the overlay went"
-        );
+            // Help closing: pixels painted over the cells would stay over
+            // them, so those are drawn afresh; kitty's placeholder cells are
+            // redrawn like any others, and nothing needs doing.
+            reducer::reduce(&mut state, AppMsg::UI(UIMsg::CloseHelp));
+            cache.update(&state);
+            assert_eq!(
+                cache.lyrics.shown_lines().is_none(),
+                redrawn,
+                "{protocol:?}: closing"
+            );
+        }
     }
 
     #[test]
-    fn test_image_cache_obscured_reset() {
-        let mut cache = ImageCache::empty();
-        let mut app_state = AppState::new(
-            Library::new(
-                vec![PathBuf::from("/")],
-                vec![],
-                std::collections::HashMap::new(),
-            ),
-            &melotui_core::config::AppConfig::default(),
-        );
-
-        // Setup some fake state
-        cache.album_art.width = 50;
-
+    fn art_is_made_again_for_help_only_where_images_paint_over_it() {
         use melotui_core::{AppMsg, message::ui::UIMsg, reducer};
-
-        // When help is shown, it should reset the cache
-        reducer::reduce(&mut app_state, AppMsg::UI(UIMsg::OpenHelp));
-        cache.update(&app_state);
-
-        assert_eq!(cache.album_art.width, 0);
-        assert!(cache.album_art.source.is_none());
+        for (protocol, made_again) in [
+            (ProtocolType::Iterm2, true),
+            (ProtocolType::Kitty, false),
+            (ProtocolType::Halfblocks, false),
+        ] {
+            let mut cache = ImageCache::empty();
+            cache.picker.set_protocol_type(protocol);
+            let mut app_state = AppState::new(
+                Library::new(
+                    vec![PathBuf::from("/")],
+                    vec![],
+                    std::collections::HashMap::new(),
+                ),
+                &melotui_core::config::AppConfig::default(),
+            );
+            cache.album_art.width = 50;
+            reducer::reduce(&mut app_state, AppMsg::UI(UIMsg::OpenHelp));
+            cache.update(&app_state);
+            assert_eq!(cache.album_art.width == 0, made_again, "{protocol:?}");
+        }
     }
 }

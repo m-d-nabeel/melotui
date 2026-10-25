@@ -2114,6 +2114,7 @@ dependencies = [
  "melotui-core",
  "ringbuf",
  "rodio",
+ "serde_json",
  "spectrum-analyzer",
  "tempfile",
  "tracing",

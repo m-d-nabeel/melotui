@@ -92,6 +92,11 @@ impl VisualizerManager {
         }
 
         if !self.enabled {
+            match &mut self.backend {
+                Backend::Internal(analyzer) => analyzer.idle(),
+                Backend::External(consumer) => while consumer.try_pop().is_some() {},
+                Backend::None => {}
+            }
             return None;
         }
 
@@ -115,9 +120,9 @@ impl VisualizerManager {
     }
 
     fn reconcile(&mut self) {
+        // Out of sight, the backend stays, keeping up without drawing, so it
+        // is ready the moment it is back.
         if !self.enabled {
-            self.take_active_to_idle();
-            self.backend = Backend::None;
             return;
         }
 

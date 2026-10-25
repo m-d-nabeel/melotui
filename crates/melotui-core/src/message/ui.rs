@@ -69,6 +69,12 @@ pub enum UIMsg {
     DspAdjustUp,
     DspAdjustDown,
     DspResetControl,
+    /// In the mixer, a control `columns` across and `rows` down from the
+    /// selected one.
+    MixerSelect {
+        columns: i8,
+        rows: i8,
+    },
     DspMacroSlowedReverb,
     DspMacroBassBoosted,
     DspMacroSpatial,

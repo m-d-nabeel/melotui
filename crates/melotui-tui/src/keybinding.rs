@@ -22,6 +22,7 @@ pub enum KeyContext {
     Confirm,
     LyricsSelector,
     DspStudio,
+    Mixer,
     Global,
 }
 
@@ -47,12 +48,22 @@ pub enum KeyAction {
 
     // navigation
     TogglePanel,
+    ToggleQueue,
     ToggleVisualizer,
     CycleVisualizerStyle,
     ToggleLyrics,
     TogglePlaybackPanel,
     MoveUp,
     MoveDown,
+    MoveTop,
+    MoveBottom,
+    MovePageUp,
+    MovePageDown,
+    ToggleTrackInfo,
+    SeekForwardLong,
+    SeekBackwardLong,
+    Mute,
+    SpeedReset,
     Interact,
     ToggleFolderExpand,
     ShowTrackInfo,
@@ -147,6 +158,11 @@ pub enum KeyAction {
     DspMacroBassBoosted,
     DspMacroSpatial,
     DspMacroResetAll,
+    MixerUp,
+    MixerDown,
+    MixerLeft,
+    MixerRight,
+    LeaveMixer,
 }
 
 impl KeyAction {
@@ -168,13 +184,23 @@ impl KeyAction {
             KeyAction::AutocompleteReverse => "Autocomplete Reverse",
             KeyAction::CommandHistoryPrev => "History Prev",
             KeyAction::CommandHistoryNext => "History Next",
-            KeyAction::TogglePanel => "Switch Panel",
-            KeyAction::ToggleVisualizer => "Visualizer",
-            KeyAction::CycleVisualizerStyle => "Cycle Visualizer",
+            KeyAction::TogglePanel => "Sidebar / Mixer",
+            KeyAction::ToggleQueue => "Library / Queue",
+            KeyAction::ToggleVisualizer => "Art / Visualizer",
+            KeyAction::CycleVisualizerStyle => "Visualizer Style",
             KeyAction::ToggleLyrics => "Lyrics",
             KeyAction::TogglePlaybackPanel => "Playback Panel",
             KeyAction::MoveUp => "Up",
             KeyAction::MoveDown => "Down",
+            KeyAction::MoveTop => "Top",
+            KeyAction::MoveBottom => "Bottom",
+            KeyAction::MovePageUp => "Page Up",
+            KeyAction::MovePageDown => "Page Down",
+            KeyAction::ToggleTrackInfo => "Track Info",
+            KeyAction::SeekForwardLong => "Seek Forward 1 min",
+            KeyAction::SeekBackwardLong => "Seek Back 1 min",
+            KeyAction::Mute => "Mute",
+            KeyAction::SpeedReset => "Normal Speed",
             KeyAction::Interact => "Play/Open",
             KeyAction::ToggleFolderExpand => "Expand",
             KeyAction::ShowTrackInfo => "Track Info",
@@ -184,8 +210,8 @@ impl KeyAction {
             KeyAction::PlayPrevTrack => "Prev Track",
             KeyAction::PlayPause => "Play/Pause",
             KeyAction::Stop => "Stop",
-            KeyAction::SeekForward => "Seek Fwd",
-            KeyAction::SeekBackward => "Seek Bwd",
+            KeyAction::SeekForward => "Seek Forward",
+            KeyAction::SeekBackward => "Seek Back",
             KeyAction::ToggleShuffle => "Shuffle",
             KeyAction::ToggleSort => "Sort",
             KeyAction::CycleRepeat => "Repeat",
@@ -240,13 +266,18 @@ impl KeyAction {
             KeyAction::DspSelectDown => "DSP Down",
             KeyAction::DspSelectLeft => "DSP Left",
             KeyAction::DspSelectRight => "DSP Right",
-            KeyAction::DspAdjustUp => "DSP Increase",
-            KeyAction::DspAdjustDown => "DSP Decrease",
-            KeyAction::DspResetControl => "DSP Reset",
+            KeyAction::DspAdjustUp => "Increase",
+            KeyAction::DspAdjustDown => "Decrease",
+            KeyAction::DspResetControl => "Reset",
             KeyAction::DspMacroSlowedReverb => "Slowed+Reverb",
             KeyAction::DspMacroBassBoosted => "Bass Boosted",
             KeyAction::DspMacroSpatial => "3D Spatial",
             KeyAction::DspMacroResetAll => "Reset All DSP",
+            KeyAction::MixerUp => "Up",
+            KeyAction::MixerDown => "Down",
+            KeyAction::MixerLeft => "Left",
+            KeyAction::MixerRight => "Right",
+            KeyAction::LeaveMixer => "Leave",
         }
     }
 }
@@ -276,7 +307,25 @@ impl KeyAction {
 
             KeyAction::MoveUp => Some(AppMsg::Navigation(NavigationMsg::MoveUp)),
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
-            KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
+            KeyAction::MoveTop => Some(AppMsg::Navigation(NavigationMsg::MoveTop)),
+            KeyAction::MoveBottom => Some(AppMsg::Navigation(NavigationMsg::MoveBottom)),
+            KeyAction::MovePageUp => {
+                Some(AppMsg::Navigation(NavigationMsg::MovePage { down: false }))
+            }
+            KeyAction::MovePageDown => {
+                Some(AppMsg::Navigation(NavigationMsg::MovePage { down: true }))
+            }
+            KeyAction::ToggleTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
+            KeyAction::SeekForwardLong => {
+                Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(60)))
+            }
+            KeyAction::SeekBackwardLong => {
+                Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(-60)))
+            }
+            KeyAction::Mute => Some(AppMsg::Audio(AudioMsg::ToggleMute)),
+            KeyAction::SpeedReset => Some(AppMsg::Audio(AudioMsg::ResetSpeed)),
+            KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleMixerFocus)),
+            KeyAction::ToggleQueue => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
             KeyAction::ToggleVisualizer => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
             KeyAction::CycleVisualizerStyle => {
                 Some(AppMsg::Navigation(NavigationMsg::CycleVisualizerStyle))
@@ -378,6 +427,23 @@ impl KeyAction {
             KeyAction::DspMacroBassBoosted => Some(AppMsg::UI(UIMsg::DspMacroBassBoosted)),
             KeyAction::DspMacroSpatial => Some(AppMsg::UI(UIMsg::DspMacroSpatial)),
             KeyAction::DspMacroResetAll => Some(AppMsg::UI(UIMsg::DspMacroResetAll)),
+            KeyAction::MixerUp => Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 0,
+                rows: -1,
+            })),
+            KeyAction::MixerDown => Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 0,
+                rows: 1,
+            })),
+            KeyAction::MixerLeft => Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: -1,
+                rows: 0,
+            })),
+            KeyAction::MixerRight => Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 1,
+                rows: 0,
+            })),
+            KeyAction::LeaveMixer => Some(AppMsg::Navigation(NavigationMsg::LeaveMixer)),
         }
     }
 }
@@ -429,6 +495,7 @@ impl KeyRegistry {
                 "preset" | "presetpicker" => KeyContext::PresetPicker,
                 "confirm" => KeyContext::Confirm,
                 "dspstudio" | "dsp" => KeyContext::DspStudio,
+                "mixer" => KeyContext::Mixer,
                 "global" => KeyContext::Global,
                 _ => {
                     let err = format!("Unknown keymap context: {}", ctx_str);
@@ -507,17 +574,19 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::PageUp, KeyAction::HelpPageUp),
                 KeyBinding::new(KeyCode::Char('g'), KeyAction::HelpTop),
                 KeyBinding::new(KeyCode::Home, KeyAction::HelpTop),
-                KeyBinding::new(KeyCode::Char('G'), KeyAction::HelpBottom),
+                // A capital comes as its small letter with shift held.
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::HelpBottom)
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::End, KeyAction::HelpBottom),
             ],
         );
 
         bindings.insert(
             KeyContext::TrackInfo,
-            vec![
-                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo),
-                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo),
-            ],
+            vec![KeyBinding::new(
+                KeyCode::Char('i'),
+                KeyAction::ToggleTrackInfo,
+            )],
         );
 
         // command context
@@ -543,9 +612,14 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp),
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::MoveTop),
+                KeyBinding::new(KeyCode::Home, KeyAction::MoveTop),
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::MoveBottom)
+                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::End, KeyAction::MoveBottom),
+                KeyBinding::new(KeyCode::PageUp, KeyAction::MovePageUp),
+                KeyBinding::new(KeyCode::PageDown, KeyAction::MovePageDown),
                 KeyBinding::new(KeyCode::Enter, KeyAction::Interact),
-                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo),
-                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo),
                 KeyBinding::new(KeyCode::Char('a'), KeyAction::AddToQueue),
                 KeyBinding::new(KeyCode::Char('a'), KeyAction::QueuePlayNext)
                     .with_mod(KeyModifiers::SHIFT),
@@ -605,9 +679,14 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp),
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::MoveTop),
+                KeyBinding::new(KeyCode::Home, KeyAction::MoveTop),
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::MoveBottom)
+                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::End, KeyAction::MoveBottom),
+                KeyBinding::new(KeyCode::PageUp, KeyAction::MovePageUp),
+                KeyBinding::new(KeyCode::PageDown, KeyAction::MovePageDown),
                 KeyBinding::new(KeyCode::Enter, KeyAction::Interact),
-                KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo),
-                KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo),
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::RemoveFromQueue),
                 KeyBinding::new(KeyCode::Delete, KeyAction::RemoveFromQueue),
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::ClearQueue)
@@ -632,63 +711,79 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // global context
+        // global context — the keys cmus, ncmpcpp and mpv share where they
+        // agree: space pauses, < > change track, arrows seek, [ ] set the
+        // speed, s and r shuffle and repeat, i shows the track, l the lyrics.
+        // Effects are adjusted where they show: in the mixer, moved on to
+        // with Tab, and in the DSP studio.
         bindings.insert(
             KeyContext::Global,
             vec![
-                KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit),
-                KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp),
-                KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode),
                 KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause),
                 KeyBinding::new(KeyCode::Enter, KeyAction::PlaySelected),
-                KeyBinding::new(KeyCode::Left, KeyAction::PlayPrevTrack)
-                    .with_mod(KeyModifiers::CONTROL),
+                KeyBinding::new(KeyCode::Char('`'), KeyAction::ToggleQueue),
+                KeyBinding::new(KeyCode::Char('>'), KeyAction::PlayNextTrack),
                 KeyBinding::new(KeyCode::Right, KeyAction::PlayNextTrack)
                     .with_mod(KeyModifiers::CONTROL),
-                KeyBinding::new(KeyCode::Char('x'), KeyAction::Stop),
-                KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary),
-                KeyBinding::new(KeyCode::BackTab, KeyAction::ToggleVisualizer)
-                    .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('w'), KeyAction::CycleVisualizerStyle),
-                KeyBinding::new(KeyCode::F(3), KeyAction::CycleVisualizerStyle),
-                KeyBinding::new(KeyCode::Char('l'), KeyAction::ToggleLyrics),
-                KeyBinding::new(KeyCode::Char('L'), KeyAction::ToggleLyrics)
-                    .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('v'), KeyAction::TogglePlaybackPanel),
-                KeyBinding::new(KeyCode::Char('V'), KeyAction::TogglePlaybackPanel)
-                    .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackward),
-                KeyBinding::new(KeyCode::Char('<'), KeyAction::SeekBackward),
-                KeyBinding::new(KeyCode::Char('.'), KeyAction::SeekForward),
-                KeyBinding::new(KeyCode::Char('>'), KeyAction::SeekForward),
-                KeyBinding::new(KeyCode::Esc, KeyAction::CancelDownload),
+                KeyBinding::new(KeyCode::Char('<'), KeyAction::PlayPrevTrack),
+                KeyBinding::new(KeyCode::Left, KeyAction::PlayPrevTrack)
+                    .with_mod(KeyModifiers::CONTROL),
+                KeyBinding::new(KeyCode::Right, KeyAction::SeekForward),
+                KeyBinding::new(KeyCode::Left, KeyAction::SeekBackward),
+                KeyBinding::new(KeyCode::Char('.'), KeyAction::SeekForwardLong),
+                KeyBinding::new(KeyCode::Char(','), KeyAction::SeekBackwardLong),
+                KeyBinding::new(KeyCode::Char('s'), KeyAction::Stop).with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('+'), KeyAction::VolUp),
                 KeyBinding::new(KeyCode::Char('='), KeyAction::VolUp),
                 KeyBinding::new(KeyCode::Char('-'), KeyAction::VolDown),
-                KeyBinding::new(KeyCode::Char('_'), KeyAction::VolDown),
-                KeyBinding::new(KeyCode::Char('z'), KeyAction::ToggleShuffle),
-                KeyBinding::new(KeyCode::Char('c'), KeyAction::CycleRepeat),
-                KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedUp),
-                KeyBinding::new(KeyCode::Char('s'), KeyAction::SpeedDown)
+                KeyBinding::new(KeyCode::Char('m'), KeyAction::Mute),
+                KeyBinding::new(KeyCode::Char(']'), KeyAction::SpeedUp),
+                KeyBinding::new(KeyCode::Char('['), KeyAction::SpeedDown),
+                KeyBinding::new(KeyCode::Backspace, KeyAction::SpeedReset),
+                KeyBinding::new(KeyCode::Char('s'), KeyAction::ToggleShuffle),
+                KeyBinding::new(KeyCode::Char('r'), KeyAction::CycleRepeat),
+                KeyBinding::new(KeyCode::Char('i'), KeyAction::ToggleTrackInfo),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::ToggleLyrics),
+                KeyBinding::new(KeyCode::Char('v'), KeyAction::ToggleVisualizer),
+                KeyBinding::new(KeyCode::Char('v'), KeyAction::CycleVisualizerStyle)
                     .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('b'), KeyAction::BassUp),
-                KeyBinding::new(KeyCode::Char('b'), KeyAction::BassDown)
-                    .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('t'), KeyAction::TrebleUp),
-                KeyBinding::new(KeyCode::Char('t'), KeyAction::TrebleDown)
-                    .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('r'), KeyAction::ReverbUp),
-                KeyBinding::new(KeyCode::Char('r'), KeyAction::ReverbDown)
-                    .with_mod(KeyModifiers::SHIFT),
-                KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoUp),
-                KeyBinding::new(KeyCode::Char('e'), KeyAction::EchoDown)
-                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::F(3), KeyAction::CycleVisualizerStyle),
                 KeyBinding::new(KeyCode::F(1), KeyAction::CycleFocusMode),
-                KeyBinding::new(KeyCode::Char('h'), KeyAction::ShrinkSidebar)
-                    .with_mod(KeyModifiers::CONTROL),
+                KeyBinding::new(KeyCode::F(2), KeyAction::ToggleDspStudio),
                 KeyBinding::new(KeyCode::Char('l'), KeyAction::GrowSidebar)
                     .with_mod(KeyModifiers::CONTROL),
-                KeyBinding::new(KeyCode::F(2), KeyAction::ToggleDspStudio),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::ShrinkSidebar)
+                    .with_mod(KeyModifiers::CONTROL),
+                KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary),
+                KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode),
+                KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp),
+                KeyBinding::new(KeyCode::Esc, KeyAction::CancelDownload),
+                KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit),
+            ],
+        );
+
+        // the mixer, moved on to from the sidebar with Tab: as in the DSP
+        // studio, the arrows
+        // pick a control and + - adjust it
+        bindings.insert(
+            KeyContext::Mixer,
+            vec![
+                KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel),
+                KeyBinding::new(KeyCode::Esc, KeyAction::LeaveMixer),
+                KeyBinding::new(KeyCode::Up, KeyAction::MixerUp),
+                KeyBinding::new(KeyCode::Char('k'), KeyAction::MixerUp),
+                KeyBinding::new(KeyCode::Down, KeyAction::MixerDown),
+                KeyBinding::new(KeyCode::Char('j'), KeyAction::MixerDown),
+                KeyBinding::new(KeyCode::Left, KeyAction::MixerLeft),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::MixerLeft),
+                KeyBinding::new(KeyCode::Right, KeyAction::MixerRight),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::MixerRight),
+                KeyBinding::new(KeyCode::Char('+'), KeyAction::DspAdjustUp),
+                KeyBinding::new(KeyCode::Char('='), KeyAction::DspAdjustUp),
+                KeyBinding::new(KeyCode::Char('-'), KeyAction::DspAdjustDown),
+                KeyBinding::new(KeyCode::Char('_'), KeyAction::DspAdjustDown),
+                KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
+                KeyBinding::new(KeyCode::Backspace, KeyAction::DspResetControl),
             ],
         );
 
@@ -713,6 +808,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('-'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('_'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
+                KeyBinding::new(KeyCode::Backspace, KeyAction::DspResetControl),
                 KeyBinding::new(KeyCode::Char('1'), KeyAction::DspMacroSlowedReverb),
                 KeyBinding::new(KeyCode::Char('2'), KeyAction::DspMacroBassBoosted),
                 KeyBinding::new(KeyCode::Char('3'), KeyAction::DspMacroSpatial),
@@ -745,10 +841,10 @@ mod tests {
         // Simulate reading ~/.config/melotui/keymaps.toml
         // [global]
         // "<Space>" = "ToggleVisualizer"
-        // "x" = "Quit"
+        // "s" = "Quit"
         let mut global_map = HashMap::new();
         global_map.insert("<Space>".to_string(), "ToggleVisualizer".to_string());
-        global_map.insert("x".to_string(), "Quit".to_string());
+        global_map.insert("s".to_string(), "Quit".to_string());
 
         let mut overrides = HashMap::new();
         overrides.insert("global".to_string(), global_map);
@@ -771,25 +867,28 @@ mod tests {
         );
         assert_eq!(space_bindings[0].action, KeyAction::ToggleVisualizer);
 
-        // 2. Ensure 'x' now maps to Quit.
-        // Wait, 'x' was mapped to Stop by default! The default Stop on 'x' should be erased.
-        let x_bindings: Vec<_> = new_global
+        // 2. 's' was shuffle by default; that binding is wiped out, and
+        // Shift+S, a different key, keeps stopping.
+        let s_bindings: Vec<_> = new_global
             .iter()
-            .filter(|b| b.key == KeyCode::Char('x'))
+            .filter(|b| b.key == KeyCode::Char('s') && b.modifiers.is_empty())
             .collect();
         assert_eq!(
-            x_bindings.len(),
+            s_bindings.len(),
             1,
-            "The default 'x' binding should be wiped out"
+            "The default 's' binding should be wiped out"
         );
-        assert_eq!(x_bindings[0].action, KeyAction::Quit);
+        assert_eq!(s_bindings[0].action, KeyAction::Quit);
+        assert!(new_global.iter().any(|b| b.key == KeyCode::Char('s')
+            && b.modifiers == KeyModifiers::SHIFT
+            && b.action == KeyAction::Stop));
 
-        // 3. Ensure an unaffected binding like 'c' (CycleRepeat) is still intact
-        let c_binding = new_global
+        // 3. An unaffected binding like 'r' (CycleRepeat) is still intact.
+        let r_binding = new_global
             .iter()
-            .find(|b| b.key == KeyCode::Char('c'))
+            .find(|b| b.key == KeyCode::Char('r'))
             .unwrap();
-        assert_eq!(c_binding.action, KeyAction::CycleRepeat);
+        assert_eq!(r_binding.action, KeyAction::CycleRepeat);
     }
 
     #[test]

@@ -62,6 +62,8 @@ struct OutputSlot {
     /// When to try again after a failure, and whether the failure was said.
     retry_at: Option<Instant>,
     failure_reported: bool,
+    /// The output open now, for telling what it plays through.
+    watched: Arc<std::sync::Mutex<crate::output_kind::Watched>>,
 }
 
 impl OutputSlot {
@@ -140,6 +142,10 @@ impl OutputSlot {
                     self.retry_at = None;
                 }
                 self.failure_reported = false;
+                if let Ok(mut watched) = self.watched.lock() {
+                    watched.name = Some(output.name.clone());
+                    watched.follows_default = self.wanted.is_none() || self.standing_in;
+                }
                 worker.send(IpcEvent::AudioOutputOpened {
                     name: output.name.clone(),
                 });
@@ -176,7 +182,9 @@ pub fn run(
         buffer_size: config.buffer_size,
         retry_at: None,
         failure_reported: false,
+        watched: Default::default(),
     };
+    let output_kinds = crate::output_kind::watch(slot.watched.clone());
 
     // A player until there is a device to play through: commands arriving
     // meanwhile are kept, and take effect once one is open.
@@ -219,6 +227,10 @@ pub fn run(
         }
 
         engine.tick(&mut worker);
+
+        while let Ok(kind) = output_kinds.try_recv() {
+            worker.send(IpcEvent::AudioOutputKind(kind));
+        }
 
         // 10ms sleep covers ~100Hz
         thread::sleep(Duration::from_millis(10));

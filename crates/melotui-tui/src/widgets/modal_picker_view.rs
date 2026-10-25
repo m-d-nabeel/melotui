@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
 use melotui_core::AppState;
@@ -60,8 +60,8 @@ pub fn draw_picker(frame: &mut Frame, area: Rect, state: &AppState, config: Pick
     let list_area = layout[1];
     let input_area = layout[2];
 
-    frame.render_widget(Clear, list_area);
-    frame.render_widget(Clear, input_area);
+    crate::widgets::clear_for_popup(frame, list_area);
+    crate::widgets::clear_for_popup(frame, input_area);
 
     let input_content = Line::from(vec![
         Span::styled(

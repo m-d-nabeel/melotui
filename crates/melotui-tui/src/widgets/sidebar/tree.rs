@@ -22,7 +22,7 @@ use crate::widgets::sidebar::generate_marquee_delayed;
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let nav = state.library_nav();
     let total_rows = get_row_count(&state.library, nav);
-    let is_active = state.is_library_focused();
+    let is_active = state.is_library_focused() && !state.is_mixer_focused();
 
     let t = crate::theme::get_theme(state);
     let border_style = if is_active {

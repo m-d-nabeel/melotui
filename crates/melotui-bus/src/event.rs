@@ -23,6 +23,7 @@ pub enum IpcEvent {
         save_path: std::path::PathBuf,
     },
     LyricsFetchFailed {
+        save_path: std::path::PathBuf,
         error: String,
     },
     LyricsSearchResults {
@@ -53,6 +54,8 @@ pub enum IpcEvent {
     AudioOutputOpened {
         name: String,
     },
+    /// What the music comes out of changed.
+    AudioOutputKind(melotui_core::state::audio::OutputKind),
     /// The output devices there are.
     OutputDevices {
         names: Vec<String>,

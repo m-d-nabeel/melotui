@@ -5,7 +5,6 @@ use ratatui::{
     style::{Modifier, Style},
     widgets::{Block, BorderType, Borders, Paragraph},
 };
-use ratatui_image::StatefulImage;
 
 use crate::image_cache::ImageCache;
 
@@ -42,12 +41,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     frame.render_widget(block, area);
 
     if art_state.source.is_some() {
-        art_state.update_protocol(&cache.picker, inner_area);
-
-        if let Some(protocol) = &mut art_state.protocol {
-            let image = StatefulImage::default().resize(ratatui_image::Resize::Fit(None));
-            frame.render_stateful_widget(image, inner_area, protocol);
-        }
+        art_state.draw(frame, &cache.picker, inner_area);
     } else {
         // Select branding art based on available width
         let art = if inner_area.width >= 92 {

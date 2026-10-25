@@ -439,7 +439,7 @@ fn fetch_missing_lyrics(
     if !lyrics.fetched.insert(audio.to_path_buf()) {
         return vec![];
     }
-    lyrics.fetching_unasked = Some(save_path.clone());
+    lyrics.fetching_unasked.insert(save_path.clone());
     vec![AppMsg::Download(
         crate::message::download::DownloadMsg::RequestFetchLyrics {
             track_name: track.title.clone(),
@@ -1308,10 +1308,93 @@ mod lyrics_tests {
     #[test]
     fn lyrics_that_cannot_be_found_unasked_say_nothing() {
         let (mut state, _dir, song) = playing(None);
-        handle_audio_started(&mut state, song);
-        crate::action::download_action::handle_lyrics_fetch_failed(&mut state, "404".into());
+        let (_, _, save_path) = fetch_requested(&handle_audio_started(&mut state, song)).unwrap();
+        crate::action::download_action::handle_lyrics_fetch_failed(
+            &mut state,
+            save_path,
+            "404".into(),
+        );
         assert!(state.session.notification.current.is_none());
         assert!(!state.session.ui.show_lyrics);
+    }
+
+    #[test]
+    fn songs_skipped_through_keep_their_fetches_quiet_and_asked_ones_still_speak() {
+        use crate::action::download_action::{handle_lyrics_fetch_failed, handle_lyrics_fetched};
+        let (mut state, dir, song) = playing(None);
+        let (_, _, this_song) = fetch_requested(&handle_audio_started(&mut state, song)).unwrap();
+        // The next song started, and its lyrics went looking too.
+        let next_song = dir.path().join("lyrics/Next - Song.lrc");
+        state
+            .session
+            .lyrics
+            .fetching_unasked
+            .insert(next_song.clone());
+
+        // This song's come after: nothing pops up, and the panel is not
+        // forced open as though they had been asked for.
+        std::fs::create_dir_all(this_song.parent().unwrap()).unwrap();
+        std::fs::write(&this_song, SYNCED).unwrap();
+        state.session.lyrics.panel_closed = true;
+        handle_lyrics_fetched(&mut state, this_song);
+        assert!(state.session.notification.current.is_none());
+        assert!(state.session.lyrics.panel_closed);
+
+        // A fetch asked for fails while the next song's is still out: said.
+        let asked = dir.path().join("lyrics/Asked - For.lrc");
+        handle_lyrics_fetch_failed(&mut state, asked, "no lyrics found".into());
+        assert!(state.session.notification.current.take().is_some());
+
+        // And the next song's own failure stays quiet.
+        handle_lyrics_fetch_failed(&mut state, next_song, "no lyrics found".into());
+        assert!(state.session.notification.current.is_none());
+        assert!(state.session.lyrics.fetching_unasked.is_empty());
+    }
+
+    #[test]
+    fn lyrics_commands_know_the_song_playing() {
+        use crate::action::ui_action::handle_submit_command;
+        let (mut state, _dir, song) = playing(None);
+        state.config.lyrics.auto_fetch = false;
+        handle_audio_started(&mut state, song);
+
+        // A search without a query looks for the song playing, by title.
+        let searched = handle_submit_command(&mut state, "lyrics search".into());
+        assert!(matches!(
+            searched.as_slice(),
+            [AppMsg::Download(DownloadMsg::RequestSearchLyrics { query })] if query == "紅蓮華"
+        ));
+
+        // A fetch by hand asks with the song's length and album, as one
+        // unasked does.
+        let (album, duration, _) =
+            fetch_requested(&handle_submit_command(&mut state, "lyrics fetch".into())).unwrap();
+        assert_eq!((album.as_deref(), duration), (Some("LEO-NiNE"), Some(235)));
+
+        // `Artist - Title`, split where spaced.
+        let fetched = handle_submit_command(&mut state, "lyrics fetch Jay-Z - 99 Problems".into());
+        assert!(fetched.iter().any(|m| matches!(
+            m,
+            AppMsg::Download(DownloadMsg::RequestFetchLyrics { track_name, artist_name, .. })
+                if track_name == "99 Problems" && artist_name == "Jay-Z"
+        )));
+    }
+
+    #[test]
+    fn lyrics_chosen_in_a_search_beat_a_lrc_beside_the_song() {
+        let (mut state, dir, song) = playing(Some("[00:01.00] Beside"));
+        handle_audio_started(&mut state, song.clone());
+        let line = |state: &AppState| match &state.session.lyrics.data {
+            LyricsData::Synced(lyrics) => lyrics.get_timed_lines()[0].1.to_string(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(line(&state), "Beside");
+
+        let chosen = dir.path().join("lyrics/LiSA - 紅蓮華.lrc");
+        std::fs::create_dir_all(chosen.parent().unwrap()).unwrap();
+        std::fs::write(&chosen, "[00:01.00] Chosen").unwrap();
+        crate::action::download_action::handle_lyrics_fetched(&mut state, chosen);
+        assert_eq!(line(&state), "Chosen");
     }
 
     #[test]

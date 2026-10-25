@@ -167,11 +167,9 @@ pub fn handle_dispatch_download(
 }
 
 pub fn handle_lyrics_fetched(state: &mut AppState, save_path: std::path::PathBuf) -> Vec<AppMsg> {
-    let unasked = state.session.lyrics.fetching_unasked.as_ref() == Some(&save_path);
-    if unasked {
-        // Fetched as the song started: the panel opening says it.
-        state.session.lyrics.fetching_unasked = None;
-    } else {
+    // Fetched as a song started, this one or one before: the panel opening
+    // says it.
+    if !state.session.lyrics.fetching_unasked.remove(&save_path) {
         state.session.notification.current = Some(
             Notification::new(NotificationKind::Info, "Lyrics downloaded successfully!")
                 .with_duration(3),
@@ -190,8 +188,12 @@ pub fn handle_lyrics_fetched(state: &mut AppState, save_path: std::path::PathBuf
     vec![]
 }
 
-pub fn handle_lyrics_fetch_failed(state: &mut AppState, error: String) -> Vec<AppMsg> {
-    if state.session.lyrics.fetching_unasked.take().is_some() {
+pub fn handle_lyrics_fetch_failed(
+    state: &mut AppState,
+    save_path: std::path::PathBuf,
+    error: String,
+) -> Vec<AppMsg> {
+    if state.session.lyrics.fetching_unasked.remove(&save_path) {
         // Not every song has lyrics to be found; nobody asked for these.
         tracing::info!("No lyrics found for the song playing: {error}");
         return vec![];

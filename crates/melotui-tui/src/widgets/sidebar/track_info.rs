@@ -6,7 +6,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Padding, Paragraph, Wrap},
 };
-use ratatui_image::StatefulImage;
 
 use crate::{format_duration, image_cache::ImageCache, theme::Theme};
 
@@ -69,12 +68,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     // Album art or placeholder
     if art_state.source.is_some() {
         let art_area = chunks[0];
-        art_state.update_protocol(picker, art_area);
-
-        if let Some(protocol) = &mut art_state.protocol {
-            let image = StatefulImage::default().resize(ratatui_image::Resize::Fit(None));
-            frame.render_stateful_widget(image, art_area, protocol);
-        }
+        art_state.draw(frame, picker, art_area);
     } else {
         let art_area = chunks[0];
         let placeholder = Paragraph::new("♪")
