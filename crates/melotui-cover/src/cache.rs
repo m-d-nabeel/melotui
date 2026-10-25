@@ -8,6 +8,15 @@ use std::{
     time::SystemTime,
 };
 
+/// The most the cover cache may hold on disk. Past it, the covers used
+/// longest ago are deleted — each track's cover is cached on its own, and a
+/// track re-tagged or moved leaves its old one behind, so without a limit the
+/// cache only ever grew.
+const MAX_CACHE_BYTES: u64 = 256 * 1024 * 1024;
+/// What the cache is trimmed down to once over the limit, so it is not
+/// trimmed again at the next start.
+const TRIM_TO_BYTES: u64 = MAX_CACHE_BYTES / 10 * 8;
+
 pub struct CoverCache {
     cache_dir: PathBuf,
     max_cover_dim: u32,
@@ -30,6 +39,18 @@ impl CoverCache {
             tracing::error!("Failed to create cache dir: {}", e);
         }
 
+        // Trimmed on a thread of its own: walking a large cache takes a moment,
+        // and the first covers should not wait for it.
+        let dir = cache_dir.clone();
+        let _ = std::thread::Builder::new()
+            .name("cover-cache-trim".into())
+            .spawn(move || {
+                let removed = trim(&dir, MAX_CACHE_BYTES, TRIM_TO_BYTES);
+                if removed > 0 {
+                    tracing::info!("Trimmed {removed} old covers from the cache");
+                }
+            });
+
         Self {
             cache_dir,
             max_cover_dim,
@@ -43,6 +64,10 @@ impl CoverCache {
 
         if cache_path.exists() {
             if let Ok(img) = image::open(&cache_path) {
+                // Marked as just used, so trimming takes it last.
+                if let Ok(file) = fs::File::options().write(true).open(&cache_path) {
+                    let _ = file.set_modified(SystemTime::now());
+                }
                 return Some(Arc::new(img));
             }
             let _ = fs::remove_file(&cache_path);
@@ -154,6 +179,39 @@ impl CoverCache {
 
 /// Read image dimensions from compressed bytes without full decode.
 /// Returns (width, height) or None if the format can't be determined.
+/// When the cache in `dir` holds more than `limit` bytes, deletes the covers
+/// used longest ago until it holds no more than `target`. Returns how many it
+/// deleted.
+fn trim(dir: &Path, limit: u64, target: u64) -> usize {
+    let mut covers: Vec<(SystemTime, u64, PathBuf)> = Vec::new();
+    for shard in fs::read_dir(dir).into_iter().flatten().flatten() {
+        for entry in fs::read_dir(shard.path()).into_iter().flatten().flatten() {
+            if let Ok(metadata) = entry.metadata()
+                && metadata.is_file()
+            {
+                let used = metadata.modified().unwrap_or(SystemTime::UNIX_EPOCH);
+                covers.push((used, metadata.len(), entry.path()));
+            }
+        }
+    }
+    let mut total: u64 = covers.iter().map(|(_, size, _)| size).sum();
+    if total <= limit {
+        return 0;
+    }
+    covers.sort_by_key(|(used, _, _)| *used);
+    let mut removed = 0;
+    for (_, size, path) in covers {
+        if total <= target {
+            break;
+        }
+        if fs::remove_file(&path).is_ok() {
+            total -= size;
+            removed += 1;
+        }
+    }
+    removed
+}
+
 fn image_dimensions_from_bytes(data: &[u8]) -> Option<(u32, u32)> {
     let reader = image::ImageReader::new(Cursor::new(data))
         .with_guessed_format()
@@ -218,5 +276,31 @@ mod tests {
             cache_path.file_name().unwrap().to_str().unwrap(),
             format!("{}.jpg", key_str)
         );
+    }
+
+    #[test]
+    fn a_cache_over_its_limit_loses_the_covers_used_longest_ago() {
+        let dir = tempdir().unwrap();
+        let shard = dir.path().join("ab");
+        fs::create_dir(&shard).unwrap();
+        let base = SystemTime::now() - std::time::Duration::from_secs(1000);
+        for i in 0..10u64 {
+            let path = shard.join(format!("{i}.jpg"));
+            fs::write(&path, vec![0u8; 100]).unwrap();
+            let file = File::options().write(true).open(&path).unwrap();
+            file.set_modified(base + std::time::Duration::from_secs(i * 10))
+                .unwrap();
+        }
+        // 1000 bytes against a limit of 600: down to 400, oldest first.
+        assert_eq!(trim(dir.path(), 600, 400), 6);
+        let mut left: Vec<String> = fs::read_dir(&shard)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(left, ["6.jpg", "7.jpg", "8.jpg", "9.jpg"]);
+
+        // Under the limit, nothing goes.
+        assert_eq!(trim(dir.path(), 600, 400), 0);
     }
 }

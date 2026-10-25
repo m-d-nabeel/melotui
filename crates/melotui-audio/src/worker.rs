@@ -570,15 +570,22 @@ mod tests {
     }
 
     /// A player with a thread pulling its samples, as a device's callback
-    /// would, so that seeks are answered.
-    fn live_player() -> Player {
-        let (mixer, source) = rodio::mixer::mixer(rodio::nz!(2), rodio::nz!(44_100));
+    /// would, so that seeks are answered. The thread stops once the test's
+    /// handle is dropped, and rests between blocks so tests running beside
+    /// it are not starved.
+    fn live_player() -> (Player, Arc<()>) {
+        let (mixer, mut source) = rodio::mixer::mixer(rodio::nz!(2), rodio::nz!(44_100));
+        let alive = Arc::new(());
+        let running = Arc::downgrade(&alive);
         std::thread::spawn(move || {
-            for _ in source {
-                std::hint::spin_loop();
+            while running.upgrade().is_some() {
+                for _ in 0..1024 {
+                    source.next();
+                }
+                std::thread::sleep(Duration::from_micros(200));
             }
         });
-        Player::connect_new(&mixer)
+        (Player::connect_new(&mixer), alive)
     }
 
     #[test]
@@ -588,11 +595,13 @@ mod tests {
         let (bus_tx, bus_rx) = mpsc::channel();
         let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
         let mut engine = engine();
-        engine.reconnect(live_player(), &mut worker);
+        let (player, _device_1) = live_player();
+        engine.reconnect(player, &mut worker);
 
         engine.do_play(path.clone(), &mut worker);
         engine.do_seek(4_000, 1);
-        engine.reconnect(live_player(), &mut worker);
+        let (player, _device_2) = live_player();
+        engine.reconnect(player, &mut worker);
 
         assert_eq!(engine.current.as_deref(), Some(path.as_path()));
         assert!(engine.time_keeper.is_playing);
@@ -614,11 +623,13 @@ mod tests {
         let (bus_tx, _bus_rx) = mpsc::channel();
         let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
         let mut engine = engine();
-        engine.reconnect(live_player(), &mut worker);
+        let (player, _device_3) = live_player();
+        engine.reconnect(player, &mut worker);
 
         engine.do_play(path, &mut worker);
         engine.do_pause(&mut worker);
-        engine.reconnect(live_player(), &mut worker);
+        let (player, _device_4) = live_player();
+        engine.reconnect(player, &mut worker);
 
         assert!(!engine.time_keeper.is_playing);
         assert!(engine.sink.is_paused());
@@ -629,7 +640,8 @@ mod tests {
         let (bus_tx, _bus_rx) = mpsc::channel();
         let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
         let mut engine = engine();
-        engine.reconnect(live_player(), &mut worker);
+        let (player, _device_5) = live_player();
+        engine.reconnect(player, &mut worker);
         assert!(engine.current.is_none());
         assert!(engine.sink.empty());
     }
@@ -648,7 +660,9 @@ mod tests {
         engine.do_seek(3_000, 2);
         assert!((3_000..3_200).contains(&engine.time_keeper.get_position().as_millis()));
 
-        engine.reconnect(live_player(), &mut worker);
+        let (player, _device_6) = live_player();
+
+        engine.reconnect(player, &mut worker);
         let at = engine.time_keeper.get_position().as_millis();
         assert!((3_000..3_500).contains(&at), "picked up at {at} ms");
     }
