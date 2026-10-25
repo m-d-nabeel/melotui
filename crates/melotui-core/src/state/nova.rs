@@ -18,8 +18,11 @@ const KICK_BANDS: std::ops::Range<usize> = 41..111;
 
 /// A kick is the kick range rising this far over its recent level, at least
 /// `MIN_KICK` in the analyser's units, no sooner than `KICK_GAP` after the
-/// last: one drum hit, one kick.
-const KICK_RISE: f32 = 1.3;
+/// last: one drum hit, one kick. The analyser's heights go as amplitude to
+/// the 0.35, so this is the amplitude rising by two thirds, and `KICK_FULL`
+/// it quadrupling, the hardest kick.
+const KICK_RISE: f32 = 1.2;
+const KICK_FULL: f32 = 1.62;
 const MIN_KICK: f32 = 0.05;
 const KICK_GAP: f32 = 0.15;
 /// How long the recent level takes to follow the music, in seconds.
@@ -87,7 +90,7 @@ impl KickDetector {
         self.wait -= dt;
         let rise = level / recent.max(1e-4);
         let kick = (self.wait <= 0.0 && level >= MIN_KICK && rise >= KICK_RISE)
-            .then(|| ((rise - KICK_RISE) / (2.0 - KICK_RISE)).clamp(0.0, 1.0));
+            .then(|| ((rise - KICK_RISE) / (KICK_FULL - KICK_RISE)).clamp(0.0, 1.0));
         if kick.is_some() {
             self.wait = KICK_GAP;
         }
