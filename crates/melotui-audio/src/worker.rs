@@ -479,6 +479,7 @@ impl AudioEngine {
         } else {
             self.time_keeper.seek(dur);
             self.seek_epoch = epoch;
+            self.vis_manager.restart();
         }
     }
 

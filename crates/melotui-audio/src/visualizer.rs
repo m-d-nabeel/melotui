@@ -75,6 +75,13 @@ impl VisualizerManager {
         self.reconcile();
     }
 
+    /// After a seek: the analyser starts over on the audio from there.
+    pub fn restart(&mut self) {
+        if let Backend::Internal(analyzer) = &mut self.backend {
+            analyzer.restart();
+        }
+    }
+
     pub fn detach_source(&mut self) {
         self.take_active_to_idle();
         self.idle_internal = None; // drop internal stream

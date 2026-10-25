@@ -83,6 +83,17 @@ where
         self.consumer
     }
 
+    /// Forgets the audio it holds and starts its pacing over, for after a
+    /// seek: what was waiting is from before it.
+    pub fn restart(&mut self) {
+        while self.consumer.try_pop().is_some() {}
+        self.history.clear();
+        self.first = self.received;
+        self.playhead = self.received as f64;
+        self.last_tick = None;
+        self.arrived_last_tick = 0;
+    }
+
     pub fn next_spectrum(&mut self) -> Option<Vec<f32>> {
         self.next_spectrum_at(Instant::now())
     }
@@ -323,6 +334,32 @@ mod tests {
         assert!(ends[100..].iter().all(Option::is_some));
         let backlog = analyzer.received as f64 - analyzer.playhead;
         assert!(backlog >= 4096.0, "backlog {backlog}");
+    }
+
+    #[test]
+    fn after_a_restart_only_audio_from_then_on_is_drawn() {
+        let (mut prod, mut analyzer) = analyzer();
+        let start = Instant::now();
+        play(&mut prod, &mut analyzer, start, 2048, 1.0, 1.0);
+        // Audio from before a seek, waiting to be read.
+        prod.push_slice(&[0.9; 4096]);
+        analyzer.restart();
+        assert!(analyzer.history.is_empty());
+        assert!(
+            analyzer
+                .next_spectrum_at(start + Duration::from_millis(1010))
+                .is_none(),
+            "nothing to draw until a window of new audio has come"
+        );
+        let ends = play(
+            &mut prod,
+            &mut analyzer,
+            start + Duration::from_secs(2),
+            2048,
+            1.0,
+            1.0,
+        );
+        assert!(ends[50..].iter().all(Option::is_some));
     }
 
     #[test]

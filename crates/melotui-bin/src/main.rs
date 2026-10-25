@@ -1,3 +1,4 @@
+mod frame_clock;
 mod input_processor;
 mod logging;
 #[cfg(target_os = "windows")]

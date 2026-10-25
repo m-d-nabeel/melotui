@@ -144,11 +144,17 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
 
     let mut last_tick = Instant::now();
     let mut should_render = true;
+    let mut frames = crate::frame_clock::FrameClock::new(Instant::now());
+    let mut spectrum_moving = true;
 
     while runtime.running {
-        let timeout = if state.should_draw_spectrum() {
-            let limit = state.config.ui.fps_limit.max(1); // prevent division by zero
-            Duration::from_millis(1000 / limit)
+        let frame_time =
+            Duration::from_secs_f64(1.0 / state.config.ui.fps_limit.clamp(1, 1000) as f64);
+        // Animated while playing, and after until everything has come to
+        // rest; then nothing moves, and nothing is drawn but what changes.
+        let animating = state.should_draw_spectrum() && (state.is_playing() || spectrum_moving);
+        let timeout = if animating {
+            frames.wait(Instant::now())
         } else {
             Duration::from_millis(100)
         };
@@ -214,8 +220,19 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         last_tick = now;
 
         state.time_elapsed += dt;
-        if tick_state(&mut state, dt) {
+        if tick_state(&mut state) {
             should_render = true;
+        }
+
+        let mut frame_due = false;
+        if animating {
+            if let Some(dt) = frames.tick(now, frame_time) {
+                spectrum_moving = update_visualizer_physics(&mut state, dt.min(0.1));
+                frame_due = true;
+                should_render = true;
+            }
+        } else {
+            frames.rest(now);
         }
 
         if process_effects(&mut runtime, &mut state) {
@@ -244,7 +261,9 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
             runtime.last_saved = Instant::now();
         }
 
-        if should_render && runtime.running {
+        // While animating, drawn on the frame's time: what changed in between
+        // waits at most a frame, and frames stay even.
+        if should_render && runtime.running && (frame_due || !animating) {
             if let Err(e) = tui.draw(&state) {
                 tracing::warn!("Lost the terminal ({e}), quitting");
                 terminal_lost = true;
@@ -341,13 +360,8 @@ fn resolve_paths(config: &melotui_core::config::AppConfig) -> Result<(PathBuf, V
     Ok((db_path, music_roots))
 }
 
-fn tick_state(state: &mut AppState, dt: f32) -> bool {
+fn tick_state(state: &mut AppState) -> bool {
     let mut changed = false;
-
-    if state.should_draw_spectrum() {
-        update_visualizer_physics(state, dt);
-        changed = true;
-    }
 
     if let Some(n) = state.current_notification()
         && let Some(timeout) = n.dismiss_after
