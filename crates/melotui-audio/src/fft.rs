@@ -422,6 +422,19 @@ mod tests {
     }
 
     #[test]
+    fn the_curve_through_the_bins_meets_them_and_runs_smoothly_between() {
+        let bins = [0.0, 1.0, 4.0, 9.0, 4.0, 0.0];
+        for (k, &v) in bins.iter().enumerate() {
+            assert!((curve_through_bins(&bins, k as f32) - v).abs() < 1e-6);
+        }
+        // A straight run stays straight between the bins.
+        let line = [0.0, 1.0, 2.0, 3.0];
+        assert!((curve_through_bins(&line, 1.5) - 1.5).abs() < 1e-6);
+        // Never below silence, however the curve swings.
+        assert!((0..50).all(|i| curve_through_bins(&bins, i as f32 / 10.0) >= 0.0));
+    }
+
+    #[test]
     fn test_spectrum_analyzer_incomplete_frame() {
         let (mut prod, mut analyzer) = analyzer();
 
