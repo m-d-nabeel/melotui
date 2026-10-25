@@ -33,6 +33,8 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
         NavigationMsg::ToggleLibraryQueue => nav_action::handle_toggle_library_queue(state),
         NavigationMsg::MoveUp => nav_action::handle_move_up(state),
         NavigationMsg::MoveDown => nav_action::handle_move_down(state),
+        NavigationMsg::MoveTop => nav_action::handle_move_to_end(state, false),
+        NavigationMsg::MoveBottom => nav_action::handle_move_to_end(state, true),
         NavigationMsg::ToggleArt => playback_action::handle_toggle_art(state),
         NavigationMsg::ToggleTreeExpand => nav_action::handle_toggle_tree_expand(state),
         NavigationMsg::CycleVisualizerStyle => {

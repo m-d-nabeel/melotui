@@ -373,4 +373,51 @@ mod tests {
         let msg = InputHandler::handle(enter_key, &state, &registry);
         assert!(matches!(msg, Some(AppMsg::UI(UIMsg::SubmitPresetPicker))));
     }
+
+    /// A key as terminals send it: a capital with shift held.
+    fn typed(c: char) -> KeyEvent {
+        let shift = if c.is_ascii_uppercase() {
+            KeyModifiers::SHIFT
+        } else {
+            KeyModifiers::empty()
+        };
+        KeyEvent::new(KeyCode::Char(c), shift)
+    }
+
+    #[test]
+    fn g_and_capital_g_go_to_the_top_and_bottom_of_the_help() {
+        let mut state = test_state();
+        reduce(&mut state, AppMsg::UI(UIMsg::OpenHelp));
+        let registry = crate::keybinding::KeyRegistry::default();
+        assert!(matches!(
+            InputHandler::handle(typed('g'), &state, &registry),
+            Some(AppMsg::UI(UIMsg::ScrollHelp { by: i32::MIN, .. }))
+        ));
+        assert!(matches!(
+            InputHandler::handle(typed('G'), &state, &registry),
+            Some(AppMsg::UI(UIMsg::ScrollHelp { by: i32::MAX, .. }))
+        ));
+    }
+
+    #[test]
+    fn g_and_capital_g_go_to_the_top_and_bottom_of_the_tree_and_the_queue() {
+        use melotui_core::message::navigation::NavigationMsg;
+        let mut state = test_state();
+        let registry = crate::keybinding::KeyRegistry::default();
+        for _ in 0..2 {
+            assert!(matches!(
+                InputHandler::handle(typed('g'), &state, &registry),
+                Some(AppMsg::Navigation(NavigationMsg::MoveTop))
+            ));
+            assert!(matches!(
+                InputHandler::handle(typed('G'), &state, &registry),
+                Some(AppMsg::Navigation(NavigationMsg::MoveBottom))
+            ));
+            // And the same in the queue.
+            reduce(
+                &mut state,
+                AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue),
+            );
+        }
+    }
 }

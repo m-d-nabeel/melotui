@@ -53,6 +53,8 @@ pub enum KeyAction {
     TogglePlaybackPanel,
     MoveUp,
     MoveDown,
+    MoveTop,
+    MoveBottom,
     Interact,
     ToggleFolderExpand,
     ShowTrackInfo,
@@ -175,6 +177,8 @@ impl KeyAction {
             KeyAction::TogglePlaybackPanel => "Playback Panel",
             KeyAction::MoveUp => "Up",
             KeyAction::MoveDown => "Down",
+            KeyAction::MoveTop => "Top",
+            KeyAction::MoveBottom => "Bottom",
             KeyAction::Interact => "Play/Open",
             KeyAction::ToggleFolderExpand => "Expand",
             KeyAction::ShowTrackInfo => "Track Info",
@@ -276,6 +280,8 @@ impl KeyAction {
 
             KeyAction::MoveUp => Some(AppMsg::Navigation(NavigationMsg::MoveUp)),
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
+            KeyAction::MoveTop => Some(AppMsg::Navigation(NavigationMsg::MoveTop)),
+            KeyAction::MoveBottom => Some(AppMsg::Navigation(NavigationMsg::MoveBottom)),
             KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
             KeyAction::ToggleVisualizer => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
             KeyAction::CycleVisualizerStyle => {
@@ -507,7 +513,9 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::PageUp, KeyAction::HelpPageUp),
                 KeyBinding::new(KeyCode::Char('g'), KeyAction::HelpTop),
                 KeyBinding::new(KeyCode::Home, KeyAction::HelpTop),
-                KeyBinding::new(KeyCode::Char('G'), KeyAction::HelpBottom),
+                // A capital comes as its small letter with shift held.
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::HelpBottom)
+                    .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::End, KeyAction::HelpBottom),
             ],
         );
@@ -543,6 +551,11 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp),
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::MoveTop),
+                KeyBinding::new(KeyCode::Home, KeyAction::MoveTop),
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::MoveBottom)
+                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::End, KeyAction::MoveBottom),
                 KeyBinding::new(KeyCode::Enter, KeyAction::Interact),
                 KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo),
                 KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo),
@@ -605,6 +618,11 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Down, KeyAction::MoveDown),
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::MoveUp),
                 KeyBinding::new(KeyCode::Up, KeyAction::MoveUp),
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::MoveTop),
+                KeyBinding::new(KeyCode::Home, KeyAction::MoveTop),
+                KeyBinding::new(KeyCode::Char('g'), KeyAction::MoveBottom)
+                    .with_mod(KeyModifiers::SHIFT),
+                KeyBinding::new(KeyCode::End, KeyAction::MoveBottom),
                 KeyBinding::new(KeyCode::Enter, KeyAction::Interact),
                 KeyBinding::new(KeyCode::Char('['), KeyAction::HideTrackInfo),
                 KeyBinding::new(KeyCode::Char(']'), KeyAction::ShowTrackInfo),

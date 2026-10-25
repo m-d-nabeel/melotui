@@ -195,6 +195,41 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
     effects
 }
 
+/// Selects the first row of the tree or the queue, or with `last` the last,
+/// the tree scrolled to show it.
+pub fn handle_move_to_end(state: &mut AppState, last: bool) -> Vec<AppMsg> {
+    state.last_nav_time = state.time_elapsed;
+    state.session.nav.show_track_info = false;
+    match state.session.nav.active_panel {
+        LeftPanelMode::Library => {
+            let nav = &state.session.nav.library;
+            let total_rows = projector::get_row_count(&state.library, nav);
+            if total_rows == 0 {
+                return vec![];
+            }
+            let index = if last { total_rows - 1 } else { 0 };
+            if let Some(node) = projector::get_node_at_index(&state.library, nav, index) {
+                state.session.nav.library.selected_id = Some(node);
+                let (_, h) = state.terminal_size();
+                let viewport_height = (h.saturating_sub(3) as usize).max(1);
+                state.session.nav.library.scroll_offset = if last {
+                    total_rows.saturating_sub(viewport_height)
+                } else {
+                    0
+                };
+            }
+        }
+        LeftPanelMode::Queue => {
+            let queue = state.queue();
+            let entry = if last { queue.back() } else { queue.front() };
+            if let Some(entry) = entry {
+                state.session.nav.queue.selected_queue_id = Some(entry.id);
+            }
+        }
+    }
+    vec![]
+}
+
 pub fn handle_move_down(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
     state.session.nav.show_track_info = false;
@@ -383,5 +418,47 @@ mod tests {
 
         handle_toggle_tree_expand(&mut state);
         assert!(!state.session.nav.library.expanded_ids.contains(&node));
+    }
+
+    #[test]
+    fn the_top_and_bottom_of_the_tree_are_a_key_away() {
+        let mut state = test_state();
+        state.session.ui.terminal_size = (80, 6);
+        let rows = projector::get_row_count(&state.library, &state.session.nav.library);
+        assert!(rows > 3, "{rows} rows");
+
+        handle_move_to_end(&mut state, true);
+        let nav = &state.session.nav.library;
+        let at = projector::get_index_of(&state.library, nav, nav.selected_id.as_ref().unwrap());
+        assert_eq!(at, Some(rows - 1));
+        assert_eq!(
+            nav.scroll_offset,
+            rows - 3,
+            "scrolled to show it at the bottom"
+        );
+
+        handle_move_to_end(&mut state, false);
+        let nav = &state.session.nav.library;
+        let at = projector::get_index_of(&state.library, nav, nav.selected_id.as_ref().unwrap());
+        assert_eq!(at, Some(0));
+        assert_eq!(nav.scroll_offset, 0);
+    }
+
+    #[test]
+    fn the_first_and_last_of_the_queue_are_a_key_away() {
+        use crate::{message::library::LibraryMsg, reducer::reduce};
+        let mut state = test_state();
+        let track = crate::domain::ids::TrackId(1);
+        for _ in 0..3 {
+            reduce(&mut state, AppMsg::Library(LibraryMsg::AddToQueue(track)));
+        }
+        state.session.nav.active_panel = LeftPanelMode::Queue;
+        let ids: Vec<_> = state.queue().iter().map(|e| e.id).collect();
+        assert_eq!(ids.len(), 3);
+
+        handle_move_to_end(&mut state, true);
+        assert_eq!(state.session.nav.queue.selected_queue_id, Some(ids[2]));
+        handle_move_to_end(&mut state, false);
+        assert_eq!(state.session.nav.queue.selected_queue_id, Some(ids[0]));
     }
 }
