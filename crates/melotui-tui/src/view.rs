@@ -55,6 +55,23 @@ pub fn draw(
 
     // Overlays render on top regardless of focus mode
     draw_overlays(frame, area, state, registry);
+    fit_escape_cells(frame.buffer_mut());
+}
+
+/// Marks each cell holding an escape sequence — an image, as kitty
+/// placeholders, a sixel or an iTerm2 image — as one column wide.
+///
+/// ratatui measures a cell by the text in it and skips that many columns
+/// when working out what to send; an image row's escape codes measure as
+/// dozens, so the rows below it were skipped and never sent, and only the
+/// first row of every image showed.
+fn fit_escape_cells(buffer: &mut ratatui::buffer::Buffer) {
+    use ratatui::buffer::CellDiffOption;
+    for cell in &mut buffer.content {
+        if cell.diff_option == CellDiffOption::None && cell.symbol().contains('\x1b') {
+            cell.set_diff_option(CellDiffOption::ForcedWidth(std::num::NonZeroU16::MIN));
+        }
+    }
 }
 
 /// Full layout: sidebar + visualizer + mixer + playback
@@ -307,5 +324,57 @@ mod tests {
             .collect::<Vec<String>>()
             .join("\n");
         assert!(!full_text.contains("Terminal too small"));
+    }
+}
+
+#[cfg(test)]
+mod image_tests {
+    use super::fit_escape_cells;
+    use image::{DynamicImage, RgbaImage};
+    use ratatui::{Terminal, backend::TestBackend, layout::Rect};
+    use ratatui_image::{
+        Image, Resize,
+        picker::{Picker, ProtocolType},
+    };
+
+    /// Draws a 20 × 5 cell image through ratatui-image, as the album art is,
+    /// and returns what the terminal was sent.
+    fn sent(protocol: ProtocolType) -> ratatui::buffer::Buffer {
+        let mut picker = Picker::halfblocks();
+        picker.set_protocol_type(protocol);
+        let (w, h) = picker.font_size();
+        let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            20 * u32::from(w),
+            5 * u32::from(h),
+            image::Rgba([200, 100, 50, 255]),
+        ));
+        let area = Rect::new(0, 0, 20, 5);
+        let art = picker.new_protocol(image, area, Resize::Fit(None)).unwrap();
+        let mut terminal = Terminal::new(TestBackend::new(30, 7)).unwrap();
+        terminal
+            .draw(|f| {
+                f.render_widget(Image::new(&art), Rect::new(2, 1, 20, 5));
+                fit_escape_cells(f.buffer_mut());
+            })
+            .unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    #[test]
+    fn every_row_of_the_album_art_reaches_the_terminal() {
+        let sent = sent(ProtocolType::Kitty);
+        for y in 1..=5 {
+            assert!(
+                sent[(2, y)].symbol().contains('\u{10EEEE}'),
+                "row {y} of the art was never written: {:?}",
+                sent[(2, y)].symbol()
+            );
+        }
+    }
+
+    #[test]
+    fn an_iterm2_image_is_sent_whole() {
+        let sent = sent(ProtocolType::Iterm2);
+        assert!(sent[(2, 1)].symbol().contains("]1337;File="));
     }
 }

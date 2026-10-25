@@ -113,6 +113,9 @@ impl Widget for &KittyImage {
             write!(symbol, "\x1b[u\x1b[{}C", width - 1).unwrap();
             if let Some(cell) = buf.cell_mut((area.left(), area.top() + y)) {
                 cell.set_symbol(&symbol);
+                // The symbol is escape codes and placeholders, which ratatui
+                // would measure as dozens of columns and skip that far past.
+                cell.set_diff_option(CellDiffOption::ForcedWidth(std::num::NonZeroU16::MIN));
             }
             for x in 1..width {
                 if let Some(cell) = buf.cell_mut((area.left() + x, area.top() + y)) {

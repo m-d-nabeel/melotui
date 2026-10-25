@@ -287,4 +287,24 @@ mod tests {
         assert!(image_row(&buffer, 1) && image_row(&buffer, 2));
         assert_eq!(cache.lyrics.shown_lines(), Some(1));
     }
+
+    #[test]
+    fn every_row_of_a_lyrics_image_reaches_the_terminal() {
+        // Checked in what the terminal is sent, not in the frame: the frame
+        // held every row while only the first was written.
+        let state = state_with_lyrics(LYRICS, "sent");
+        let mut cache = kitty_cache();
+        let mut terminal = Terminal::new(TestBackend::new(50, 8)).unwrap();
+        terminal
+            .draw(|f| draw(f, f.area(), &state, &mut cache, 2.0))
+            .unwrap();
+        let sent = terminal.backend().buffer();
+        for y in 1..=6 {
+            assert!(
+                sent[(3, y)].symbol().contains('\u{10EEEE}'),
+                "row {y} of the image was never written: {:?}",
+                sent[(3, y)].symbol()
+            );
+        }
+    }
 }
