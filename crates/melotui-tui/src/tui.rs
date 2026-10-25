@@ -94,10 +94,9 @@ impl Tui {
                 &self.help_scroll_max,
             );
         })?;
-        // Lyric images that left the screen in that frame are freed now, with
+        // kitty images that left the screen in that frame are freed now, with
         // the frame written and nothing else going to the terminal.
         self.image_cache
-            .lyrics
             .flush_retired(self.terminal.backend_mut())?;
         Ok(())
     }
