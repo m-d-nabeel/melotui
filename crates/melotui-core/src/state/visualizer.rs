@@ -111,6 +111,14 @@ pub struct SpectrumMotion {
     cap_hold: Vec<f32>,
     /// How fast each cap is falling, in spectrum units per second.
     cap_speed: Vec<f32>,
+    nova: super::nova::Nova,
+}
+
+impl SpectrumMotion {
+    /// Nova's particles and core.
+    pub fn nova(&self) -> &super::nova::Nova {
+        &self.nova
+    }
 }
 
 /// Bars rise this share of the way to the music each 60th of a second —
@@ -206,6 +214,16 @@ pub fn update_visualizer_physics(state: &mut AppState, dt: f32) -> bool {
             *cap = (*cap - motion.cap_speed[i] * dt).max(*bar);
         }
         showing |= *cap > 0.0;
+    }
+
+    if *state.spectrum_style() == SpectrumStyle::Nova {
+        let silence = [0.0; 0];
+        let bands = if playing {
+            &state.spectrum_raw[..]
+        } else {
+            &silence[..]
+        };
+        showing |= state.spectrum_motion.nova.step(bands, dt);
     }
 
     let take_n = len.clamp(1, 64);
