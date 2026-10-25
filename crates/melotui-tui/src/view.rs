@@ -451,4 +451,244 @@ mod image_tests {
             "and off the art, it is cleared"
         );
     }
+
+    /// A terminal, as far as what ends up on screen goes: it prints each
+    /// character where the cursor is and moves on, follows the cursor
+    /// movement ratatui and ratatui-image send, puts kitty's placeholder
+    /// diacritics on the cell before them, and skips kitty's image commands,
+    /// which show nothing by themselves. Unlike `TestBackend`, which files
+    /// each cell where ratatui says, this sees what a row of placeholders
+    /// written from one cell paints over.
+    struct Screen {
+        width: u16,
+        cells: Vec<(String, Option<ratatui::style::Color>)>,
+        cursor: (u16, u16),
+        saved: (u16, u16),
+        fg: Option<ratatui::style::Color>,
+        last: Option<usize>,
+    }
+
+    impl Screen {
+        fn new(width: u16, height: u16) -> Self {
+            Self {
+                width,
+                cells: vec![(" ".to_string(), None); usize::from(width) * usize::from(height)],
+                cursor: (0, 0),
+                saved: (0, 0),
+                fg: None,
+                last: None,
+            }
+        }
+
+        fn feed(&mut self, bytes: &[u8]) {
+            let text = std::str::from_utf8(bytes).unwrap();
+            let mut chars = text.chars().peekable();
+            while let Some(c) = chars.next() {
+                if c != '\x1b' {
+                    self.print(c);
+                    continue;
+                }
+                match chars.next() {
+                    Some('[') => {
+                        let mut params = String::new();
+                        let mut last = ' ';
+                        for c in chars.by_ref() {
+                            if ('\x40'..='\x7e').contains(&c) {
+                                last = c;
+                                break;
+                            }
+                            params.push(c);
+                        }
+                        self.csi(&params, last);
+                    }
+                    // Strings — kitty's APC image commands among them — run to
+                    // ESC \ and show nothing.
+                    Some('_' | 'P' | ']') => {
+                        while let Some(c) = chars.next() {
+                            if c == '\x1b' && chars.peek() == Some(&'\\') {
+                                chars.next();
+                                break;
+                            }
+                        }
+                    }
+                    Some('7') => self.saved = self.cursor,
+                    Some('8') => self.cursor = self.saved,
+                    _ => {}
+                }
+            }
+        }
+
+        fn csi(&mut self, params: &str, last: char) {
+            let arg = |i: usize| -> u16 {
+                params
+                    .split(';')
+                    .nth(i)
+                    .and_then(|p| p.parse().ok())
+                    .filter(|&n| n > 0)
+                    .unwrap_or(1)
+            };
+            match last {
+                'H' => self.cursor = (arg(1) - 1, arg(0) - 1),
+                's' => self.saved = self.cursor,
+                'u' => self.cursor = self.saved,
+                'C' => self.cursor.0 = self.cursor.0.saturating_add(arg(0)),
+                'B' => self.cursor.1 = self.cursor.1.saturating_add(arg(0)),
+                'm' => self.sgr(params),
+                _ => {}
+            }
+        }
+
+        fn sgr(&mut self, params: &str) {
+            use ratatui::style::Color;
+            let p: Vec<&str> = params.split(';').collect();
+            let mut i = 0;
+            while i < p.len() {
+                match (p[i], p.get(i + 1).copied()) {
+                    ("" | "0" | "39", _) => self.fg = None,
+                    ("38", Some("2")) => {
+                        let ch = |k: usize| p[i + k].parse().unwrap();
+                        self.fg = Some(Color::Rgb(ch(2), ch(3), ch(4)));
+                        i += 4;
+                    }
+                    ("38", Some("5")) => {
+                        self.fg = Some(Color::Indexed(p[i + 2].parse().unwrap()));
+                        i += 2;
+                    }
+                    ("48" | "58", Some("2")) => i += 4,
+                    ("48" | "58", Some("5")) => i += 2,
+                    _ => {}
+                }
+                i += 1;
+            }
+        }
+
+        fn print(&mut self, c: char) {
+            if crate::lyrics::kitty::DIACRITICS.contains(&c) {
+                if let Some(i) = self.last {
+                    self.cells[i].0.push(c);
+                }
+                return;
+            }
+            let (x, y) = self.cursor;
+            let i = usize::from(y) * usize::from(self.width) + usize::from(x);
+            if x < self.width && i < self.cells.len() {
+                self.cells[i] = (c.to_string(), self.fg);
+                self.last = Some(i);
+            } else {
+                self.last = None;
+            }
+            self.cursor.0 = self.cursor.0.saturating_add(1);
+        }
+
+        fn at(&self, x: u16, y: u16) -> &(String, Option<ratatui::style::Color>) {
+            &self.cells[usize::from(y) * usize::from(self.width) + usize::from(x)]
+        }
+    }
+
+    /// The bytes sent to the terminal, kept where the test can read them.
+    #[derive(Clone, Default)]
+    struct Sent(std::rc::Rc<std::cell::RefCell<Vec<u8>>>);
+
+    impl std::io::Write for Sent {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.borrow_mut().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// What of `symbol` shows on screen: all but its escape sequences.
+    fn visible(symbol: &str) -> String {
+        let mut screen = Screen::new(64, 1);
+        screen.feed(symbol.as_bytes());
+        let width = screen.cursor.0.min(64);
+        (0..width).map(|x| screen.at(x, 0).0.clone()).collect()
+    }
+
+    #[test]
+    fn the_terminal_shows_what_was_drawn_as_popups_and_art_change_together() {
+        use crate::widgets::notification_popup;
+        use melotui_core::{AppState, library::snapshot::Library, state::NotificationKind};
+        use ratatui::{
+            Terminal, TerminalOptions, Viewport,
+            backend::CrosstermBackend,
+            buffer::{Buffer, CellDiffOption},
+        };
+        use ratatui_image::StatefulImage;
+
+        let (width, height) = (60, 16);
+        let mut picker = Picker::halfblocks();
+        picker.set_protocol_type(ProtocolType::Kitty);
+        let (w, h) = picker.font_size();
+        let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            60 * u32::from(w),
+            14 * u32::from(h),
+            image::Rgba([90, 140, 60, 255]),
+        ));
+        let mut art = picker.new_resize_protocol(image);
+        let mut state = AppState::new(
+            Library::new(vec![], vec![], std::collections::HashMap::new()),
+            &melotui_core::config::AppConfig::default(),
+        );
+        let sent = Sent::default();
+        let mut terminal = Terminal::with_options(
+            CrosstermBackend::new(sent.clone()),
+            TerminalOptions {
+                viewport: Viewport::Fixed(Rect::new(0, 0, width, height)),
+            },
+        )
+        .unwrap();
+        let mut screen = Screen::new(width, height);
+
+        // As the app's frames go: the art (narrower once the layout changes),
+        // then the spreading pass, then whatever pops up over it.
+        let mut frame = |state: &AppState, art_width: u16, step: &str| {
+            let mut drawn = Buffer::empty(Rect::new(0, 0, width, height));
+            terminal
+                .draw(|f| {
+                    let image = StatefulImage::default().resize(Resize::Fit(None));
+                    f.render_stateful_widget(image, Rect::new(1, 1, art_width, 14), &mut art);
+                    spread_rows(f.buffer_mut());
+                    notification_popup::draw(f, f.area(), state);
+                    fit_escape_cells(f.buffer_mut());
+                    drawn = f.buffer_mut().clone();
+                })
+                .unwrap();
+            screen.feed(&sent.0.take());
+            for y in 0..height {
+                for x in 0..width {
+                    let cell = &drawn[(x, y)];
+                    #[allow(deprecated)]
+                    let skipped = cell.skip || cell.diff_option == CellDiffOption::Skip;
+                    assert!(
+                        !skipped,
+                        "{step}: ({x}, {y}) is left for another cell to draw"
+                    );
+                    let (shown, fg) = screen.at(x, y);
+                    assert_eq!(
+                        *shown,
+                        visible(cell.symbol()),
+                        "{step}: ({x}, {y}) shows something other than what was drawn"
+                    );
+                    if shown.starts_with('\u{10EEEE}') {
+                        assert_eq!(*fg, Some(cell.fg), "{step}: ({x}, {y}) is another image");
+                    }
+                }
+            }
+        };
+
+        frame(&state, 58, "the art alone");
+        state.set_notification(NotificationKind::Info, "Focus: Lyrics");
+        frame(&state, 58, "a notification over it");
+        // A focus change: the art is drawn again at a new size while the
+        // notification's text changes, which is when, sent a row at a time,
+        // the art painted over everything of the popup but its new text.
+        state.set_notification(NotificationKind::Info, "Full");
+        frame(&state, 40, "the art redrawn under a new notification");
+        state.clear_current_notification();
+        frame(&state, 40, "the notification gone");
+    }
 }

@@ -227,7 +227,7 @@ fn diacritic(n: u16) -> char {
 /// kitty's rowcolumn-diacritics.txt
 /// (<https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders>),
 /// as ratatui-image (MIT) lists them.
-static DIACRITICS: [char; 297] = [
+pub(crate) static DIACRITICS: [char; 297] = [
     '\u{305}',
     '\u{30D}',
     '\u{30E}',
