@@ -47,11 +47,7 @@ impl VisualizerManager {
             cava_process: None,
             cava_scratch: vec![0.0; 200],
             enabled: false,
-            style: if available {
-                SpectrumStyle::Cava
-            } else {
-                SpectrumStyle::Default
-            },
+            style: SpectrumStyle::default(),
             fft_size,
             sample_rate: 44100,
         }

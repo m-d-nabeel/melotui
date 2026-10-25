@@ -44,15 +44,10 @@ pub fn is_cava_available() -> bool {
 }
 
 impl Default for SpectrumStyle {
+    /// The particle fountain, cava installed or not: cava stays a style
+    /// to pick.
     fn default() -> Self {
-        if is_cava_available() {
-            tracing::info!("Cava detected, using for spectrum");
-            SpectrumStyle::Cava
-        } else {
-            tracing::info!("Cava not found, using default visualizer");
-            tracing::info!("Install CAVA for better spectrum visualization");
-            SpectrumStyle::Default
-        }
+        SpectrumStyle::Particle
     }
 }
 
