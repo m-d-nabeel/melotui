@@ -677,6 +677,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 *audio = crate::state::AudioState {
                     volume: audio.volume,
                     speed: audio.speed,
+                    muted_from: audio.muted_from,
                     ..Default::default()
                 };
                 tell(state, "Effects reset");

@@ -41,6 +41,8 @@ pub struct AudioState {
     pub wobble: f32,         // range 0.0 to 1.0
     pub ping_pong: f32,      // range 0.0 to 1.0
     pub phaser: f32,         // range 0.0 to 1.0
+    /// The volume before muting, while muted.
+    pub muted_from: Option<f32>,
 }
 
 impl Default for AudioState {
@@ -65,6 +67,7 @@ impl Default for AudioState {
             wobble: 0.0,
             ping_pong: 0.0,
             phaser: 0.0,
+            muted_from: None,
         }
     }
 }

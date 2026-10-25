@@ -35,6 +35,7 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
         NavigationMsg::MoveDown => nav_action::handle_move_down(state),
         NavigationMsg::MoveTop => nav_action::handle_move_to_end(state, false),
         NavigationMsg::MoveBottom => nav_action::handle_move_to_end(state, true),
+        NavigationMsg::MovePage { down } => nav_action::handle_move_page(state, down),
         NavigationMsg::ToggleArt => playback_action::handle_toggle_art(state),
         NavigationMsg::ToggleTreeExpand => nav_action::handle_toggle_tree_expand(state),
         NavigationMsg::CycleVisualizerStyle => {
@@ -99,6 +100,8 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
     match msg {
         AudioMsg::AdjustVolume(delta) => audio_action::handle_adjust_volume(state, delta),
         AudioMsg::AdjustSpeed(delta) => audio_action::handle_adjust_speed(state, delta),
+        AudioMsg::ToggleMute => audio_action::handle_toggle_mute(state),
+        AudioMsg::ResetSpeed => audio_action::handle_reset_speed(state),
         AudioMsg::AdjustBass(delta) => audio_action::handle_adjust_bass(state, delta),
         AudioMsg::AdjustTreble(delta) => audio_action::handle_adjust_treble(state, delta),
         AudioMsg::AdjustReverb(delta) => audio_action::handle_adjust_reverb(state, delta),

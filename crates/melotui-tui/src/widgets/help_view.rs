@@ -171,18 +171,19 @@ pub fn draw(
 }
 
 /// The bindings of one context, one row per thing they do, keys that do the
-/// same thing together.
+/// same thing together, in the order they are defined: by kind, not by name.
 fn key_section(title: &'static str, bindings: Option<&Vec<KeyBinding>>) -> Section {
-    let mut grouped: std::collections::BTreeMap<&str, Vec<String>> = Default::default();
+    let mut rows: Vec<(&str, Vec<String>)> = Vec::new();
     for binding in bindings.into_iter().flatten() {
-        grouped
-            .entry(binding.action.description())
-            .or_default()
-            .push(format_key(binding));
+        let desc = binding.action.description();
+        match rows.iter_mut().find(|(d, _)| *d == desc) {
+            Some((_, keys)) => keys.push(format_key(binding)),
+            None => rows.push((desc, vec![format_key(binding)])),
+        }
     }
     Section {
         title,
-        rows: grouped
+        rows: rows
             .into_iter()
             .map(|(desc, keys)| (keys.join(" | "), desc.to_string()))
             .collect(),

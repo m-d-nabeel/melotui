@@ -10,7 +10,7 @@
 
 - **Local Library & Playlists**: Your music folders are scanned at start and watched while running, so new music appears by itself.
 - **Audio Playback**: Support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
-- **Spectrum Visualizer**: Six styles, cycled with `w` or picked with `:vis <style>`: Particle (the default, a fountain of droplets thrown up by the music), Default and Bar (mirrored bars with falling caps), Radial (a turning ring), Nova (particles sprayed out of a pulsing core, with a burst on every kick), and Cava when [CAVA](https://github.com/karlstav/cava) is installed. It follows the music, not the volume slider, and rests when playback is paused.
+- **Spectrum Visualizer**: Six styles, cycled with `Shift+V` or picked with `:vis <style>`: Particle (the default, a fountain of droplets thrown up by the music), Default and Bar (mirrored bars with falling caps), Radial (a turning ring), Nova (particles sprayed out of a pulsing core, with a burst on every kick), and Cava when [CAVA](https://github.com/karlstav/cava) is installed. It follows the music, not the volume slider, and rests when playback is paused.
 - **Synced Lyrics**: Time-synced lyrics from `.lrc` files, the lyrics in your files' own tags, or fetched from LRCLIB as a song starts. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
 - **DSP Studio**: Real-time audio processing (speed, bass, treble, reverb, echo, panning, width, filters and more) with a 10-band EQ and presets.
 - **System Integration**: Shows in the desktop's media controls on Linux, macOS and Windows, and answers media keys and headset buttons.
@@ -88,11 +88,27 @@ Options: `--config <FILE>` reads another config file, `--no-config` starts with 
 > **Need help?**
 > Once inside the app, press `?` for every key and command; `j`/`k` scroll it, and `q` or `Esc` closes it.
 
-### Basic Navigation
+### Keys
 
-- Use `h`/`j`/`k`/`l` or the `Arrow Keys` to navigate.
-- Press `Tab` to switch between panels.
-- Press `:` to enter the command bar (e.g., `:dl lofi hip hop` or `:quit`). It lists every command as you type; `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names.
+The keys follow what cmus, ncmpcpp and mpv agree on.
+
+| Keys | What they do |
+| --- | --- |
+| `Space` | Play or pause |
+| `<` `>` (or `Ctrl+←` `Ctrl+→`) | Previous and next track |
+| `←` `→`, `,` `.` | Seek 5 seconds, and a minute |
+| `+` `-`, `m` | Volume, and mute |
+| `[` `]`, `Backspace` | Slower and faster, and normal speed |
+| `s`, `r`, `Shift+S` | Shuffle, repeat mode, and stop |
+| `j` `k` (or `↑` `↓`), `g` `G` (or `Home` `End`), `PgUp` `PgDn` | Move in the tree or queue |
+| `Enter`, `Tab` | Play or open, and switch between the tree and the queue |
+| `a`, `A`, `f`, `p` | Add to the queue, play next, favorite, add to a playlist |
+| `i`, `l` | Track info, and lyrics |
+| `v`, `Shift+V` | Album art or visualizer, and the next visualizer style |
+| `F1`, `F2` | Layout, and the DSP studio, where the effects are adjusted |
+| `:`, `?`, `q` | Commands, help, and quit |
+
+Volume, speed and effects changed out of sight of the mixer are shown in a notification. Press `:` for the command bar (e.g., `:dl lofi hip hop` or `:quit`): it lists every command as you type, and `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names. Keys can be changed in `keymaps.toml` (`melotui --paths` shows where).
 
 ### Commands
 

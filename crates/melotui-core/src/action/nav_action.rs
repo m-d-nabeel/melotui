@@ -195,6 +195,21 @@ pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
     effects
 }
 
+/// Moves a screenful down the tree or the queue, or up, a row at a time so
+/// the view scrolls as it does for one.
+pub fn handle_move_page(state: &mut AppState, down: bool) -> Vec<AppMsg> {
+    let (_, h) = state.terminal_size();
+    let rows = (h.saturating_sub(3) as usize).max(1);
+    for _ in 0..rows {
+        if down {
+            handle_move_down(state);
+        } else {
+            handle_move_up(state);
+        }
+    }
+    vec![]
+}
+
 /// Selects the first row of the tree or the queue, or with `last` the last,
 /// the tree scrolled to show it.
 pub fn handle_move_to_end(state: &mut AppState, last: bool) -> Vec<AppMsg> {

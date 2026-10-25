@@ -1,38 +1,96 @@
 use crate::{AppMsg, AppState, message::audio::AudioMsg, state::audio::AudioState};
 
+/// Says what a change came to, unless the mixer, which shows it, is on
+/// screen: in the DSP studio, or in the full layout with the lyrics panel
+/// not in its place.
+fn show_unless_mixer_shown(state: &mut AppState, message: String) {
+    let ui = &state.session.ui;
+    let mixer_shown = ui.show_dsp_studio
+        || (ui.focus_mode == crate::state::ui::FocusMode::Full && !ui.show_lyrics);
+    if !mixer_shown {
+        state.session.notification.current = Some(
+            crate::state::notification::Notification::new(
+                crate::state::notification::NotificationKind::Info,
+                message,
+            )
+            .with_duration(2),
+        );
+    }
+}
+
 pub fn handle_adjust_volume(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
+    // Turned up or down, it is no longer muted.
+    state.session.audio.muted_from = None;
     let new_volume = (state.volume() + delta).clamp(0.0, 1.5);
     state.session.audio.volume = new_volume;
+    show_unless_mixer_shown(state, format!("Volume {:.0}%", new_volume * 100.0));
     vec![AppMsg::Audio(AudioMsg::DispatchSetVolume(new_volume))]
+}
+
+pub fn handle_toggle_mute(state: &mut AppState) -> Vec<AppMsg> {
+    let audio = &mut state.session.audio;
+    let message = match audio.muted_from.take() {
+        Some(volume) => {
+            audio.volume = volume;
+            format!("Unmuted: {:.0}%", volume * 100.0)
+        }
+        None => {
+            audio.muted_from = Some(audio.volume);
+            audio.volume = 0.0;
+            "Muted".to_string()
+        }
+    };
+    let volume = audio.volume;
+    state.session.notification.current = Some(
+        crate::state::notification::Notification::new(
+            crate::state::notification::NotificationKind::Info,
+            message,
+        )
+        .with_duration(2),
+    );
+    vec![AppMsg::Audio(AudioMsg::DispatchSetVolume(volume))]
 }
 
 pub fn handle_adjust_speed(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     let new_speed = (state.speed() + delta).clamp(0.5, 2.0);
-    state.session.audio.speed = new_speed;
-    vec![AppMsg::Audio(AudioMsg::DispatchSetSpeed(new_speed))]
+    set_speed(state, new_speed)
+}
+
+pub fn handle_reset_speed(state: &mut AppState) -> Vec<AppMsg> {
+    set_speed(state, 1.0)
+}
+
+fn set_speed(state: &mut AppState, speed: f32) -> Vec<AppMsg> {
+    state.session.audio.speed = speed;
+    show_unless_mixer_shown(state, format!("Speed {speed:.2}×"));
+    vec![AppMsg::Audio(AudioMsg::DispatchSetSpeed(speed))]
 }
 
 pub fn handle_adjust_bass(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     let new_bass = (state.bass() + delta).clamp(0.1, 5.0);
     state.session.audio.bass = new_bass;
+    show_unless_mixer_shown(state, format!("Bass ×{new_bass:.1}"));
     vec![AppMsg::Audio(AudioMsg::DispatchSetBass(new_bass))]
 }
 
 pub fn handle_adjust_treble(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     let new_treble = (state.treble() + delta).clamp(0.1, 5.0);
     state.session.audio.treble = new_treble;
+    show_unless_mixer_shown(state, format!("Treble ×{new_treble:.1}"));
     vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(new_treble))]
 }
 
 pub fn handle_adjust_reverb(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     let new_reverb = (state.reverb() + delta).clamp(0.0, 1.0);
     state.session.audio.reverb = new_reverb;
+    show_unless_mixer_shown(state, format!("Reverb {:.0}%", new_reverb * 100.0));
     vec![AppMsg::Audio(AudioMsg::DispatchSetReverb(new_reverb))]
 }
 
 pub fn handle_adjust_echo(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     let new_echo = (state.echo() + delta).clamp(0.0, 0.9);
     state.session.audio.echo = new_echo;
+    show_unless_mixer_shown(state, format!("Echo {:.0}%", new_echo * 100.0));
     vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(new_echo))]
 }
 
@@ -200,6 +258,7 @@ pub fn handle_dispatch_set_phaser(_state: &mut AppState, _val: f32) -> Vec<AppMs
 
 fn apply_macro_profile(state: &mut AppState, mut audio: AudioState) -> Vec<AppMsg> {
     audio.volume = state.session.audio.volume;
+    audio.muted_from = state.session.audio.muted_from;
     state.session.audio = audio.clone();
 
     let mut msgs = vec![
@@ -400,6 +459,52 @@ mod tests {
             (state.session.audio.treble - 0.1).abs() < 1e-6,
             "treble went down to {}",
             state.session.audio.treble
+        );
+    }
+
+    #[test]
+    fn mute_keeps_the_volume_to_come_back_to() {
+        let mut state = test_state();
+        state.session.audio.volume = 0.8;
+        handle_toggle_mute(&mut state);
+        assert_eq!(state.session.audio.volume, 0.0);
+        let saved = crate::state::session_store::PersistedSession::from_app_state(&state);
+        assert_eq!(
+            saved.volume, 0.8,
+            "a muted session is saved at the volume to come back to"
+        );
+        handle_toggle_mute(&mut state);
+        assert_eq!(state.session.audio.volume, 0.8);
+
+        // Turned up while muted, it starts from silence and is unmuted.
+        handle_toggle_mute(&mut state);
+        handle_adjust_volume(&mut state, 0.05);
+        assert!((state.session.audio.volume - 0.05).abs() < 1e-6);
+        assert_eq!(state.session.audio.muted_from, None);
+    }
+
+    #[test]
+    fn a_change_is_told_only_where_the_mixer_does_not_show_it() {
+        use crate::state::ui::FocusMode;
+        let mut state = test_state();
+        state.session.ui.focus_mode = FocusMode::Full;
+        state.session.ui.show_lyrics = false;
+        handle_adjust_speed(&mut state, 0.1);
+        assert!(
+            state.session.notification.current.is_none(),
+            "the mixer shows it"
+        );
+
+        state.session.ui.focus_mode = FocusMode::Visualizer;
+        handle_adjust_speed(&mut state, 0.1);
+        let told = state.session.notification.current.as_ref().unwrap();
+        assert_eq!(told.message, "Speed 1.20×");
+
+        handle_reset_speed(&mut state);
+        assert_eq!(state.session.audio.speed, 1.0);
+        assert_eq!(
+            state.session.notification.current.as_ref().unwrap().message,
+            "Speed 1.00×"
         );
     }
 }

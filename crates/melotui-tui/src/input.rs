@@ -420,4 +420,115 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn the_keys_do_what_music_players_agree_on() {
+        use melotui_core::message::{
+            audio::AudioMsg, library::LibraryMsg, navigation::NavigationMsg, playback::PlaybackMsg,
+        };
+        let state = test_state();
+        let registry = crate::keybinding::KeyRegistry::default();
+        let press = |code: KeyCode, mods: KeyModifiers| {
+            InputHandler::handle(KeyEvent::new(code, mods), &state, &registry)
+        };
+        let none = KeyModifiers::empty();
+        let shift = KeyModifiers::SHIFT;
+        let step = state.config.audio.seek_step;
+
+        assert!(matches!(
+            press(KeyCode::Char(' '), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('>'), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestPlayNext))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('<'), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestPlayPrev))
+        ));
+        assert!(
+            matches!(press(KeyCode::Right, none), Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(s))) if s == step)
+        );
+        assert!(
+            matches!(press(KeyCode::Left, none), Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(s))) if s == -step)
+        );
+        assert!(matches!(
+            press(KeyCode::Char('.'), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(60)))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char(','), none),
+            Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(-60)))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('s'), none),
+            Some(AppMsg::Library(LibraryMsg::ToggleShuffle))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('S'), shift),
+            Some(AppMsg::Playback(PlaybackMsg::RequestStop))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('r'), none),
+            Some(AppMsg::Library(LibraryMsg::ToggleRepeatMode))
+        ));
+        assert!(
+            matches!(press(KeyCode::Char(']'), none), Some(AppMsg::Audio(AudioMsg::AdjustSpeed(d))) if d > 0.0)
+        );
+        assert!(
+            matches!(press(KeyCode::Char('['), none), Some(AppMsg::Audio(AudioMsg::AdjustSpeed(d))) if d < 0.0)
+        );
+        assert!(matches!(
+            press(KeyCode::Backspace, none),
+            Some(AppMsg::Audio(AudioMsg::ResetSpeed))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('m'), none),
+            Some(AppMsg::Audio(AudioMsg::ToggleMute))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('i'), none),
+            Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('l'), none),
+            Some(AppMsg::UI(UIMsg::ToggleLyrics))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('v'), none),
+            Some(AppMsg::Navigation(NavigationMsg::ToggleArt))
+        ));
+        assert!(matches!(
+            press(KeyCode::Char('V'), shift),
+            Some(AppMsg::Navigation(NavigationMsg::CycleVisualizerStyle))
+        ));
+        assert!(matches!(
+            press(KeyCode::PageDown, none),
+            Some(AppMsg::Navigation(NavigationMsg::MovePage { down: true }))
+        ));
+
+        // The old effect, shuffle, repeat, stop and style letters are free.
+        for c in ['b', 't', 'e', 'z', 'c', 'x', 'w'] {
+            assert!(press(KeyCode::Char(c), none).is_none(), "{c} still bound");
+        }
+    }
+
+    #[test]
+    fn no_binding_waits_for_a_key_that_never_comes() {
+        // A capital comes as its small letter with shift held, so a binding
+        // to the capital itself never fires: G, Shift+L and Shift+V did not.
+        let registry = crate::keybinding::KeyRegistry::default();
+        for (context, bindings) in &registry.bindings {
+            for binding in bindings {
+                if let KeyCode::Char(c) = binding.key {
+                    assert!(
+                        !c.is_ascii_uppercase(),
+                        "{context:?}: {c:?} for {:?} can never be pressed",
+                        binding.action
+                    );
+                }
+            }
+        }
+    }
 }

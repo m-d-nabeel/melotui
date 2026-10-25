@@ -10,7 +10,11 @@ pub enum AudioMsg {
     /// An output device was opened.
     OutputOpened(String),
     AdjustVolume(f32),
+    /// Mutes, keeping the volume to unmute to, or unmutes.
+    ToggleMute,
     AdjustSpeed(f32),
+    /// Back to normal speed.
+    ResetSpeed,
     AdjustBass(f32),
     AdjustTreble(f32),
     AdjustReverb(f32),
