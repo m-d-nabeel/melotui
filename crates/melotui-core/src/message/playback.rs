@@ -6,6 +6,11 @@ use crate::state::SpectrumStyle;
 pub enum PlaybackMsg {
     RequestPlaySelected,
     RequestTogglePlayback,
+    /// Plays: resumes what is paused, or starts the selection; nothing if
+    /// already playing. Unlike the toggle, safe to repeat.
+    RequestPlay,
+    /// Pauses if playing; nothing otherwise.
+    RequestPause,
     RequestStop,
     RequestPlayNext,
     RequestPlayPrev,

@@ -542,22 +542,8 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![]
         }
         Command::Help => handle_open_help(state),
-        Command::Play => {
-            if state.is_playing() {
-                vec![]
-            } else if state.session.playback.current.is_some() {
-                vec![AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)]
-            } else {
-                vec![AppMsg::Playback(PlaybackMsg::RequestPlaySelected)]
-            }
-        }
-        Command::Pause => {
-            if state.is_playing() {
-                vec![AppMsg::Playback(PlaybackMsg::RequestTogglePlayback)]
-            } else {
-                vec![]
-            }
-        }
+        Command::Play => vec![AppMsg::Playback(PlaybackMsg::RequestPlay)],
+        Command::Pause => vec![AppMsg::Playback(PlaybackMsg::RequestPause)],
         Command::Stop => vec![AppMsg::Playback(PlaybackMsg::RequestStop)],
         Command::Next => vec![AppMsg::Playback(PlaybackMsg::RequestPlayNext)],
         Command::Prev => vec![AppMsg::Playback(PlaybackMsg::RequestPlayPrev)],
@@ -1560,6 +1546,33 @@ mod tests {
 
         run(&mut state, "device default");
         assert_eq!(state.session.output.wanted, None);
+    }
+
+    #[test]
+    fn play_and_pause_are_safe_to_repeat() {
+        use crate::playback::state::PlaybackStatus;
+        let mut state = test_state();
+        state.session.playback.current = Some(crate::domain::TrackId(1));
+        state.session.playback.status = PlaybackStatus::Playing;
+
+        // Play while playing — a headset's button, a desktop widget — is
+        // nothing, where the toggle it used to be paused the music.
+        assert!(
+            crate::reducer::reduce(&mut state, AppMsg::Playback(PlaybackMsg::RequestPlay))
+                .is_empty()
+        );
+        assert!(state.is_playing());
+
+        crate::reducer::reduce(&mut state, AppMsg::Playback(PlaybackMsg::RequestPause));
+        assert!(state.is_paused());
+        assert!(
+            crate::reducer::reduce(&mut state, AppMsg::Playback(PlaybackMsg::RequestPause))
+                .is_empty()
+        );
+        assert!(state.is_paused());
+
+        crate::reducer::reduce(&mut state, AppMsg::Playback(PlaybackMsg::RequestPlay));
+        assert!(state.is_playing());
     }
 
     #[test]

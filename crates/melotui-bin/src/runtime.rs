@@ -127,8 +127,8 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
     // trying to restore it.
     let mut terminal_lost = false;
 
-    // Initialize MPRIS / system media controls (Linux/macOS only)
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    // Initialize MPRIS / system media controls (Linux, macOS, Windows)
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     let (mut mpris_manager, mpris_rx) = {
         match crate::mpris::MprisManager::new() {
             Some((mgr, rx)) => (Some(mgr), Some(rx)),
@@ -196,8 +196,8 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
             should_render = true;
         }
 
-        // Poll MPRIS media key events (Linux/macOS only)
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
+        // Poll MPRIS media key events (Linux, macOS, Windows)
+        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
         if let Some(ref rx) = mpris_rx {
             while let Ok(evt) = rx.try_recv() {
                 match evt {
@@ -253,8 +253,8 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
             }
             should_render = false;
 
-            // Sync MPRIS metadata/status after render (Linux/macOS only)
-            #[cfg(any(target_os = "linux", target_os = "macos"))]
+            // Sync MPRIS metadata/status after render (Linux, macOS, Windows)
+            #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
             if let Some(ref mut mgr) = mpris_manager {
                 mgr.update_state(&state);
             }
@@ -265,7 +265,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
     // joining its background thread. The process is about to end, so leak it
     // deliberately: same effect the old `process::exit` had on it, but without
     // taking the log flush and terminal restore down as well.
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     if let Some(mgr) = mpris_manager.take() {
         std::mem::forget(mgr);
     }
