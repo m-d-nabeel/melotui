@@ -17,6 +17,13 @@ use tui_input::InputRequest;
 
 pub fn handle_open_help(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.show_help = true;
+    state.session.ui.help_scroll = 0;
+    vec![]
+}
+
+pub fn handle_scroll_help(state: &mut AppState, by: i32, max: u16) -> Vec<AppMsg> {
+    let scroll = i64::from(state.session.ui.help_scroll) + i64::from(by);
+    state.session.ui.help_scroll = scroll.clamp(0, i64::from(max)) as u16;
     vec![]
 }
 
@@ -1706,5 +1713,22 @@ mod tests {
         // Move up from grid top (14 -> 9)
         handle_dsp_select_up(&mut state);
         assert_eq!(state.session.ui.dsp_selected_control, 9);
+    }
+
+    #[test]
+    fn the_help_scrolls_within_its_length_and_opens_at_the_top() {
+        let mut state = test_state();
+        handle_open_help(&mut state);
+        handle_scroll_help(&mut state, 5, 30);
+        assert_eq!(state.session.ui.help_scroll, 5);
+        handle_scroll_help(&mut state, i32::MAX, 30);
+        assert_eq!(state.session.ui.help_scroll, 30, "no further than its end");
+        handle_scroll_help(&mut state, -1, 30);
+        assert_eq!(state.session.ui.help_scroll, 29, "and back at once");
+        handle_scroll_help(&mut state, i32::MIN, 30);
+        assert_eq!(state.session.ui.help_scroll, 0);
+        handle_scroll_help(&mut state, 9, 30);
+        handle_open_help(&mut state);
+        assert_eq!(state.session.ui.help_scroll, 0);
     }
 }

@@ -24,6 +24,9 @@ pub struct Tui {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     pub image_cache: ImageCache,
     pub key_registry: crate::keybinding::KeyRegistry,
+    /// How far the help can scroll, as last drawn: the keys that scroll it
+    /// go no further.
+    help_scroll_max: std::cell::Cell<u16>,
     /// Terminal events, read on a thread of their own.
     events: mpsc::Receiver<std::io::Result<Event>>,
 }
@@ -73,6 +76,7 @@ impl Tui {
                 terminal,
                 image_cache,
                 key_registry,
+                help_scroll_max: std::cell::Cell::new(0),
                 events,
             },
             errors,
@@ -82,7 +86,13 @@ impl Tui {
     pub fn draw(&mut self, state: &AppState) -> anyhow::Result<()> {
         self.terminal.draw(|frame| {
             self.image_cache.update(state);
-            view::draw(frame, state, &mut self.image_cache, &self.key_registry);
+            view::draw(
+                frame,
+                state,
+                &mut self.image_cache,
+                &self.key_registry,
+                &self.help_scroll_max,
+            );
         })?;
         // Lyric images that left the screen in that frame are freed now, with
         // the frame written and nothing else going to the terminal.
@@ -130,7 +140,15 @@ impl Tui {
                 }
             };
             let msg = match event {
-                Event::Key(key) => InputHandler::handle(key, state, &self.key_registry),
+                Event::Key(key) => match InputHandler::handle(key, state, &self.key_registry) {
+                    Some(AppMsg::UI(UIMsg::ScrollHelp { by, .. })) => {
+                        Some(AppMsg::UI(UIMsg::ScrollHelp {
+                            by,
+                            max: self.help_scroll_max.get(),
+                        }))
+                    }
+                    msg => msg,
+                },
                 Event::Resize(w, h) => Some(AppMsg::UI(UIMsg::Resize(w, h))),
                 _ => None,
             };

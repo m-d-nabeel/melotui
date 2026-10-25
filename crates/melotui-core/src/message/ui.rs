@@ -13,6 +13,11 @@ pub enum UIMsg {
     CommandHistoryNext,
     OpenHelp,
     CloseHelp,
+    /// Scrolls the help by `by` lines, down for more, no further than `max`.
+    ScrollHelp {
+        by: i32,
+        max: u16,
+    },
     ToggleLyrics,
     TogglePlaybackPanel,
     Resize(u16, u16),

@@ -459,6 +459,10 @@ impl AppState {
         self.session.ui.show_help
     }
 
+    pub fn ui_help_scroll(&self) -> u16 {
+        self.session.ui.help_scroll
+    }
+
     pub fn ui_show_lyrics(&self) -> bool {
         self.session.ui.show_lyrics
     }

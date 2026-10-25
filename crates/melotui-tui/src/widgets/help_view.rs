@@ -5,35 +5,85 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Padding},
+    widgets::{
+        Block, Borders, Clear, Padding, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState,
+    },
 };
+use unicode_width::UnicodeWidthStr;
 
+/// One section of the help: a title, and what each key or command does.
+struct Section {
+    title: &'static str,
+    rows: Vec<(String, String)>,
+}
+
+/// The help: every key and command, in one or two columns as the width
+/// allows, each description whole, wrapped if need be, and scrolled when it
+/// does not all fit. How far it can scroll is left in `scroll_max` for the
+/// keys that scroll it.
 pub fn draw(
     frame: &mut Frame,
     area: Rect,
     state: &melotui_core::AppState,
     registry: &crate::keybinding::KeyRegistry,
+    scroll_max: &std::cell::Cell<u16>,
 ) {
-    // help screen area
     let help_area = centered_rect(90, 90, area);
-
-    // clear bg
     frame.render_widget(Clear, help_area);
-
     let t = crate::theme::get_theme(state);
 
-    // main block
+    let sections = [
+        key_section(" Global ", registry.bindings.get(&KeyContext::Global)),
+        key_section(" Library ", registry.bindings.get(&KeyContext::Library)),
+        key_section(" Queue ", registry.bindings.get(&KeyContext::Queue)),
+        Section {
+            title: " Commands (: then Tab) ",
+            rows: melotui_core::Command::help_entries(),
+        },
+    ];
+
+    // Laid out before the frame's title can say where in it the view is.
+    let inner_of = |area: Rect| {
+        Block::default()
+            .borders(Borders::ALL)
+            .padding(Padding::new(2, 2, 1, 0))
+            .inner(area)
+    };
+    let inner = inner_of(help_area);
+    let columns: u16 = if inner.width >= 110 { 2 } else { 1 };
+    let gap = 4;
+    let column_width = (inner.width.saturating_sub(gap * (columns - 1)) / columns).max(10);
+    let rendered: Vec<Vec<Line>> = sections
+        .iter()
+        .map(|section| section_lines(section, column_width, t))
+        .collect();
+    let column_lines = split_columns(rendered, columns as usize);
+    let total = column_lines.iter().map(Vec::len).max().unwrap_or(0) as u16;
+    let max = total.saturating_sub(inner.height);
+    scroll_max.set(max);
+    let scroll = state.ui_help_scroll().min(max);
+
+    let position = if max == 0 {
+        String::new()
+    } else {
+        format!(
+            " · lines {}–{} of {}",
+            scroll + 1,
+            (scroll + inner.height).min(total),
+            total
+        )
+    };
     let block = Block::default()
         .title(
             Line::from(vec![
                 Span::styled(
-                    "  Keyboard Shortcuts ",
+                    " Keyboard Shortcuts ",
                     Style::default()
                         .fg(t.accent_primary)
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    "(press q or Esc to close)",
+                    format!("(j/k scroll · q or Esc to close{position}) "),
                     Style::default().fg(t.help_subtext),
                 ),
             ])
@@ -42,159 +92,166 @@ pub fn draw(
         .borders(Borders::ALL)
         .border_style(Style::default().fg(t.help_border))
         .style(Style::default().bg(t.help_overlay_bg))
-        .padding(Padding::uniform(1));
-
-    let inner = block.inner(help_area);
+        .padding(Padding::new(2, 2, 1, 0));
     frame.render_widget(block, help_area);
 
-    let (cols, rows) = if inner.width < 120 { (2, 2) } else { (4, 1) };
-
-    let row_constraints: Vec<Constraint> = (0..rows).map(|_| Constraint::Fill(1)).collect();
-    let row_layouts = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(row_constraints)
+    let areas = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(
+            (0..columns)
+                .flat_map(|c| {
+                    let mut parts = vec![Constraint::Length(column_width)];
+                    if c + 1 < columns {
+                        parts.push(Constraint::Length(gap));
+                    }
+                    parts
+                })
+                .collect::<Vec<_>>(),
+        )
         .split(inner);
-
-    let mut sections = Vec::new();
-    for row_area in row_layouts.iter() {
-        let col_constraints: Vec<Constraint> = (0..cols).map(|_| Constraint::Fill(1)).collect();
-        let col_layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(col_constraints)
-            .split(*row_area);
-        sections.extend(col_layout.iter().copied());
+    for (lines, area) in column_lines.into_iter().zip(areas.iter().step_by(2)) {
+        frame.render_widget(Paragraph::new(lines).scroll((scroll, 0)), *area);
     }
 
-    // Render sections safely into the available slots
-    if !sections.is_empty() {
-        render_section(
-            frame,
-            sections[0],
-            " Global ",
-            registry.bindings.get(&KeyContext::Global),
-            t,
+    if max > 0 {
+        let mut bar = ScrollbarState::new(max as usize + 1).position(scroll as usize);
+        frame.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .style(Style::default().fg(t.help_border)),
+            help_area.inner(ratatui::layout::Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
+            &mut bar,
         );
-    }
-    if sections.len() >= 2 {
-        render_section(
-            frame,
-            sections[1],
-            " Library ",
-            registry.bindings.get(&KeyContext::Library),
-            t,
-        );
-    }
-    if sections.len() >= 3 {
-        render_section(
-            frame,
-            sections[2],
-            " Queue ",
-            registry.bindings.get(&KeyContext::Queue),
-            t,
-        );
-    }
-    if sections.len() >= 4 {
-        render_command_section(frame, sections[3], " Commands (: then Tab) ", t);
     }
 }
 
-fn render_command_section(frame: &mut Frame, area: Rect, title: &str, t: &Theme) {
-    let block = Block::default()
-        .title(
-            Line::from(Span::styled(
-                title,
-                Style::default()
-                    .fg(t.help_header)
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .alignment(Alignment::Center),
-        )
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(t.help_border))
-        .style(Style::default().bg(t.help_overlay_bg))
-        .padding(Padding::horizontal(1));
+/// The bindings of one context, one row per thing they do, keys that do the
+/// same thing together.
+fn key_section(title: &'static str, bindings: Option<&Vec<KeyBinding>>) -> Section {
+    let mut grouped: std::collections::BTreeMap<&str, Vec<String>> = Default::default();
+    for binding in bindings.into_iter().flatten() {
+        grouped
+            .entry(binding.action.description())
+            .or_default()
+            .push(format_key(binding));
+    }
+    Section {
+        title,
+        rows: grouped
+            .into_iter()
+            .map(|(desc, keys)| (keys.join(" | "), desc.to_string()))
+            .collect(),
+    }
+}
 
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let entries = melotui_core::Command::help_entries();
-    let syntax_width = entries
+/// A section as lines `width` wide: its title, then each key and what it
+/// does, the description wrapped under itself where it runs long.
+fn section_lines(section: &Section, width: u16, t: &Theme) -> Vec<Line<'static>> {
+    let width = width as usize;
+    let title_width = section.title.width();
+    let mut lines = vec![Line::from(vec![
+        Span::styled(
+            section.title.trim().to_string(),
+            Style::default()
+                .fg(t.help_header)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" {}", "─".repeat(width.saturating_sub(title_width))),
+            Style::default().fg(t.help_border),
+        ),
+    ])];
+    let key_width = section
+        .rows
         .iter()
-        .map(|(syntax, _)| syntax.chars().count() as u16)
+        .map(|(key, _)| key.width())
         .max()
         .unwrap_or(0)
-        .min(inner.width / 2);
-    let rows = entries.into_iter().map(|(syntax, desc)| {
-        ratatui::widgets::Row::new(vec![
-            ratatui::widgets::Cell::from(Span::styled(syntax, Style::default().fg(t.help_key))),
-            ratatui::widgets::Cell::from(Span::styled(desc, Style::default().fg(t.help_text))),
-        ])
-    });
-
-    let table = ratatui::widgets::Table::new(
-        rows,
-        [Constraint::Length(syntax_width), Constraint::Min(10)],
-    );
-    frame.render_widget(table, inner);
-}
-
-fn render_section(
-    frame: &mut Frame,
-    area: Rect,
-    title: &str,
-    bindings: Option<&Vec<KeyBinding>>,
-    t: &Theme,
-) {
-    let block = Block::default()
-        .title(
-            Line::from(Span::styled(
-                title,
-                Style::default()
-                    .fg(t.help_header)
-                    .add_modifier(Modifier::BOLD),
-            ))
-            .alignment(Alignment::Center),
-        )
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(t.help_border))
-        .style(Style::default().bg(t.help_overlay_bg))
-        .padding(Padding::horizontal(1));
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    // group bindings by description
-    let mut grouped: std::collections::HashMap<&str, Vec<String>> =
-        std::collections::HashMap::new();
-
-    if let Some(bindings) = bindings {
-        for binding in bindings {
-            let key_str = format_key(binding);
-            grouped
-                .entry(binding.action.description())
-                .or_default()
-                .push(key_str);
+        .min(width * 2 / 5)
+        .max(4);
+    let desc_width = width.saturating_sub(key_width + 2).max(8);
+    for (key, desc) in &section.rows {
+        let wrapped = wrap(desc, desc_width);
+        let key_fits = key.width() <= key_width;
+        if !key_fits {
+            lines.push(Line::from(Span::styled(
+                key.clone(),
+                Style::default().fg(t.help_key),
+            )));
+        }
+        for (n, part) in wrapped.into_iter().enumerate() {
+            let lead = if n == 0 && key_fits {
+                format!("{key}{}", " ".repeat(key_width - key.width() + 2))
+            } else {
+                " ".repeat(key_width + 2)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(lead, Style::default().fg(t.help_key)),
+                Span::styled(part, Style::default().fg(t.help_text)),
+            ]));
         }
     }
-    let mut entries: Vec<_> = grouped.into_iter().collect();
-    entries.sort_by(|a, b| a.0.cmp(b.0));
+    lines.push(Line::default());
+    lines
+}
 
-    let rows: Vec<ratatui::widgets::Row> = entries
-        .into_iter()
-        .map(|(desc, keys)| {
-            let key_display = keys.join(" | ");
-            ratatui::widgets::Row::new(vec![
-                ratatui::widgets::Cell::from(Span::styled(
-                    key_display,
-                    Style::default().fg(t.help_key),
-                )),
-                ratatui::widgets::Cell::from(Span::styled(desc, Style::default().fg(t.help_text))),
-            ])
+/// `text` in lines no wider than `width`, broken between words where it can.
+fn wrap(text: &str, width: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        let needed = if line.is_empty() {
+            word.width()
+        } else {
+            line.width() + 1 + word.width()
+        };
+        if needed > width && !line.is_empty() {
+            lines.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+        // A word longer than the line is cut where it must be.
+        while line.width() > width {
+            let cut = line
+                .char_indices()
+                .scan(0, |w, (i, c)| {
+                    *w += unicode_width::UnicodeWidthChar::width(c).unwrap_or(0);
+                    Some((i, *w))
+                })
+                .find(|&(_, w)| w > width)
+                .map_or(line.len(), |(i, _)| i);
+            let rest = line.split_off(cut);
+            lines.push(std::mem::replace(&mut line, rest));
+        }
+    }
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
+/// The sections' lines in `columns` columns, in order, split where the
+/// columns come out most nearly the same height.
+fn split_columns(sections: Vec<Vec<Line<'static>>>, columns: usize) -> Vec<Vec<Line<'static>>> {
+    if columns < 2 || sections.len() < 2 {
+        return vec![sections.into_iter().flatten().collect()];
+    }
+    let heights: Vec<usize> = sections.iter().map(Vec::len).collect();
+    let total: usize = heights.iter().sum();
+    let split = (1..sections.len())
+        .min_by_key(|&k| {
+            let left: usize = heights[..k].iter().sum();
+            left.max(total - left)
         })
-        .collect();
-
-    let table = ratatui::widgets::Table::new(rows, [Constraint::Length(15), Constraint::Min(10)]);
-    frame.render_widget(table, inner);
+        .unwrap_or(1);
+    let mut sections = sections.into_iter();
+    let left = sections.by_ref().take(split).flatten().collect();
+    let right = sections.flatten().collect();
+    vec![left, right]
 }
 
 fn format_key(binding: &KeyBinding) -> String {
@@ -268,4 +325,60 @@ fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn drawn(width: u16, height: u16) -> (String, u16) {
+        let state = melotui_core::AppState::new(
+            melotui_core::library::snapshot::Library::new(vec![], vec![], Default::default()),
+            &melotui_core::config::AppConfig::default(),
+        );
+        let registry = crate::keybinding::KeyRegistry::default();
+        let max = std::cell::Cell::new(0);
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|f| draw(f, f.area(), &state, &registry, &max))
+            .unwrap();
+        let buffer = terminal.backend().buffer();
+        let text = (0..height)
+            .map(|y| {
+                (0..width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        (text, max.get())
+    }
+
+    #[test]
+    fn descriptions_are_drawn_whole() {
+        let (text, _) = drawn(190, 50);
+        assert!(text.contains("Resume, or play the selected track"));
+        assert!(text.contains("Shuffle on or off, or toggle it"));
+    }
+
+    #[test]
+    fn what_does_not_fit_is_scrolled_to_and_all_of_it_when_it_fits() {
+        let (text, max) = drawn(100, 30);
+        assert!(max > 0);
+        assert!(text.contains(&format!("of {}", max + 24)), "{text}");
+        let (_, max) = drawn(300, 120);
+        assert_eq!(max, 0, "everything shows at once");
+    }
+
+    #[test]
+    fn long_text_wraps_between_words() {
+        let lines = wrap("Effects: bass, treble, reverb, echo, pan, lowpass", 20);
+        assert!(lines.iter().all(|l| l.width() <= 20), "{lines:?}");
+        assert_eq!(
+            lines.join(" "),
+            "Effects: bass, treble, reverb, echo, pan, lowpass"
+        );
+        assert_eq!(wrap("abcdefghij", 4), vec!["abcd", "efgh", "ij"]);
+    }
 }
