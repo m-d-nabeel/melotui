@@ -55,6 +55,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         melotui_core::state::lyrics::LyricsData::None => vec![("No lyrics found.", t.fg_muted)],
     };
 
+    // The line to keep in the middle: the one being sung, or for plain
+    // lyrics, as far down them as the song has got, so they can all be read.
+    let anchor = match state.lyrics_data() {
+        melotui_core::state::lyrics::LyricsData::Unsynced(_) => {
+            unsynced_line(lines.len(), state.progress_ms(), state.total_duration_ms())
+        }
+        _ => active_index,
+    };
+
     let texts: Vec<&str> = lines.iter().map(|(text, _)| *text).collect();
     let picker = &cache.picker;
     let shaped = &mut cache.lyrics;
@@ -62,11 +71,11 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     // As one image where the terminal can show it; as text where it cannot,
     // or while the fonts are still loading.
     let drawn = shaped.should_shape(picker, &texts, zoom)
-        && shaped.draw(frame, inner, picker, &lines, active_index, zoom);
+        && shaped.draw(frame, inner, picker, &lines, anchor, zoom);
     if !drawn {
         shaped.clear();
         let viewport_height = inner.height as usize;
-        let scroll_offset = active_index.map_or(0, |idx| idx.saturating_sub(viewport_height / 2));
+        let scroll_offset = anchor.map_or(0, |idx| idx.saturating_sub(viewport_height / 2));
         let text_lines: Vec<Line> = lines
             .iter()
             .map(|(text, color)| text_line(text, *color))
@@ -76,6 +85,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
             .scroll((scroll_offset as u16, 0));
         frame.render_widget(paragraph, inner);
     }
+}
+
+/// Of `count` plain lyric lines, the one as far down them as `progress` is
+/// through a song `duration` long.
+fn unsynced_line(count: usize, progress: u64, duration: u64) -> Option<usize> {
+    (duration > 0 && count > 0).then(|| {
+        let through = (progress as f64 / duration as f64).clamp(0.0, 1.0);
+        (through * (count - 1) as f64).round() as usize
+    })
 }
 
 /// A lyric line as terminal text, bold, with right-to-left runs in the order
@@ -110,6 +128,10 @@ fn draw_search(
         }
     };
 
+    // Scrolled to keep the selected result in sight, both columns together.
+    let visible = (inner.height as usize).saturating_sub(1).max(1);
+    let skip = search_state.selected_row.saturating_sub(visible - 1);
+
     // LRCLIB (Left column)
     let mut lrclib_lines = vec![Line::from(vec![Span::styled(
         "LRCLIB",
@@ -117,7 +139,7 @@ fn draw_search(
             .add_modifier(Modifier::BOLD)
             .fg(t.accent_info),
     )])];
-    for (i, res) in search_state.lrclib_results.iter().enumerate() {
+    for (i, res) in search_state.lrclib_results.iter().enumerate().skip(skip) {
         let is_selected = search_state.selected_column == 0 && search_state.selected_row == i;
         let prefix = if res.is_synced { "[S] " } else { "[U] " };
         lrclib_lines.push(Line::styled(
@@ -138,7 +160,7 @@ fn draw_search(
             .add_modifier(Modifier::BOLD)
             .fg(t.accent_info),
     )])];
-    for (i, res) in search_state.ovh_results.iter().enumerate() {
+    for (i, res) in search_state.ovh_results.iter().enumerate().skip(skip) {
         let is_selected = search_state.selected_column == 1 && search_state.selected_row == i;
         ovh_lines.push(Line::styled(
             format!(
@@ -305,5 +327,43 @@ mod tests {
                 sent[(3, y)].symbol()
             );
         }
+    }
+
+    #[test]
+    fn plain_lyrics_move_down_as_the_song_goes_on() {
+        assert_eq!(unsynced_line(41, 0, 200_000), Some(0));
+        assert_eq!(unsynced_line(41, 100_000, 200_000), Some(20));
+        assert_eq!(unsynced_line(41, 250_000, 200_000), Some(40));
+        assert_eq!(unsynced_line(41, 1_000, 0), None, "length unknown");
+    }
+
+    #[test]
+    fn the_selected_search_result_stays_in_sight() {
+        use melotui_core::state::lyrics::{LyricsApi, LyricsCandidate, LyricsSearchState};
+        let result = |n: usize| LyricsCandidate {
+            api: LyricsApi::Lrclib,
+            track_name: format!("Song {n}"),
+            artist_name: "Artist".into(),
+            is_synced: true,
+            provider_id: None,
+        };
+        let search = LyricsSearchState {
+            lrclib_results: (0..8).map(result).collect(),
+            ovh_results: vec![],
+            selected_column: 0,
+            selected_row: 6,
+        };
+        let theme = crate::theme::Theme::default();
+        let mut terminal = Terminal::new(TestBackend::new(60, 5)).unwrap();
+        let frame = terminal
+            .draw(|f| draw_search(f, f.area(), &search, &theme))
+            .unwrap();
+        let text: String = frame.buffer.content().iter().map(|c| c.symbol()).collect();
+        // A header and four rows: the fourth is the selected one.
+        assert!(text.contains("Song 6"), "{text}");
+        assert!(
+            !text.contains("Song 2") && !text.contains("Song 7"),
+            "{text}"
+        );
     }
 }

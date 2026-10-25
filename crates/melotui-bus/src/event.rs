@@ -23,6 +23,7 @@ pub enum IpcEvent {
         save_path: std::path::PathBuf,
     },
     LyricsFetchFailed {
+        save_path: std::path::PathBuf,
         error: String,
     },
     LyricsSearchResults {

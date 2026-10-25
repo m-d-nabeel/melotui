@@ -222,8 +222,8 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         IpcEvent::LyricsFetched { save_path } => {
             AppMsg::Download(DownloadMsg::LyricsFetched { save_path })
         }
-        IpcEvent::LyricsFetchFailed { error } => {
-            AppMsg::Download(DownloadMsg::LyricsFetchFailed { error })
+        IpcEvent::LyricsFetchFailed { save_path, error } => {
+            AppMsg::Download(DownloadMsg::LyricsFetchFailed { save_path, error })
         }
         IpcEvent::LyricsSearchResults {
             lrclib_results,

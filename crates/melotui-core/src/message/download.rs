@@ -38,6 +38,7 @@ pub enum DownloadMsg {
         save_path: PathBuf,
     },
     LyricsFetchFailed {
+        save_path: PathBuf,
         error: String,
     },
     RequestCancelDownload,

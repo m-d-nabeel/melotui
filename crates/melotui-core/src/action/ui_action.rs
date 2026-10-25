@@ -410,20 +410,21 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         }
         Command::FetchLyrics { query } => {
             if let Some(track) = state.get_playing_track() {
-                let (track_name, artist_name) = if let Some(q) = query {
-                    if let Some((a, t)) = q.split_once('-') {
-                        (t.trim().to_string(), a.trim().to_string())
-                    } else {
-                        (q, String::new())
-                    }
-                } else {
-                    let t = track.title.clone();
-                    let a = match track.artist.clone() {
-                        Some(ar) if !ar.is_empty() => ar,
-                        _ => String::new(),
-                    };
-                    (t, a)
+                // `Artist - Title`, split where it is spaced, as Jay-Z is not.
+                let (track_name, artist_name, album_name) = match query {
+                    Some(q) => match q.split_once(" - ") {
+                        Some((a, t)) => (t.trim().to_string(), a.trim().to_string(), None),
+                        None => (q, String::new(), None),
+                    },
+                    None => (
+                        track.title.clone(),
+                        track.artist.clone().unwrap_or_default(),
+                        track.album.clone(),
+                    ),
                 };
+                // The song playing's length, to tell its lyrics from those
+                // of others of the same name.
+                let duration_secs = Some(track.duration_ms / 1000).filter(|&d| d > 0);
 
                 if track_name.is_empty() {
                     state.session.notification.current = Some(Notification::new(
@@ -450,8 +451,8 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 vec![AppMsg::Download(DownloadMsg::RequestFetchLyrics {
                     track_name,
                     artist_name,
-                    album_name: None,
-                    duration_secs: None,
+                    album_name,
+                    duration_secs,
                     save_path,
                     provider: None,
                     provider_id: None,
@@ -483,7 +484,20 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             }
         }
         Command::SearchLyrics { query } => {
-            vec![AppMsg::Download(DownloadMsg::RequestSearchLyrics { query })]
+            // Without a query, the song playing by its title alone: its
+            // artist may be the label or channel it came from, and the
+            // results say whose each is.
+            let query = query.or_else(|| state.get_playing_track().map(|t| t.title.clone()));
+            match query {
+                Some(query) => vec![AppMsg::Download(DownloadMsg::RequestSearchLyrics { query })],
+                None => {
+                    state.session.notification.current = Some(Notification::new(
+                        NotificationKind::Warning,
+                        "Search for what? Nothing is playing",
+                    ));
+                    vec![]
+                }
+            }
         }
         Command::Search { field, query } => {
             vec![AppMsg::Library(LibraryMsg::Search { field, query })]

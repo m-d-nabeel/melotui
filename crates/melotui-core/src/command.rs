@@ -318,7 +318,12 @@ pub static COMMANDS: &[Spec] = &[
                 "Fetch lyrics for the playing track",
                 TEXT,
             ),
-            spec(&["search"], "<query>", "Search for lyrics", TEXT),
+            spec(
+                &["search"],
+                "[query]",
+                "Search for lyrics, for the playing track by default",
+                TEXT,
+            ),
         ]),
     ),
     spec(&["fx", "effect"], "", "Effects", Then::Sub(EFFECTS)),
@@ -501,8 +506,9 @@ pub enum Command {
     FetchLyrics {
         query: Option<String>,
     },
+    /// A lyrics search; without a query, for the song playing.
     SearchLyrics {
-        query: String,
+        query: Option<String>,
     },
     SetEffect {
         effect: Effect,
@@ -801,7 +807,7 @@ fn parse(input: &str) -> Result<Command, Command> {
                 query: Some(rest.join(" ")).filter(|q| !q.is_empty()),
             },
             (_, rest) => Command::SearchLyrics {
-                query: text(rest, "lyrics search")?,
+                query: Some(rest.join(" ")).filter(|q| !q.is_empty()),
             },
         },
         "fx" => {
@@ -1079,6 +1085,10 @@ mod tests {
             Command::FetchLyrics {
                 query: Some("Adele - Hello".into())
             }
+        );
+        assert_eq!(
+            Command::parse("lyrics search"),
+            Command::SearchLyrics { query: None }
         );
         assert_eq!(
             invalid(Command::parse("lyrics")),

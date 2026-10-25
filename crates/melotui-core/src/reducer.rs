@@ -345,8 +345,8 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         DownloadMsg::LyricsFetched { save_path } => {
             download_action::handle_lyrics_fetched(state, save_path)
         }
-        DownloadMsg::LyricsFetchFailed { error } => {
-            download_action::handle_lyrics_fetch_failed(state, error)
+        DownloadMsg::LyricsFetchFailed { save_path, error } => {
+            download_action::handle_lyrics_fetch_failed(state, save_path, error)
         }
         DownloadMsg::RequestSearchLyrics { query } => {
             download_action::handle_request_search_lyrics(state, query)
