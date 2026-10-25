@@ -15,9 +15,18 @@ use crate::lyrics::bidi;
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache, zoom: f32) {
     let t = crate::theme::get_theme(state);
 
-    // Minimalist Sound Control Panel Lyrics
+    // Plain lyrics have no times to follow: said, so their stillness is not
+    // taken for sync gone wrong.
+    let plain = matches!(
+        state.lyrics_data(),
+        melotui_core::state::lyrics::LyricsData::Unsynced(_)
+    ) && state.lyrics_search_state().is_none();
     let block = Block::default()
-        .title(" Lyrics ")
+        .title(if plain {
+            " Lyrics · not timed "
+        } else {
+            " Lyrics "
+        })
         .title_style(Style::default().add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -133,12 +142,18 @@ fn draw_search(
     let skip = search_state.selected_row.saturating_sub(visible - 1);
 
     // LRCLIB (Left column)
-    let mut lrclib_lines = vec![Line::from(vec![Span::styled(
-        "LRCLIB",
-        Style::default()
-            .add_modifier(Modifier::BOLD)
-            .fg(t.accent_info),
-    )])];
+    let header = |name: &'static str, note: &'static str| {
+        Line::from(vec![
+            Span::styled(
+                name,
+                Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(t.accent_info),
+            ),
+            Span::styled(note, Style::default().fg(t.fg_muted)),
+        ])
+    };
+    let mut lrclib_lines = vec![header("LRCLIB", "  [S] synced · [U] plain")];
     for (i, res) in search_state.lrclib_results.iter().enumerate().skip(skip) {
         let is_selected = search_state.selected_column == 0 && search_state.selected_row == i;
         let prefix = if res.is_synced { "[S] " } else { "[U] " };
@@ -154,17 +169,13 @@ fn draw_search(
     }
 
     // OVH (Right column)
-    let mut ovh_lines = vec![Line::from(vec![Span::styled(
-        "OVH",
-        Style::default()
-            .add_modifier(Modifier::BOLD)
-            .fg(t.accent_info),
-    )])];
+    // lyrics.ovh has plain lyrics only.
+    let mut ovh_lines = vec![header("OVH", "  plain only")];
     for (i, res) in search_state.ovh_results.iter().enumerate().skip(skip) {
         let is_selected = search_state.selected_column == 1 && search_state.selected_row == i;
         ovh_lines.push(Line::styled(
             format!(
-                "{}: {}",
+                "[U] {}: {}",
                 bidi::for_terminal(&res.artist_name),
                 bidi::for_terminal(&res.track_name)
             ),
@@ -365,5 +376,18 @@ mod tests {
             !text.contains("Song 2") && !text.contains("Song 7"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn plain_lyrics_say_they_are_not_timed() {
+        let mut cache = ImageCache::empty();
+        let title = |state: &AppState, cache: &mut ImageCache| {
+            let buffer = render(state, cache);
+            (0..50).map(|x| buffer[(x, 0)].symbol()).collect::<String>()
+        };
+        let plain = state_with_lyrics("Look at the stars\nLook how they shine", "plain");
+        assert!(title(&plain, &mut cache).contains("Lyrics · not timed"));
+        let synced = state_with_lyrics(LYRICS, "timed");
+        assert!(!title(&synced, &mut cache).contains("not timed"));
     }
 }
