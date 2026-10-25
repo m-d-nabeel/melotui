@@ -285,6 +285,7 @@ pub fn handle_request_seek_relative(state: &mut AppState, offset_seconds: i64) -
 
     state.session.seek_epoch += 1;
     state.session.playback.progress_ms = new_ms as u64;
+    sync_lyrics_line(state);
     vec![AppMsg::Playback(PlaybackMsg::DispatchSeek {
         position_ms: new_ms as u64,
         epoch: state.session.seek_epoch,
@@ -303,6 +304,7 @@ pub fn handle_request_seek_absolute(state: &mut AppState, position_seconds: u64)
 
     state.session.seek_epoch += 1;
     state.session.playback.progress_ms = new_ms;
+    sync_lyrics_line(state);
     vec![AppMsg::Playback(PlaybackMsg::DispatchSeek {
         position_ms: new_ms,
         epoch: state.session.seek_epoch,
@@ -312,11 +314,7 @@ pub fn handle_request_seek_absolute(state: &mut AppState, position_seconds: u64)
 pub fn handle_audio_progress(state: &mut AppState, position_ms: u64, epoch: u64) -> Vec<AppMsg> {
     if state.is_playing() && epoch >= state.session.seek_epoch {
         state.session.playback.progress_ms = position_ms;
-
-        if let crate::state::lyrics::LyricsData::Synced(lyrics) = &state.session.lyrics.data {
-            state.session.lyrics.active_line_index =
-                lyrics.find_timed_line_index(position_ms as i64);
-        }
+        sync_lyrics_line(state);
     }
     vec![]
 }
@@ -375,21 +373,20 @@ pub fn handle_dispatch_seek(_: &mut AppState, _: u64, _: u64) -> Vec<AppMsg> {
     vec![]
 }
 pub fn handle_audio_started(state: &mut AppState, path: String) -> Vec<AppMsg> {
-    state.session.lyrics.data = crate::state::lyrics::LyricsData::None;
-    state.session.lyrics.active_line_index = None;
-
-    let audio_path = std::path::PathBuf::from(&path);
-    let lrc_path = audio_path.with_extension("lrc");
-
-    if let Ok(content) = std::fs::read_to_string(lrc_path) {
-        if let Ok(parsed) = content.parse::<lrc::Lyrics>() {
-            state.session.lyrics.data = crate::state::lyrics::LyricsData::Synced(parsed);
-        } else {
-            state.session.lyrics.data = crate::state::lyrics::LyricsData::Unsynced(content);
-        }
-    }
-
+    state.session.lyrics.data =
+        crate::state::lyrics::LyricsData::load_for(std::path::Path::new(&path));
+    sync_lyrics_line(state);
     vec![]
+}
+
+/// Points the lyrics at the line for where playback is — after progress, and
+/// after a seek, which while paused brings no progress to do it.
+fn sync_lyrics_line(state: &mut AppState) {
+    let position = state.session.playback.progress_ms as i64;
+    state.session.lyrics.active_line_index = match &state.session.lyrics.data {
+        crate::state::lyrics::LyricsData::Synced(lyrics) => lyrics.find_timed_line_index(position),
+        _ => None,
+    };
 }
 pub fn handle_audio_paused(_: &mut AppState) -> Vec<AppMsg> {
     vec![]
@@ -570,6 +567,21 @@ mod tests {
     fn untick(state: &mut AppState) {
         state.session.last_play_time =
             Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+    }
+
+    #[test]
+    fn seeking_while_paused_moves_the_lyrics_to_the_line_for_there() {
+        let mut state = test_state_with_track();
+        state.session.lyrics.data = crate::state::lyrics::LyricsData::from_text(
+            "[00:01.00] One\n[00:10.00] Two\n[00:20.00] Three".into(),
+        );
+        state.session.playback.current = Some(TrackId(1));
+        state.session.playback.status = PlaybackStatus::Paused;
+        handle_request_seek_absolute(&mut state, 12);
+        assert_eq!(state.session.lyrics.active_line_index, Some(1));
+        // The test track is ten seconds long: from its end, back eight.
+        handle_request_seek_relative(&mut state, -8);
+        assert_eq!(state.session.lyrics.active_line_index, Some(0));
     }
 
     #[test]
