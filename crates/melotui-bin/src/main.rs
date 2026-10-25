@@ -26,6 +26,11 @@ struct Cli {
     #[arg(short, long, value_name = "FILE")]
     config: Option<PathBuf>,
 
+    /// Start with the built-in settings, reading no config file, theme or
+    /// keymaps
+    #[arg(long, conflicts_with = "config")]
+    no_config: bool,
+
     /// Start without restoring the last session
     #[arg(long)]
     no_restore: bool,
@@ -42,6 +47,7 @@ fn main() -> ExitCode {
 
     let config_file = cli.config.clone().unwrap_or_else(AppConfig::config_path);
     let load = || match &cli.config {
+        _ if cli.no_config => Ok(AppConfig::builtin()),
         Some(path) => AppConfig::load_from(path).map_err(|e| {
             eprintln!("melotui: cannot read {}: {e}", path.display());
             ExitCode::from(2)
@@ -52,7 +58,7 @@ fn main() -> ExitCode {
     if cli.paths {
         return match load() {
             Ok(config) => {
-                print_paths(&config, &config_file);
+                print_paths(&config, &config_file, cli.no_config);
                 ExitCode::SUCCESS
             }
             Err(code) => code,
@@ -97,7 +103,7 @@ fn main() -> ExitCode {
 
 /// Every file and directory melotui reads or writes, one per line, noting
 /// those that do not exist yet.
-fn print_paths(config: &AppConfig, config_file: &Path) {
+fn print_paths(config: &AppConfig, config_file: &Path, no_config: bool) {
     let config_dir = AppConfig::config_dir();
     let data_dir = AppConfig::data_dir();
     let cache_dir = dirs::cache_dir()
@@ -120,13 +126,20 @@ fn print_paths(config: &AppConfig, config_file: &Path) {
             .into_iter()
             .map(|dir| ("music", dir)),
     );
+    let mut out = std::io::stdout().lock();
     for (name, path) in rows {
-        let note = if path.exists() {
+        let note = if no_config && matches!(name, "config" | "themes" | "keymaps") {
+            "  (not read: --no-config)"
+        } else if path.exists() {
             ""
         } else {
             "  (not there yet)"
         };
-        println!("{name:<8} {}{note}", path.display());
+        // Stop quietly once whatever reads this has gone, as `| head` does,
+        // instead of panicking the way println! would.
+        if writeln!(out, "{name:<8} {}{note}", path.display()).is_err() {
+            return;
+        }
     }
 }
 
@@ -170,6 +183,11 @@ mod tests {
         assert!(cli.no_restore && !cli.paths);
         assert!(parse(&["-c", "a.toml", "--paths"]).unwrap().paths);
         assert!(parse(&["--config"]).is_err(), "--config without a file");
+        assert!(parse(&["--no-config"]).unwrap().no_config);
+        assert_eq!(
+            parse(&["--no-config", "--config", "a.toml"]).unwrap_err(),
+            ErrorKind::ArgumentConflict
+        );
     }
 
     #[test]
