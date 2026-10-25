@@ -31,6 +31,7 @@ pub struct AppState {
     pub spectrum_raw: Vec<f32>,
     pub spectrum_smooth: Vec<f32>,
     pub spectrum_peaks: Vec<f32>,
+    pub spectrum_motion: crate::state::visualizer::SpectrumMotion,
     pub spectrum_source: Box<dyn SpectrumSource>,
 
     // cached resources
@@ -82,6 +83,7 @@ impl AppState {
             spectrum_raw: vec![0.0; 512],
             spectrum_smooth: vec![0.0; 512],
             spectrum_peaks: vec![0.0; 512],
+            spectrum_motion: Default::default(),
             spectrum_source: Box::new(NoOpSpectrum),
             current_cover: None,
             current_cover_path: None,
