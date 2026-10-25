@@ -7,7 +7,6 @@
 //! kilobytes.
 
 use std::cell::RefCell;
-use std::fmt::Write;
 use std::io::Cursor;
 
 use base64::Engine;
@@ -16,6 +15,7 @@ use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use ratatui::{
     buffer::{Buffer, CellDiffOption},
     layout::Rect,
+    style::Color,
     widgets::Widget,
 };
 
@@ -88,41 +88,131 @@ fn wrap(escape: &str, is_tmux: bool) -> String {
 impl Widget for &KittyImage {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let [_, r, g, b] = self.id.to_be_bytes();
-        let width = area.width.min(self.cols);
-        if width == 0 {
-            return;
-        }
+        let id_colour = Color::Rgb(r, g, b);
         for y in 0..area.height.min(self.rows) {
-            // Each row of placeholders goes into its first cell, and the rest
-            // of the row is left to it, as ratatui-image does: the first one
-            // carries the row, column 0 and the id in its colour, and the
-            // rest follow on from it.
-            let mut symbol = if y == 0 {
-                self.transmit.borrow_mut().take().unwrap_or_default()
-            } else {
-                String::new()
-            };
-            write!(
-                symbol,
-                "\x1b[s\x1b[38;2;{r};{g};{b}m\u{10EEEE}{}{}",
-                diacritic(y),
-                diacritic(0)
-            )
-            .unwrap();
-            symbol.extend(std::iter::repeat_n('\u{10EEEE}', usize::from(width) - 1));
-            write!(symbol, "\x1b[u\x1b[{}C", width - 1).unwrap();
-            if let Some(cell) = buf.cell_mut((area.left(), area.top() + y)) {
-                cell.set_symbol(&symbol);
-                // The symbol is escape codes and placeholders, which ratatui
-                // would measure as dozens of columns and skip that far past.
-                cell.set_diff_option(CellDiffOption::ForcedWidth(std::num::NonZeroU16::MIN));
-            }
-            for x in 1..width {
-                if let Some(cell) = buf.cell_mut((area.left() + x, area.top() + y)) {
-                    cell.set_diff_option(CellDiffOption::Skip);
-                }
+            for x in 0..area.width.min(self.cols) {
+                let Some(cell) = buf.cell_mut((area.left() + x, area.top() + y)) else {
+                    continue;
+                };
+                let mut symbol = if (x, y) == (0, 0) {
+                    self.transmit.borrow_mut().take().unwrap_or_default()
+                } else {
+                    String::new()
+                };
+                push_placeholder(&mut symbol, diacritic(y), x, None);
+                cell.set_symbol(&symbol).set_fg(id_colour);
+                cell.set_diff_option(one_column(&symbol));
             }
         }
+    }
+}
+
+/// Adds the placeholder for column `col` of the image row `row` (its
+/// diacritic) to `symbol`, with the diacritic for the top byte of the id if
+/// it has one.
+///
+/// Each cell names its own row and column rather than leaving them to follow
+/// on from the cell to its left, so a cell stands alone: a popup drawn over
+/// part of an image, or taken away again, changes just the cells it covers,
+/// which ratatui sends like any others. Past the last numbered column a
+/// placeholder has to follow on after all.
+fn push_placeholder(symbol: &mut String, row: char, col: u16, id_top: Option<char>) {
+    symbol.push('\u{10EEEE}');
+    if let Some(&col) = DIACRITICS.get(usize::from(col)) {
+        symbol.push(row);
+        symbol.push(col);
+        symbol.extend(id_top);
+    }
+}
+
+/// A cell carrying the image itself is escape codes, which ratatui would
+/// measure as dozens of columns and skip that far past.
+fn one_column(symbol: &str) -> CellDiffOption {
+    if symbol.contains('\x1b') {
+        CellDiffOption::ForcedWidth(std::num::NonZeroU16::MIN)
+    } else {
+        CellDiffOption::None
+    }
+}
+
+/// Spreads each kitty image row that ratatui-image wrote into its first cell
+/// over the cells of the row, one placeholder each, the way [`KittyImage`]
+/// draws. ratatui-image puts the whole row in the first cell and leaves the
+/// rest to be skipped, so when that cell was sent it painted over anything
+/// drawn on top of the row, and when a popup went away the skipped cells it
+/// had covered were never sent again and it stayed on screen. Called after
+/// the panels are drawn and before anything goes over them.
+pub(crate) fn spread_rows(buf: &mut Buffer) {
+    let area = buf.area;
+    for y in area.top()..area.bottom() {
+        let mut x = area.left();
+        while x < area.right() {
+            let Some(row) = ImageRow::parse(buf[(x, y)].symbol()) else {
+                x += 1;
+                continue;
+            };
+            for i in 0..row.width {
+                let Some(cell) = buf.cell_mut((x + i, y)) else {
+                    break;
+                };
+                let mut symbol = if i == 0 {
+                    row.transmit.clone()
+                } else {
+                    String::new()
+                };
+                push_placeholder(&mut symbol, row.row, i, row.id_top);
+                cell.set_symbol(&symbol).set_fg(row.id_colour);
+                #[allow(deprecated)]
+                cell.set_skip(false);
+                cell.set_diff_option(one_column(&symbol));
+            }
+            x += row.width.max(1);
+        }
+    }
+}
+
+/// An image row as ratatui-image writes it into one cell: maybe the image
+/// itself, then `ESC [ s`, the id as a colour, a placeholder carrying the
+/// row, column 0 and the id's top byte, the rest of the row's placeholders,
+/// and cursor movement back.
+struct ImageRow {
+    transmit: String,
+    id_colour: Color,
+    row: char,
+    id_top: Option<char>,
+    width: u16,
+}
+
+impl ImageRow {
+    fn parse(symbol: &str) -> Option<Self> {
+        const START: &str = "\x1b[s\x1b[38;2;";
+        let at = symbol.find(START)?;
+        let rest = &symbol[at + START.len()..];
+        let (rgb, rest) = rest.split_once('m')?;
+        let mut rgb = rgb.split(';').map(|n| n.parse::<u8>().ok());
+        let (Some(Some(r)), Some(Some(g)), Some(Some(b)), None) =
+            (rgb.next(), rgb.next(), rgb.next(), rgb.next())
+        else {
+            return None;
+        };
+        let mut chars = rest.chars().peekable();
+        if chars.next()? != '\u{10EEEE}' {
+            return None;
+        }
+        let row = chars.next()?;
+        let _col = chars.next()?;
+        let id_top = chars.next_if(|&c| c != '\u{10EEEE}' && c != '\x1b');
+        let mut width: u16 = 1;
+        while chars.next_if_eq(&'\u{10EEEE}').is_some() {
+            width += 1;
+        }
+        Some(Self {
+            transmit: symbol[..at].to_string(),
+            id_colour: Color::Rgb(r, g, b),
+            row,
+            id_top,
+            width,
+        })
     }
 }
 
@@ -137,7 +227,7 @@ fn diacritic(n: u16) -> char {
 /// kitty's rowcolumn-diacritics.txt
 /// (<https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders>),
 /// as ratatui-image (MIT) lists them.
-static DIACRITICS: [char; 297] = [
+pub(crate) static DIACRITICS: [char; 297] = [
     '\u{305}',
     '\u{30D}',
     '\u{30E}',
@@ -452,22 +542,21 @@ mod tests {
             first.starts_with("\x1b_Ga=T,U=1,f=100,t=d,i=658188,c=4,r=2,q=2,m=0;iVBOR"),
             "{first:?}"
         );
-        assert!(first.contains("\x1b[38;2;10;11;12m\u{10EEEE}\u{305}\u{305}"));
-        assert_eq!(first.matches('\u{10EEEE}').count(), 4);
+        assert!(first.ends_with("\u{10EEEE}\u{305}\u{305}"), "{first:?}");
+        // Every cell is its own placeholder, numbered, in the id's colour.
+        assert_eq!(buf[(3, 0)].symbol(), "\u{10EEEE}\u{305}\u{30E}");
+        assert_eq!(buf[(1, 1)].symbol(), "\u{10EEEE}\u{30D}\u{305}");
+        assert_eq!(buf[(4, 1)].fg, Color::Rgb(10, 11, 12));
+        assert_eq!(buf[(5, 0)].symbol(), " ", "outside the image");
         assert!(
-            (buf[(2, 0)].diff_option == CellDiffOption::Skip)
-                && (buf[(4, 1)].diff_option == CellDiffOption::Skip)
-                && !(buf[(5, 0)].diff_option == CellDiffOption::Skip)
-        );
-        assert!(
-            buf[(1, 1)].symbol().contains("\u{10EEEE}\u{30D}\u{305}"),
-            "second row"
+            (buf[(1, 0)].diff_option == CellDiffOption::ForcedWidth(std::num::NonZeroU16::MIN))
+                && (buf[(2, 0)].diff_option == CellDiffOption::None)
         );
 
         // Drawn again, it is not sent again.
         let mut again = Buffer::empty(Rect::new(0, 0, 10, 3));
         (&kitty).render(Rect::new(1, 0, 4, 2), &mut again);
-        assert!(again[(1, 0)].symbol().starts_with("\x1b[s"));
+        assert_eq!(again[(1, 0)].symbol(), "\u{10EEEE}\u{305}\u{305}");
     }
 
     #[test]

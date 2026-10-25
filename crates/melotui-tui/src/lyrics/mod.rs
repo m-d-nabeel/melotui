@@ -35,7 +35,7 @@
 //!   with right-to-left lines put into visual order for the terminal.
 
 pub mod bidi;
-mod kitty;
+pub(crate) mod kitty;
 mod script;
 mod shaper;
 
@@ -460,7 +460,6 @@ fn rgb(color: Color) -> [u8; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::buffer::CellDiffOption;
     use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
 
     fn picker(protocol: ProtocolType) -> Picker {
@@ -568,10 +567,7 @@ mod tests {
         assert!(first.contains("f=100"), "not sent as PNG");
         for y in 0..6 {
             assert!(buffer[(0, y)].symbol().contains('\u{10EEEE}'), "row {y}");
-            assert!(
-                (buffer[(1, y)].diff_option == CellDiffOption::Skip),
-                "row {y}"
-            );
+            assert!(buffer[(1, y)].symbol().starts_with('\u{10EEEE}'), "row {y}");
         }
         let id = r.panel.as_ref().unwrap().kitty_id;
 

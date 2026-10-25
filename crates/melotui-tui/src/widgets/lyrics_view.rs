@@ -164,7 +164,6 @@ mod tests {
     use melotui_core::library::snapshot::Library;
     use melotui_core::message::playback::PlaybackMsg;
     use melotui_core::{AppMsg, reducer};
-    use ratatui::buffer::CellDiffOption;
     use ratatui::{Terminal, backend::TestBackend, buffer::Buffer};
     use ratatui_image::picker::ProtocolType;
     use std::collections::HashMap;
@@ -225,8 +224,8 @@ mod tests {
 
         let buffer = render(&state, &mut cache);
         // Inside the border and the two-column padding, each lyric row is one
-        // kitty image, drawn as unicode placeholders from its first cell —
-        // the English line too, so the panel reads as one piece.
+        // kitty image, drawn as unicode placeholders, one a cell — the
+        // English line too, so the panel reads as one piece.
         for row in 1..=3 {
             let first = buffer[(3, row)].symbol();
             assert!(
@@ -234,7 +233,7 @@ mod tests {
                 "row {row} is not an image: {first:?}"
             );
             assert!(
-                (buffer[(4, row)].diff_option == CellDiffOption::Skip),
+                buffer[(4, row)].symbol().starts_with('\u{10EEEE}'),
                 "row {row}: the rest of the row belongs to the image"
             );
         }
