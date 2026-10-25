@@ -373,10 +373,84 @@ pub fn handle_dispatch_seek(_: &mut AppState, _: u64, _: u64) -> Vec<AppMsg> {
     vec![]
 }
 pub fn handle_audio_started(state: &mut AppState, path: String) -> Vec<AppMsg> {
-    state.session.lyrics.data =
-        crate::state::lyrics::LyricsData::load_for(std::path::Path::new(&path));
+    let audio = std::path::PathBuf::from(&path);
+    let track = state
+        .get_playing_track()
+        .filter(|t| t.file_path == audio)
+        .cloned();
+    state.session.lyrics.data = crate::state::lyrics::LyricsData::load_for(
+        &audio,
+        track.as_ref(),
+        &state.session.lyrics.store,
+    );
     sync_lyrics_line(state);
-    vec![]
+    fit_lyrics_panel(state);
+    fetch_missing_lyrics(state, &audio, track.as_ref())
+}
+
+/// Opens the lyrics panel for a song with lyrics, unless it was closed by
+/// hand, and closes it again for one without if it was opened for lyrics.
+pub fn fit_lyrics_panel(state: &mut AppState) {
+    let has_lyrics = !matches!(
+        state.session.lyrics.data,
+        crate::state::lyrics::LyricsData::None
+    );
+    let lyrics = &mut state.session.lyrics;
+    let ui = &mut state.session.ui;
+    if has_lyrics {
+        if !ui.show_lyrics && !lyrics.panel_closed {
+            ui.show_lyrics = true;
+            lyrics.panel_opened_for_lyrics = true;
+        }
+    } else if lyrics.panel_opened_for_lyrics {
+        ui.show_lyrics = false;
+        lyrics.panel_opened_for_lyrics = false;
+    }
+}
+
+/// Records the lyrics panel being opened or closed by hand.
+pub fn lyrics_panel_set_by_hand(state: &mut AppState, show: bool) {
+    state.session.ui.show_lyrics = show;
+    state.session.lyrics.panel_closed = !show;
+    state.session.lyrics.panel_opened_for_lyrics = false;
+}
+
+/// Fetches lyrics for the song at `audio` if it has none, fetching is on,
+/// and they have not been looked for already this run.
+fn fetch_missing_lyrics(
+    state: &mut AppState,
+    audio: &std::path::Path,
+    track: Option<&crate::domain::TrackMeta>,
+) -> Vec<AppMsg> {
+    let wanted = state.config.lyrics.auto_fetch
+        && matches!(
+            state.session.lyrics.data,
+            crate::state::lyrics::LyricsData::None
+        );
+    let Some(track) = track.filter(|_| wanted) else {
+        return vec![];
+    };
+    let lyrics = &mut state.session.lyrics;
+    let Some(save_path) =
+        crate::state::lyrics::stored_path(&lyrics.store, &track.title, track.artist.as_deref())
+    else {
+        return vec![];
+    };
+    if !lyrics.fetched.insert(audio.to_path_buf()) {
+        return vec![];
+    }
+    lyrics.fetching_unasked = Some(save_path.clone());
+    vec![AppMsg::Download(
+        crate::message::download::DownloadMsg::RequestFetchLyrics {
+            track_name: track.title.clone(),
+            artist_name: track.artist.clone().unwrap_or_default(),
+            album_name: track.album.clone(),
+            duration_secs: Some(track.duration_ms / 1000).filter(|&d| d > 0),
+            save_path,
+            provider: None,
+            provider_id: None,
+        },
+    )]
 }
 
 /// Points the lyrics at the line for where playback is — after progress, and
@@ -1142,5 +1216,135 @@ mod tests {
             restored_state.session.playback.context.natural_position(),
             1
         );
+    }
+}
+
+#[cfg(test)]
+mod lyrics_tests {
+    use super::*;
+    use crate::{
+        domain::{TrackMeta, ids::TrackId},
+        library::snapshot::Library,
+        message::download::DownloadMsg,
+        state::lyrics::LyricsData,
+    };
+    use std::{collections::HashMap, path::PathBuf};
+
+    const SYNCED: &str = "[00:01.00] First line\n[00:03.00] Second line";
+
+    /// A song playing, LiSA's 紅蓮華, with lyrics kept in the test's folder.
+    fn playing(lyrics_beside: Option<&str>) -> (AppState, tempfile::TempDir, String) {
+        let dir = tempfile::tempdir().unwrap();
+        let song = dir.path().join("LiSA『紅蓮華』-MUSiC CLiP-.flac");
+        std::fs::write(&song, b"not really audio").unwrap();
+        if let Some(text) = lyrics_beside {
+            std::fs::write(song.with_extension("lrc"), text).unwrap();
+        }
+        let id = TrackId(1);
+        let track = TrackMeta {
+            id,
+            file_path: song.clone(),
+            title: "紅蓮華".into(),
+            artist: Some("LiSA".into()),
+            album: Some("LEO-NiNE".into()),
+            genre: None,
+            year: None,
+            is_favorite: false,
+            track_number: None,
+            play_count: 0,
+            last_played_at: None,
+            duration_ms: 235_000,
+            bitrate: None,
+            sample_rate: None,
+            format: "flac".into(),
+            has_cover: false,
+            file_size_bytes: 16,
+        };
+        let library = Library::new(
+            vec![dir.path().to_path_buf()],
+            vec![],
+            HashMap::from([(id, track)]),
+        );
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
+        state.session.playback.current = Some(id);
+        state.session.lyrics.store = dir.path().join("lyrics");
+        (state, dir, song.to_string_lossy().into_owned())
+    }
+
+    fn fetch_requested(msgs: &[AppMsg]) -> Option<(Option<String>, Option<u64>, PathBuf)> {
+        msgs.iter().find_map(|m| match m {
+            AppMsg::Download(DownloadMsg::RequestFetchLyrics {
+                album_name,
+                duration_secs,
+                save_path,
+                ..
+            }) => Some((album_name.clone(), *duration_secs, save_path.clone())),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn a_song_without_lyrics_has_them_fetched_once_into_the_store_quietly() {
+        let (mut state, dir, song) = playing(None);
+        let (album, duration, save_path) =
+            fetch_requested(&handle_audio_started(&mut state, song.clone())).expect("a fetch");
+        assert_eq!(album.as_deref(), Some("LEO-NiNE"));
+        assert_eq!(duration, Some(235));
+        assert_eq!(save_path, dir.path().join("lyrics/LiSA - 紅蓮華.lrc"));
+        assert!(
+            fetch_requested(&handle_audio_started(&mut state, song)).is_none(),
+            "not asked again the next time it plays"
+        );
+
+        // They come: loaded, the panel opens, and nothing pops up.
+        std::fs::create_dir_all(save_path.parent().unwrap()).unwrap();
+        std::fs::write(&save_path, SYNCED).unwrap();
+        crate::action::download_action::handle_lyrics_fetched(&mut state, save_path);
+        assert!(matches!(state.session.lyrics.data, LyricsData::Synced(_)));
+        assert!(state.session.ui.show_lyrics);
+        assert!(state.session.notification.current.is_none());
+    }
+
+    #[test]
+    fn lyrics_that_cannot_be_found_unasked_say_nothing() {
+        let (mut state, _dir, song) = playing(None);
+        handle_audio_started(&mut state, song);
+        crate::action::download_action::handle_lyrics_fetch_failed(&mut state, "404".into());
+        assert!(state.session.notification.current.is_none());
+        assert!(!state.session.ui.show_lyrics);
+    }
+
+    #[test]
+    fn nothing_is_fetched_with_fetching_turned_off() {
+        let (mut state, _dir, song) = playing(None);
+        state.config.lyrics.auto_fetch = false;
+        assert!(fetch_requested(&handle_audio_started(&mut state, song)).is_none());
+    }
+
+    #[test]
+    fn the_lyrics_panel_opens_for_lyrics_but_stays_as_set_by_hand() {
+        let (mut state, _dir, song) = playing(Some(SYNCED));
+        handle_audio_started(&mut state, song.clone());
+        assert!(state.session.ui.show_lyrics, "opened for the song's lyrics");
+
+        // A song without: the panel opened for lyrics closes again.
+        std::fs::remove_file(PathBuf::from(&song).with_extension("lrc")).unwrap();
+        state.config.lyrics.auto_fetch = false;
+        handle_audio_started(&mut state, song.clone());
+        assert!(!state.session.ui.show_lyrics);
+
+        // Closed by hand, it stays closed for songs with lyrics.
+        std::fs::write(PathBuf::from(&song).with_extension("lrc"), SYNCED).unwrap();
+        handle_audio_started(&mut state, song.clone());
+        crate::action::ui_action::handle_toggle_lyrics(&mut state);
+        assert!(!state.session.ui.show_lyrics);
+        handle_audio_started(&mut state, song.clone());
+        assert!(!state.session.ui.show_lyrics, "closed by hand stays closed");
+
+        // Opened by hand, it stays open for songs without.
+        crate::action::ui_action::handle_toggle_lyrics(&mut state);
+        std::fs::remove_file(PathBuf::from(&song).with_extension("lrc")).unwrap();
+        handle_audio_started(&mut state, song);
+        assert!(state.session.ui.show_lyrics, "opened by hand stays open");
     }
 }

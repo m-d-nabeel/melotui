@@ -114,6 +114,7 @@ fn print_paths(config: &AppConfig, config_file: &Path, no_config: bool) {
         ("themes", config_dir.join("themes")),
         ("keymaps", config_dir.join("keymaps.toml")),
         ("presets", config_dir.join("presets")),
+        ("lyrics", data_dir.join("lyrics")),
         ("library", config.db_path()),
         ("session", data_dir.join("last_session.toml")),
         ("history", data_dir.join("command_history")),

@@ -13,6 +13,9 @@ pub enum DownloadMsg {
     RequestFetchLyrics {
         track_name: String,
         artist_name: String,
+        /// Narrow the match to the song's album and length when known.
+        album_name: Option<String>,
+        duration_secs: Option<u64>,
         save_path: PathBuf,
         provider: Option<String>,
         provider_id: Option<String>,

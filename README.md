@@ -11,7 +11,7 @@
 - **Local Library & Playlists**: Your music folders are scanned at start and watched while running, so new music appears by itself.
 - **Audio Playback**: Support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
 - **Spectrum Visualizer**: Real-time audio spectrum visualization (supports CAVA).
-- **Synced Lyrics**: Time-synced lyrics from `.lrc` files, the lyrics in your files' own tags, or LRCLIB. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
+- **Synced Lyrics**: Time-synced lyrics from `.lrc` files, the lyrics in your files' own tags, or fetched from LRCLIB as a song starts. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
 - **DSP Studio**: Real-time audio processing (Speed, Bass, Treble, Reverb, Echo) with a symmetric 8-band EQ.
 - **System Integration**: Syncs with Linux/macOS desktop media widgets and supports hardware media keys.
 - **Download Support**: Integrated YouTube downloads via `yt-dlp`.
@@ -119,6 +119,15 @@ output_device = "USB Audio"   # the name, or part of it
 ```
 
 A chosen device that is not there is stood in for by the default until it comes back.
+
+### Lyrics
+
+A song's lyrics come from a `.lrc` file in melotui's `lyrics` folder (`melotui --paths` shows where), named `Artist - Title.lrc` or after the audio file, from a `.lrc` beside the song, or from the song's own tags. A song with none has them fetched from [LRCLIB](https://lrclib.net) as it starts, into that folder, never into the music folders; the lyrics panel opens when a song has lyrics, unless you have closed it. Fetching sends the song's title, artist, album and length to lrclib.net; turn it off in `config.toml`:
+
+```toml
+[lyrics]
+auto_fetch = false
+```
 
 ### Lyrics size
 

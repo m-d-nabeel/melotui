@@ -87,8 +87,13 @@ pub fn handle_lyrics_selector_submit(state: &mut AppState) -> Vec<AppMsg> {
             // Wait, we need to guarantee it fetches the *exact* one.
             // Since we use the exact `track_name` and `artist_name`, both APIs will find it properly.
             if let Some(track) = state.get_playing_track() {
-                let mut save_path = track.file_path.clone();
-                save_path.set_extension("lrc");
+                let Some(save_path) = crate::state::lyrics::stored_path(
+                    &state.session.lyrics.store,
+                    &track.title,
+                    track.artist.as_deref(),
+                ) else {
+                    return vec![];
+                };
 
                 let provider = match c.api {
                     crate::state::lyrics::LyricsApi::Lrclib => "lrclib".to_string(),
@@ -99,6 +104,8 @@ pub fn handle_lyrics_selector_submit(state: &mut AppState) -> Vec<AppMsg> {
                     crate::message::download::DownloadMsg::RequestFetchLyrics {
                         track_name: c.track_name,
                         artist_name: c.artist_name,
+                        album_name: None,
+                        duration_secs: None,
                         save_path,
                         provider: Some(provider),
                         provider_id: c.provider_id,
@@ -316,7 +323,8 @@ pub fn handle_resize(state: &mut AppState, w: u16, h: u16) -> Vec<AppMsg> {
 }
 
 pub fn handle_toggle_lyrics(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.ui.show_lyrics = !state.session.ui.show_lyrics;
+    let show = !state.session.ui.show_lyrics;
+    crate::action::playback_action::lyrics_panel_set_by_hand(state, show);
     vec![]
 }
 
@@ -418,8 +426,15 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                     return vec![];
                 }
 
-                let mut save_path = track.file_path.clone();
-                save_path.set_extension("lrc");
+                // Kept under the song playing, for it to be found again,
+                // whatever was searched for.
+                let Some(save_path) = crate::state::lyrics::stored_path(
+                    &state.session.lyrics.store,
+                    &track.title,
+                    track.artist.as_deref(),
+                ) else {
+                    return vec![];
+                };
 
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Info,
@@ -428,6 +443,8 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 vec![AppMsg::Download(DownloadMsg::RequestFetchLyrics {
                     track_name,
                     artist_name,
+                    album_name: None,
+                    duration_secs: None,
                     save_path,
                     provider: None,
                     provider_id: None,
@@ -592,7 +609,8 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         Command::Sort => vec![AppMsg::Library(LibraryMsg::ToggleSort)],
         Command::ClearQueue => vec![AppMsg::Library(LibraryMsg::ClearQueue)],
         Command::ShowLyrics(show) => {
-            state.session.ui.show_lyrics = show.unwrap_or(!state.session.ui.show_lyrics);
+            let show = show.unwrap_or(!state.session.ui.show_lyrics);
+            crate::action::playback_action::lyrics_panel_set_by_hand(state, show);
             vec![]
         }
         Command::LyricsZoom { view, zoom } => {
