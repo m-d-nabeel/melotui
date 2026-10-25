@@ -338,6 +338,9 @@ pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(canvas, inner_area);
 }
 
+/// Particle: droplets thrown up and down from a wavering centre line, the
+/// bass in the middle. Where they turn traces the spectrum; their motion is
+/// worked out with the rest of the visualizer's physics.
 pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
     let block = Block::default()
         .title(" Visualizer ")
@@ -347,180 +350,62 @@ pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    let spectrum = &state.spectrum_smooth;
-    let peaks = &state.spectrum_peaks;
     let time = state.time_elapsed as f64;
-
-    if spectrum.is_empty() {
-        return;
-    }
-
-    // colors
-    let color_wave = Color::LightBlue;
-    let color_magenta = Color::Blue;
-    let color_accent = Color::DarkGray;
-    let color_peak = Color::Gray;
+    let drops = &state.spectrum_motion.fountain().drops;
 
     let canvas = Canvas::default()
         .marker(symbols::Marker::Braille)
-        // HD resolution
         .x_bounds([0.0, (inner_area.width * 2) as f64])
         .y_bounds([0.0, (inner_area.height * 4) as f64])
         .paint(move |ctx| {
-            // HD dimensions
             let width = (inner_area.width * 2) as f64;
             let height = (inner_area.height * 4) as f64;
+            let (center_x, center_y) = (width / 2.0, height / 2.0);
+            let reach_y = center_y * 0.95;
 
-            let center_y = height / 2.0;
-            let max_height = height / 2.5;
-
-            // center line / wave
-            let wave_speed = 2.0;
-            // iterate HD width
+            // The centre line, wavering slowly.
             for x_int in 0..(width as usize) {
                 let x = x_int as f64;
-                // slower freq
-                let wave = (x * 0.025 + time * wave_speed).sin() * 4.0;
-
+                let wave = (x * 0.025 + time * 2.0).sin() * 1.5;
                 ctx.draw(&Line {
                     x1: x,
                     y1: center_y + wave - 0.5,
                     x2: x,
                     y2: center_y + wave + 0.5,
-                    color: color_wave,
+                    color: Color::Rgb(40, 70, 140),
                 });
             }
 
-            // mirror logic
-            let center_x = width / 2.0;
-            let num_bands = center_x as usize;
-            if num_bands == 0 {
-                return;
-            }
-
-            let step = spectrum.len() as f64 / num_bands as f64;
-
-            for i in 0..num_bands {
-                let idx = (i as f64 * step) as usize;
-                if idx >= spectrum.len() {
-                    break;
+            // Droplets in eight shades, from deep blue thrown low to light
+            // blue thrown high, a shade dimmer on the way down; drawn a shade
+            // at a time, mirrored either side and above and below the line.
+            let mut shades: [Vec<(f64, f64)>; 16] = Default::default();
+            for d in drops {
+                let shade =
+                    ((d.peak * 7.0).round() as usize).min(7) + if d.vy < 0.0 { 8 } else { 0 };
+                let dx = d.x as f64 * center_x;
+                let dy = d.y as f64 * reach_y;
+                for (x, y) in [
+                    (center_x + dx, center_y + dy),
+                    (center_x - dx, center_y + dy),
+                    (center_x + dx, center_y - dy),
+                    (center_x - dx, center_y - dy),
+                ] {
+                    shades[shade].push((x, y));
                 }
-
-                // high sensitivity
-                let val: f64 = (spectrum[idx] * SENSITIVITY * 2.0).into();
-                let peak_val: f64 = (peaks[idx] * SENSITIVITY * 2.0).into();
-
-                let bar_height = val.clamp(0.0, max_height);
-                let peak_height = peak_val.clamp(0.0, max_height);
-
-                if bar_height < 1.0 && peak_height < 1.0 {
+            }
+            for (shade, coords) in shades.iter().enumerate() {
+                if coords.is_empty() {
                     continue;
                 }
-
-                let left_x = center_x - 1.0 - i as f64;
-                let right_x = center_x + i as f64;
-
-                // wave animation
-                let wave_freq = 0.8;
-                // adjust x-factor
-                let upper_wave = (time * wave_freq + i as f64 * 0.05).sin() * 2.0;
-                let lower_wave =
-                    (time * wave_freq + i as f64 * 0.05 + std::f64::consts::PI).sin() * 2.0;
-
-                let upper_y = center_y + bar_height + upper_wave;
-                let lower_y = center_y - bar_height + lower_wave;
-
-                // draw bars
-                for offset in [-1.0, 0.0, 1.0] {
-                    // Right
-                    ctx.draw(&Line {
-                        x1: right_x + offset,
-                        y1: center_y,
-                        x2: right_x + offset,
-                        y2: upper_y,
-                        color: color_magenta,
-                    });
-                    ctx.draw(&Line {
-                        x1: right_x + offset,
-                        y1: center_y,
-                        x2: right_x + offset,
-                        y2: lower_y,
-                        color: color_magenta,
-                    });
-                    // Left
-                    ctx.draw(&Line {
-                        x1: left_x + offset,
-                        y1: center_y,
-                        x2: left_x + offset,
-                        y2: upper_y,
-                        color: color_magenta,
-                    });
-                    ctx.draw(&Line {
-                        x1: left_x + offset,
-                        y1: center_y,
-                        x2: left_x + offset,
-                        y2: lower_y,
-                        color: color_magenta,
-                    });
-                }
-
-                // draw peaks
-                if peak_height > bar_height * 1.05 {
-                    let peak_upper_y = center_y + peak_height;
-                    let peak_lower_y = center_y - peak_height;
-
-                    // dot size
-                    ctx.draw(&Rectangle {
-                        x: right_x,
-                        y: peak_upper_y,
-                        width: 1.0,
-                        height: 1.0,
-                        color: color_peak,
-                    });
-                    ctx.draw(&Rectangle {
-                        x: right_x,
-                        y: peak_lower_y,
-                        width: 1.0,
-                        height: 1.0,
-                        color: color_peak,
-                    });
-                    ctx.draw(&Rectangle {
-                        x: left_x,
-                        y: peak_upper_y,
-                        width: 1.0,
-                        height: 1.0,
-                        color: color_peak,
-                    });
-                    ctx.draw(&Rectangle {
-                        x: left_x,
-                        y: peak_lower_y,
-                        width: 1.0,
-                        height: 1.0,
-                        color: color_peak,
-                    });
-                }
-
-                // draw particles
-                if bar_height > max_height * 0.6 {
-                    let particle_freq = 3.0;
-                    let particle_y =
-                        upper_y + (time * particle_freq + i as f64 * 0.2).sin().abs() * 8.0;
-
-                    ctx.draw(&Rectangle {
-                        x: right_x,
-                        y: particle_y,
-                        width: 1.0,
-                        height: 1.0,
-                        color: color_accent,
-                    });
-                    ctx.draw(&Rectangle {
-                        x: left_x,
-                        y: particle_y,
-                        width: 1.0,
-                        height: 1.0,
-                        color: color_accent,
-                    });
-                }
+                let t = (shade % 8) as f64 / 7.0;
+                let dim = if shade >= 8 { 0.75 } else { 1.0 };
+                let color = Color::Rgb(
+                    ((40.0 + 100.0 * t) * dim) as u8,
+                    ((90.0 + 120.0 * t) * dim) as u8,
+                    ((210.0 + 45.0 * t) * dim) as u8,
+                );
+                ctx.draw(&ratatui::widgets::canvas::Points { coords, color });
             }
         });
 

@@ -111,13 +111,39 @@ pub struct SpectrumMotion {
     cap_hold: Vec<f32>,
     /// How fast each cap is falling, in spectrum units per second.
     cap_speed: Vec<f32>,
+    /// What the bars are heading for: the analyser's bands, each lifting
+    /// its neighbours.
+    targets: Vec<f32>,
     nova: super::nova::Nova,
+    fountain: super::fountain::Fountain,
 }
 
 impl SpectrumMotion {
     /// Nova's particles and core.
     pub fn nova(&self) -> &super::nova::Nova {
         &self.nova
+    }
+
+    /// The Particle style's droplets.
+    pub fn fountain(&self) -> &super::fountain::Fountain {
+        &self.fountain
+    }
+}
+
+/// Each band lifts its neighbours by this share of its height, the next
+/// one over by its square, and so on, as cava's monstercat filter does. A
+/// strong overtone lit only the bands right on it, and drawn a column at a
+/// time it stood as a lone needle far above the rest; over real songs this
+/// takes about nine in ten of those away, for bars some 6% taller.
+const NEIGHBOUR_LIFT: f32 = 0.85;
+
+/// `bands` with each lifting its neighbours by [`NEIGHBOUR_LIFT`].
+fn lift_neighbours(bands: &mut [f32]) {
+    for i in 1..bands.len() {
+        bands[i] = bands[i].max(bands[i - 1] * NEIGHBOUR_LIFT);
+    }
+    for i in (0..bands.len().saturating_sub(1)).rev() {
+        bands[i] = bands[i].max(bands[i + 1] * NEIGHBOUR_LIFT);
     }
 }
 
@@ -188,8 +214,19 @@ pub fn update_visualizer_physics(state: &mut AppState, dt: f32) -> bool {
     motion.cap_speed.resize(len, 0.0);
     let mut showing = playing;
 
+    motion.targets.clear();
+    if playing {
+        motion.targets.extend_from_slice(&state.spectrum_raw);
+        // cava smooths its own neighbours together.
+        if !cava {
+            lift_neighbours(&mut motion.targets);
+        }
+    } else {
+        motion.targets.resize(len, 0.0);
+    }
+
     for i in 0..len {
-        let target = if playing { state.spectrum_raw[i] } else { 0.0 };
+        let target = motion.targets[i];
         let bar = &mut state.spectrum_smooth[i];
         if cava && playing {
             // cava smooths its own bars.
@@ -216,14 +253,11 @@ pub fn update_visualizer_physics(state: &mut AppState, dt: f32) -> bool {
         showing |= *cap > 0.0;
     }
 
-    if *state.spectrum_style() == SpectrumStyle::Nova {
-        let silence = [0.0; 0];
-        let bands = if playing {
-            &state.spectrum_raw[..]
-        } else {
-            &silence[..]
-        };
-        showing |= state.spectrum_motion.nova.step(bands, dt);
+    let motion = &mut state.spectrum_motion;
+    match state.session.spectrum_style {
+        SpectrumStyle::Nova => showing |= motion.nova.step(&motion.targets, dt),
+        SpectrumStyle::Particle => showing |= motion.fountain.step(&motion.targets, dt),
+        _ => {}
     }
 
     let take_n = len.clamp(1, 64);

@@ -1,5 +1,6 @@
 pub mod audio;
 pub mod download;
+pub mod fountain;
 pub mod lyrics;
 pub mod notification;
 pub mod nova;

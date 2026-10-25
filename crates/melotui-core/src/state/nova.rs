@@ -1,20 +1,20 @@
-//! Nova: particles thrown out of a pulsing core by the music's kicks.
+//! Nova: particles sprayed out of a pulsing core by the music.
 //!
-//! A kick is a sudden rise in the kick-drum range well above where it has
-//! been lately; it throws a ring of particles out of the core, more of them
-//! and faster the harder it is. Between kicks, the hi-hats and voices let a
-//! trickle of slower ones out. Every particle slows with drag, sags a little
-//! under gravity and fades as it goes. Positions are in units of the
-//! distance from the core to the panel's edge, the core at the origin, up
-//! positive.
+//! Round the core, each direction stands for a stretch of the spectrum, as
+//! Nova's colours always ran: the bass straight down, the treble straight
+//! up, both sides alike. Every stretch sprays particles its way as long as
+//! it sounds, more and farther the louder it is, so the spray takes the
+//! music's shape. A kick — the kick-drum range rising suddenly over where it
+//! has been — throws a ring out all round besides, swells the core and sends
+//! a shockwave out. Every particle slows with drag, sags a little under
+//! gravity and fades as it goes. Positions are in units of the distance from
+//! the core to the panel's edge, the core at the origin, up positive.
 
-use std::f32::consts::TAU;
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 /// The bands of the analyser's 512 (30 Hz to 18 kHz, evenly in pitch) that
-/// hold kick drums, about 50 to 120 Hz, and hi-hats and voices, about 1 to
-/// 8 kHz.
+/// hold kick drums, about 50 to 120 Hz.
 const KICK_BANDS: std::ops::Range<usize> = 41..111;
-const BRIGHT_BANDS: std::ops::Range<usize> = 250..420;
 
 /// A kick is the kick range rising this far over its recent level, at least
 /// `MIN_KICK` in the analyser's units, no sooner than `KICK_GAP` after the
@@ -25,12 +25,22 @@ const KICK_GAP: f32 = 0.15;
 /// How long the recent level takes to follow the music, in seconds.
 const RECENT_SECS: f32 = 0.5;
 
+/// How many stretches of the spectrum each side of the core sprays.
+const STRETCHES: usize = 48;
+/// A stretch this loud, in the analyser's units, sprays `SPRAY` particles a
+/// second; quieter ones fewer, as the square of how loud they are.
+const LOUD: f32 = 0.3;
+const SPRAY: f32 = 20.0;
+
 const DRAG: f32 = 2.2;
-const GRAVITY: f32 = 0.35;
-const MAX_PARTICLES: usize = 700;
+const GRAVITY: f32 = 0.3;
+const MAX_PARTICLES: usize = 900;
+
+/// Where particles start: the core's edge, in units of the panel's reach.
+pub const CORE: f32 = 0.12;
 
 /// The mean of `bands` over `range`, as far as they go.
-fn mean(bands: &[f32], range: std::ops::Range<usize>) -> f32 {
+pub(crate) fn mean(bands: &[f32], range: std::ops::Range<usize>) -> f32 {
     let range = range.start.min(bands.len())..range.end.min(bands.len());
     let n = range.len().max(1) as f32;
     bands[range].iter().sum::<f32>() / n
@@ -51,7 +61,7 @@ pub struct Particle {
     pub vy: f32,
     pub age: f32,
     pub life: f32,
-    /// Where on the palette it is drawn, 0 to 1.
+    /// Where on the palette it is drawn, 0 for the bass to 1 for the treble.
     pub hue: f32,
 }
 
@@ -95,8 +105,8 @@ pub struct Nova {
     pub since_kick: f32,
     pub kick_strength: f32,
     kicks: KickDetector,
-    /// Trickle particles owed but not yet let out.
-    owed: f32,
+    /// Particles each stretch owes but has not let out yet.
+    owed: [f32; STRETCHES],
     seed: u32,
 }
 
@@ -108,7 +118,7 @@ impl Default for Nova {
             since_kick: f32::INFINITY,
             kick_strength: 0.0,
             kicks: KickDetector::default(),
-            owed: 0.0,
+            owed: [0.0; STRETCHES],
             seed: 0x9E37_79B9,
         }
     }
@@ -116,21 +126,15 @@ impl Default for Nova {
 
 impl Nova {
     /// Moves everything on by `dt` seconds, with `bands` the analyser's
-    /// bands now, all zero when the music has stopped. Returns whether
-    /// anything is still to be seen.
+    /// bands now, empty or all zero when the music has stopped. Returns
+    /// whether anything is still to be seen.
     pub fn step(&mut self, bands: &[f32], dt: f32) -> bool {
-        let (kick, bright) = (kick_level(bands), mean(bands, BRIGHT_BANDS));
-
         self.since_kick += dt;
         self.pulse = (self.pulse - 2.5 * dt).max(0.0);
-        if let Some(strength) = self.kicks.feed(kick, dt) {
+        if let Some(strength) = self.kicks.feed(kick_level(bands), dt) {
             self.burst(strength);
         }
-        self.owed += bright * 120.0 * dt;
-        while self.owed >= 1.0 {
-            self.owed -= 1.0;
-            self.trickle();
-        }
+        self.spray(bands, dt);
 
         let drag = (-DRAG * dt).exp();
         for p in &mut self.particles {
@@ -149,37 +153,56 @@ impl Nova {
         !self.particles.is_empty() || self.pulse > 0.0
     }
 
-    /// A ring of particles out of the core, for a kick of `strength`.
+    /// Each stretch of the spectrum sprays its way, as loud as it is.
+    fn spray(&mut self, bands: &[f32], dt: f32) {
+        if bands.is_empty() {
+            return;
+        }
+        for stretch in 0..STRETCHES {
+            let start = stretch * bands.len() / STRETCHES;
+            let end = ((stretch + 1) * bands.len() / STRETCHES).max(start + 1);
+            let loudness = (mean(bands, start..end) / LOUD).min(1.5);
+            self.owed[stretch] += SPRAY * loudness * loudness * dt;
+            while self.owed[stretch] >= 1.0 {
+                self.owed[stretch] -= 1.0;
+                let hue = (stretch as f32 + self.random()) / STRETCHES as f32;
+                // From straight down for the bass to straight up for the
+                // treble, on the right; the left mirrors it.
+                let right = -FRAC_PI_2 + hue * PI;
+                let angle = if self.random() < 0.5 {
+                    right
+                } else {
+                    PI - right
+                };
+                let speed = (0.5 + 1.8 * loudness) * (0.85 + 0.3 * self.random());
+                let life = 0.5 + 0.4 * self.random();
+                self.launch(angle, speed, life, hue);
+            }
+        }
+    }
+
+    /// A ring of particles all round the core, for a kick of `strength`.
     fn burst(&mut self, strength: f32) {
         self.since_kick = 0.0;
         self.kick_strength = strength;
         self.pulse = (0.4 + 0.6 * strength).max(self.pulse);
-        let count = (24.0 + 48.0 * strength) as usize;
+        let count = (16.0 + 32.0 * strength) as usize;
         let turn = self.random();
         for i in 0..count {
             let angle = (i as f32 + self.random() * 0.6) / count as f32 * TAU + turn;
-            let speed = (0.8 + strength) * (0.8 + 0.4 * self.random());
-            let life = 0.9 + 0.6 * self.random();
-            self.launch(angle, speed, life, CORE);
+            let speed = (0.9 + strength) * (0.8 + 0.4 * self.random());
+            let life = 0.8 + 0.5 * self.random();
+            // Coloured as the stretch of spectrum that way.
+            let hue = 0.5 + 0.5 * angle.sin();
+            self.launch(angle, speed, life, hue);
         }
     }
 
-    /// One slow particle, for the brighter sounds between kicks.
-    fn trickle(&mut self) {
-        let angle = self.random() * TAU;
-        let speed = 0.25 + 0.3 * self.random();
-        let life = 0.5 + 0.4 * self.random();
-        self.launch(angle, speed, life, CORE);
-    }
-
-    fn launch(&mut self, angle: f32, speed: f32, life: f32, from: f32) {
+    fn launch(&mut self, angle: f32, speed: f32, life: f32, hue: f32) {
         let (sin, cos) = angle.sin_cos();
-        // Bass at the bottom of the palette's turn, treble at the top, as
-        // Nova's colours have always run.
-        let hue = 0.5 - 0.5 * sin;
         self.particles.push(Particle {
-            x: cos * from,
-            y: sin * from,
+            x: cos * CORE,
+            y: sin * CORE,
             vx: cos * speed,
             vy: sin * speed,
             age: 0.0,
@@ -198,17 +221,13 @@ impl Nova {
     }
 }
 
-/// Where particles start: the core's edge, in units of the panel's reach.
-pub const CORE: f32 = 0.12;
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn bands(kick: f32, bright: f32) -> Vec<f32> {
+    fn bands(kick: f32) -> Vec<f32> {
         let mut b = vec![0.0; 512];
         b[KICK_BANDS].fill(kick);
-        b[BRIGHT_BANDS].fill(bright);
         b
     }
 
@@ -232,56 +251,88 @@ mod tests {
     }
 
     #[test]
-    fn a_kick_throws_particles_out_that_slow_and_fade() {
+    fn the_spray_points_where_the_music_is() {
+        // Only the treble sounding: particles go upward.
+        let mut treble = vec![0.0; 512];
+        treble[400..512].fill(0.3);
         let mut nova = Nova::default();
-        for _ in 0..60 {
-            nova.step(&bands(0.1, 0.0), 1.0 / 60.0);
+        for _ in 0..30 {
+            nova.step(&treble, 1.0 / 60.0);
         }
-        assert!(nova.particles.is_empty());
-        nova.step(&bands(0.3, 0.0), 1.0 / 60.0);
-        let thrown = nova.particles.len();
-        assert!(thrown >= 40, "{thrown} particles");
-        assert!(nova.pulse > 0.8 && nova.since_kick < 0.02);
+        assert!(nova.particles.len() > 20, "{}", nova.particles.len());
+        assert!(nova.particles.iter().all(|p| p.hue > 0.7));
+        let up = nova.particles.iter().filter(|p| p.y > 0.0).count();
+        assert!(
+            up * 10 >= nova.particles.len() * 9,
+            "{up} of {}",
+            nova.particles.len()
+        );
 
-        let speed = |n: &Nova| {
-            n.particles.iter().map(|p| p.vx.hypot(p.vy)).sum::<f32>() / n.particles.len() as f32
-        };
-        let reach = |n: &Nova| {
-            n.particles.iter().map(|p| p.x.hypot(p.y)).sum::<f32>() / n.particles.len() as f32
-        };
-        let (s0, r0) = (speed(&nova), reach(&nova));
-        for _ in 0..20 {
-            nova.step(&bands(0.3, 0.0), 1.0 / 60.0);
+        // Only the bass: downward.
+        let mut bass = vec![0.0; 512];
+        bass[0..60].fill(0.3);
+        let mut nova = Nova::default();
+        for _ in 0..30 {
+            nova.step(&bass, 1.0 / 60.0);
         }
-        assert!(speed(&nova) < s0 * 0.6, "drag slows them");
-        assert!(reach(&nova) > r0 + 0.2, "they fly outward");
-        for _ in 0..120 {
-            nova.step(&bands(0.0, 0.0), 1.0 / 60.0);
-        }
-        assert!(nova.particles.is_empty(), "and are gone within their life");
+        let down = nova.particles.iter().filter(|p| p.y < 0.0).count();
+        assert!(down * 10 >= nova.particles.len() * 9);
     }
 
     #[test]
-    fn brighter_sounds_let_a_trickle_out_between_kicks() {
+    fn louder_sprays_more_and_farther() {
+        let run = |level: f32| {
+            let mut nova = Nova::default();
+            let mut mid = vec![0.0; 512];
+            mid[200..300].fill(level);
+            for _ in 0..60 {
+                nova.step(&mid, 1.0 / 60.0);
+            }
+            let reach = nova
+                .particles
+                .iter()
+                .map(|p| p.x.hypot(p.y))
+                .fold(0.0, f32::max);
+            (nova.particles.len(), reach)
+        };
+        let (quiet, quiet_reach) = run(0.1);
+        let (loud, loud_reach) = run(0.3);
+        assert!(loud > quiet * 4, "{loud} against {quiet}");
+        assert!(
+            loud_reach > quiet_reach,
+            "{loud_reach} against {quiet_reach}"
+        );
+    }
+
+    #[test]
+    fn a_kick_throws_a_ring_out_that_slows_and_fades() {
         let mut nova = Nova::default();
         for _ in 0..60 {
-            nova.step(&bands(0.0, 0.2), 1.0 / 60.0);
+            nova.step(&bands(0.1), 1.0 / 60.0);
         }
-        // 0.2 * 120 particles a second, less those already faded.
+        let before = nova.particles.len();
+        nova.step(&bands(0.3), 1.0 / 60.0);
         assert!(
-            (10..=30).contains(&nova.particles.len()),
-            "{}",
+            nova.particles.len() >= before + 30,
+            "{before} -> {}",
             nova.particles.len()
         );
+        assert!(nova.pulse > 0.8 && nova.since_kick < 0.02);
+        for _ in 0..120 {
+            nova.step(&[], 1.0 / 60.0);
+        }
+        assert!(nova.particles.is_empty(), "gone within their life");
     }
 
     #[test]
     fn with_the_music_stopped_it_comes_to_rest() {
         let mut nova = Nova::default();
-        nova.step(&bands(0.1, 0.2), 1.0 / 60.0);
-        nova.step(&bands(0.4, 0.2), 1.0 / 60.0);
+        let loud = vec![0.25; 512];
+        for _ in 0..30 {
+            nova.step(&loud, 1.0 / 60.0);
+        }
         let mut frames = 0;
-        while nova.step(&[0.0; 512], 1.0 / 60.0) {
+        while nova.step(&[], 1.0 / 60.0) {
             frames += 1;
             assert!(frames < 200, "never came to rest");
         }
