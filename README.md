@@ -101,11 +101,12 @@ The keys follow what cmus, ncmpcpp and mpv agree on.
 | `[` `]`, `Backspace` | Slower and faster, and normal speed |
 | `s`, `r`, `Shift+S` | Shuffle, repeat mode, and stop |
 | `j` `k` (or `↑` `↓`), `g` `G` (or `Home` `End`), `PgUp` `PgDn` | Move in the tree or queue |
-| `Enter`, `Tab` | Play or open, and switch between the tree and the queue |
+| `Enter`, `Tab` | Play or open, and move between the tree, the queue and the mixer |
+| In the mixer: arrows (or `h` `j` `k` `l`), `+` `-`, `r`, `Esc` | Pick a control, turn it up or down, reset it, and leave |
 | `a`, `A`, `f`, `p` | Add to the queue, play next, favorite, add to a playlist |
 | `i`, `l` | Track info, and lyrics |
 | `v`, `Shift+V` | Album art or visualizer, and the next visualizer style |
-| `F1`, `F2` | Layout, and the DSP studio, where the effects are adjusted |
+| `F1`, `F2` | Layout, and the DSP studio, where every effect is adjusted |
 | `:`, `?`, `q` | Commands, help, and quit |
 
 Volume, speed and effects changed out of sight of the mixer are shown in a notification. Press `:` for the command bar (e.g., `:dl lofi hip hop` or `:quit`): it lists every command as you type, and `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names. Keys can be changed in `keymaps.toml` (`melotui --paths` shows where).

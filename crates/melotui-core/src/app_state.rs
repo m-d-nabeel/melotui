@@ -611,6 +611,18 @@ impl AppState {
         self.session.ui.show_dsp_studio
     }
 
+    /// Whether the mixer is on screen: in the full layout, where the lyrics
+    /// panel is not in its place.
+    pub fn mixer_on_screen(&self) -> bool {
+        self.session.ui.focus_mode == crate::state::ui::FocusMode::Full
+            && !self.session.ui.show_lyrics
+    }
+
+    /// Whether keys go to the mixer: moved on to with Tab, and on screen.
+    pub fn is_mixer_focused(&self) -> bool {
+        self.session.ui.mixer_focused && self.mixer_on_screen()
+    }
+
     pub fn dsp_selected_control(&self) -> usize {
         self.session.ui.dsp_selected_control
     }

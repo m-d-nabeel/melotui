@@ -102,6 +102,9 @@ pub struct UIState {
     pub show_playback: bool,
     pub show_dsp_studio: bool,
     pub dsp_selected_control: usize, // 0..18 (10 EQ bands + 9 sliders)
+    /// Whether Tab has moved on to the mixer; its keys then adjust the
+    /// control selected in it, the DSP studio's selection.
+    pub mixer_focused: bool,
     pub scrolloff: usize,
     pub terminal_size: (u16, u16),
     pub sidebar_width: u16,
@@ -133,6 +136,7 @@ impl Default for UIState {
             show_playback: true,
             show_dsp_studio: false,
             dsp_selected_control: 0,
+            mixer_focused: false,
             scrolloff: 8,
             terminal_size: (0, 0),
             sidebar_width: 28,

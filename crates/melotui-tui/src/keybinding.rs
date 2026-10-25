@@ -22,6 +22,7 @@ pub enum KeyContext {
     Confirm,
     LyricsSelector,
     DspStudio,
+    Mixer,
     Global,
 }
 
@@ -156,6 +157,11 @@ pub enum KeyAction {
     DspMacroBassBoosted,
     DspMacroSpatial,
     DspMacroResetAll,
+    MixerUp,
+    MixerDown,
+    MixerLeft,
+    MixerRight,
+    LeaveMixer,
 }
 
 impl KeyAction {
@@ -258,13 +264,18 @@ impl KeyAction {
             KeyAction::DspSelectDown => "DSP Down",
             KeyAction::DspSelectLeft => "DSP Left",
             KeyAction::DspSelectRight => "DSP Right",
-            KeyAction::DspAdjustUp => "DSP Increase",
-            KeyAction::DspAdjustDown => "DSP Decrease",
-            KeyAction::DspResetControl => "DSP Reset",
+            KeyAction::DspAdjustUp => "Increase",
+            KeyAction::DspAdjustDown => "Decrease",
+            KeyAction::DspResetControl => "Reset",
             KeyAction::DspMacroSlowedReverb => "Slowed+Reverb",
             KeyAction::DspMacroBassBoosted => "Bass Boosted",
             KeyAction::DspMacroSpatial => "3D Spatial",
             KeyAction::DspMacroResetAll => "Reset All DSP",
+            KeyAction::MixerUp => "Up",
+            KeyAction::MixerDown => "Down",
+            KeyAction::MixerLeft => "Left",
+            KeyAction::MixerRight => "Right",
+            KeyAction::LeaveMixer => "Leave",
         }
     }
 }
@@ -413,6 +424,23 @@ impl KeyAction {
             KeyAction::DspMacroBassBoosted => Some(AppMsg::UI(UIMsg::DspMacroBassBoosted)),
             KeyAction::DspMacroSpatial => Some(AppMsg::UI(UIMsg::DspMacroSpatial)),
             KeyAction::DspMacroResetAll => Some(AppMsg::UI(UIMsg::DspMacroResetAll)),
+            KeyAction::MixerUp => Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 0,
+                rows: -1,
+            })),
+            KeyAction::MixerDown => Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 0,
+                rows: 1,
+            })),
+            KeyAction::MixerLeft => Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: -1,
+                rows: 0,
+            })),
+            KeyAction::MixerRight => Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 1,
+                rows: 0,
+            })),
+            KeyAction::LeaveMixer => Some(AppMsg::Navigation(NavigationMsg::LeaveMixer)),
         }
     }
 }
@@ -464,6 +492,7 @@ impl KeyRegistry {
                 "preset" | "presetpicker" => KeyContext::PresetPicker,
                 "confirm" => KeyContext::Confirm,
                 "dspstudio" | "dsp" => KeyContext::DspStudio,
+                "mixer" => KeyContext::Mixer,
                 "global" => KeyContext::Global,
                 _ => {
                     let err = format!("Unknown keymap context: {}", ctx_str);
@@ -682,7 +711,8 @@ impl Default for KeyRegistry {
         // global context — the keys cmus, ncmpcpp and mpv share where they
         // agree: space pauses, < > change track, arrows seek, [ ] set the
         // speed, s and r shuffle and repeat, i shows the track, l the lyrics.
-        // Effects are adjusted in the DSP studio, where they show.
+        // Effects are adjusted where they show: in the mixer, moved on to
+        // with Tab, and in the DSP studio.
         bindings.insert(
             KeyContext::Global,
             vec![
@@ -725,6 +755,29 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp),
                 KeyBinding::new(KeyCode::Esc, KeyAction::CancelDownload),
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit),
+            ],
+        );
+
+        // the mixer, moved on to with Tab: as in the DSP studio, the arrows
+        // pick a control and + - adjust it
+        bindings.insert(
+            KeyContext::Mixer,
+            vec![
+                KeyBinding::new(KeyCode::Tab, KeyAction::TogglePanel),
+                KeyBinding::new(KeyCode::Esc, KeyAction::LeaveMixer),
+                KeyBinding::new(KeyCode::Up, KeyAction::MixerUp),
+                KeyBinding::new(KeyCode::Char('k'), KeyAction::MixerUp),
+                KeyBinding::new(KeyCode::Down, KeyAction::MixerDown),
+                KeyBinding::new(KeyCode::Char('j'), KeyAction::MixerDown),
+                KeyBinding::new(KeyCode::Left, KeyAction::MixerLeft),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::MixerLeft),
+                KeyBinding::new(KeyCode::Right, KeyAction::MixerRight),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::MixerRight),
+                KeyBinding::new(KeyCode::Char('+'), KeyAction::DspAdjustUp),
+                KeyBinding::new(KeyCode::Char('='), KeyAction::DspAdjustUp),
+                KeyBinding::new(KeyCode::Char('-'), KeyAction::DspAdjustDown),
+                KeyBinding::new(KeyCode::Char('_'), KeyAction::DspAdjustDown),
+                KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
             ],
         );
 

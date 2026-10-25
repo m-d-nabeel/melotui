@@ -968,6 +968,39 @@ pub fn handle_toggle_dsp_studio(state: &mut AppState) -> Vec<AppMsg> {
     })]
 }
 
+/// The mixer's controls as it lays them out, column by column, as the DSP
+/// studio numbers them: volume and speed, bass and treble, reverb and echo.
+pub const MIXER: [[usize; 2]; 3] = [[10, 11], [12, 13], [17, 18]];
+
+/// Where the selected control is in the mixer, if it is one of its.
+fn mixer_coords(control: usize) -> Option<(usize, usize)> {
+    MIXER.iter().enumerate().find_map(|(column, rows)| {
+        rows.iter()
+            .position(|&c| c == control)
+            .map(|row| (column, row))
+    })
+}
+
+/// Moved on to the mixer: what is selected in the DSP studio stays selected
+/// if the mixer has it, otherwise the volume is.
+pub fn select_in_mixer(state: &mut AppState) {
+    if mixer_coords(state.session.ui.dsp_selected_control).is_none() {
+        state.session.ui.dsp_selected_control = MIXER[0][0];
+    }
+}
+
+pub fn handle_mixer_select(state: &mut AppState, columns: i8, rows: i8) -> Vec<AppMsg> {
+    let (column, row) = mixer_coords(state.session.ui.dsp_selected_control).unwrap_or((0, 0));
+    let column = column
+        .saturating_add_signed(columns as isize)
+        .min(MIXER.len() - 1);
+    let row = row
+        .saturating_add_signed(rows as isize)
+        .min(MIXER[0].len() - 1);
+    state.session.ui.dsp_selected_control = MIXER[column][row];
+    vec![]
+}
+
 /// Up: move cursor up within current zone (EQ or grid column)
 pub fn handle_dsp_select_up(state: &mut AppState) -> Vec<AppMsg> {
     let idx = state.session.ui.dsp_selected_control;
@@ -1109,6 +1142,7 @@ pub fn handle_dsp_reset_control(state: &mut AppState) -> Vec<AppMsg> {
             })]
         }
         10 => {
+            state.session.audio.muted_from = None;
             state.session.audio.volume = 1.0;
             vec![AppMsg::Audio(AudioMsg::DispatchSetVolume(1.0))]
         }
@@ -1381,6 +1415,52 @@ mod tests {
         let root = std::path::PathBuf::from("/tmp");
         let library = Library::new(vec![root], vec![], HashMap::new());
         AppState::new(library, &crate::config::AppConfig::default())
+    }
+
+    #[test]
+    fn in_the_mixer_the_arrows_pick_a_control_and_plus_minus_adjust_it() {
+        let mut state = test_state();
+        // An EQ band selected in the DSP studio: the mixer starts at the volume.
+        state.session.ui.dsp_selected_control = 3;
+        select_in_mixer(&mut state);
+        assert_eq!(state.session.ui.dsp_selected_control, 10);
+
+        // Right to bass, down to treble; no further than the edges.
+        handle_mixer_select(&mut state, 1, 0);
+        handle_mixer_select(&mut state, 0, 1);
+        assert_eq!(state.session.ui.dsp_selected_control, 13);
+        handle_mixer_select(&mut state, 0, 1);
+        handle_mixer_select(&mut state, 5, 0);
+        assert_eq!(state.session.ui.dsp_selected_control, 18, "echo");
+        handle_mixer_select(&mut state, -9, -9);
+        assert_eq!(state.session.ui.dsp_selected_control, 10, "volume");
+
+        handle_mixer_select(&mut state, 1, 0);
+        let treble = state.treble();
+        handle_dsp_adjust_up(&mut state);
+        assert!((state.bass() - 1.1).abs() < 1e-5);
+        assert_eq!(state.treble(), treble);
+        assert!(
+            state.session.notification.current.is_none(),
+            "the mixer shows it"
+        );
+        handle_dsp_reset_control(&mut state);
+        assert_eq!(state.bass(), 1.0);
+
+        // Reverb, the mixer's own, stays selected.
+        handle_mixer_select(&mut state, 1, 0);
+        select_in_mixer(&mut state);
+        assert_eq!(state.session.ui.dsp_selected_control, 17);
+    }
+
+    #[test]
+    fn resetting_the_volume_unmutes() {
+        let mut state = test_state();
+        crate::action::audio_action::handle_toggle_mute(&mut state);
+        state.session.ui.dsp_selected_control = 10;
+        handle_dsp_reset_control(&mut state);
+        assert_eq!(state.volume(), 1.0);
+        assert!(!state.is_muted());
     }
 
     #[test]

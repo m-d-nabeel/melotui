@@ -11,7 +11,7 @@ use ratatui::{
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let queue = state.queue();
-    let is_active = state.is_queue_focused();
+    let is_active = state.is_queue_focused() && !state.is_mixer_focused();
 
     let t = crate::theme::get_theme(state);
     let border_style = if is_active {

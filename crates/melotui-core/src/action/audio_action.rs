@@ -4,10 +4,7 @@ use crate::{AppMsg, AppState, message::audio::AudioMsg, state::audio::AudioState
 /// screen: in the DSP studio, or in the full layout with the lyrics panel
 /// not in its place.
 fn show_unless_mixer_shown(state: &mut AppState, message: String) {
-    let ui = &state.session.ui;
-    let mixer_shown = ui.show_dsp_studio
-        || (ui.focus_mode == crate::state::ui::FocusMode::Full && !ui.show_lyrics);
-    if !mixer_shown {
+    if !(state.ui_show_dsp_studio() || state.mixer_on_screen()) {
         state.session.notification.current = Some(
             crate::state::notification::Notification::new(
                 crate::state::notification::NotificationKind::Info,

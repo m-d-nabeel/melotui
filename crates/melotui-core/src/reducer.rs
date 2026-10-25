@@ -31,6 +31,7 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
         NavigationMsg::SwitchToTracks => nav_action::handle_switch_to_tracks(state),
         NavigationMsg::ToggleTrackInfo => nav_action::handle_toggle_track_info(state),
         NavigationMsg::ToggleLibraryQueue => nav_action::handle_toggle_library_queue(state),
+        NavigationMsg::LeaveMixer => nav_action::handle_leave_mixer(state),
         NavigationMsg::MoveUp => nav_action::handle_move_up(state),
         NavigationMsg::MoveDown => nav_action::handle_move_down(state),
         NavigationMsg::MoveTop => nav_action::handle_move_to_end(state, false),
@@ -249,6 +250,9 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::DspAdjustUp => ui_action::handle_dsp_adjust_up(state),
         UIMsg::DspAdjustDown => ui_action::handle_dsp_adjust_down(state),
         UIMsg::DspResetControl => ui_action::handle_dsp_reset_control(state),
+        UIMsg::MixerSelect { columns, rows } => {
+            ui_action::handle_mixer_select(state, columns, rows)
+        }
         UIMsg::DspMacroSlowedReverb => audio_action::handle_macro_slowed_reverb(state),
         UIMsg::DspMacroBassBoosted => audio_action::handle_macro_bass_boosted(state),
         UIMsg::DspMacroSpatial => audio_action::handle_macro_spatial(state),

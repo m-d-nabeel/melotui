@@ -32,6 +32,10 @@ pub fn draw(
         key_section("Global", registry.bindings.get(&KeyContext::Global)),
         key_section("Library", registry.bindings.get(&KeyContext::Library)),
         key_section("Queue", registry.bindings.get(&KeyContext::Queue)),
+        key_section(
+            "Mixer  ( Tab from the queue )",
+            registry.bindings.get(&KeyContext::Mixer),
+        ),
         Section {
             title: "Commands  ( : then Tab )",
             rows: melotui_core::Command::help_entries(),

@@ -61,7 +61,9 @@ impl InputHandler {
         }
 
         // panel contexts
-        if state.is_library_focused() {
+        if state.is_mixer_focused() {
+            contexts.push(KeyContext::Mixer);
+        } else if state.is_library_focused() {
             contexts.push(KeyContext::Library);
         } else if state.is_queue_focused() {
             contexts.push(KeyContext::Queue);
@@ -530,5 +532,65 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn in_the_mixer_the_arrows_pick_and_plus_minus_adjust_and_the_rest_still_work() {
+        use melotui_core::message::{navigation::NavigationMsg, playback::PlaybackMsg};
+        let mut state = test_state();
+        // Tab, to the queue and on to the mixer.
+        for _ in 0..2 {
+            reduce(
+                &mut state,
+                AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue),
+            );
+        }
+        let registry = crate::keybinding::KeyRegistry::default();
+        let press = |state: &AppState, key: KeyEvent| InputHandler::handle(key, state, &registry);
+        let arrow = |code| KeyEvent::new(code, KeyModifiers::empty());
+
+        assert!(matches!(
+            press(&state, arrow(KeyCode::Right)),
+            Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 1,
+                rows: 0
+            }))
+        ));
+        assert!(matches!(
+            press(&state, typed('j')),
+            Some(AppMsg::UI(UIMsg::MixerSelect {
+                columns: 0,
+                rows: 1
+            }))
+        ));
+        assert!(matches!(
+            press(&state, typed('+')),
+            Some(AppMsg::UI(UIMsg::DspAdjustUp))
+        ));
+        assert!(matches!(
+            press(&state, typed('-')),
+            Some(AppMsg::UI(UIMsg::DspAdjustDown))
+        ));
+        assert!(matches!(
+            press(&state, typed('r')),
+            Some(AppMsg::UI(UIMsg::DspResetControl))
+        ));
+        assert!(matches!(
+            press(&state, arrow(KeyCode::Esc)),
+            Some(AppMsg::Navigation(NavigationMsg::LeaveMixer))
+        ));
+        assert!(matches!(
+            press(&state, arrow(KeyCode::Tab)),
+            Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue))
+        ));
+        assert!(matches!(
+            press(&state, typed(' ')),
+            Some(AppMsg::Playback(PlaybackMsg::RequestTogglePlayback))
+        ));
+
+        // With the mixer hidden by the lyrics, the keys are the queue's and
+        // the player's again.
+        reduce(&mut state, AppMsg::UI(UIMsg::ToggleLyrics));
+        assert!(matches!(press(&state, typed('+')), Some(AppMsg::Audio(_))));
     }
 }

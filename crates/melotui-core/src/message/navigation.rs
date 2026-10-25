@@ -4,6 +4,7 @@ pub enum NavigationMsg {
     SwitchToTracks,
     ToggleTrackInfo,
     ToggleLibraryQueue,
+    LeaveMixer,
     MoveUp,
     MoveDown,
     /// To the first row of the tree or the queue, and to the last.
