@@ -419,7 +419,9 @@ impl AudioEngine {
         let unit: Box<dyn AudioUnit> = create_audio_graph(channels, &self.dsp_params);
         let dsp_source = FundspSource::new(decoder, unit, self.bypass.clone());
 
-        let ring = HeapRb::<f32>::new(8192);
+        // A second of audio: room for the biggest lump the device pulls at
+        // once plus the backlog the analyser keeps behind it.
+        let ring = HeapRb::<f32>::new((sample_rate as usize).max(8192));
         let (producer, consumer) = ring.split();
         self.vis_manager.attach_source(consumer, sample_rate);
 
