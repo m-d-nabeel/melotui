@@ -216,22 +216,30 @@ fn render_sleek_slider(
         .constraints([Constraint::Fill(1), Constraint::Fill(1)])
         .split(label_area);
 
-    let (label_style, value_style) = if is_selected {
-        let row = Style::default().bg(t.dsp_selected_bg);
-        (row.fg(config.color), row.fg(t.fg_primary))
+    // The selected control is marked and drawn in its own colour, its
+    // slider heavier; the others stay muted.
+    let (label, text, line) = if is_selected {
+        (
+            format!("▸ {}", config.label),
+            Style::default()
+                .fg(config.color)
+                .add_modifier(Modifier::BOLD),
+            "━",
+        )
     } else {
         (
+            config.label.to_string(),
             Style::default().fg(t.fg_muted),
-            Style::default().fg(t.fg_muted),
+            "─",
         )
     };
-    let label_span = Span::styled(config.label, label_style.add_modifier(Modifier::BOLD));
-    frame.render_widget(Paragraph::new(label_span).style(label_style), header[0]);
-
-    let val_str = config.format_value();
     frame.render_widget(
-        Paragraph::new(val_str)
-            .style(value_style)
+        Paragraph::new(label).style(text.add_modifier(Modifier::BOLD)),
+        header[0],
+    );
+    frame.render_widget(
+        Paragraph::new(config.format_value())
+            .style(text)
             .alignment(Alignment::Right),
         header[1],
     );
@@ -246,7 +254,7 @@ fn render_sleek_slider(
     let thumb_pos = (ratio * track_width as f32).round() as usize;
     let remaining = track_width.saturating_sub(thumb_pos);
 
-    let active_line = "─".repeat(thumb_pos);
+    let active_line = line.repeat(thumb_pos);
     let inactive_line = "─".repeat(remaining);
 
     let slider_line = Line::from(vec![
@@ -275,13 +283,19 @@ mod tests {
         terminal.backend().buffer().clone()
     }
 
+    fn text(buf: &Buffer) -> String {
+        buf.content().iter().map(|c| c.symbol()).collect()
+    }
+
     /// The cell where `word` starts.
     fn find(buf: &Buffer, word: &str) -> (u16, u16) {
         let area = buf.area;
         (0..area.height)
             .find_map(|y| {
                 let row: String = (0..area.width).map(|x| buf[(x, y)].symbol()).collect();
-                row.find(word).map(|x| (x as u16, y))
+                // Columns, not bytes: the borders are three bytes a cell.
+                row.find(word)
+                    .map(|at| (row[..at].chars().count() as u16, y))
             })
             .unwrap()
     }
@@ -305,14 +319,14 @@ mod tests {
 
         let buf = drawn(&state);
         assert_eq!(buf[(0, 0)].fg, t.border_inactive);
-        assert_ne!(buf[find(&buf, "Bass")].bg, t.dsp_selected_bg, "not focused");
+        assert!(!text(&buf).contains('▸'), "not focused");
 
         reduce(&mut state, tab());
         reduce(&mut state, tab());
         let buf = drawn(&state);
         assert_eq!(buf[(0, 0)].fg, t.border_active);
-        assert_eq!(buf[find(&buf, "Bass")].bg, t.dsp_selected_bg);
-        assert_eq!(buf[find(&buf, "Bass")].fg, t.slider_bass);
-        assert_ne!(buf[find(&buf, "Volume")].bg, t.dsp_selected_bg);
+        assert_eq!(buf[find(&buf, "▸ Bass")].fg, t.slider_bass);
+        assert_eq!(buf[find(&buf, "Volume")].fg, t.fg_muted);
+        assert!(!text(&buf).contains("▸ Volume"));
     }
 }

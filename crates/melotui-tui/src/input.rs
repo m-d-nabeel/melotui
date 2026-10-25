@@ -576,6 +576,10 @@ mod tests {
             Some(AppMsg::UI(UIMsg::DspResetControl))
         ));
         assert!(matches!(
+            press(&state, arrow(KeyCode::Backspace)),
+            Some(AppMsg::UI(UIMsg::DspResetControl))
+        ));
+        assert!(matches!(
             press(&state, arrow(KeyCode::Esc)),
             Some(AppMsg::Navigation(NavigationMsg::LeaveMixer))
         ));

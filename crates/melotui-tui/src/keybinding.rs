@@ -778,6 +778,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('-'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('_'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
+                KeyBinding::new(KeyCode::Backspace, KeyAction::DspResetControl),
             ],
         );
 
@@ -802,6 +803,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('-'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('_'), KeyAction::DspAdjustDown),
                 KeyBinding::new(KeyCode::Char('r'), KeyAction::DspResetControl),
+                KeyBinding::new(KeyCode::Backspace, KeyAction::DspResetControl),
                 KeyBinding::new(KeyCode::Char('1'), KeyAction::DspMacroSlowedReverb),
                 KeyBinding::new(KeyCode::Char('2'), KeyAction::DspMacroBassBoosted),
                 KeyBinding::new(KeyCode::Char('3'), KeyAction::DspMacroSpatial),

@@ -102,7 +102,7 @@ The keys follow what cmus, ncmpcpp and mpv agree on.
 | `s`, `r`, `Shift+S` | Shuffle, repeat mode, and stop |
 | `j` `k` (or `↑` `↓`), `g` `G` (or `Home` `End`), `PgUp` `PgDn` | Move in the tree or queue |
 | `Enter`, `Tab` | Play or open, and move between the tree, the queue and the mixer |
-| In the mixer: arrows (or `h` `j` `k` `l`), `+` `-`, `r`, `Esc` | Pick a control, turn it up or down, reset it, and leave |
+| In the mixer: arrows (or `h` `j` `k` `l`), `+` `-`, `Backspace` (or `r`), `Esc` | Pick a control, turn it up or down, reset it, and leave |
 | `a`, `A`, `f`, `p` | Add to the queue, play next, favorite, add to a playlist |
 | `i`, `l` | Track info, and lyrics |
 | `v`, `Shift+V` | Album art or visualizer, and the next visualizer style |
