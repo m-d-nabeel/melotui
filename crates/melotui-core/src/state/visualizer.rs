@@ -102,6 +102,29 @@ impl FromStr for SpectrumStyle {
     }
 }
 
+/// How each cap is moving, kept from frame to frame.
+#[derive(Debug, Default)]
+pub struct SpectrumMotion {
+    /// How long each cap has left to hold before it falls, in seconds.
+    cap_hold: Vec<f32>,
+    /// How fast each cap is falling, in spectrum units per second.
+    cap_speed: Vec<f32>,
+}
+
+/// Bars close this share of the gap to the music each 60th of a second, as
+/// they always have, worked out for any frame time so they move alike at
+/// any frame rate.
+const BAR_STEP_AT_60_FPS: f32 = 0.25;
+
+/// Caps hold this long at their highest, then fall ever faster, as dropped
+/// things do. Gravity is in spectrum units per second squared: the
+/// analyser's bands rarely pass 0.45, cava's run to 1, so cava's caps fall
+/// with gravity scaled to match. From a typical tall bar either way, a cap
+/// lands about a third of a second after it lets go.
+const CAP_HOLD_SECS: f32 = 0.12;
+const CAP_GRAVITY: f32 = 5.0;
+const CAP_GRAVITY_CAVA: f32 = 11.0;
+
 pub fn update_visualizer_physics(state: &mut AppState, dt: f32) {
     if !state.should_draw_spectrum() {
         return;
@@ -125,40 +148,37 @@ pub fn update_visualizer_physics(state: &mut AppState, dt: f32) {
         state.spectrum_peaks.resize(len, 0.0);
     }
 
-    if *state.spectrum_style() == SpectrumStyle::Cava {
-        state.spectrum_smooth.copy_from_slice(&state.spectrum_raw);
-        for i in 0..len {
-            if state.spectrum_smooth[i] > state.spectrum_peaks[i] {
-                state.spectrum_peaks[i] = state.spectrum_smooth[i];
-            } else {
-                state.spectrum_peaks[i] -= 2.0 * dt;
-                if state.spectrum_peaks[i] < 0.0 {
-                    state.spectrum_peaks[i] = 0.0;
-                }
-            }
-        }
-        let take_n = len.clamp(1, 64);
-        let energy: f32 = state.spectrum_smooth.iter().take(take_n).sum::<f32>() / take_n as f32;
-        let speed = 0.4 + (energy * 18.0).min(5.0);
-        state.swirl_phase += speed * dt;
-        return;
-    }
+    let cava = *state.spectrum_style() == SpectrumStyle::Cava;
+    // Paused or stopped, nothing new arrives: let everything come to rest
+    // instead of standing frozen where the music left it.
+    let playing = state.is_playing();
+    let step = 1.0 - (1.0 - BAR_STEP_AT_60_FPS).powf(dt * 60.0);
+    let gravity = if cava { CAP_GRAVITY_CAVA } else { CAP_GRAVITY };
 
-    let gravity = 4.0;
-    let smoothing_speed = 15.0;
+    let motion = &mut state.spectrum_motion;
+    motion.cap_hold.resize(len, 0.0);
+    motion.cap_speed.resize(len, 0.0);
 
     for i in 0..len {
-        let target = state.spectrum_raw[i];
-        let diff = target - state.spectrum_smooth[i];
-        state.spectrum_smooth[i] += diff * (smoothing_speed * dt).min(1.0);
-
-        if state.spectrum_smooth[i] > state.spectrum_peaks[i] {
-            state.spectrum_peaks[i] = state.spectrum_smooth[i];
+        let target = if playing { state.spectrum_raw[i] } else { 0.0 };
+        let bar = &mut state.spectrum_smooth[i];
+        if cava && playing {
+            // cava smooths its own bars.
+            *bar = target;
         } else {
-            state.spectrum_peaks[i] -= gravity * dt;
-            if state.spectrum_peaks[i] < 0.0 {
-                state.spectrum_peaks[i] = 0.0;
-            }
+            *bar += (target - *bar) * step;
+        }
+
+        let cap = &mut state.spectrum_peaks[i];
+        if *bar >= *cap {
+            *cap = *bar;
+            motion.cap_hold[i] = CAP_HOLD_SECS;
+            motion.cap_speed[i] = 0.0;
+        } else if motion.cap_hold[i] > 0.0 {
+            motion.cap_hold[i] -= dt;
+        } else {
+            motion.cap_speed[i] += gravity * dt;
+            *cap = (*cap - motion.cap_speed[i] * dt).max(*bar);
         }
     }
 
@@ -166,4 +186,135 @@ pub fn update_visualizer_physics(state: &mut AppState, dt: f32) {
     let energy: f32 = state.spectrum_smooth.iter().take(take_n).sum::<f32>() / take_n as f32;
     let speed = 0.4 + (energy * 18.0).min(5.0);
     state.swirl_phase += speed * dt;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{playback::state::PlaybackStatus, utils::SpectrumSource};
+    use std::sync::{Arc, Mutex};
+
+    /// A source whose single band reads whatever the test puts in it.
+    struct Level(Arc<Mutex<f32>>);
+
+    impl SpectrumSource for Level {
+        fn get_latest(&self, out: &mut [f32]) -> usize {
+            out[0] = *self.0.lock().unwrap();
+            1
+        }
+    }
+
+    fn state(style: SpectrumStyle) -> (AppState, Arc<Mutex<f32>>) {
+        let library = crate::library::snapshot::Library::new(
+            vec![],
+            vec![],
+            std::collections::HashMap::new(),
+        );
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
+        state.session.visualizer_mode = VisualizerMode::Spectrum;
+        state.session.spectrum_style = style;
+        state.session.playback.status = PlaybackStatus::Playing;
+        let level = Arc::new(Mutex::new(0.0));
+        state.spectrum_source = Box::new(Level(level.clone()));
+        (state, level)
+    }
+
+    /// Runs `frames` frames of `dt`, returning the bar and cap after each.
+    fn run(state: &mut AppState, frames: usize, dt: f32) -> Vec<(f32, f32)> {
+        (0..frames)
+            .map(|_| {
+                update_visualizer_physics(state, dt);
+                (state.spectrum_smooth[0], state.spectrum_peaks[0])
+            })
+            .collect()
+    }
+
+    #[test]
+    fn at_60_fps_bars_move_exactly_as_they_always_have() {
+        let (mut state, level) = state(SpectrumStyle::Default);
+        let mut before = 0.0f32;
+        for i in 0..240 {
+            // Music-like: jumps up and down at odd moments.
+            let target = [0.31, 0.05, 0.22, 0.0, 0.4, 0.12][(i * 7 / 11) % 6];
+            *level.lock().unwrap() = target;
+            update_visualizer_physics(&mut state, 1.0 / 60.0);
+            before += (target - before) * (15.0f32 / 60.0).min(1.0);
+            assert!(
+                (state.spectrum_smooth[0] - before).abs() < 1e-5,
+                "frame {i}: {} where the old rule gives {before}",
+                state.spectrum_smooth[0]
+            );
+        }
+    }
+
+    #[test]
+    fn bars_move_alike_at_any_frame_rate() {
+        let height_after_a_fifth_of_a_second = |fps: f32| {
+            let (mut state, level) = state(SpectrumStyle::Default);
+            *level.lock().unwrap() = 0.3;
+            run(&mut state, (fps * 0.2) as usize, 1.0 / fps)
+                .last()
+                .unwrap()
+                .0
+        };
+        let at_60 = height_after_a_fifth_of_a_second(60.0);
+        for fps in [30.0, 144.0] {
+            let h = height_after_a_fifth_of_a_second(fps);
+            assert!((h - at_60).abs() < 0.003, "{h} at {fps} fps, {at_60} at 60");
+        }
+    }
+
+    #[test]
+    fn a_cap_holds_then_falls_ever_faster_onto_its_bar() {
+        let (mut state, level) = state(SpectrumStyle::Default);
+        *level.lock().unwrap() = 0.3;
+        run(&mut state, 60, 1.0 / 60.0);
+        let top = state.spectrum_peaks[0];
+        *level.lock().unwrap() = 0.0;
+        let frames = run(&mut state, 120, 1.0 / 60.0);
+        let hold = (CAP_HOLD_SECS * 60.0) as usize;
+        assert!(frames[..hold].iter().all(|f| f.1 == top), "the cap holds");
+
+        let caps: Vec<f32> = frames.iter().map(|f| f.1).collect();
+        // A cap comes to rest on its bar.
+        let landed = frames.iter().position(|(bar, cap)| cap == bar).unwrap();
+        let drops: Vec<f32> = caps[hold..landed].windows(2).map(|w| w[0] - w[1]).collect();
+        assert!(
+            drops.windows(2).all(|d| d[1] > d[0]),
+            "the fall speeds up: {drops:?}"
+        );
+        let falling = (landed - hold) as f32 / 60.0;
+        assert!(
+            (0.25..0.45).contains(&falling),
+            "a cap from {top} fell for {falling} s"
+        );
+    }
+
+    #[test]
+    fn cava_bars_follow_cava_and_their_caps_fall_alike() {
+        let (mut state, level) = state(SpectrumStyle::Cava);
+        *level.lock().unwrap() = 0.67;
+        let up = run(&mut state, 30, 1.0 / 60.0);
+        assert_eq!(up.last().unwrap().0, 0.67, "cava smooths its own bars");
+        *level.lock().unwrap() = 0.0;
+        let frames = run(&mut state, 120, 1.0 / 60.0);
+        assert_eq!(frames[0].0, 0.0);
+        let hold = (CAP_HOLD_SECS * 60.0) as usize;
+        let landed = frames.iter().position(|f| f.1 == 0.0).unwrap();
+        let falling = (landed - hold) as f32 / 60.0;
+        assert!((0.25..0.45).contains(&falling), "{falling} s");
+    }
+
+    #[test]
+    fn paused_everything_comes_to_rest_instead_of_freezing() {
+        for style in [SpectrumStyle::Default, SpectrumStyle::Cava] {
+            let (mut state, level) = state(style.clone());
+            *level.lock().unwrap() = 0.4;
+            run(&mut state, 30, 1.0 / 60.0);
+            state.session.playback.status = PlaybackStatus::Paused;
+            let frames = run(&mut state, 120, 1.0 / 60.0);
+            let (bar, cap) = *frames.last().unwrap();
+            assert!(bar < 0.001 && cap < 0.001, "{style:?}: {bar}, {cap}");
+        }
+    }
 }
