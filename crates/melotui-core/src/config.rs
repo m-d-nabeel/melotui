@@ -217,6 +217,11 @@ impl AppConfig {
         Ok(Self::parse(path, &contents))
     }
 
+    /// The built-in configuration, reading no config file, theme or keymaps.
+    pub fn builtin() -> Self {
+        Self::default().validated()
+    }
+
     fn parse(path: &std::path::Path, contents: &str) -> Self {
         match toml::from_str::<AppConfig>(contents) {
             Ok(config) => {
@@ -405,6 +410,14 @@ mod tests {
         assert_eq!(config.audio.default_speed, 1.0);
         assert!(config.library.music_directories.is_empty());
         assert!(config.library.db_path.is_none());
+    }
+
+    #[test]
+    fn the_builtin_configuration_reads_nothing() {
+        let config = AppConfig::builtin();
+        assert_eq!(config.ui.theme, AppConfig::default().ui.theme);
+        assert!(config.keymap_overrides.is_empty());
+        assert!(config.startup_errors.is_empty());
     }
 
     #[test]

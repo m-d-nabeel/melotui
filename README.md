@@ -82,7 +82,7 @@ Start the player:
 melotui
 ```
 
-Options: `--config <FILE>` reads another config file, `--no-restore` starts without the last session, `--paths` prints where melotui keeps its config, library, presets, logs and caches, and `--help` and `--version` do what they say.
+Options: `--config <FILE>` reads another config file, `--no-config` starts with the built-in settings and reads no config file, theme or keymaps, `--no-restore` starts without the last session, `--paths` prints where melotui keeps its config, library, presets, logs and caches, and `--help` and `--version` do what they say.
 
 > [!TIP]
 > **Need help?**
