@@ -27,6 +27,8 @@ pub struct Tui {
     /// How far the help can scroll, as last drawn: the keys that scroll it
     /// go no further.
     help_scroll_max: std::cell::Cell<u16>,
+    /// Keeps a held toggle key from flicking its toggle over and over.
+    hold: std::cell::Cell<crate::input::HoldGuard>,
     /// Terminal events, read on a thread of their own.
     events: mpsc::Receiver<std::io::Result<Event>>,
 }
@@ -77,6 +79,7 @@ impl Tui {
                 image_cache,
                 key_registry,
                 help_scroll_max: std::cell::Cell::new(0),
+                hold: Default::default(),
                 events,
             },
             errors,
@@ -121,6 +124,19 @@ impl Tui {
         Ok((size.width, size.height))
     }
 
+    /// Whether a key press should act: not a held toggle key's repeats.
+    fn allows(&self, key: &ratatui::crossterm::event::KeyEvent, state: &AppState) -> bool {
+        if key.kind != ratatui::crossterm::event::KeyEventKind::Press {
+            return true;
+        }
+        let repeats = InputHandler::action_for(key, state, &self.key_registry)
+            .is_none_or(|action| action.repeats());
+        let mut hold = self.hold.get();
+        let allowed = hold.allow(key, repeats, Instant::now());
+        self.hold.set(hold);
+        allowed
+    }
+
     /// The next event that means something to the app, waiting at most
     /// `timeout` for one. An error means the terminal is gone.
     pub fn poll_event(
@@ -139,6 +155,7 @@ impl Tui {
                 }
             };
             let msg = match event {
+                Event::Key(key) if !self.allows(&key, state) => None,
                 Event::Key(key) => match InputHandler::handle(key, state, &self.key_registry) {
                     Some(AppMsg::UI(UIMsg::ScrollHelp { by, .. })) => {
                         Some(AppMsg::UI(UIMsg::ScrollHelp {

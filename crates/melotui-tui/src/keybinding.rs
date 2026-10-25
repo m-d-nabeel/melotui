@@ -159,6 +159,63 @@ pub enum KeyAction {
 }
 
 impl KeyAction {
+    /// Whether holding its key should do it again and again — moving,
+    /// seeking, turning something up or down — rather than once, as a
+    /// toggle should: held, `v` flicked between album art and the
+    /// visualizer thirty times a second.
+    pub fn repeats(&self) -> bool {
+        use KeyAction::*;
+        matches!(
+            self,
+            MoveUp
+                | MoveDown
+                | MovePageUp
+                | MovePageDown
+                | SeekForward
+                | SeekBackward
+                | SeekForwardLong
+                | SeekBackwardLong
+                | VolUp
+                | VolDown
+                | SpeedUp
+                | SpeedDown
+                | BassUp
+                | BassDown
+                | TrebleUp
+                | TrebleDown
+                | ReverbUp
+                | ReverbDown
+                | EchoUp
+                | EchoDown
+                | ShrinkSidebar
+                | GrowSidebar
+                | HelpDown
+                | HelpUp
+                | HelpPageDown
+                | HelpPageUp
+                | CommandHistoryPrev
+                | CommandHistoryNext
+                | Autocomplete
+                | AutocompleteReverse
+                | PlaylistPickerMoveUp
+                | PlaylistPickerMoveDown
+                | PlaylistPickerBackspace
+                | PresetPickerMoveUp
+                | PresetPickerMoveDown
+                | PresetPickerBackspace
+                | LyricsSelectorUp
+                | LyricsSelectorDown
+                | LyricsSelectorLeft
+                | LyricsSelectorRight
+                | DspSelectUp
+                | DspSelectDown
+                | DspSelectLeft
+                | DspSelectRight
+                | DspAdjustUp
+                | DspAdjustDown
+        )
+    }
+
     pub fn description(&self) -> &'static str {
         match self {
             KeyAction::Quit => "Quit",
