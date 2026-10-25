@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
+    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -91,7 +91,7 @@ pub fn draw(
     scroll_max.set(max);
     let scroll = state.ui_help_scroll().min(max);
 
-    frame.render_widget(Clear, help_area);
+    crate::widgets::clear_for_popup(frame, help_area);
     let hint = Style::default().fg(t.help_subtext);
     let mut block = Block::default()
         .title(

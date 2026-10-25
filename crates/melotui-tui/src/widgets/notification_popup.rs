@@ -2,7 +2,7 @@ use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Modifier, Style},
-    widgets::{Block, BorderType, Borders, Clear, Gauge, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, Gauge, Paragraph, Wrap},
 };
 
 use melotui_core::AppState;
@@ -18,7 +18,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let height = 4;
     let popup_area = top_right_rect(width, height, area, 1);
 
-    frame.render_widget(Clear, popup_area);
+    crate::widgets::clear_for_popup(frame, popup_area);
 
     let (base_color, title, icon) = match notification.kind {
         NotificationKind::Progress => (t.accent_info, "Downloading", "⟳"),
