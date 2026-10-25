@@ -428,17 +428,14 @@ fn fetch_lyrics_task(
     let try_lrclib = provider.as_deref() == Some("lrclib") || provider.is_none();
     let try_ovh = provider.as_deref() == Some("ovh") || provider.is_none();
 
+    // Why LRCLIB could not be asked, if it could not: told rather than
+    // "no lyrics found" when it was only busy.
+    let trouble = std::cell::RefCell::new(None);
     let lrclib_get = |url: &str, query: &[(&str, &str)]| -> Option<serde_json::Value> {
-        let mut req = ureq::get(url)
-            .set("User-Agent", USER_AGENT)
-            .timeout(std::time::Duration::from_secs(30));
-        for (key, value) in query {
-            req = req.query(key, value);
-        }
-        let response = req.call().ok()?;
-        (response.status() == 200)
-            .then(|| response.into_json::<serde_json::Value>().ok())
-            .flatten()
+        lrclib(url, query).unwrap_or_else(|e| {
+            *trouble.borrow_mut() = Some(e);
+            None
+        })
     };
     let lrclib_search = |q: &str| -> Option<String> {
         let results = lrclib_get("https://lrclib.net/api/search", &[("q", q)])?;
@@ -522,11 +519,55 @@ fn fetch_lyrics_task(
     } else {
         format!("{artist_name} – {track_name}")
     };
-    tracing::info!("No lyrics found for {song}");
-    let _ = tx.send(InternalEvent::LyricsFailed {
-        save_path,
-        error: format!("no lyrics found for {song}"),
-    });
+    let error = match trouble.into_inner() {
+        Some(trouble) => format!("{trouble}; try again in a moment"),
+        None => format!("no lyrics found for {song}"),
+    };
+    tracing::info!("No lyrics for {song}: {error}");
+    let _ = tx.send(InternalEvent::LyricsFailed { save_path, error });
+}
+
+/// GETs `url` from LRCLIB with `query`: the answer, or `None` where it has
+/// nothing (404), or why it could not be asked. Busy, LRCLIB turns requests
+/// away, in bursts, with a 503 and a second to wait in Retry-After; they
+/// are made again, waiting a little longer each time as the burst may last,
+/// for up to a quarter of a minute in all before giving up.
+fn lrclib(url: &str, query: &[(&str, &str)]) -> Result<Option<serde_json::Value>, String> {
+    const TRIES: u64 = 6;
+    for attempt in 1..=TRIES {
+        let mut req = ureq::get(url)
+            .set("User-Agent", USER_AGENT)
+            .timeout(Duration::from_secs(30));
+        for (key, value) in query {
+            req = req.query(key, value);
+        }
+        match req.call() {
+            Ok(response) => {
+                return response
+                    .into_json()
+                    .map(Some)
+                    .map_err(|e| format!("LRCLIB's answer could not be read: {e}"));
+            }
+            Err(ureq::Error::Status(404, _)) => return Ok(None),
+            Err(ureq::Error::Status(code, response))
+                if (code == 429 || code >= 500) && attempt < TRIES =>
+            {
+                let wait = response
+                    .header("retry-after")
+                    .and_then(|s| s.trim().parse::<u64>().ok())
+                    .unwrap_or(1)
+                    .max(attempt)
+                    .clamp(1, 5);
+                tracing::debug!("LRCLIB answered {code}, asking again in {wait}s");
+                thread::sleep(Duration::from_secs(wait));
+            }
+            Err(ureq::Error::Status(code, _)) => {
+                return Err(format!("LRCLIB is busy (it answered {code})"));
+            }
+            Err(e) => return Err(format!("LRCLIB could not be reached: {e}")),
+        }
+    }
+    Err("LRCLIB is busy".into())
 }
 
 /// Saves `lyrics` at `save_path` and says how that went.
@@ -566,16 +607,12 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
     let mut ovh_results = Vec::new();
 
     // 1. LRCLIB Search
-    let lrclib_req = ureq::get("https://lrclib.net/api/search")
-        .query("q", &query)
-        .set("User-Agent", USER_AGENT)
-        .timeout(std::time::Duration::from_secs(30));
-
-    if let Ok(res) = lrclib_req.call()
-        && res.status() == 200
-        && let Ok(json_arr) = res.into_json::<Vec<serde_json::Value>>()
-    {
-        lrclib_results = candidates(json_arr);
+    match lrclib("https://lrclib.net/api/search", &[("q", &query)]) {
+        Ok(Some(results)) => {
+            lrclib_results = candidates(serde_json::from_value(results).unwrap_or_default());
+        }
+        Ok(None) => {}
+        Err(e) => tracing::warn!("Lyrics search on LRCLIB failed: {e}"),
     }
 
     // 2. OVH Suggest

@@ -102,6 +102,12 @@ pub fn handle_lyrics_selector_submit(state: &mut AppState) -> Vec<AppMsg> {
                     return vec![];
                 };
 
+                // LRCLIB, busy, can take some seconds to answer.
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Info,
+                    format!("Fetching lyrics: {} – {}…", c.artist_name, c.track_name),
+                ));
+
                 let provider = match c.api {
                     crate::state::lyrics::LyricsApi::Lrclib => "lrclib".to_string(),
                     crate::state::lyrics::LyricsApi::Ovh => "ovh".to_string(),
