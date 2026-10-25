@@ -10,11 +10,11 @@
 
 - **Local Library & Playlists**: Your music folders are scanned at start and watched while running, so new music appears by itself.
 - **Audio Playback**: Support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
-- **Spectrum Visualizer**: Real-time audio spectrum visualization (supports CAVA).
+- **Spectrum Visualizer**: Six styles, cycled with `w` or picked with `:vis <style>`: Particle (the default, a fountain of droplets thrown up by the music), Default and Bar (mirrored bars with falling caps), Radial (a turning ring), Nova (particles sprayed out of a pulsing core, with a burst on every kick), and Cava when [CAVA](https://github.com/karlstav/cava) is installed. It follows the music, not the volume slider, and rests when playback is paused.
 - **Synced Lyrics**: Time-synced lyrics from `.lrc` files, the lyrics in your files' own tags, or fetched from LRCLIB as a song starts. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
-- **DSP Studio**: Real-time audio processing (Speed, Bass, Treble, Reverb, Echo) with a symmetric 8-band EQ.
-- **System Integration**: Syncs with Linux/macOS desktop media widgets and supports hardware media keys.
-- **Download Support**: Integrated YouTube downloads via `yt-dlp`.
+- **DSP Studio**: Real-time audio processing (speed, bass, treble, reverb, echo, panning, width, filters and more) with a 10-band EQ and presets.
+- **System Integration**: Shows in the desktop's media controls on Linux, macOS and Windows, and answers media keys and headset buttons.
+- **Download Support**: Integrated YouTube downloads via `yt-dlp`, tagged with the song's title and artist rather than the video's title and channel.
 
 ---
 
@@ -86,7 +86,7 @@ Options: `--config <FILE>` reads another config file, `--no-config` starts with 
 
 > [!TIP]
 > **Need help?**
-> Once inside the app, simply press `?` to open the Help Overlay and see a complete list of all available keybindings and commands!
+> Once inside the app, press `?` for every key and command; `j`/`k` scroll it, and `q` or `Esc` closes it.
 
 ### Basic Navigation
 
@@ -104,8 +104,9 @@ Options: `--config <FILE>` reads another config file, `--no-config` starts with 
 | `:shuffle on`, `:repeat track` | Shuffle and repeat |
 | `:fx bass 2`, `:fx eq 3 -4`, `:fx reset` | Effects, the EQ, and resetting them |
 | `:fx slowed`, `:preset load <name>` | Effect macros and presets |
+| `:lyrics fetch`, `:lyrics search <query>` | Fetch or look up lyrics |
 | `:lyrics zoom 3`, `:lyrics zoom panel 2` | Lyrics size |
-| `:focus lyrics`, `:vis radial`, `:toggle art` | Layout, visualizer and panels |
+| `:focus lyrics`, `:vis nova`, `:toggle art` | Layout, visualizer and panels |
 | `:device`, `:device <name>`, `:device default` | Audio output device |
 | `:pl add <playlist>`, `:artist <query>` | Playlists and search |
 
