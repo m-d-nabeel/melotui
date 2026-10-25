@@ -169,6 +169,10 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
             state.session.output.devices = names;
             vec![]
         }
+        AudioMsg::OutputKindChanged(kind) => {
+            state.session.output.kind = kind;
+            vec![]
+        }
         AudioMsg::OutputOpened(name) => {
             // Said only when it changes: the device opened at start is not
             // news, a replacement for one that went is.

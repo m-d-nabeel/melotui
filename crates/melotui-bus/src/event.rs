@@ -53,6 +53,8 @@ pub enum IpcEvent {
     AudioOutputOpened {
         name: String,
     },
+    /// What the music comes out of changed.
+    AudioOutputKind(melotui_core::state::audio::OutputKind),
     /// The output devices there are.
     OutputDevices {
         names: Vec<String>,

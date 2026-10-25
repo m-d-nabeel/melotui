@@ -264,4 +264,18 @@ pub struct OutputState {
     /// The devices there are, for completing `:device`; asked for each time
     /// the command bar opens.
     pub devices: Vec<String>,
+    /// What the music comes out of, as far as can be told.
+    pub kind: OutputKind,
+}
+
+/// What the music comes out of, for the playback bar's icon.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum OutputKind {
+    #[default]
+    Unknown,
+    Speakers,
+    Headphones,
+    Headset,
+    /// A monitor or television, over HDMI or DisplayPort.
+    Display,
 }

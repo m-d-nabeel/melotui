@@ -83,14 +83,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         };
         frame.render_widget(Paragraph::new(title_line), row1_layout[0]);
 
-        // Right: source, shuffle, repeat
-        let controls_line = Line::from(vec![
+        // Right: output, source, shuffle, repeat
+        let output = utils::get_output_icon(state.output_kind(), state.is_muted(), t);
+        let controls_line = Line::from_iter(output.into_iter().chain([
             Span::styled(source_icon, Style::default().fg(source_color).bold()),
             Span::raw(" "),
             utils::get_shuffle_icon(state.shuffle_active(), t),
             Span::raw(" "),
             utils::get_repeat_icon(state.repeat_mode(), t),
-        ]);
+        ]));
         frame.render_widget(
             Paragraph::new(controls_line).alignment(Alignment::Right),
             row1_layout[1],
@@ -227,14 +228,15 @@ pub fn draw_compact(frame: &mut Frame, area: Rect, state: &AppState) {
         } else {
             ("♪", t.accent_info)
         };
-        let controls_line = Line::from(vec![
+        let output = utils::get_output_icon(state.output_kind(), state.is_muted(), t);
+        let controls_line = Line::from_iter(output.into_iter().chain([
             Span::styled(source_icon, Style::default().fg(source_color).bold()),
             Span::raw(" "),
             utils::get_shuffle_icon(state.shuffle_active(), t),
             Span::raw(" "),
             utils::get_repeat_icon(state.repeat_mode(), t),
             Span::raw(" "),
-        ]);
+        ]));
         frame.render_widget(
             Paragraph::new(controls_line).alignment(Alignment::Right),
             row_layout[1],

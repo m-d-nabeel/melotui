@@ -288,6 +288,7 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         // A worker that failed says so, rather than the failure only reaching
         // the log.
         IpcEvent::AudioOutputOpened { name } => AppMsg::Audio(AudioMsg::OutputOpened(name)),
+        IpcEvent::AudioOutputKind(kind) => AppMsg::Audio(AudioMsg::OutputKindChanged(kind)),
         IpcEvent::OutputDevices { names } => AppMsg::Audio(AudioMsg::OutputDevicesListed(names)),
         IpcEvent::Error { message } => AppMsg::UI(UIMsg::Notify {
             kind: NotificationKind::Error,

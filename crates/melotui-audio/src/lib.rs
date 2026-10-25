@@ -3,6 +3,7 @@ mod clock;
 mod effects;
 mod fft;
 mod output;
+mod output_kind;
 mod reaper;
 mod source;
 mod tap;

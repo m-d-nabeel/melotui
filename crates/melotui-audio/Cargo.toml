@@ -17,6 +17,7 @@ tracing = "0.1"
 spectrum-analyzer = "1.7"
 ringbuf = "0.5"
 anyhow = "1"
+serde_json = "1"
 fundsp = "0.20"
 
 # Pulled in directly (not via rodio) purely to switch on cpal's optional

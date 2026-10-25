@@ -459,6 +459,14 @@ impl AppState {
         self.session.ui.show_help
     }
 
+    pub fn is_muted(&self) -> bool {
+        self.session.audio.muted_from.is_some()
+    }
+
+    pub fn output_kind(&self) -> crate::state::audio::OutputKind {
+        self.session.output.kind
+    }
+
     pub fn ui_help_scroll(&self) -> u16 {
         self.session.ui.help_scroll
     }

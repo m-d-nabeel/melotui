@@ -9,6 +9,8 @@ pub enum AudioMsg {
     OutputDevicesListed(Vec<String>),
     /// An output device was opened.
     OutputOpened(String),
+    /// What the music comes out of changed: headphones plugged in, say.
+    OutputKindChanged(crate::state::audio::OutputKind),
     AdjustVolume(f32),
     /// Mutes, keeping the volume to unmute to, or unmutes.
     ToggleMute,
