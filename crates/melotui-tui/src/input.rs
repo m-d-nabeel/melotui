@@ -12,36 +12,6 @@ use melotui_core::{
     state::UIMode,
 };
 
-/// Tells a held key from a pressed one, for keys that should act once.
-///
-/// A held key comes as presses, one after another, a few tens of
-/// milliseconds apart once the terminal starts repeating it, and a fraction
-/// of a second after the first before that. The same key again sooner than
-/// `HOLD` after the last of it is the hold going on; it is let through only
-/// for actions meant to repeat.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct HoldGuard {
-    last: Option<(
-        KeyCode,
-        ratatui::crossterm::event::KeyModifiers,
-        std::time::Instant,
-    )>,
-}
-
-const HOLD: std::time::Duration = std::time::Duration::from_millis(500);
-
-impl HoldGuard {
-    /// Whether `key`, arriving at `now`, should act. `repeats` says whether
-    /// its action is meant to repeat while held.
-    pub fn allow(&mut self, key: &KeyEvent, repeats: bool, now: std::time::Instant) -> bool {
-        let held = self.last.is_some_and(|(code, modifiers, at)| {
-            code == key.code && modifiers == key.modifiers && now.duration_since(at) < HOLD
-        });
-        self.last = Some((key.code, key.modifiers, now));
-        repeats || !held
-    }
-}
-
 pub struct InputHandler;
 
 impl InputHandler {
@@ -102,12 +72,13 @@ impl InputHandler {
         contexts
     }
 
-    /// The action `key` is bound to where the app is now, if any.
-    pub fn action_for(
-        key: &KeyEvent,
-        state: &AppState,
-        registry: &KeyRegistry,
-    ) -> Option<KeyAction> {
+    pub fn handle(key: KeyEvent, state: &AppState, registry: &KeyRegistry) -> Option<AppMsg> {
+        if key.kind == KeyEventKind::Release {
+            return None;
+        }
+
+        let contexts = Self::get_active_contexts(state);
+
         let mut normalized_code = key.code;
         if let KeyCode::Char(c) = normalized_code
             && key
@@ -117,22 +88,18 @@ impl InputHandler {
         {
             normalized_code = KeyCode::Char(c.to_ascii_lowercase());
         }
-        Self::get_active_contexts(state)
-            .into_iter()
-            .find_map(|ctx| {
-                registry.bindings.get(&ctx)?.iter().find_map(|binding| {
-                    (binding.key == normalized_code && binding.modifiers == key.modifiers)
-                        .then_some(binding.action)
-                })
-            })
-    }
 
-    pub fn handle(key: KeyEvent, state: &AppState, registry: &KeyRegistry) -> Option<AppMsg> {
-        if key.kind == KeyEventKind::Release {
-            return None;
+        let mut action = None;
+        'ctx_loop: for ctx in contexts {
+            if let Some(bindings) = registry.bindings.get(&ctx) {
+                for binding in bindings {
+                    if binding.key == normalized_code && binding.modifiers == key.modifiers {
+                        action = Some(binding.action);
+                        break 'ctx_loop;
+                    }
+                }
+            }
         }
-
-        let action = Self::action_for(&key, state, registry);
 
         // command mode typing fallback
         let Some(act) = action else {
@@ -563,32 +530,5 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[test]
-    fn a_held_toggle_acts_once_and_a_held_move_keeps_moving() {
-        let start = std::time::Instant::now();
-        let at = |ms: u64| start + std::time::Duration::from_millis(ms);
-        let v = typed('v');
-        let mut guard = HoldGuard::default();
-        // Pressed, then repeating: the terminal's delay, then every 33 ms.
-        let held: Vec<bool> = [0, 400, 433, 466, 500]
-            .iter()
-            .map(|&ms| guard.allow(&v, false, at(ms)))
-            .collect();
-        assert_eq!(held, vec![true, false, false, false, false]);
-        // Let go, pressed again a moment later: that acts.
-        assert!(guard.allow(&v, false, at(1100)));
-        // Another key in between is a press of its own.
-        assert!(guard.allow(&typed('l'), false, at(1150)));
-        assert!(guard.allow(&v, false, at(1200)));
-
-        let mut guard = HoldGuard::default();
-        let down = KeyEvent::new(KeyCode::Down, KeyModifiers::empty());
-        assert!(
-            [0, 400, 433, 466]
-                .iter()
-                .all(|&ms| guard.allow(&down, true, at(ms)))
-        );
     }
 }
