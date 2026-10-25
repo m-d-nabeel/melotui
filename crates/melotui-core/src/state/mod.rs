@@ -1,7 +1,9 @@
 pub mod audio;
 pub mod download;
+pub mod fountain;
 pub mod lyrics;
 pub mod notification;
+pub mod nova;
 pub mod preset;
 pub mod session;
 pub mod session_store;

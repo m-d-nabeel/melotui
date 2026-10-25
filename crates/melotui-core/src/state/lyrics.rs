@@ -1,4 +1,11 @@
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
+
 use lrc::Lyrics;
+
+use crate::domain::TrackMeta;
 
 #[derive(Debug, Clone, Default)]
 pub enum LyricsData {
@@ -23,17 +30,55 @@ impl LyricsData {
         }
     }
 
-    /// The lyrics for the audio file at `audio`: from a `.lrc` file beside it
-    /// if there is one, or else from the lyrics in its own tags.
-    pub fn load_for(audio: &std::path::Path) -> Self {
-        if let Ok(text) = std::fs::read_to_string(audio.with_extension("lrc")) {
-            let lyrics = Self::from_text(text);
-            if !matches!(lyrics, LyricsData::None) {
-                return lyrics;
+    /// The lyrics for the audio file at `audio`, the song `track`: from a
+    /// `.lrc` file beside it, or one in `store` named after the song or after
+    /// the file, or else from the lyrics in its own tags.
+    pub fn load_for(audio: &Path, track: Option<&TrackMeta>, store: &Path) -> Self {
+        let beside = audio.with_extension("lrc");
+        let by_song = track.and_then(|t| stored_path(store, &t.title, t.artist.as_deref()));
+        let by_file = audio
+            .file_stem()
+            .map(|stem| store.join(format!("{}.lrc", stem.to_string_lossy())));
+        for path in [Some(beside), by_song, by_file].into_iter().flatten() {
+            if let Ok(text) = std::fs::read_to_string(path) {
+                let lyrics = Self::from_text(text);
+                if !matches!(lyrics, LyricsData::None) {
+                    return lyrics;
+                }
             }
         }
         embedded_lyrics(audio).map_or(LyricsData::None, Self::from_text)
     }
+}
+
+/// Where lyrics are kept, out of the music folders: those melotui fetches,
+/// named after the song, and any put there by hand, named after the song or
+/// after the audio file.
+pub fn store_dir() -> PathBuf {
+    crate::config::AppConfig::data_dir().join("lyrics")
+}
+
+/// The file in `store` for `title` by `artist`: `Artist - Title.lrc`.
+pub fn stored_path(store: &Path, title: &str, artist: Option<&str>) -> Option<PathBuf> {
+    let name = match artist.map(str::trim).filter(|a| !a.is_empty()) {
+        Some(artist) => format!("{artist} - {}", title.trim()),
+        None => title.trim().to_string(),
+    };
+    let name: String = name
+        .chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    // Room for `.lrc` within the usual 255-byte limit on a name.
+    let mut end = name.len().min(240);
+    while !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    let name = name[..end].trim().trim_matches('.');
+    (!name.is_empty() && !title.trim().is_empty()).then(|| store.join(format!("{name}.lrc")))
 }
 
 /// The lyrics in an audio file's tags — ID3's USLT, Vorbis and FLAC's
@@ -74,11 +119,38 @@ pub struct LyricsSearchState {
     pub selected_row: usize,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct LyricsState {
     pub data: LyricsData,
     pub active_line_index: Option<usize>,
     pub search_state: Option<LyricsSearchState>,
+    /// Where lyrics are kept: [`store_dir`], but for tests.
+    pub store: PathBuf,
+    /// The songs lyrics have been fetched for this run, found or not, so a
+    /// song that has none is not asked about at every play.
+    pub fetched: HashSet<PathBuf>,
+    /// Where lyrics fetched unasked are going: they come, or don't, quietly.
+    pub fetching_unasked: Option<PathBuf>,
+    /// The lyrics panel was closed by hand, and stays closed until opened.
+    pub panel_closed: bool,
+    /// The lyrics panel was opened for a song's lyrics, and closes again for
+    /// a song with none.
+    pub panel_opened_for_lyrics: bool,
+}
+
+impl Default for LyricsState {
+    fn default() -> Self {
+        Self {
+            data: LyricsData::None,
+            active_line_index: None,
+            search_state: None,
+            store: store_dir(),
+            fetched: HashSet::new(),
+            fetching_unasked: None,
+            panel_closed: false,
+            panel_opened_for_lyrics: false,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -150,21 +222,92 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let song = dir.path().join("song.wav");
         wav(&song);
-        assert!(matches!(LyricsData::load_for(&song), LyricsData::None));
+        let store = dir.path().join("store");
+        assert!(matches!(
+            LyricsData::load_for(&song, None, &store),
+            LyricsData::None
+        ));
 
         tag_lyrics(&song, "[00:01.00] From the tag\n[00:03.00] Second line");
-        match LyricsData::load_for(&song) {
+        match LyricsData::load_for(&song, None, &store) {
             LyricsData::Synced(lyrics) => assert_eq!(lyrics.get_timed_lines().len(), 2),
             other => panic!("{other:?}"),
         }
 
         // A .lrc beside it comes first.
         std::fs::write(song.with_extension("lrc"), "[00:00.50] From the lrc").unwrap();
-        match LyricsData::load_for(&song) {
+        match LyricsData::load_for(&song, None, &store) {
             LyricsData::Synced(lyrics) => {
                 assert_eq!(lyrics.get_timed_lines()[0].1.as_ref(), "From the lrc")
             }
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn lyrics_are_found_in_the_store_by_song_or_by_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = dir.path().join("store");
+        std::fs::create_dir_all(&store).unwrap();
+        let song = dir.path().join("LiSA『紅蓮華』-MUSiC CLiP-.wav");
+        wav(&song);
+        let track = TrackMeta {
+            id: crate::domain::TrackId(1),
+            file_path: song.clone(),
+            title: "紅蓮華".into(),
+            artist: Some("LiSA".into()),
+            album: None,
+            genre: None,
+            year: None,
+            is_favorite: false,
+            track_number: None,
+            play_count: 0,
+            last_played_at: None,
+            duration_ms: 1000,
+            bitrate: None,
+            sample_rate: None,
+            format: "wav".into(),
+            has_cover: false,
+            file_size_bytes: 16,
+        };
+
+        // Moved over by hand, named as the audio file was.
+        std::fs::write(
+            store.join("LiSA『紅蓮華』-MUSiC CLiP-.lrc"),
+            "[00:01.00] By file",
+        )
+        .unwrap();
+        let line = |l: LyricsData| match l {
+            LyricsData::Synced(lyrics) => lyrics.get_timed_lines()[0].1.to_string(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            line(LyricsData::load_for(&song, Some(&track), &store)),
+            "By file"
+        );
+
+        // Fetched, named after the song: that comes first.
+        std::fs::write(store.join("LiSA - 紅蓮華.lrc"), "[00:01.00] By song").unwrap();
+        assert_eq!(
+            line(LyricsData::load_for(&song, Some(&track), &store)),
+            "By song"
+        );
+    }
+
+    #[test]
+    fn stored_names_are_safe_file_names() {
+        let store = Path::new("/store");
+        assert_eq!(
+            stored_path(store, "AC/DC: Live?", Some("ヨルシカ / n-buna")),
+            Some(PathBuf::from("/store/ヨルシカ _ n-buna - AC_DC_ Live_.lrc"))
+        );
+        assert_eq!(
+            stored_path(store, "Title", None),
+            Some(PathBuf::from("/store/Title.lrc"))
+        );
+        assert_eq!(stored_path(store, "  ", Some("Artist")), None);
+        let long = "あ".repeat(200);
+        let path = stored_path(store, &long, None).unwrap();
+        assert!(path.file_name().unwrap().len() <= 255);
     }
 }

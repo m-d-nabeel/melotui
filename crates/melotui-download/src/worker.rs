@@ -13,7 +13,10 @@ use std::{
 
 use melotui_bus::{channel::IpcWorker, command::DownloadCommand, event::IpcEvent};
 
-use crate::progress::parse_progress;
+use crate::{
+    progress::parse_progress,
+    tags::{REPORT, Reports, retag},
+};
 
 enum InternalEvent {
     Progress(u8),
@@ -72,6 +75,8 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                 DownloadCommand::FetchLyrics {
                     track_name,
                     artist_name,
+                    album_name,
+                    duration_secs,
                     save_path,
                     provider,
                     provider_id,
@@ -86,6 +91,8 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                         fetch_lyrics_task(
                             track_name,
                             artist_name,
+                            album_name,
+                            duration_secs,
                             save_path,
                             provider,
                             provider_id,
@@ -172,6 +179,14 @@ fn download_task(
         format!("ytsearch1:{}", query)
     };
 
+    let mut reports = Reports::new(std::env::temp_dir().join(format!(
+        "melotui-download-{}-{}.jsonl",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    )));
+
     let cmd = Command::new("yt-dlp")
         .arg("-x")
         .arg("-f")
@@ -183,6 +198,11 @@ fn download_task(
         .arg("--add-metadata")
         .arg("--output")
         .arg(format!("{}/%(title)s.%(ext)s", dl_path.display()))
+        // Reported before the --exec below runs, so each item's report is
+        // there by the time it is said to be finished.
+        .arg("--print-to-file")
+        .arg(REPORT)
+        .arg(reports.template())
         .arg("--exec")
         .arg("echo MELOTUI_ITEM_FINISHED")
         .arg(target)
@@ -240,6 +260,12 @@ fn download_task(
                 let _ = tx_out.send(InternalEvent::Progress(pct));
             }
             if line.contains("MELOTUI_ITEM_FINISHED") {
+                for report in reports.take_new() {
+                    match retag(&report) {
+                        Ok(path) => tracing::info!("Tagged {path:?} with its song"),
+                        Err(e) => tracing::warn!("Could not tag a download: {e}"),
+                    }
+                }
                 let _ = tx_out.send(InternalEvent::ItemFinished);
             }
         }
@@ -275,9 +301,56 @@ fn download_task(
     }
 }
 
+const USER_AGENT: &str = concat!(
+    "melotui/",
+    env!("CARGO_PKG_VERSION"),
+    " (https://github.com/m-d-nabeel/melotui)"
+);
+
+/// Writes `lyrics` to `path`, making the folder it goes in if need be.
+fn save_lyrics(path: &std::path::Path, lyrics: &str) -> std::io::Result<()> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(path, lyrics)
+}
+
+/// The best of LRCLIB's search results for a song `duration` seconds long:
+/// one with lyrics, synced before plain, nearest in length first, and none
+/// more than `MAX_DRIFT` seconds off — that is another recording, or another
+/// song. A music video runs longer than the song for its intro, hence the
+/// leeway.
+fn best_match(results: Vec<serde_json::Value>, duration: Option<u64>) -> Option<serde_json::Value> {
+    const MAX_DRIFT: f64 = 15.0;
+    let text = |r: &serde_json::Value, key: &str| {
+        r.get(key)
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.trim().is_empty())
+    };
+    let drift = |r: &serde_json::Value| match duration {
+        Some(d) => r
+            .get("duration")
+            .and_then(|v| v.as_f64())
+            .map_or(f64::INFINITY, |len| (len - d as f64).abs()),
+        None => 0.0,
+    };
+    results
+        .into_iter()
+        .filter(|r| (text(r, "syncedLyrics") || text(r, "plainLyrics")) && drift(r) <= MAX_DRIFT)
+        .min_by(|a, b| {
+            let rank = |r: &serde_json::Value| (!text(r, "syncedLyrics"), drift(r));
+            rank(a)
+                .partial_cmp(&rank(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn fetch_lyrics_task(
     track_name: String,
     artist_name: String,
+    album_name: Option<String>,
+    duration_secs: Option<u64>,
     save_path: PathBuf,
     provider: Option<String>,
     provider_id: Option<String>,
@@ -300,10 +373,7 @@ fn fetch_lyrics_task(
         if let Some(id) = &provider_id {
             // We have an exact ID, fetch directly!
             let req = ureq::get(&format!("https://lrclib.net/api/get/{}", id))
-                .set(
-                    "User-Agent",
-                    "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
-                )
+                .set("User-Agent", USER_AGENT)
                 .timeout(std::time::Duration::from_secs(30));
             if let Ok(response) = req.call()
                 && response.status() == 200
@@ -311,13 +381,17 @@ fn fetch_lyrics_task(
                 json_opt = response.into_json::<serde_json::Value>().ok();
             }
         } else if !artist_name.is_empty() {
-            let req = ureq::get("https://lrclib.net/api/get")
+            let mut req = ureq::get("https://lrclib.net/api/get")
                 .query("track_name", &track_name)
-                .query("artist_name", &artist_name)
-                .set(
-                    "User-Agent",
-                    "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
-                )
+                .query("artist_name", &artist_name);
+            if let Some(album) = &album_name {
+                req = req.query("album_name", album);
+            }
+            if let Some(duration) = duration_secs {
+                req = req.query("duration", &duration.to_string());
+            }
+            let req = req
+                .set("User-Agent", USER_AGENT)
                 .timeout(std::time::Duration::from_secs(30));
 
             if let Ok(response) = req.call()
@@ -337,18 +411,14 @@ fn fetch_lyrics_task(
 
             let req = ureq::get("https://lrclib.net/api/search")
                 .query("q", &query)
-                .set(
-                    "User-Agent",
-                    "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
-                )
+                .set("User-Agent", USER_AGENT)
                 .timeout(std::time::Duration::from_secs(30));
 
             if let Ok(response) = req.call()
                 && response.status() == 200
-                && let Ok(mut arr) = response.into_json::<Vec<serde_json::Value>>()
-                && !arr.is_empty()
+                && let Ok(results) = response.into_json::<Vec<serde_json::Value>>()
             {
-                json_opt = Some(arr.remove(0));
+                json_opt = best_match(results, duration_secs);
             }
         }
 
@@ -367,7 +437,7 @@ fn fetch_lyrics_task(
             }
 
             if let Some(l) = lyrics {
-                if let Err(e) = std::fs::write(&save_path, l.as_bytes()) {
+                if let Err(e) = save_lyrics(&save_path, &l) {
                     tracing::error!("Failed to write lyrics to file: {}", e);
                     let _ = tx.send(InternalEvent::LyricsFailed(format!(
                         "Failed to write lyrics file: {}",
@@ -408,10 +478,7 @@ fn fetch_lyrics_task(
 
         let ovh_url = format!("https://api.lyrics.ovh/v1/{}/{}", ovh_artist, ovh_track);
         let req = ureq::get(&ovh_url)
-            .set(
-                "User-Agent",
-                "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
-            )
+            .set("User-Agent", USER_AGENT)
             .timeout(std::time::Duration::from_secs(30));
 
         if let Ok(response) = req.call()
@@ -420,7 +487,7 @@ fn fetch_lyrics_task(
             && let Some(lyrics) = json.get("lyrics").and_then(|v| v.as_str())
             && !lyrics.trim().is_empty()
         {
-            if let Err(e) = std::fs::write(&save_path, lyrics) {
+            if let Err(e) = save_lyrics(&save_path, lyrics) {
                 tracing::error!("Failed to write lyrics to file: {}", e);
                 let _ = tx.send(InternalEvent::LyricsFailed(format!(
                     "Failed to write lyrics file: {}",
@@ -449,10 +516,7 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
     // 1. LRCLIB Search
     let lrclib_req = ureq::get("https://lrclib.net/api/search")
         .query("q", &query)
-        .set(
-            "User-Agent",
-            "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
-        )
+        .set("User-Agent", USER_AGENT)
         .timeout(std::time::Duration::from_secs(30));
 
     if let Ok(res) = lrclib_req.call()
@@ -503,10 +567,7 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
         .collect::<String>();
 
     let ovh_req = ureq::get(&format!("https://api.lyrics.ovh/suggest/{}", ovh_query))
-        .set(
-            "User-Agent",
-            "Melotui/0.3.0 (https://github.com/m-d-nabeel/melotui)",
-        )
+        .set("User-Agent", USER_AGENT)
         .timeout(std::time::Duration::from_secs(30));
 
     if let Ok(res) = ovh_req.call()
@@ -541,4 +602,32 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
         lrclib_results,
         ovh_results,
     });
+}
+
+#[cfg(test)]
+mod lyrics_match_tests {
+    use super::best_match;
+    use serde_json::json;
+
+    #[test]
+    fn synced_lyrics_of_the_right_length_win_and_other_songs_lose() {
+        let results = vec![
+            json!({"id": 1, "duration": 236.0, "plainLyrics": "plain", "syncedLyrics": null}),
+            json!({"id": 2, "duration": 240.0, "plainLyrics": "plain", "syncedLyrics": "[00:01.00] a"}),
+            json!({"id": 3, "duration": 410.0, "plainLyrics": "plain", "syncedLyrics": "[00:01.00] b"}),
+            json!({"id": 4, "duration": 235.0, "plainLyrics": "", "syncedLyrics": ""}),
+        ];
+        let best = best_match(results.clone(), Some(235)).unwrap();
+        assert_eq!(
+            best["id"], 2,
+            "synced, five seconds off, before plain and one off"
+        );
+        let none_close = best_match(results[2..3].to_vec(), Some(235));
+        assert!(none_close.is_none(), "175 seconds off is another recording");
+        assert_eq!(
+            best_match(results, None).unwrap()["id"],
+            2,
+            "no length known: synced first"
+        );
+    }
 }

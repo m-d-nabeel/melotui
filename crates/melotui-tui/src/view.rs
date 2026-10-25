@@ -24,6 +24,7 @@ pub fn draw(
     state: &AppState,
     image_cache: &mut ImageCache,
     registry: &crate::keybinding::KeyRegistry,
+    help_scroll_max: &std::cell::Cell<u16>,
 ) {
     let area = frame.area();
 
@@ -57,7 +58,7 @@ pub fn draw(
     crate::lyrics::kitty::spread_rows(frame.buffer_mut());
 
     // Overlays render on top regardless of focus mode
-    draw_overlays(frame, area, state, registry);
+    draw_overlays(frame, area, state, registry, help_scroll_max);
     fit_escape_cells(frame.buffer_mut());
 }
 
@@ -195,6 +196,7 @@ fn draw_overlays(
     area: Rect,
     state: &AppState,
     registry: &crate::keybinding::KeyRegistry,
+    help_scroll_max: &std::cell::Cell<u16>,
 ) {
     notification_popup::draw(frame, frame.area(), state);
 
@@ -232,7 +234,7 @@ fn draw_overlays(
 
     if state.ui_show_help() {
         frame.render_widget(dim_block.clone(), area);
-        help_view::draw(frame, area, state, registry);
+        help_view::draw(frame, area, state, registry, help_scroll_max);
     }
 }
 
@@ -282,7 +284,7 @@ mod tests {
         terminal
             .draw(|f| {
                 let registry = crate::keybinding::KeyRegistry::default();
-                draw(f, &state, &mut image_cache, &registry);
+                draw(f, &state, &mut image_cache, &registry, &Default::default());
             })
             .unwrap();
 
@@ -312,7 +314,7 @@ mod tests {
         terminal
             .draw(|f| {
                 let registry = crate::keybinding::KeyRegistry::default();
-                draw(f, &state, &mut image_cache, &registry);
+                draw(f, &state, &mut image_cache, &registry, &Default::default());
             })
             .unwrap();
 

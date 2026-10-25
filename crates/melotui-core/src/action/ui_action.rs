@@ -17,6 +17,13 @@ use tui_input::InputRequest;
 
 pub fn handle_open_help(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.show_help = true;
+    state.session.ui.help_scroll = 0;
+    vec![]
+}
+
+pub fn handle_scroll_help(state: &mut AppState, by: i32, max: u16) -> Vec<AppMsg> {
+    let scroll = i64::from(state.session.ui.help_scroll) + i64::from(by);
+    state.session.ui.help_scroll = scroll.clamp(0, i64::from(max)) as u16;
     vec![]
 }
 
@@ -87,8 +94,13 @@ pub fn handle_lyrics_selector_submit(state: &mut AppState) -> Vec<AppMsg> {
             // Wait, we need to guarantee it fetches the *exact* one.
             // Since we use the exact `track_name` and `artist_name`, both APIs will find it properly.
             if let Some(track) = state.get_playing_track() {
-                let mut save_path = track.file_path.clone();
-                save_path.set_extension("lrc");
+                let Some(save_path) = crate::state::lyrics::stored_path(
+                    &state.session.lyrics.store,
+                    &track.title,
+                    track.artist.as_deref(),
+                ) else {
+                    return vec![];
+                };
 
                 let provider = match c.api {
                     crate::state::lyrics::LyricsApi::Lrclib => "lrclib".to_string(),
@@ -99,6 +111,8 @@ pub fn handle_lyrics_selector_submit(state: &mut AppState) -> Vec<AppMsg> {
                     crate::message::download::DownloadMsg::RequestFetchLyrics {
                         track_name: c.track_name,
                         artist_name: c.artist_name,
+                        album_name: None,
+                        duration_secs: None,
                         save_path,
                         provider: Some(provider),
                         provider_id: c.provider_id,
@@ -316,7 +330,8 @@ pub fn handle_resize(state: &mut AppState, w: u16, h: u16) -> Vec<AppMsg> {
 }
 
 pub fn handle_toggle_lyrics(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.ui.show_lyrics = !state.session.ui.show_lyrics;
+    let show = !state.session.ui.show_lyrics;
+    crate::action::playback_action::lyrics_panel_set_by_hand(state, show);
     vec![]
 }
 
@@ -418,8 +433,15 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                     return vec![];
                 }
 
-                let mut save_path = track.file_path.clone();
-                save_path.set_extension("lrc");
+                // Kept under the song playing, for it to be found again,
+                // whatever was searched for.
+                let Some(save_path) = crate::state::lyrics::stored_path(
+                    &state.session.lyrics.store,
+                    &track.title,
+                    track.artist.as_deref(),
+                ) else {
+                    return vec![];
+                };
 
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Info,
@@ -428,6 +450,8 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 vec![AppMsg::Download(DownloadMsg::RequestFetchLyrics {
                     track_name,
                     artist_name,
+                    album_name: None,
+                    duration_secs: None,
                     save_path,
                     provider: None,
                     provider_id: None,
@@ -592,7 +616,8 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         Command::Sort => vec![AppMsg::Library(LibraryMsg::ToggleSort)],
         Command::ClearQueue => vec![AppMsg::Library(LibraryMsg::ClearQueue)],
         Command::ShowLyrics(show) => {
-            state.session.ui.show_lyrics = show.unwrap_or(!state.session.ui.show_lyrics);
+            let show = show.unwrap_or(!state.session.ui.show_lyrics);
+            crate::action::playback_action::lyrics_panel_set_by_hand(state, show);
             vec![]
         }
         Command::LyricsZoom { view, zoom } => {
@@ -1688,5 +1713,22 @@ mod tests {
         // Move up from grid top (14 -> 9)
         handle_dsp_select_up(&mut state);
         assert_eq!(state.session.ui.dsp_selected_control, 9);
+    }
+
+    #[test]
+    fn the_help_scrolls_within_its_length_and_opens_at_the_top() {
+        let mut state = test_state();
+        handle_open_help(&mut state);
+        handle_scroll_help(&mut state, 5, 30);
+        assert_eq!(state.session.ui.help_scroll, 5);
+        handle_scroll_help(&mut state, i32::MAX, 30);
+        assert_eq!(state.session.ui.help_scroll, 30, "no further than its end");
+        handle_scroll_help(&mut state, -1, 30);
+        assert_eq!(state.session.ui.help_scroll, 29, "and back at once");
+        handle_scroll_help(&mut state, i32::MIN, 30);
+        assert_eq!(state.session.ui.help_scroll, 0);
+        handle_scroll_help(&mut state, 9, 30);
+        handle_open_help(&mut state);
+        assert_eq!(state.session.ui.help_scroll, 0);
     }
 }

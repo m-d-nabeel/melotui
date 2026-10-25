@@ -50,12 +50,16 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             DownloadMsg::RequestFetchLyrics {
                 track_name,
                 artist_name,
+                album_name,
+                duration_secs,
                 save_path,
                 provider,
                 provider_id,
             } => Some(IpcCommand::Download(DownloadCommand::FetchLyrics {
                 track_name: track_name.clone(),
                 artist_name: artist_name.clone(),
+                album_name: album_name.clone(),
+                duration_secs: *duration_secs,
                 save_path: save_path.clone(),
                 provider: provider.clone(),
                 provider_id: provider_id.clone(),
@@ -368,6 +372,8 @@ mod tests {
         let msg = AppMsg::Download(DownloadMsg::RequestFetchLyrics {
             track_name: "Test Title".to_string(),
             artist_name: "Test Artist".to_string(),
+            album_name: Some("Test Album".to_string()),
+            duration_secs: Some(200),
             save_path: std::path::PathBuf::from("/path/to/lyrics.lrc"),
             provider: None,
             provider_id: None,
@@ -377,10 +383,14 @@ mod tests {
             IpcCommand::Download(melotui_bus::command::DownloadCommand::FetchLyrics {
                 track_name,
                 artist_name,
+                album_name,
+                duration_secs,
                 save_path,
                 provider: _,
                 provider_id: _,
             }) => {
+                assert_eq!(album_name.as_deref(), Some("Test Album"));
+                assert_eq!(duration_secs, Some(200));
                 assert_eq!(track_name, "Test Title");
                 assert_eq!(artist_name, "Test Artist");
                 assert_eq!(save_path, std::path::PathBuf::from("/path/to/lyrics.lrc"));

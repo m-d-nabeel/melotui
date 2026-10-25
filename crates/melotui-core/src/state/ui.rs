@@ -96,6 +96,8 @@ pub struct UIState {
     pub confirm_dialog: Option<ConfirmDialog>,
 
     pub show_help: bool,
+    /// How far the help is scrolled, in lines.
+    pub help_scroll: u16,
     pub show_lyrics: bool,
     pub show_playback: bool,
     pub show_dsp_studio: bool,
@@ -126,6 +128,7 @@ impl Default for UIState {
             pending_add_track: None,
             confirm_dialog: None,
             show_help: false,
+            help_scroll: 0,
             show_lyrics: false,
             show_playback: true,
             show_dsp_studio: false,

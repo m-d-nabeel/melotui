@@ -24,6 +24,7 @@ pub struct AppConfig {
     pub ui: UiConfig,
     pub library: LibraryConfig,
     pub audio: AudioConfig,
+    pub lyrics: LyricsConfig,
     #[serde(skip)]
     pub theme_overrides: std::collections::HashMap<String, String>,
     #[serde(skip)]
@@ -67,6 +68,22 @@ pub struct UiConfig {
     pub lyrics_zoom: f32,
     /// The same for the full lyrics view (`:focus lyrics`).
     pub lyrics_zoom_focus: f32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct LyricsConfig {
+    /// Fetch lyrics from LRCLIB for a song that has none, as it starts:
+    /// its title, artist, album and length are sent to lrclib.net. Fetched
+    /// lyrics are kept in the data folder's `lyrics` folder (see `--paths`),
+    /// never beside the music.
+    pub auto_fetch: bool,
+}
+
+impl Default for LyricsConfig {
+    fn default() -> Self {
+        Self { auto_fetch: true }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]

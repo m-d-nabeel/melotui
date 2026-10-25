@@ -191,6 +191,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::CommandHistoryNext => ui_action::handle_command_history_next(state),
         UIMsg::OpenHelp => ui_action::handle_open_help(state),
         UIMsg::CloseHelp => ui_action::handle_close_help(state),
+        UIMsg::ScrollHelp { by, max } => ui_action::handle_scroll_help(state, by, max),
         UIMsg::ToggleLyrics => ui_action::handle_toggle_lyrics(state),
         UIMsg::TogglePlaybackPanel => ui_action::handle_toggle_playback_panel(state),
         UIMsg::Resize(w, h) => ui_action::handle_resize(state, w, h),

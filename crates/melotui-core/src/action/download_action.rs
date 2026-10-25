@@ -115,7 +115,7 @@ pub fn handle_request_search_lyrics(state: &mut AppState, query: String) -> Vec<
     ));
 
     // Auto switch to Lyrics View tab (which acts as the selector)
-    state.session.ui.show_lyrics = true;
+    crate::action::playback_action::lyrics_panel_set_by_hand(state, true);
 
     vec![AppMsg::Download(DownloadMsg::DispatchSearchLyrics {
         query,
@@ -166,19 +166,22 @@ pub fn handle_dispatch_download(
     vec![]
 }
 
-pub fn handle_lyrics_fetched(state: &mut AppState, _save_path: std::path::PathBuf) -> Vec<AppMsg> {
-    state.session.notification.current = Some(
-        Notification::new(NotificationKind::Info, "Lyrics downloaded successfully!")
-            .with_duration(3),
-    );
+pub fn handle_lyrics_fetched(state: &mut AppState, save_path: std::path::PathBuf) -> Vec<AppMsg> {
+    let unasked = state.session.lyrics.fetching_unasked.as_ref() == Some(&save_path);
+    if unasked {
+        // Fetched as the song started: the panel opening says it.
+        state.session.lyrics.fetching_unasked = None;
+    } else {
+        state.session.notification.current = Some(
+            Notification::new(NotificationKind::Info, "Lyrics downloaded successfully!")
+                .with_duration(3),
+        );
+        crate::action::playback_action::lyrics_panel_set_by_hand(state, true);
+    }
 
-    // Auto switch to Lyrics View tab so the user can see them
-    state.session.ui.show_lyrics = true;
-
-    // Re-trigger audio started logic to load the newly downloaded lyrics file without
-    // actually stopping/restarting playback
+    // Load them for the song playing, without restarting it.
     if let Some(track) = state.get_playing_track() {
-        crate::action::playback_action::handle_audio_started(
+        return crate::action::playback_action::handle_audio_started(
             state,
             track.file_path.clone().to_string_lossy().to_string(),
         );
@@ -188,6 +191,11 @@ pub fn handle_lyrics_fetched(state: &mut AppState, _save_path: std::path::PathBu
 }
 
 pub fn handle_lyrics_fetch_failed(state: &mut AppState, error: String) -> Vec<AppMsg> {
+    if state.session.lyrics.fetching_unasked.take().is_some() {
+        // Not every song has lyrics to be found; nobody asked for these.
+        tracing::info!("No lyrics found for the song playing: {error}");
+        return vec![];
+    }
     state.session.notification.current = Some(
         Notification::new(
             NotificationKind::Error,

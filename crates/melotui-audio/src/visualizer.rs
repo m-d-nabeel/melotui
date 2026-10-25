@@ -47,11 +47,7 @@ impl VisualizerManager {
             cava_process: None,
             cava_scratch: vec![0.0; 200],
             enabled: false,
-            style: if available {
-                SpectrumStyle::Cava
-            } else {
-                SpectrumStyle::Default
-            },
+            style: SpectrumStyle::default(),
             fft_size,
             sample_rate: 44100,
         }
@@ -73,6 +69,13 @@ impl VisualizerManager {
         self.idle_internal = Some(consumer);
         self.sample_rate = sample_rate;
         self.reconcile();
+    }
+
+    /// After a seek: the analyser starts over on the audio from there.
+    pub fn restart(&mut self) {
+        if let Backend::Internal(analyzer) = &mut self.backend {
+            analyzer.restart();
+        }
     }
 
     pub fn detach_source(&mut self) {

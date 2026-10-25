@@ -2,10 +2,7 @@ use ringbuf::traits::Consumer;
 use spectrum_analyzer::{
     FrequencyLimit, samples_fft_to_spectrum, scaling::divide_by_N, windows::hann_window,
 };
-use std::{
-    collections::{BTreeMap, VecDeque},
-    time::Instant,
-};
+use std::{collections::VecDeque, time::Instant};
 
 const NUM_BINS: usize = 512;
 const MIN_FREQ: f32 = 30.0; // catch sub-bass
@@ -75,12 +72,23 @@ where
             last_tick: None,
             lump: 0.0,
             arrived_last_tick: 0,
-            window: vec![0.0; fft_size],
+            window: Vec::with_capacity(fft_size * BASS_SCALE),
         }
     }
 
     pub fn into_consumer(self) -> C {
         self.consumer
+    }
+
+    /// Forgets the audio it holds and starts its pacing over, for after a
+    /// seek: what was waiting is from before it.
+    pub fn restart(&mut self) {
+        while self.consumer.try_pop().is_some() {}
+        self.history.clear();
+        self.first = self.received;
+        self.playhead = self.received as f64;
+        self.last_tick = None;
+        self.arrived_last_tick = 0;
     }
 
     pub fn next_spectrum(&mut self) -> Option<Vec<f32>> {
@@ -129,44 +137,53 @@ where
         // Never past the newest sample: with nothing new, wait for it.
         self.playhead = self.playhead.min(self.received as f64);
 
-        // Keep only what the window can still reach.
+        // The bass's longer window is centred where the short one is, on
+        // audio already here, so the bass is drawn in time with the rest
+        // rather than half its length late.
+        let (short_len, long) = (self.fft_size as u64, (self.fft_size * BASS_SCALE) as u64);
         let end = self.window_end();
-        let keep_from = end.saturating_sub(self.fft_size as u64);
+        let long_end = (end + (long - short_len) / 2).min(self.received);
+        let long_start = long_end.checked_sub(long)?;
+        let keep_from = long_start.min(end.saturating_sub(short_len));
         if keep_from > self.first {
             let drop = ((keep_from - self.first) as usize).min(self.history.len());
             self.history.drain(..drop);
             self.first += drop as u64;
         }
 
-        let start = end.checked_sub(self.fft_size as u64)?;
-        if end == old_end || start < self.first {
+        let short_start = end.checked_sub(short_len)?;
+        if end == old_end || long_start < self.first || short_start < long_start {
             return None;
         }
-        let offset = (start - self.first) as usize;
-        for (slot, sample) in self
-            .window
-            .iter_mut()
-            .zip(self.history.range(offset..offset + self.fft_size))
-        {
-            *slot = *sample;
-        }
+        let offset = (long_start - self.first) as usize;
+        self.window.clear();
+        self.window
+            .extend(self.history.range(offset..offset + long as usize));
+        let short_from = (short_start - long_start) as usize;
 
-        let hann_window = hann_window(&self.window);
-        let spectrum_result = samples_fft_to_spectrum(
-            &hann_window,
+        let short = self.spectrum_of(&self.window[short_from..short_from + self.fft_size])?;
+        let bass = self.spectrum_of(&self.window)?;
+        Some(self.fill_log_bins(&short, &bass, NUM_BINS))
+    }
+
+    /// The bins of `samples`' spectrum, at their exact frequencies: `to_map`
+    /// keys them by whole hertz, which moved bins out of the narrow bass
+    /// bands they belonged in.
+    fn spectrum_of(&self, samples: &[f32]) -> Option<Vec<(f32, f32)>> {
+        let spectrum = samples_fft_to_spectrum(
+            &hann_window(samples),
             self.sample_rate,
             FrequencyLimit::Range(20.0, 22_050.0),
             Some(&divide_by_N),
-        );
-
-        if let Ok(spectrum) = spectrum_result {
-            let data = spectrum.to_map();
-            // map linear spectrum to log bins for UI
-            let output = self.fill_log_bins(&data, NUM_BINS);
-            return Some(output);
-        }
-
-        None
+        )
+        .ok()?;
+        Some(
+            spectrum
+                .data()
+                .iter()
+                .map(|(freq, value)| (freq.val(), value.val()))
+                .collect(),
+        )
     }
 
     /// The sample the analysis window ends at.
@@ -174,55 +191,127 @@ where
         self.playhead.max(0.0) as u64
     }
 
-    fn fill_log_bins(&self, data: &BTreeMap<u32, f32>, bin_count: usize) -> Vec<f32> {
-        let mut output = vec![0.0; bin_count];
+    /// The bands, from the short window's spectrum and, in the bass, the
+    /// long one's.
+    fn fill_log_bins(
+        &self,
+        short: &[(f32, f32)],
+        bass: &[(f32, f32)],
+        bin_count: usize,
+    ) -> Vec<f32> {
+        let short_hz = self.sample_rate as f32 / self.fft_size as f32;
+        let bass_hz = short_hz / BASS_SCALE as f32;
+        let short = Bins::new(short, short_hz, 11.0);
+        let bass = Bins::new(bass, bass_hz, 0.0);
+        let (log_min, log_max) = (MIN_FREQ.ln(), MAX_FREQ.ln());
+        let (split_low, split_high) = (BASS_SPLIT.0.ln(), BASS_SPLIT.1.ln());
 
-        let log_min = MIN_FREQ.ln();
-        let log_max = MAX_FREQ.ln();
-        let log_range = log_max - log_min;
-
-        // sparse map to dense vectors
-        let freqs: Vec<f32> = data.keys().map(|&k| k as f32).collect();
-        let vals: Vec<f32> = data.values().copied().collect();
-
-        if freqs.is_empty() {
-            return output;
-        }
-
-        (0..bin_count).for_each(|i| {
-            // target frequency
-            let norm_pos = i as f32 / (bin_count as f32 - 1.0);
-            let target_freq = (log_min + norm_pos * log_range).exp();
-
-            // frequency window
-            let window_width = (target_freq * 0.05).max(11.0);
-            let start_f = target_freq - window_width / 2.0;
-            let end_f = target_freq + window_width / 2.0;
-
-            // max value in window
-            let mut max_val = 0.0;
-
-            // find start index
-            let start_idx = match freqs.binary_search_by(|f| f.total_cmp(&start_f)) {
-                Ok(idx) => idx,
-                Err(idx) => idx,
-            };
-
-            for j in start_idx..freqs.len() {
-                if freqs[j] > end_f {
-                    break;
-                }
-                if vals[j] > max_val {
-                    max_val = vals[j];
-                }
-            }
-
-            // scale value based on position (highs usually quieter)
-            output[i] = max_val.sqrt() * (1.0 + norm_pos);
-        });
-
-        output
+        (0..bin_count)
+            .map(|i| {
+                let norm_pos = i as f32 / (bin_count as f32 - 1.0);
+                let log_freq = log_min + norm_pos * (log_max - log_min);
+                let freq = log_freq.exp();
+                // The long window's bins in the bass, the short one's above,
+                // blended between so the two meet without a seam.
+                let from_bass =
+                    ((split_high - log_freq) / (split_high - split_low)).clamp(0.0, 1.0);
+                let value = if from_bass >= 1.0 {
+                    bass.read(freq)
+                } else if from_bass <= 0.0 {
+                    short.read(freq)
+                } else {
+                    bass.read(freq) * from_bass + short.read(freq) * (1.0 - from_bass)
+                };
+                // Heights go as amplitude to the HEIGHT_CURVE power, the highs
+                // lifted for being quieter.
+                value.powf(HEIGHT_CURVE) * HEIGHT_GAIN * (1.0 + norm_pos)
+            })
+            .collect()
     }
+}
+
+/// The bass is analysed over a window this many times as long as the rest:
+/// its notes lie close together in hertz, and the short window's bins, 11.7 Hz
+/// apart at 48 kHz, could only draw them as steps or, read between, as smooth
+/// domes. A longer window tells them apart and draws real peaks there, as cava
+/// does, at the cost of the bass answering over a longer stretch of time.
+const BASS_SCALE: usize = 2;
+/// Where the long window's bins give way to the short one's, in Hz: wholly
+/// below the first, not at all above the second.
+const BASS_SPLIT: (f32, f32) = (200.0, 400.0);
+
+/// One spectrum's bins, read for bands.
+struct Bins {
+    freqs: Vec<f32>,
+    vals: Vec<f32>,
+    bin_hz: f32,
+    min_width: f32,
+}
+
+impl Bins {
+    fn new(data: &[(f32, f32)], bin_hz: f32, min_width: f32) -> Self {
+        Self {
+            freqs: data.iter().map(|&(freq, _)| freq).collect(),
+            vals: data.iter().map(|&(_, value)| value).collect(),
+            bin_hz,
+            min_width,
+        }
+    }
+
+    /// The band at `freq`: the loudest bin within 2.5% of it, its window at
+    /// least a bin wide, or a band can fall between two bins and read nothing
+    /// ever. Where a band's window holds a bin or so, bands lie closer
+    /// together than the bins, and runs of them read the same one: flat tops
+    /// ending in a step. There it reads a smooth curve through the bins at its
+    /// own frequency instead, blending into the loudest-bin reading by where
+    /// windows hold three.
+    fn read(&self, freq: f32) -> f32 {
+        if self.freqs.is_empty() {
+            return 0.0;
+        }
+        let width = (freq * 0.05).max(self.min_width).max(self.bin_hz * 1.01);
+        let (lo, hi) = (freq - width / 2.0, freq + width / 2.0);
+        let start = self.freqs.partition_point(|&f| f < lo);
+        let loudest = self.freqs[start..]
+            .iter()
+            .zip(&self.vals[start..])
+            .take_while(|&(&f, _)| f <= hi)
+            .map(|(_, &v)| v)
+            .fold(0.0, f32::max);
+        let curve = ((3.0 - width / self.bin_hz) / 2.0).clamp(0.0, 1.0);
+        if curve > 0.0 {
+            let between = curve_through_bins(&self.vals, (freq - self.freqs[0]) / self.bin_hz);
+            between * curve + loudest * (1.0 - curve)
+        } else {
+            loudest
+        }
+    }
+}
+
+/// Heights go as amplitude to this power. The square root, as they did, drew
+/// a tone ten times louder than its surroundings three times as tall: one
+/// overtone stood as a needle far above the rest. At this power it stands
+/// about twice as tall; over real songs the tallest column stands 1.9 times
+/// the average rather than 2.5, needles are three in four fewer, and loud
+/// moments still stand out. `HEIGHT_GAIN` keeps the average height as it was.
+const HEIGHT_CURVE: f32 = 0.35;
+const HEIGHT_GAIN: f32 = 0.48;
+
+/// The value at `at`, counted in bins, on a Catmull–Rom curve through the
+/// bins' `values`: it passes through every bin, and rounds over a peak
+/// that falls between two rather than meeting it in a corner.
+fn curve_through_bins(values: &[f32], at: f32) -> f32 {
+    let last = values.len().saturating_sub(1) as isize;
+    let k = at.floor() as isize;
+    let t = at - k as f32;
+    let v = |i: isize| values[i.clamp(0, last) as usize];
+    let (p0, p1, p2, p3) = (v(k - 1), v(k), v(k + 1), v(k + 2));
+    let value = 0.5
+        * (2.0 * p1
+            + (p2 - p0) * t
+            + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t
+            + (3.0 * p1 - p0 - 3.0 * p2 + p3) * t * t * t);
+    value.max(0.0)
 }
 
 #[cfg(test)]
@@ -323,6 +412,65 @@ mod tests {
         assert!(ends[100..].iter().all(Option::is_some));
         let backlog = analyzer.received as f64 - analyzer.playhead;
         assert!(backlog >= 4096.0, "backlog {backlog}");
+    }
+
+    #[test]
+    fn after_a_restart_only_audio_from_then_on_is_drawn() {
+        let (mut prod, mut analyzer) = analyzer();
+        let start = Instant::now();
+        play(&mut prod, &mut analyzer, start, 2048, 1.0, 1.0);
+        // Audio from before a seek, waiting to be read.
+        prod.push_slice(&[0.9; 4096]);
+        analyzer.restart();
+        assert!(analyzer.history.is_empty());
+        assert!(
+            analyzer
+                .next_spectrum_at(start + Duration::from_millis(1010))
+                .is_none(),
+            "nothing to draw until a window of new audio has come"
+        );
+        let ends = play(
+            &mut prod,
+            &mut analyzer,
+            start + Duration::from_secs(2),
+            2048,
+            1.0,
+            1.0,
+        );
+        assert!(ends[50..].iter().all(Option::is_some));
+    }
+
+    #[test]
+    fn no_band_is_left_empty_at_48_khz() {
+        let (mut prod, cons) = HeapRb::<f32>::new(RATE as usize).split();
+        let mut analyzer = SpectrumAnalyzer::new(cons, 4096, RATE);
+        // White noise: something at every frequency.
+        let mut seed = 0x2545_F491_u32;
+        let noise: Vec<f32> = (0..16384)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as f32 / u32::MAX as f32 - 0.5
+            })
+            .collect();
+        prod.push_slice(&noise);
+        let bands = analyzer.next_spectrum_at(Instant::now()).unwrap();
+        let empty: Vec<usize> = (0..bands.len()).filter(|&i| bands[i] == 0.0).collect();
+        assert!(empty.is_empty(), "bands that read nothing: {empty:?}");
+    }
+
+    #[test]
+    fn the_curve_through_the_bins_meets_them_and_runs_smoothly_between() {
+        let bins = [0.0, 1.0, 4.0, 9.0, 4.0, 0.0];
+        for (k, &v) in bins.iter().enumerate() {
+            assert!((curve_through_bins(&bins, k as f32) - v).abs() < 1e-6);
+        }
+        // A straight run stays straight between the bins.
+        let line = [0.0, 1.0, 2.0, 3.0];
+        assert!((curve_through_bins(&line, 1.5) - 1.5).abs() < 1e-6);
+        // Never below silence, however the curve swings.
+        assert!((0..50).all(|i| curve_through_bins(&bins, i as f32 / 10.0) >= 0.0));
     }
 
     #[test]

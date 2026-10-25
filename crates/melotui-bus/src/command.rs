@@ -56,6 +56,8 @@ pub enum DownloadCommand {
     FetchLyrics {
         track_name: String,
         artist_name: String,
+        album_name: Option<String>,
+        duration_secs: Option<u64>,
         save_path: PathBuf,
         provider: Option<String>,
         provider_id: Option<String>,
