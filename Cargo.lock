@@ -2179,6 +2179,7 @@ dependencies = [
 name = "melotui-download"
 version = "0.5.0"
 dependencies = [
+ "lofty",
  "melotui-bus",
  "melotui-core",
  "serde_json",

@@ -13,7 +13,10 @@ use std::{
 
 use melotui_bus::{channel::IpcWorker, command::DownloadCommand, event::IpcEvent};
 
-use crate::progress::parse_progress;
+use crate::{
+    progress::parse_progress,
+    tags::{REPORT, Reports, retag},
+};
 
 enum InternalEvent {
     Progress(u8),
@@ -172,6 +175,14 @@ fn download_task(
         format!("ytsearch1:{}", query)
     };
 
+    let mut reports = Reports::new(std::env::temp_dir().join(format!(
+        "melotui-download-{}-{}.jsonl",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos())
+    )));
+
     let cmd = Command::new("yt-dlp")
         .arg("-x")
         .arg("-f")
@@ -183,6 +194,11 @@ fn download_task(
         .arg("--add-metadata")
         .arg("--output")
         .arg(format!("{}/%(title)s.%(ext)s", dl_path.display()))
+        // Reported before the --exec below runs, so each item's report is
+        // there by the time it is said to be finished.
+        .arg("--print-to-file")
+        .arg(REPORT)
+        .arg(reports.template())
         .arg("--exec")
         .arg("echo MELOTUI_ITEM_FINISHED")
         .arg(target)
@@ -240,6 +256,12 @@ fn download_task(
                 let _ = tx_out.send(InternalEvent::Progress(pct));
             }
             if line.contains("MELOTUI_ITEM_FINISHED") {
+                for report in reports.take_new() {
+                    match retag(&report) {
+                        Ok(path) => tracing::info!("Tagged {path:?} with its song"),
+                        Err(e) => tracing::warn!("Could not tag a download: {e}"),
+                    }
+                }
                 let _ = tx_out.send(InternalEvent::ItemFinished);
             }
         }
