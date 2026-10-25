@@ -53,6 +53,9 @@ pub fn draw(
         }
     }
 
+    // Before anything is drawn over the images.
+    crate::lyrics::kitty::spread_rows(frame.buffer_mut());
+
     // Overlays render on top regardless of focus mode
     draw_overlays(frame, area, state, registry);
     fit_escape_cells(frame.buffer_mut());
@@ -330,6 +333,7 @@ mod tests {
 #[cfg(test)]
 mod image_tests {
     use super::fit_escape_cells;
+    use crate::lyrics::kitty::spread_rows;
     use image::{DynamicImage, RgbaImage};
     use ratatui::{Terminal, backend::TestBackend, layout::Rect};
     use ratatui_image::{
@@ -354,6 +358,7 @@ mod image_tests {
         terminal
             .draw(|f| {
                 f.render_widget(Image::new(&art), Rect::new(2, 1, 20, 5));
+                spread_rows(f.buffer_mut());
                 fit_escape_cells(f.buffer_mut());
             })
             .unwrap();
@@ -376,5 +381,74 @@ mod image_tests {
     fn an_iterm2_image_is_sent_whole() {
         let sent = sent(ProtocolType::Iterm2);
         assert!(sent[(2, 1)].symbol().contains("]1337;File="));
+    }
+
+    #[test]
+    fn a_popup_over_the_album_art_leaves_no_trace_when_it_goes() {
+        use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+        let mut picker = Picker::halfblocks();
+        picker.set_protocol_type(ProtocolType::Kitty);
+        let (w, h) = picker.font_size();
+        let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
+            20 * u32::from(w),
+            5 * u32::from(h),
+            image::Rgba([200, 100, 50, 255]),
+        ));
+        let art_area = Rect::new(2, 1, 20, 5);
+        let art = picker
+            .new_protocol(image, art_area, Resize::Fit(None))
+            .unwrap();
+        let popup = Rect::new(12, 2, 15, 3);
+        let mut terminal = Terminal::new(TestBackend::new(30, 7)).unwrap();
+        let mut frame = |with_popup: bool| {
+            terminal
+                .draw(|f| {
+                    f.render_widget(Image::new(&art), art_area);
+                    spread_rows(f.buffer_mut());
+                    if with_popup {
+                        f.render_widget(Clear, popup);
+                        f.render_widget(
+                            Paragraph::new("Visualizer").block(Block::new().borders(Borders::ALL)),
+                            popup,
+                        );
+                    }
+                    fit_escape_cells(f.buffer_mut());
+                })
+                .unwrap();
+            terminal.backend().buffer().clone()
+        };
+
+        frame(false);
+        let shown = frame(true);
+        assert_eq!(
+            shown[(13, 3)].symbol(),
+            "V",
+            "the popup is drawn over the art"
+        );
+        let after = frame(false);
+        let under = popup.intersection(art_area);
+        for y in under.top()..under.bottom() {
+            for x in under.left()..under.right() {
+                assert!(
+                    after[(x, y)].symbol().contains('\u{10EEEE}'),
+                    "({x}, {y}) still shows the popup: {:?}",
+                    after[(x, y)].symbol()
+                );
+            }
+        }
+        for y in art_area.top()..art_area.bottom() {
+            for x in art_area.left()..art_area.right() {
+                assert!(
+                    after[(x, y)].symbol().contains('\u{10EEEE}'),
+                    "({x}, {y}) is not the art: {:?}",
+                    after[(x, y)].symbol()
+                );
+            }
+        }
+        assert_eq!(
+            after[(25, 3)].symbol(),
+            " ",
+            "and off the art, it is cleared"
+        );
     }
 }
