@@ -48,6 +48,7 @@ pub enum KeyAction {
 
     // navigation
     TogglePanel,
+    ToggleQueue,
     ToggleVisualizer,
     CycleVisualizerStyle,
     ToggleLyrics,
@@ -183,7 +184,8 @@ impl KeyAction {
             KeyAction::AutocompleteReverse => "Autocomplete Reverse",
             KeyAction::CommandHistoryPrev => "History Prev",
             KeyAction::CommandHistoryNext => "History Next",
-            KeyAction::TogglePanel => "Switch Panel",
+            KeyAction::TogglePanel => "Sidebar / Mixer",
+            KeyAction::ToggleQueue => "Library / Queue",
             KeyAction::ToggleVisualizer => "Art / Visualizer",
             KeyAction::CycleVisualizerStyle => "Visualizer Style",
             KeyAction::ToggleLyrics => "Lyrics",
@@ -322,7 +324,8 @@ impl KeyAction {
             }
             KeyAction::Mute => Some(AppMsg::Audio(AudioMsg::ToggleMute)),
             KeyAction::SpeedReset => Some(AppMsg::Audio(AudioMsg::ResetSpeed)),
-            KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
+            KeyAction::TogglePanel => Some(AppMsg::Navigation(NavigationMsg::ToggleMixerFocus)),
+            KeyAction::ToggleQueue => Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue)),
             KeyAction::ToggleVisualizer => Some(AppMsg::Navigation(NavigationMsg::ToggleArt)),
             KeyAction::CycleVisualizerStyle => {
                 Some(AppMsg::Navigation(NavigationMsg::CycleVisualizerStyle))
@@ -718,6 +721,7 @@ impl Default for KeyRegistry {
             vec![
                 KeyBinding::new(KeyCode::Char(' '), KeyAction::PlayPause),
                 KeyBinding::new(KeyCode::Enter, KeyAction::PlaySelected),
+                KeyBinding::new(KeyCode::Char('`'), KeyAction::ToggleQueue),
                 KeyBinding::new(KeyCode::Char('>'), KeyAction::PlayNextTrack),
                 KeyBinding::new(KeyCode::Right, KeyAction::PlayNextTrack)
                     .with_mod(KeyModifiers::CONTROL),
@@ -758,7 +762,8 @@ impl Default for KeyRegistry {
             ],
         );
 
-        // the mixer, moved on to with Tab: as in the DSP studio, the arrows
+        // the mixer, moved on to from the sidebar with Tab: as in the DSP
+        // studio, the arrows
         // pick a control and + - adjust it
         bindings.insert(
             KeyContext::Mixer,

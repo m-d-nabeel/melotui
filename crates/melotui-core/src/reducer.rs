@@ -31,6 +31,7 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
         NavigationMsg::SwitchToTracks => nav_action::handle_switch_to_tracks(state),
         NavigationMsg::ToggleTrackInfo => nav_action::handle_toggle_track_info(state),
         NavigationMsg::ToggleLibraryQueue => nav_action::handle_toggle_library_queue(state),
+        NavigationMsg::ToggleMixerFocus => nav_action::handle_toggle_mixer_focus(state),
         NavigationMsg::LeaveMixer => nav_action::handle_leave_mixer(state),
         NavigationMsg::MoveUp => nav_action::handle_move_up(state),
         NavigationMsg::MoveDown => nav_action::handle_move_down(state),

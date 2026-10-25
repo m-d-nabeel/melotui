@@ -8,22 +8,14 @@ use crate::{
     },
 };
 
-/// Tab: the tree, then the queue, then the mixer when it is on screen, and
-/// round again.
+/// The sidebar between the tree and the queue, and the keys to it.
 pub fn handle_toggle_library_queue(state: &mut AppState) -> Vec<AppMsg> {
-    let from_mixer = state.is_mixer_focused();
     state.session.ui.mixer_focused = false;
     state.session.nav.active_panel = match state.session.nav.active_panel {
-        _ if from_mixer => LeftPanelMode::Library,
         LeftPanelMode::Library => {
             if state.session.nav.queue.selected_queue_id.is_none() {
                 state.session.nav.queue.selected_queue_id = state.queue().front().map(|e| e.id);
             }
-            LeftPanelMode::Queue
-        }
-        LeftPanelMode::Queue if state.mixer_on_screen() => {
-            state.session.ui.mixer_focused = true;
-            crate::action::ui_action::select_in_mixer(state);
             LeftPanelMode::Queue
         }
         LeftPanelMode::Queue => LeftPanelMode::Library,
@@ -31,7 +23,18 @@ pub fn handle_toggle_library_queue(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
-/// Esc in the mixer: back to the panel it was moved on to from.
+/// Tab: the keys from the sidebar to the mixer, when it is on screen, and
+/// back.
+pub fn handle_toggle_mixer_focus(state: &mut AppState) -> Vec<AppMsg> {
+    let focus = !state.is_mixer_focused() && state.mixer_on_screen();
+    state.session.ui.mixer_focused = focus;
+    if focus {
+        crate::action::ui_action::select_in_mixer(state);
+    }
+    vec![]
+}
+
+/// Esc in the mixer: back to the sidebar.
 pub fn handle_leave_mixer(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.mixer_focused = false;
     vec![]
@@ -395,48 +398,56 @@ mod tests {
     }
 
     #[test]
-    fn tab_goes_round_the_tree_the_queue_and_the_mixer() {
+    fn backtick_switches_the_sidebar_between_the_tree_and_the_queue() {
         let mut state = test_state();
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Library);
-
         handle_toggle_library_queue(&mut state);
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Queue);
-        assert!(!state.is_mixer_focused());
-
-        // The queue stays in the sidebar while the mixer has the keys.
         handle_toggle_library_queue(&mut state);
-        assert!(state.is_mixer_focused());
-        assert_eq!(state.session.nav.active_panel, LeftPanelMode::Queue);
-
-        handle_toggle_library_queue(&mut state);
-        assert!(!state.is_mixer_focused());
         assert_eq!(state.session.nav.active_panel, LeftPanelMode::Library);
 
-        // Esc steps back out to the queue.
+        // From the mixer, it hands the keys back to the sidebar.
+        handle_toggle_mixer_focus(&mut state);
         handle_toggle_library_queue(&mut state);
-        handle_toggle_library_queue(&mut state);
-        handle_leave_mixer(&mut state);
         assert!(!state.is_mixer_focused());
-        assert_eq!(state.session.nav.active_panel, LeftPanelMode::Queue);
+        assert!(state.is_queue_focused());
     }
 
     #[test]
-    fn tab_passes_the_mixer_by_where_it_is_not_shown() {
+    fn tab_goes_between_the_sidebar_and_the_mixer() {
+        let mut state = test_state();
+        handle_toggle_mixer_focus(&mut state);
+        assert!(state.is_mixer_focused());
+        assert_eq!(
+            state.session.nav.active_panel,
+            LeftPanelMode::Library,
+            "the sidebar stays as it was"
+        );
+        handle_toggle_mixer_focus(&mut state);
+        assert!(!state.is_mixer_focused());
+
+        handle_toggle_mixer_focus(&mut state);
+        handle_leave_mixer(&mut state);
+        assert!(!state.is_mixer_focused());
+    }
+
+    #[test]
+    fn tab_does_nothing_where_the_mixer_is_not_shown() {
         let mut state = test_state();
         state.session.ui.show_lyrics = true;
-        handle_toggle_library_queue(&mut state);
-        handle_toggle_library_queue(&mut state);
+        handle_toggle_mixer_focus(&mut state);
         assert!(!state.is_mixer_focused());
-        assert_eq!(state.session.nav.active_panel, LeftPanelMode::Library);
 
-        // Focused, then hidden by the lyrics: the keys go to the queue.
+        // Focused, then hidden by the lyrics: the keys go to the sidebar,
+        // and Tab brings them back to the mixer once it shows again.
         state.session.ui.show_lyrics = false;
-        handle_toggle_library_queue(&mut state);
-        handle_toggle_library_queue(&mut state);
-        assert!(state.is_mixer_focused());
+        handle_toggle_mixer_focus(&mut state);
         state.session.ui.show_lyrics = true;
         assert!(!state.is_mixer_focused());
-        assert!(state.is_queue_focused());
+        assert!(state.is_library_focused());
+        handle_toggle_mixer_focus(&mut state);
+        state.session.ui.show_lyrics = false;
+        assert!(!state.is_mixer_focused());
     }
 
     #[test]

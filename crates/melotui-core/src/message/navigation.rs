@@ -4,6 +4,7 @@ pub enum NavigationMsg {
     SwitchToTracks,
     ToggleTrackInfo,
     ToggleLibraryQueue,
+    ToggleMixerFocus,
     LeaveMixer,
     MoveUp,
     MoveDown,

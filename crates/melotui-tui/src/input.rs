@@ -538,13 +538,11 @@ mod tests {
     fn in_the_mixer_the_arrows_pick_and_plus_minus_adjust_and_the_rest_still_work() {
         use melotui_core::message::{navigation::NavigationMsg, playback::PlaybackMsg};
         let mut state = test_state();
-        // Tab, to the queue and on to the mixer.
-        for _ in 0..2 {
-            reduce(
-                &mut state,
-                AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue),
-            );
-        }
+        // Tab, from the sidebar to the mixer.
+        reduce(
+            &mut state,
+            AppMsg::Navigation(NavigationMsg::ToggleMixerFocus),
+        );
         let registry = crate::keybinding::KeyRegistry::default();
         let press = |state: &AppState, key: KeyEvent| InputHandler::handle(key, state, &registry);
         let arrow = |code| KeyEvent::new(code, KeyModifiers::empty());
@@ -585,6 +583,10 @@ mod tests {
         ));
         assert!(matches!(
             press(&state, arrow(KeyCode::Tab)),
+            Some(AppMsg::Navigation(NavigationMsg::ToggleMixerFocus))
+        ));
+        assert!(matches!(
+            press(&state, typed('`')),
             Some(AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue))
         ));
         assert!(matches!(

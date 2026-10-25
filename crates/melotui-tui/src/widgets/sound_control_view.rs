@@ -216,25 +216,20 @@ fn render_sleek_slider(
         .constraints([Constraint::Fill(1), Constraint::Fill(1)])
         .split(label_area);
 
-    // The selected control is marked and drawn in its own colour, its
-    // slider heavier; the others stay muted.
-    let (label, text, line) = if is_selected {
+    // The selected control is drawn in its own colour, its slider heavier;
+    // the others stay muted. Nothing moves.
+    let (text, line) = if is_selected {
         (
-            format!("▸ {}", config.label),
             Style::default()
                 .fg(config.color)
                 .add_modifier(Modifier::BOLD),
             "━",
         )
     } else {
-        (
-            config.label.to_string(),
-            Style::default().fg(t.fg_muted),
-            "─",
-        )
+        (Style::default().fg(t.fg_muted), "─")
     };
     frame.render_widget(
-        Paragraph::new(label).style(text.add_modifier(Modifier::BOLD)),
+        Paragraph::new(config.label).style(text.add_modifier(Modifier::BOLD)),
         header[0],
     );
     frame.render_widget(
@@ -283,10 +278,6 @@ mod tests {
         terminal.backend().buffer().clone()
     }
 
-    fn text(buf: &Buffer) -> String {
-        buf.content().iter().map(|c| c.symbol()).collect()
-    }
-
     /// The cell where `word` starts.
     fn find(buf: &Buffer, word: &str) -> (u16, u16) {
         let area = buf.area;
@@ -301,12 +292,12 @@ mod tests {
     }
 
     #[test]
-    fn moved_on_to_it_is_marked_and_its_selected_control_picked_out() {
+    fn moved_on_to_it_is_marked_and_its_selected_control_drawn_in_its_colour() {
         let mut state = AppState::new(
             Library::new(vec![], vec![], Default::default()),
             &melotui_core::config::AppConfig::default(),
         );
-        let tab = || AppMsg::Navigation(NavigationMsg::ToggleLibraryQueue);
+        let tab = || AppMsg::Navigation(NavigationMsg::ToggleMixerFocus);
         // Bass: right of the volume.
         reduce(
             &mut state,
@@ -317,16 +308,15 @@ mod tests {
         );
         let t = crate::theme::get_theme(&state).clone();
 
-        let buf = drawn(&state);
-        assert_eq!(buf[(0, 0)].fg, t.border_inactive);
-        assert!(!text(&buf).contains('▸'), "not focused");
+        let before = drawn(&state);
+        assert_eq!(before[(0, 0)].fg, t.border_inactive);
+        assert_eq!(before[find(&before, "Bass")].fg, t.fg_muted, "not focused");
 
-        reduce(&mut state, tab());
         reduce(&mut state, tab());
         let buf = drawn(&state);
         assert_eq!(buf[(0, 0)].fg, t.border_active);
-        assert_eq!(buf[find(&buf, "▸ Bass")].fg, t.slider_bass);
+        assert_eq!(buf[find(&buf, "Bass")].fg, t.slider_bass);
         assert_eq!(buf[find(&buf, "Volume")].fg, t.fg_muted);
-        assert!(!text(&buf).contains("▸ Volume"));
+        assert_eq!(find(&buf, "Bass"), find(&before, "Bass"), "in place");
     }
 }
