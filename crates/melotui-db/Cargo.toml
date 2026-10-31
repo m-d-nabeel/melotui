@@ -12,7 +12,7 @@ melotui-bus.workspace = true
 rusqlite = { version = "0.38", features = ["bundled", "time"] }
 anyhow = "1"
 tracing = "0.1"
-lofty = "0.22"
+lofty = "0.25"
 dirs = "6"
 
 [dev-dependencies]
