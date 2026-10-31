@@ -46,7 +46,7 @@ dirs = "6"
 anyhow = "1"
 
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
-souvlaki = "0.8"
+souvlaki = "0.9"
 url = "2"
 
 # The hidden window Windows' media controls belong to; the version souvlaki
