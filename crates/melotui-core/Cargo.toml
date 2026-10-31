@@ -8,7 +8,7 @@ edition.workspace = true
 
 [dependencies]
 anyhow = "1"
-lofty = "0.22"
+lofty = "0.25"
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 toml = "1.1.2"
