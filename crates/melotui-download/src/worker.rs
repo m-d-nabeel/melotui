@@ -299,11 +299,13 @@ fn download_task(
 /// each item to `report_template`.
 fn yt_dlp_args(target: &str, dl_path: &std::path::Path, report_template: &str) -> Vec<String> {
     let mut args: Vec<String> = [
+        // The audio as YouTube has it — Opus, or AAC — taken out of its
+        // container and otherwise left alone. It used to be converted to
+        // FLAC, which cannot give back what the lossy original left out:
+        // the same sound in a file several times the size.
         "-x",
         "-f",
         "bestaudio/best",
-        "--audio-format",
-        "flac",
         // A link to one video of a playlist is a request for that video;
         // without this it brought the whole playlist down with it.
         "--no-playlist",
@@ -696,6 +698,16 @@ mod download_tests {
     fn a_link_to_one_video_of_a_playlist_downloads_that_video() {
         let args = args("https://www.youtube.com/watch?v=abc&list=PL123");
         assert!(args.iter().any(|a| a == "--no-playlist"), "{args:?}");
+    }
+
+    #[test]
+    fn the_audio_is_kept_as_it_is_not_converted() {
+        let args = args("ytsearch1:a song");
+        assert!(args.iter().any(|a| a == "-x"));
+        assert!(
+            !args.iter().any(|a| a == "--audio-format"),
+            "converting a lossy original only makes it bigger: {args:?}"
+        );
     }
 
     #[test]
