@@ -16,6 +16,9 @@ use tracing::info;
 
 use crate::migrations::run_migrations;
 
+/// How long to wait for another connection to let go of the database.
+const BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 const SUPPORTED_EXTENSIONS: &[&str] = &["mp3", "flac", "m4a", "wav", "ogg", "opus"];
 
 pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
@@ -50,6 +53,15 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
 
 fn open(db_path: &Path) -> Result<rusqlite::Connection> {
     let conn = rusqlite::Connection::open(db_path)?;
+    // Settings of the connection, not of the file, so they are made every
+    // time it is opened: set only when the database was created, deleting a
+    // track took its playlist entries and history with it only because the
+    // bundled SQLite happens to be built with foreign keys on.
+    conn.pragma_update(None, "foreign_keys", true)?;
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    // A second melotui, or a backup reading the file, is waited for rather
+    // than failed on at once with "database is locked".
+    conn.busy_timeout(BUSY_TIMEOUT)?;
     run_migrations(&conn)?;
     Ok(conn)
 }
@@ -1125,6 +1137,37 @@ mod tests {
         }
         .storable();
         assert_eq!((fine.year, fine.track_number), (Some(1999), Some(7)));
+    }
+
+    #[test]
+    fn every_connection_has_foreign_keys_on_and_waits_for_a_busy_database() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("library.db");
+        // Opened twice: the second time nothing is created, which is when
+        // the settings used to go unmade.
+        drop(open(&db).unwrap());
+        let conn = open(&db).unwrap();
+        let pragma = |name: &str| -> i64 {
+            conn.pragma_query_value(None, name, |row| row.get(0))
+                .unwrap()
+        };
+        assert_eq!(pragma("foreign_keys"), 1);
+        assert_eq!(pragma("busy_timeout"), 5_000);
+        assert_eq!(pragma("synchronous"), 1, "NORMAL");
+
+        // And so a track that goes takes its playlist entries with it.
+        conn.execute_batch(
+            "INSERT INTO tracks (id, file_path, title, duration_ms, format, file_size_bytes, file_modified_at)
+                 VALUES (1, '/a.mp3', 'A', 1, 'MP3', 1, 0);
+             INSERT INTO playlists (id, name) VALUES (1, 'P');
+             INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (1, 1, 0);
+             DELETE FROM tracks WHERE id = 1;",
+        )
+        .unwrap();
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM playlist_tracks", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(left, 0);
     }
 
     #[test]
