@@ -9,7 +9,7 @@ edition.workspace = true
 [dependencies]
 melotui-core.workspace = true
 melotui-bus.workspace = true
-rusqlite = { version = "0.38", features = ["bundled", "time"] }
+rusqlite = { version = "0.41", features = ["bundled", "time"] }
 anyhow = "1"
 tracing = "0.1"
 lofty = "0.22"
