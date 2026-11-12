@@ -43,6 +43,12 @@ pub enum IpcEvent {
         epoch: u64,
     },
     PlaybackFinished,
+    /// The file asked for could not be opened or decoded, and nothing is
+    /// playing.
+    PlaybackFailed {
+        path: String,
+        error: String,
+    },
 
     // errors
     Error {

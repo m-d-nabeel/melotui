@@ -237,6 +237,9 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms, epoch })
         }
         IpcEvent::PlaybackFinished => AppMsg::Playback(PlaybackMsg::AudioFinished),
+        IpcEvent::PlaybackFailed { path, error } => {
+            AppMsg::Playback(PlaybackMsg::AudioError { path, error })
+        }
         IpcEvent::PlaybackPaused => AppMsg::Playback(PlaybackMsg::AudioPaused),
         IpcEvent::PlaybackResumed => AppMsg::Playback(PlaybackMsg::AudioResumed),
         IpcEvent::FavoriteToggled {
@@ -316,6 +319,18 @@ mod tests {
             }
             other => panic!("dropped: {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_file_that_could_not_be_played_reaches_playback_not_only_the_screen() {
+        let msg = ipc_to_appmsg(IpcEvent::PlaybackFailed {
+            path: "/music/broken.mp3".into(),
+            error: "Cannot play broken.mp3: bad header".into(),
+        });
+        assert!(
+            matches!(&msg, AppMsg::Playback(PlaybackMsg::AudioError { path, .. }) if path == "/music/broken.mp3"),
+            "{msg:?}"
+        );
     }
 
     #[test]

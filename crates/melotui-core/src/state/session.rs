@@ -36,6 +36,9 @@ pub struct SessionState {
     pub scan_quietly: bool,
 
     pub last_play_time: Option<std::time::Instant>,
+
+    /// How many tracks in a row could not be played, since one last did.
+    pub failed_in_a_row: u8,
 }
 
 impl Default for SessionState {
@@ -59,6 +62,7 @@ impl Default for SessionState {
             seek_epoch: 0,
             scan_quietly: false,
             last_play_time: None,
+            failed_in_a_row: 0,
         }
     }
 }

@@ -410,7 +410,15 @@ impl AudioEngine {
             Ok(()) => worker.send(IpcEvent::PlaybackStarted {
                 path: path.to_string_lossy().to_string(),
             }),
-            Err(message) => worker.send(IpcEvent::Error { message }),
+            Err(error) => {
+                // Nothing is playing now, and nothing is there to carry on
+                // with on another device.
+                self.current = None;
+                worker.send(IpcEvent::PlaybackFailed {
+                    path: path.to_string_lossy().to_string(),
+                    error,
+                });
+            }
         }
     }
 
@@ -689,8 +697,9 @@ mod tests {
         let mut engine = engine();
         engine.do_play(PathBuf::from("/nonexistent/song.flac"), &mut worker);
         match bus_rx.try_recv() {
-            Ok(IpcEvent::Error { message }) => {
-                assert!(message.starts_with("Cannot play song.flac:"), "{message}")
+            Ok(IpcEvent::PlaybackFailed { path, error }) => {
+                assert_eq!(path, "/nonexistent/song.flac");
+                assert!(error.starts_with("Cannot play song.flac:"), "{error}")
             }
             other => panic!("{other:?}"),
         }
