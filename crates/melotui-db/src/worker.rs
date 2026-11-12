@@ -9,7 +9,7 @@ use melotui_core::{
     library::Library,
 };
 use rusqlite::params;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -81,10 +81,14 @@ fn handle_command(
             tracing::info!("Starting Library Scan for {} directories...", roots.len());
             let mut scan_failed = false;
             let mut changed = 0;
+            let mut unreadable = 0;
             for root in &roots {
                 tracing::info!("Scanning {:?}...", root);
                 match handle_scan_library(conn, worker, root) {
-                    Ok(processed) => changed += processed,
+                    Ok(outcome) => {
+                        changed += outcome.processed;
+                        unreadable += outcome.unreadable;
+                    }
                     Err(e) => {
                         tracing::error!("Failed to scan {:?}: {:?}", root, e);
                         worker.send(IpcEvent::Error {
@@ -94,11 +98,18 @@ fn handle_command(
                     }
                 }
             }
+            if unreadable > 0 {
+                worker.send(IpcEvent::Error {
+                    message: format!(
+                        "{unreadable} folder(s) could not be read and were passed over; the log names them"
+                    ),
+                });
+            }
             // Pruning after a failed scan would drop every track under the
             // folder that failed — an unplugged drive, say — so it waits for a
             // scan that went through.
             if !scan_failed {
-                let pruned = prune_library(conn).unwrap_or(0);
+                let pruned = prune_library(conn, &[]).unwrap_or(0);
                 if pruned > 0 {
                     tracing::info!("Pruned {} dead tracks", pruned);
                 }
@@ -111,7 +122,7 @@ fn handle_command(
         }
         DatabaseCommand::PruneLibrary => {
             info!("Manual prune requested");
-            match prune_library(conn) {
+            match prune_library(conn, &[]) {
                 Ok(count) => {
                     info!("Pruned {} dead tracks", count);
                     worker.send(IpcEvent::LibraryRescanned { changed: count > 0 });
@@ -241,19 +252,42 @@ fn handle_command(
     }
 }
 
+/// What scanning one music folder came to.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct ScanOutcome {
+    /// Tracks read and written: new files, and files that had changed.
+    processed: usize,
+    /// Audio files seen at all, changed or not.
+    seen: usize,
+    /// Folders inside the root that could not be read, and were passed over.
+    unreadable: usize,
+}
+
+/// One scan of one root, as it walks the folders.
+struct Scan<'a, W> {
+    conn: &'a rusqlite::Connection,
+    worker: &'a W,
+    /// Each known file's size and modification time, to skip the unchanged.
+    cache: &'a HashMap<String, (i64, i64)>,
+    outcome: ScanOutcome,
+    skipped: usize,
+    /// Folders walked already, by their real path: a symlink back up the
+    /// tree would otherwise be walked for ever.
+    visited: HashSet<PathBuf>,
+}
+
 #[tracing::instrument(skip(conn, worker))]
 fn handle_scan_library(
     conn: &rusqlite::Connection,
     worker: &impl IpcWorker<DatabaseCommand>,
     root: &Path,
-) -> Result<usize> {
+) -> Result<ScanOutcome> {
     info!("Scanning library at: {:?}", root);
-
-    // do not delete all tracks
-
-    let mut count = 0;
-    let mut skipped = 0;
     let scan_start = std::time::Instant::now();
+
+    // The root itself has to be readable: one that is not is a drive that is
+    // not there, and the caller keeps its tracks.
+    fs::read_dir(root)?;
 
     // load cache
     let mut cache: HashMap<String, (i64, i64)> = HashMap::new();
@@ -272,39 +306,36 @@ fn handle_scan_library(
         }
     }
 
-    // use transaction
-    conn.execute("BEGIN TRANSACTION", [])?;
-
-    let res = scan_directory(
+    let tx = conn.unchecked_transaction()?;
+    let mut scan = Scan {
         conn,
         worker,
-        root,
-        &mut count,
-        &mut skipped,
-        &cache,
-        cache.len(),
-    );
+        cache: &cache,
+        outcome: ScanOutcome::default(),
+        skipped: 0,
+        visited: HashSet::new(),
+    };
+    scan.directory(root);
+    let (outcome, skipped) = (scan.outcome, scan.skipped);
+    tx.commit()?;
 
-    if res.is_ok() {
-        conn.execute("COMMIT", [])?;
-    } else {
-        conn.execute("ROLLBACK", [])?;
-        res?;
-    }
-
-    let scan_elapsed = scan_start.elapsed();
     tracing::info!(
-        "Scanned directory and processed {} tracks (skipped {}) in {:?}",
-        count,
+        "Scanned directory and processed {} tracks (skipped {}, {} unreadable folders) in {:?}",
+        outcome.processed,
         skipped,
-        scan_elapsed
+        outcome.unreadable,
+        scan_start.elapsed()
     );
 
-    Ok(count)
+    Ok(outcome)
 }
 
-/// remove non-existent tracks
-fn prune_library(conn: &rusqlite::Connection) -> Result<usize> {
+/// Removes the tracks whose files are gone, except those under `kept`: the
+/// roots that could not be scanned, or were found empty — a drive that is not
+/// mounted leaves its folder behind, and looks exactly like every song in it
+/// having been deleted. A track goes only when its file is known to be
+/// missing; one that cannot be looked at stays.
+fn prune_library(conn: &rusqlite::Connection, kept: &[PathBuf]) -> Result<usize> {
     let mut stmt = conn.prepare("SELECT id, file_path FROM tracks")?;
     let rows = stmt.query_map([], |row| {
         Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
@@ -313,7 +344,11 @@ fn prune_library(conn: &rusqlite::Connection) -> Result<usize> {
     let mut dead_ids: Vec<i64> = Vec::new();
     for row in rows {
         let (id, path) = row?;
-        if !Path::new(&path).exists() {
+        let path = Path::new(&path);
+        if kept.iter().any(|root| path.starts_with(root)) {
+            continue;
+        }
+        if matches!(path.try_exists(), Ok(false)) {
             dead_ids.push(id);
         }
     }
@@ -322,75 +357,109 @@ fn prune_library(conn: &rusqlite::Connection) -> Result<usize> {
         return Ok(0);
     }
 
-    // delete in batches
-    conn.execute("BEGIN TRANSACTION", [])?;
+    let tx = conn.unchecked_transaction()?;
     for id in &dead_ids {
-        conn.execute("DELETE FROM tracks WHERE id = ?", params![id])?;
+        tx.execute("DELETE FROM tracks WHERE id = ?", params![id])?;
     }
-    conn.execute("COMMIT", [])?;
+    tx.commit()?;
 
     Ok(dead_ids.len())
 }
 
-fn scan_directory(
-    conn: &rusqlite::Connection,
-    worker: &impl IpcWorker<DatabaseCommand>,
-    dir: &Path,
-    count: &mut usize,
-    skipped: &mut usize,
-    cache: &HashMap<String, (i64, i64)>,
-    total_cached: usize,
-) -> Result<()> {
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            scan_directory(conn, worker, &path, count, skipped, cache, total_cached)?;
-        } else if path.is_file() {
-            let path_str = path.to_string_lossy().into_owned();
-            if let Ok(meta) = fs::metadata(&path) {
-                let size = meta.len() as i64;
-                let modified = meta
-                    .modified()
-                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs() as i64;
-
-                if let Some(&(cached_size, cached_modified)) = cache.get(&path_str)
-                    && size == cached_size
-                    && modified == cached_modified
-                {
-                    *skipped += 1;
-                    if (*count + *skipped).is_multiple_of(50) {
-                        worker.send(IpcEvent::ScanProgress {
-                            scanned: *count as u32,
-                            skipped: *skipped as u32,
-                            total: total_cached as u32,
-                        });
-                    }
+impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
+    /// Scans `dir` and the folders in it. A folder that cannot be read — no
+    /// permission, a `lost+found`, a link to nowhere — is passed over and
+    /// counted, and the rest of the scan goes on.
+    fn directory(&mut self, dir: &Path) {
+        if let Ok(real) = fs::canonicalize(dir)
+            && !self.visited.insert(real)
+        {
+            tracing::debug!("Already scanned {dir:?}, reached again through a link");
+            return;
+        }
+        let entries = match fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(e) => {
+                tracing::warn!("Cannot read {dir:?}, passing over it: {e}");
+                self.outcome.unreadable += 1;
+                return;
+            }
+        };
+        for entry in entries {
+            let path = match entry {
+                Ok(entry) => entry.path(),
+                Err(e) => {
+                    tracing::warn!("Cannot read an entry of {dir:?}: {e}");
                     continue;
                 }
-            }
-
-            if let Some(track_data) = extract_track_data(&path) {
-                if let Err(e) = insert_or_replace_track(conn, &track_data) {
-                    tracing::error!("Failed to insert track {:?}: {:?}", path, e);
-                    continue; // resilient scan, do not fail transaction
-                }
-                *count += 1;
-                if (*count + *skipped).is_multiple_of(50) {
-                    worker.send(IpcEvent::ScanProgress {
-                        scanned: *count as u32,
-                        skipped: *skipped as u32,
-                        total: total_cached as u32,
-                    });
-                }
+            };
+            if path.is_dir() {
+                self.directory(&path);
+            } else if path.is_file() {
+                self.file(&path);
             }
         }
     }
-    Ok(())
+
+    fn file(&mut self, path: &Path) {
+        if !is_audio(path) {
+            return;
+        }
+        let path_str = path.to_string_lossy().into_owned();
+        if let Ok(meta) = fs::metadata(path)
+            && let Some(&cached) = self.cache.get(&path_str)
+            && cached == (meta.len() as i64, modified_secs(&meta))
+        {
+            self.outcome.seen += 1;
+            self.skipped += 1;
+            self.progress();
+            return;
+        }
+
+        // A tag library that panics over some odd file must not take the
+        // database worker, and with it the library, down.
+        let track_data =
+            std::panic::catch_unwind(|| extract_track_data(path)).unwrap_or_else(|_| {
+                tracing::error!("The tag library failed on {path:?}");
+                None
+            });
+        if let Some(track_data) = track_data {
+            if let Err(e) = insert_or_replace_track(self.conn, &track_data) {
+                tracing::error!("Failed to insert track {:?}: {:?}", path, e);
+                return; // resilient scan, do not fail transaction
+            }
+            self.outcome.seen += 1;
+            self.outcome.processed += 1;
+            self.progress();
+        }
+    }
+
+    fn progress(&self) {
+        if (self.outcome.processed + self.skipped).is_multiple_of(50) {
+            self.worker.send(IpcEvent::ScanProgress {
+                scanned: self.outcome.processed as u32,
+                skipped: self.skipped as u32,
+                total: self.cache.len() as u32,
+            });
+        }
+    }
+}
+
+/// Whether `path` has the extension of a format melotui plays.
+fn is_audio(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| {
+        let ext = ext.to_string_lossy().to_lowercase();
+        SUPPORTED_EXTENSIONS.contains(&ext.as_str())
+    })
+}
+
+/// A file's modification time in seconds since 1970, 0 if it has none.
+fn modified_secs(meta: &fs::Metadata) -> i64 {
+    meta.modified()
+        .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
 }
 
 fn extract_track_data(path: &Path) -> Option<TrackData> {
@@ -781,6 +850,76 @@ mod tests {
             Some(false),
             "pruned after a failed scan"
         );
+    }
+
+    /// The titles in the library, in order.
+    fn titles(db: &Path) -> Vec<String> {
+        let conn = rusqlite::Connection::open(db).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT title FROM tracks ORDER BY title")
+            .unwrap();
+        stmt.query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_folder_that_cannot_be_read_is_passed_over_and_the_rest_scanned() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        let locked = music.join("lost+found");
+        std::fs::create_dir_all(&locked).unwrap();
+        std::fs::create_dir(music.join("album")).unwrap();
+        wav(&music.join("first.wav"));
+        wav(&music.join("album").join("second.wav"));
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read_dir(&locked).is_ok() {
+            // Run as root, nothing is unreadable, and there is nothing to test.
+            return;
+        }
+        let db = dir.path().join("library.db");
+
+        let events = run_commands(
+            &db,
+            vec![DatabaseCommand::ScanLibrary {
+                roots: vec![music.clone()],
+            }],
+        );
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert_eq!(titles(&db), ["first", "second"]);
+        assert_eq!(rescanned(&events), Some(true));
+        assert!(
+            events.iter().any(
+                |e| matches!(e, IpcEvent::Error { message } if message.contains("could not be read"))
+            ),
+            "the folder passed over was not mentioned"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_link_back_up_the_tree_is_not_followed_round_and_round() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir_all(music.join("album")).unwrap();
+        wav(&music.join("album").join("song.wav"));
+        std::os::unix::fs::symlink(&music, music.join("album").join("back")).unwrap();
+        let db = dir.path().join("library.db");
+
+        let events = run_commands(
+            &db,
+            vec![DatabaseCommand::ScanLibrary {
+                roots: vec![music.clone()],
+            }],
+        );
+
+        assert_eq!(titles(&db), ["song"], "each file once");
+        assert!(!events.iter().any(|e| matches!(e, IpcEvent::Error { .. })));
     }
 
     #[test]
