@@ -240,9 +240,24 @@ impl AppConfig {
     }
 
     fn parse(path: &std::path::Path, contents: &str) -> Self {
-        match toml::from_str::<AppConfig>(contents) {
-            Ok(config) => {
+        // Settings the file has that melotui does not: a misspelt name was
+        // passed over without a word, and the setting it was meant to be
+        // stayed at its default with nothing to say why.
+        let mut unknown: Vec<String> = Vec::new();
+        let parsed = toml::Deserializer::parse(contents).and_then(|file| {
+            serde_ignored::deserialize::<_, _, AppConfig>(file, |setting| {
+                unknown.push(setting.to_string())
+            })
+        });
+        match parsed {
+            Ok(mut config) => {
                 tracing::info!("Loaded config from {:?}", path);
+                for setting in unknown {
+                    tracing::warn!("Unknown setting in {path:?}: {setting}");
+                    config
+                        .startup_errors
+                        .push(format!("Unknown setting `{setting}` (misspelt?)"));
+                }
                 config.finished()
             }
             Err(e) => {
@@ -316,6 +331,9 @@ impl AppConfig {
         self.ui.scrolloff = self.ui.scrolloff.clamp(0, 20);
         self.ui.lyrics_zoom = clamp_lyrics_zoom(self.ui.lyrics_zoom, 2.0);
         self.ui.lyrics_zoom_focus = clamp_lyrics_zoom(self.ui.lyrics_zoom_focus, 3.0);
+        // The analyser takes a power of two; anything else gave no
+        // spectrum at all, with nothing to say why.
+        self.audio.fft_size = self.audio.fft_size.clamp(512, 16_384).next_power_of_two();
         self.audio.default_speed = self.audio.default_speed.clamp(0.5, 2.0);
         self.audio.default_bass = self.audio.default_bass.clamp(0.1, 5.0);
         self.audio.default_treble = self.audio.default_treble.clamp(0.1, 5.0);
@@ -472,6 +490,39 @@ mod tests {
         assert_eq!(config.ui.sidebar_width, 35);
         assert_eq!(config.ui.scrolloff, 4);
         assert_eq!(config.audio.default_speed, 1.5);
+    }
+
+    #[test]
+    fn a_misspelt_setting_is_said_and_the_rest_still_read() {
+        let config = AppConfig::parse(
+            std::path::Path::new("config.toml"),
+            "[ui]\nfps_limt = 30\nscrolloff = 3\n\n[audoi]\nfft_size = 2048\n",
+        );
+        assert_eq!(config.ui.scrolloff, 3, "the rest of the file was dropped");
+        assert_eq!(config.ui.fps_limit, 60);
+        let said = config.startup_errors.join("; ");
+        assert!(said.contains("ui.fps_limt"), "{said}");
+        assert!(said.contains("audoi"), "{said}");
+
+        let fine = AppConfig::parse(
+            std::path::Path::new("config.toml"),
+            "[ui]\nfps_limit = 30\n\n[lyrics]\nauto_fetch = false\n",
+        );
+        assert!(fine.startup_errors.is_empty(), "{:?}", fine.startup_errors);
+        assert_eq!(fine.ui.fps_limit, 30);
+    }
+
+    #[test]
+    fn the_analyser_is_given_a_size_it_can_use() {
+        let sized = |size: usize| {
+            let mut config = AppConfig::default();
+            config.audio.fft_size = size;
+            config.validated().audio.fft_size
+        };
+        assert_eq!(sized(4096), 4096);
+        assert_eq!(sized(3000), 4096);
+        assert_eq!(sized(0), 512);
+        assert_eq!(sized(1_000_000), 16_384);
     }
 
     #[test]
