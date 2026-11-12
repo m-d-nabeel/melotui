@@ -9,7 +9,8 @@
 //! `AirPods`, `Headphones (Realtek Audio)`, `MacBook Pro Speakers`.
 
 use std::{
-    process::Command,
+    io::{BufRead, BufReader},
+    process::{Command, Stdio},
     sync::{Arc, Mutex, mpsc},
     thread,
     time::Duration,
@@ -17,8 +18,59 @@ use std::{
 
 use melotui_core::state::audio::OutputKind;
 
-/// How often to look again: headphones plugged in show within this.
+/// How often to look again when nothing says that something changed:
+/// headphones plugged in show within this.
 const LOOK_EVERY: Duration = Duration::from_secs(3);
+/// How often to look again all the same while the sound server is telling
+/// of changes, in case one was missed.
+const LOOK_EVERY_WHEN_TOLD: Duration = Duration::from_secs(60);
+/// How long to let a burst of changes settle before looking: plugging
+/// headphones in is a dozen events.
+const SETTLE: Duration = Duration::from_millis(300);
+
+/// Whether a line of `pactl subscribe` tells of something that can change
+/// what the music comes out of: a sink, a card's port, the server's default,
+/// or a stream moved — not the sources and clients that come and go all day.
+fn is_output_event(line: &str) -> bool {
+    ["on sink", "on card", "on server"]
+        .iter()
+        .any(|what| line.contains(what))
+}
+
+/// Has the sound server tell of changes, each sent on `changed`. `false` if
+/// it cannot be asked to: no `pactl`, or no server.
+///
+/// Asking it every few seconds instead meant two processes started every
+/// three seconds for as long as melotui ran, to learn that nothing had
+/// changed.
+fn subscribe(changed: mpsc::Sender<()>) -> bool {
+    let child = Command::new("pactl")
+        .arg("subscribe")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn();
+    let Ok(mut child) = child else {
+        return false;
+    };
+    let Some(stdout) = child.stdout.take() else {
+        return false;
+    };
+    thread::Builder::new()
+        .name("output-events".into())
+        .spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if is_output_event(&line) && changed.send(()).is_err() {
+                    break;
+                }
+            }
+            // The watcher has gone, or the server has: either way this is
+            // over, and the watcher goes back to looking by itself.
+            let _ = child.kill();
+            let _ = child.wait();
+        })
+        .is_ok()
+}
 
 /// The output open now, for the watcher to look at.
 #[derive(Debug, Default)]
@@ -109,7 +161,46 @@ pub fn watch(watched: Arc<Mutex<Watched>>) -> mpsc::Receiver<OutputKind> {
             // Without pactl, or a server to answer it, there is no asking
             // every few seconds.
             let mut can_ask = true;
+            let (changed_tx, changed) = mpsc::channel();
+            let mut told = subscribe(changed_tx);
+            // The output melotui itself has open, looked at every time: it
+            // changes without the sound server having anything to say.
+            let mut seen = (None::<String>, false);
+            let mut look = true;
+            let mut last_look = std::time::Instant::now();
             loop {
+                let now = match watched.lock() {
+                    Ok(w) => (w.name.clone(), w.follows_default),
+                    Err(_) => return,
+                };
+                if now != seen {
+                    seen = now;
+                    look = true;
+                }
+                if !look {
+                    match changed.recv_timeout(LOOK_EVERY) {
+                        Ok(()) => {
+                            thread::sleep(SETTLE);
+                            while changed.try_recv().is_ok() {}
+                            look = true;
+                        }
+                        Err(mpsc::RecvTimeoutError::Timeout) => {}
+                        // The server stopped telling.
+                        Err(mpsc::RecvTimeoutError::Disconnected) => {
+                            told = false;
+                            thread::sleep(LOOK_EVERY);
+                        }
+                    }
+                    // Told of changes, there is no asking until one comes,
+                    // but for once in a long while.
+                    let overdue = last_look.elapsed() >= LOOK_EVERY_WHEN_TOLD;
+                    if !look && told && !overdue {
+                        continue;
+                    }
+                }
+                look = false;
+                last_look = std::time::Instant::now();
+
                 let (name, follows_default) = match watched.lock() {
                     Ok(w) => (w.name.clone(), w.follows_default),
                     Err(_) => return,
@@ -128,7 +219,6 @@ pub fn watch(watched: Arc<Mutex<Watched>>) -> mpsc::Receiver<OutputKind> {
                         return;
                     }
                 }
-                thread::sleep(LOOK_EVERY);
             }
         });
     rx
@@ -137,6 +227,17 @@ pub fn watch(watched: Arc<Mutex<Watched>>) -> mpsc::Receiver<OutputKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_changes_to_where_the_sound_goes_are_looked_into() {
+        assert!(is_output_event("Event 'change' on sink #58"));
+        assert!(is_output_event("Event 'change' on card #47"));
+        assert!(is_output_event("Event 'change' on server #0"));
+        assert!(is_output_event("Event 'new' on sink-input #912"));
+        assert!(!is_output_event("Event 'new' on client #3301"));
+        assert!(!is_output_event("Event 'change' on source #59"));
+        assert!(!is_output_event("Event 'remove' on source-output #77"));
+    }
 
     #[test]
     fn devices_are_told_apart_by_their_names() {
