@@ -71,16 +71,8 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let log_guard = logging::init();
-    std::panic::set_hook(Box::new(|panic| {
-        let _ = melotui_tui::restore_terminal();
-        tracing::error!(
-            "panic: {panic}\n{}",
-            std::backtrace::Backtrace::force_capture()
-        );
-        // Not eprintln!, which panics itself if the terminal has gone.
-        let _ = writeln!(std::io::stderr(), "panic: {panic}");
-    }));
+    logging::init();
+    std::panic::set_hook(Box::new(on_panic));
 
     let mut config = match load() {
         Ok(config) => config,
@@ -90,16 +82,40 @@ fn main() -> ExitCode {
         config.ui.restore_session = false;
     }
 
-    match runtime::run(config) {
+    let code = match runtime::run(config) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("melotui: {e}");
-            // Flush the buffered log writer before exiting, so the lines that
-            // explain the failure are written.
-            drop(log_guard);
             ExitCode::FAILURE
         }
+    };
+    // The lines that explain a failure are among the last ones logged.
+    logging::flush();
+    code
+}
+
+/// What a panic comes to, on whichever thread it happens.
+///
+/// One that is caught where it happens — a tag library failing on one file
+/// — is logged and nothing more. Any other ends the app: the terminal is
+/// handed back, the panic logged and the log written, and the process exits.
+/// Left to unwind, a panic on a worker's thread took that worker and left
+/// the rest running: no sound, or no library, on a screen this hook had
+/// already taken back from the app.
+fn on_panic(panic: &std::panic::PanicHookInfo) {
+    if melotui_core::utils::panic::is_guarded() {
+        tracing::warn!("caught a panic: {panic}");
+        return;
     }
+    let _ = melotui_tui::restore_terminal();
+    tracing::error!(
+        "panic: {panic}\n{}",
+        std::backtrace::Backtrace::force_capture()
+    );
+    logging::flush();
+    // Not eprintln!, which panics itself if the terminal has gone.
+    let _ = writeln!(std::io::stderr(), "melotui: panic: {panic}");
+    std::process::exit(101);
 }
 
 /// Every file and directory melotui reads or writes, one per line, noting

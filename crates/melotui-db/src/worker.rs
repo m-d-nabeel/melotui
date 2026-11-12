@@ -462,8 +462,8 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
 
         // A tag library that panics over some odd file must not take the
         // database worker, and with it the library, down.
-        let track_data =
-            std::panic::catch_unwind(|| extract_track_data(path)).unwrap_or_else(|_| {
+        let track_data = melotui_core::utils::panic::guarded(|| extract_track_data(path))
+            .unwrap_or_else(|_| {
                 tracing::error!("The tag library failed on {path:?}");
                 None
             });
