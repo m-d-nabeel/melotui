@@ -8,7 +8,14 @@ use crate::playback::context::PlaybackContext;
 use crate::playback::state::RepeatMode;
 use crate::state::{SpectrumStyle, VisualizerMode, audio::AudioState, ui::FocusMode};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// The session as it is kept between runs.
+///
+/// Every field has a default (`#[serde(default)]` on the whole struct), so a
+/// file written by an older melotui, without the fields added since, is
+/// still read: one field without a default, and every user's session was
+/// thrown away, silently, by the release that added it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PersistedSession {
     pub queue: Vec<TrackId>,
     pub active_track_id: Option<TrackId>,
@@ -48,7 +55,42 @@ pub struct PersistedSession {
     pub output_device: Option<String>,
 }
 
+impl Default for PersistedSession {
+    fn default() -> Self {
+        let audio = AudioState::default();
+        Self {
+            queue: Vec::new(),
+            active_track_id: None,
+            active_node: None,
+            selected_node: None,
+            expanded_nodes: Vec::new(),
+            left_panel: LeftPanelMode::default(),
+            show_track_info: false,
+            repeat_mode: RepeatMode::default(),
+            context_queue: Vec::new(),
+            context_idx: 0,
+            source_name: String::new(),
+            shuffle: false,
+            playing_from_queue: false,
+            scroll_offset: 0,
+            seek_position_ms: 0,
+            // Not zero, which a derived default would make them: silence,
+            // and a speed nothing plays at.
+            volume: audio.volume,
+            speed: audio.speed,
+            focus_mode: FocusMode::default(),
+            visualizer_mode: VisualizerMode::default(),
+            spectrum_style: SpectrumStyle::default(),
+            dsp: PersistedDspParams::from_audio_state(&audio),
+            output_device: None,
+        }
+    }
+}
+
+/// The effects as they are kept between runs; a field missing from the file
+/// is at its default, as for [`PersistedSession`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct PersistedDspParams {
     pub speed: Option<f32>,
     pub bass: f32,
@@ -446,6 +488,52 @@ impl PersistedSession {
 mod tests {
     use super::*;
     use crate::domain::TrackId;
+
+    #[test]
+    fn a_session_from_before_a_field_was_added_is_still_read() {
+        // As an older melotui wrote it: no `output_device`, no `shuffle`,
+        // and effects from before the phaser and ping-pong were there.
+        let old = r#"
+            queue = [3, 4]
+            active_track_id = 4
+            seek_position_ms = 61000
+            volume = 0.6
+            speed = 1.25
+            focus_mode = "Visualizer"
+            visualizer_mode = "Spectrum"
+            spectrum_style = "Bar"
+
+            [dsp]
+            bass = 2.0
+            treble = 1.0
+            reverb = 0.3
+            echo = 0.0
+            pan = 0.0
+            lowpass = 20000.0
+            highpass = 20.0
+            auto_pan_rate = 0.0
+            auto_pan_depth = 0.0
+            eq_bands = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        "#;
+        let session: PersistedSession = toml::from_str(old).expect("thrown away");
+        assert_eq!(session.queue, vec![TrackId(3), TrackId(4)]);
+        assert_eq!(session.volume, 0.6);
+        assert_eq!((session.dsp.bass, session.dsp.reverb), (2.0, 0.3));
+        // What it does not have is as a new session has it.
+        let fresh = PersistedDspParams::default();
+        assert_eq!(session.dsp.phaser, fresh.phaser);
+        assert_eq!(session.dsp.width, fresh.width);
+        assert_eq!(session.output_device, None);
+    }
+
+    #[test]
+    fn a_session_with_nothing_in_it_is_not_silent_or_stopped() {
+        let session: PersistedSession = toml::from_str("").unwrap();
+        let audio = AudioState::default();
+        assert_eq!(session.volume, audio.volume);
+        assert_eq!(session.speed, audio.speed);
+        assert!(session.volume > 0.0 && session.speed > 0.0);
+    }
 
     #[test]
     fn test_persisted_session_serialization_roundtrip() {

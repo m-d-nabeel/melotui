@@ -399,7 +399,13 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                 ctx.library_loaded = true;
                 if !ctx.session_restored && state.config.ui.restore_session {
                     ctx.session_restored = true;
-                    if let Ok(session) = melotui_core::PersistedSession::load() {
+                    let session = melotui_core::PersistedSession::load();
+                    if let Err(e) = &session {
+                        // No file is a first run; a file that cannot be read
+                        // is a session lost, which should at least be said.
+                        tracing::warn!("Session not restored: {e:#}");
+                    }
+                    if let Ok(session) = session {
                         let count = session.apply_to_app_state(state);
                         // A device chosen with :device last time is chosen again.
                         if let Some(device) = session.output_device.clone() {
