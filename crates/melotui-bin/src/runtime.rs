@@ -50,6 +50,9 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         sample_rate: config.audio.sample_rate,
         buffer_size: config.audio.buffer_size,
         output_device: config.audio.output_device.clone(),
+        // What a worker sends is acted on as it comes, not when the wait
+        // for a key next runs out.
+        wake: Some(Arc::new(tui.waker())),
     });
 
     // request async library load

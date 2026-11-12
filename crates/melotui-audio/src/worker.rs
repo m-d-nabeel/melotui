@@ -10,7 +10,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    thread,
     time::{Duration, Instant},
 };
 
@@ -205,7 +204,17 @@ pub fn run(
             engine.reconnect(Player::connect_new(output.sink.mixer()), &mut worker);
         }
 
-        let commands = fetch_and_coalesce_commands(&mut worker);
+        // Waited for here, so a command is acted on as it comes. Playing, the
+        // wait is the tick: the position is told and the spectrum analysed
+        // a hundred times a second. With nothing playing there is only the
+        // device to keep an eye on, and the thread need not wake a hundred
+        // times a second to do nothing.
+        let wait = if engine.time_keeper.is_playing {
+            TICK
+        } else {
+            IDLE_TICK
+        };
+        let commands = fetch_and_coalesce_commands(&mut worker, wait);
         for cmd in commands {
             match cmd {
                 AudioCommand::SetOutputDevice(device) => {
@@ -232,14 +241,24 @@ pub fn run(
         while let Ok(kind) = output_kinds.try_recv() {
             worker.send(IpcEvent::AudioOutputKind(kind));
         }
-
-        // 10ms sleep covers ~100Hz
-        thread::sleep(Duration::from_millis(10));
     }
 }
 
-fn fetch_and_coalesce_commands(worker: &mut impl IpcWorker<AudioCommand>) -> Vec<AudioCommand> {
+/// How long the worker waits for a command while something plays.
+const TICK: Duration = Duration::from_millis(10);
+/// And while nothing does.
+const IDLE_TICK: Duration = Duration::from_millis(100);
+
+/// The commands waiting, having waited up to `wait` for the first, with
+/// those a later one makes pointless left out.
+fn fetch_and_coalesce_commands(
+    worker: &mut impl IpcWorker<AudioCommand>,
+    wait: Duration,
+) -> Vec<AudioCommand> {
     let mut raw_batch = Vec::new();
+    if let Some(cmd) = worker.recv_timeout(wait) {
+        raw_batch.push(cmd);
+    }
     while let Some(cmd) = worker.try_recv() {
         raw_batch.push(cmd);
     }
@@ -588,6 +607,7 @@ mod tests {
     use super::*;
     use melotui_bus::{channel::inprocess, command::AudioCommand, spectrum_bridge};
     use std::sync::mpsc;
+    use std::thread;
 
     /// Ten seconds of quiet stereo at 44.1 kHz, as a WAV file.
     fn wav(dir: &std::path::Path) -> PathBuf {
@@ -697,6 +717,29 @@ mod tests {
             reported.abs_diff(taken) < 200,
             "the clock says {reported} ms, the audio is at {taken} ms"
         );
+    }
+
+    #[test]
+    fn a_command_is_taken_as_it_comes_and_the_wait_is_the_wait() {
+        let (bus_tx, _bus_rx) = mpsc::channel();
+        let (tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+
+        // Nothing sent: the whole wait, and nothing to do.
+        let started = Instant::now();
+        assert!(fetch_and_coalesce_commands(&mut worker, Duration::from_millis(30)).is_empty());
+        assert!(started.elapsed() >= Duration::from_millis(30));
+
+        // Sent part way through a long wait: taken then, not at its end.
+        let sender = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            tx.send(AudioCommand::Pause).unwrap();
+            tx
+        });
+        let started = Instant::now();
+        let commands = fetch_and_coalesce_commands(&mut worker, Duration::from_secs(5));
+        assert!(matches!(commands[..], [AudioCommand::Pause]));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        drop(sender.join());
     }
 
     #[test]

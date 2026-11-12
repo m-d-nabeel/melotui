@@ -27,8 +27,19 @@ pub struct Tui {
     /// How far the help can scroll, as last drawn: the keys that scroll it
     /// go no further.
     help_scroll_max: std::cell::Cell<u16>,
-    /// Terminal events, read on a thread of their own.
-    events: mpsc::Receiver<std::io::Result<Event>>,
+    /// Terminal events, read on a thread of their own, and the wake-ups
+    /// sent through [`Tui::waker`].
+    events: mpsc::Receiver<Input>,
+    /// The sending end, for [`Tui::waker`].
+    wake: mpsc::Sender<Input>,
+}
+
+/// What the app's loop waits on.
+enum Input {
+    Terminal(std::io::Result<Event>),
+    /// Nothing from the terminal: something elsewhere wants the loop to go
+    /// round now rather than when its wait runs out.
+    Wake,
 }
 
 /// Reads terminal events on a thread of its own, so the app's loop only ever
@@ -38,20 +49,21 @@ pub struct Tui {
 /// the failing read forever — and the loop blocked in it then never got round
 /// to quitting. With the reading here, the loop keeps its own time whatever
 /// happens to the terminal.
-fn spawn_input_thread() -> std::io::Result<mpsc::Receiver<std::io::Result<Event>>> {
+fn spawn_input_thread() -> std::io::Result<(mpsc::Sender<Input>, mpsc::Receiver<Input>)> {
     let (tx, rx) = mpsc::channel();
+    let events = tx.clone();
     std::thread::Builder::new()
         .name("terminal-input".into())
         .spawn(move || {
             loop {
                 let event = event::read();
                 let failed = event.is_err();
-                if tx.send(event).is_err() || failed {
+                if events.send(Input::Terminal(event)).is_err() || failed {
                     break;
                 }
             }
         })?;
-    Ok(rx)
+    Ok((tx, rx))
 }
 
 impl Tui {
@@ -69,7 +81,7 @@ impl Tui {
         // The image cache asks the terminal about itself and reads the replies
         // from stdin, so input is only read from here on.
         let image_cache = ImageCache::new(config.ui.lyrics_shaping);
-        let events = spawn_input_thread()?;
+        let (wake, events) = spawn_input_thread()?;
 
         Ok((
             Self {
@@ -78,6 +90,7 @@ impl Tui {
                 key_registry,
                 help_scroll_max: std::cell::Cell::new(0),
                 events,
+                wake,
             },
             errors,
         ))
@@ -116,6 +129,18 @@ impl Tui {
         Ok(())
     }
 
+    /// Something to call, from any thread, to end the wait in
+    /// [`Tui::poll_event`] at once: the loop waits on the terminal, and what
+    /// the workers send it would otherwise wait for the wait to run out.
+    pub fn waker(&self) -> impl Fn() + Send + Sync + 'static {
+        let wake = std::sync::Mutex::new(self.wake.clone());
+        move || {
+            if let Ok(wake) = wake.lock() {
+                let _ = wake.send(Input::Wake);
+            }
+        }
+    }
+
     pub fn size(&self) -> anyhow::Result<(u16, u16)> {
         let size = self.terminal.size()?;
         Ok((size.width, size.height))
@@ -132,7 +157,9 @@ impl Tui {
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
             let event = match self.events.recv_timeout(left) {
-                Ok(event) => event?,
+                Ok(Input::Terminal(event)) => event?,
+                // Woken: back to the loop, with nothing from the terminal.
+                Ok(Input::Wake) => return Ok(None),
                 Err(mpsc::RecvTimeoutError::Timeout) => return Ok(None),
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     anyhow::bail!("the terminal input closed")

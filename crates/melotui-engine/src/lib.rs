@@ -27,6 +27,9 @@ pub struct EngineConfig {
     /// The output device's name, or part of it; `None` follows the system
     /// default.
     pub output_device: Option<String>,
+    /// Called when a worker has sent an event, so that whoever reads
+    /// `event_rx` need not look for them on a timer.
+    pub wake: Option<inprocess::Waker>,
 }
 
 /// Frontend-agnostic engine that owns all worker threads and the event bus.
@@ -66,13 +69,25 @@ impl Engine {
     /// Spawn all worker threads and return a connected Engine.
     pub fn new(config: EngineConfig) -> Self {
         let (ui_rx, bus_tx) = inprocess::hub();
+        let wake = config.wake;
+        // Each worker's end of the bus, waking the reader if it asked to be.
+        fn end<C>(
+            bus: &mpsc::Sender<IpcEvent>,
+            wake: &Option<inprocess::Waker>,
+        ) -> (mpsc::Sender<C>, inprocess::WorkerEndpoint<C>) {
+            let (tx, worker) = inprocess::join_worker::<C>(bus.clone());
+            match wake {
+                Some(wake) => (tx, worker.waking(wake.clone())),
+                None => (tx, worker),
+            }
+        }
 
         // spawn download worker
-        let (dl_tx, dl_worker) = inprocess::join_worker::<DownloadCommand>(bus_tx.clone());
+        let (dl_tx, dl_worker) = end::<DownloadCommand>(&bus_tx, &wake);
         let download = spawn("download", move || melotui_download::run(dl_worker));
 
         // spawn audio worker
-        let (audio_tx, audio_worker) = inprocess::join_worker::<AudioCommand>(bus_tx.clone());
+        let (audio_tx, audio_worker) = end::<AudioCommand>(&bus_tx, &wake);
         let spectrum_producer = config.spectrum_producer;
         let audio_config = melotui_audio::AudioRunConfig {
             fft_size: config.fft_size,
@@ -85,12 +100,12 @@ impl Engine {
         });
 
         // spawn database worker
-        let (db_tx, db_worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx.clone());
+        let (db_tx, db_worker) = end::<DatabaseCommand>(&bus_tx, &wake);
         let db_path = config.db_path;
         let database = spawn("database", move || melotui_db::run(db_worker, db_path));
 
         // spawn cover worker
-        let (cover_tx, cover_worker) = inprocess::join_worker::<CoverCommand>(bus_tx.clone());
+        let (cover_tx, cover_worker) = end::<CoverCommand>(&bus_tx, &wake);
         let max_cover_resolution = config.max_cover_resolution;
         let cover = spawn("cover", move || {
             melotui_cover::run(cover_worker, max_cover_resolution)
@@ -260,6 +275,7 @@ mod tests {
             sample_rate: None,
             buffer_size: None,
             output_device: None,
+            wake: None,
         })
     }
 
