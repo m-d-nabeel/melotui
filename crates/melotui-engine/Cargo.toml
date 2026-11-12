@@ -14,3 +14,6 @@ melotui-db.workspace = true
 melotui-download.workspace = true
 melotui-cover.workspace = true
 tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3.12"

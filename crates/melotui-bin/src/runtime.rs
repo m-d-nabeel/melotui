@@ -292,14 +292,25 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         std::mem::forget(mgr);
     }
 
-    match tui.shutdown() {
+    let restored = match tui.shutdown() {
         Err(e) if terminal_lost => {
             tracing::debug!("Not restoring a terminal that is gone: {e}");
             Ok(())
         }
         result => result,
+    };
+
+    // With the terminal handed back, so quitting looks as quick as it was:
+    // the workers finish what they were sent — the last favorite, the last
+    // play count — the database is closed, and a download's yt-dlp stopped.
+    if !runtime.engine_alive {
+        runtime.engine.join(WORKERS_FINISH_WITHIN);
     }
+    restored
 }
+
+/// How long quitting waits for the workers to finish.
+const WORKERS_FINISH_WITHIN: Duration = Duration::from_secs(3);
 
 /// Saves the session, logging rather than failing if it cannot.
 fn save_session(state: &AppState) {

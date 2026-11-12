@@ -42,6 +42,8 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
 
     // cancellation flag
     let mut cancel_flag: Option<Arc<AtomicBool>> = None;
+    // The download running, to wait on at shutdown.
+    let mut download: Option<thread::JoinHandle<()>> = None;
 
     loop {
         // Always use timeout so we can periodically check internal_rx for background task events
@@ -70,9 +72,9 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
 
                     let tx = internal_tx.clone();
 
-                    thread::spawn(move || {
+                    download = Some(thread::spawn(move || {
                         download_task(query, download_path, tx, flag);
-                    });
+                    }));
                 }
 
                 DownloadCommand::FetchLyrics {
@@ -123,6 +125,13 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                     tracing::info!("Worker: shutdown requested");
                     if let Some(flag) = &cancel_flag {
                         flag.store(true, Ordering::SeqCst);
+                    }
+                    // Waited for: the download's thread is what stops yt-dlp,
+                    // and the process ending first left yt-dlp running.
+                    if let Some(download) = download.take()
+                        && download.join().is_err()
+                    {
+                        tracing::error!("The download's thread had panicked");
                     }
                     break;
                 }

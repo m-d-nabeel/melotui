@@ -2198,6 +2198,7 @@ dependencies = [
  "melotui-cover",
  "melotui-db",
  "melotui-download",
+ "tempfile",
  "tracing",
 ]
 
