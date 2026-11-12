@@ -18,6 +18,10 @@ authors = ["m-d-nabeel"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/m-d-nabeel/melotui"
 edition = "2024"
+# The oldest Rust this builds with: what the newest of its dependencies ask
+# for. CI builds with exactly this version, so raising it is a decision made
+# here, not something a dependency update does unnoticed.
+rust-version = "1.90"
 
 # The workspace's own crates, and dependencies several of them share.
 [workspace.dependencies]

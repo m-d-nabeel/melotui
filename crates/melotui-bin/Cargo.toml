@@ -9,6 +9,7 @@ readme = "../../README.md"
 keywords = ["music", "player", "tui", "audio", "terminal"]
 categories = ["multimedia::audio", "command-line-utilities"]
 edition.workspace = true
+rust-version.workspace = true
 
 # Where `cargo binstall` finds the prebuilt binaries: the archives the
 # release workflow attaches to each GitHub release, which hold the binary
