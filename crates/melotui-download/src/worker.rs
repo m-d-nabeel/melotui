@@ -223,13 +223,22 @@ fn download_task(
 
     let tx_err = tx.clone();
     let cancel_err = cancel.clone();
+    // The last thing yt-dlp said went wrong, for saying why it failed.
+    let last_error = Arc::new(std::sync::Mutex::new(None::<String>));
+    let said = last_error.clone();
 
     // stderr reader
-    thread::spawn(move || {
+    let stderr_reader = thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
             if cancel_err.load(Ordering::SeqCst) {
                 return;
+            }
+            if let Some(error) = error_in(&line)
+                && let Ok(mut said) = said.lock()
+            {
+                tracing::warn!("yt-dlp: {line}");
+                *said = Some(error.to_string());
             }
             // check progress on stderr
             if let Some(pct) = parse_progress(&line) {
@@ -280,7 +289,13 @@ fn download_task(
                 if status.success() {
                     let _ = tx.send(InternalEvent::Finished);
                 } else {
-                    let _ = tx.send(InternalEvent::Failed(format!("Exit code: {}", status)));
+                    // Its last words are read to the end first.
+                    let _ = stderr_reader.join();
+                    let said = last_error.lock().ok().and_then(|mut said| said.take());
+                    let _ = tx.send(InternalEvent::Failed(why_it_failed(
+                        said.as_deref(),
+                        &status.to_string(),
+                    )));
                 }
                 return;
             }
@@ -292,6 +307,28 @@ fn download_task(
                 return;
             }
         }
+    }
+}
+
+/// The error in a line of yt-dlp's output, if it is one: what follows
+/// `ERROR:`.
+fn error_in(line: &str) -> Option<&str> {
+    let (_, error) = line.split_once("ERROR:")?;
+    Some(error.trim()).filter(|e| !e.is_empty())
+}
+
+/// Why a download failed, for the screen: what yt-dlp said, shortened to
+/// fit, or failing that how it exited — which was all that was said before,
+/// "Exit code: exit status: 1" for a video that is private, a network that
+/// is down and a missing ffmpeg alike.
+fn why_it_failed(said: Option<&str>, status: &str) -> String {
+    const MOST: usize = 160;
+    match said {
+        Some(said) if said.chars().count() > MOST => {
+            format!("{}…", said.chars().take(MOST).collect::<String>())
+        }
+        Some(said) => said.to_string(),
+        None => format!("yt-dlp failed ({status})"),
     }
 }
 
@@ -687,7 +724,7 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
 
 #[cfg(test)]
 mod download_tests {
-    use super::yt_dlp_args;
+    use super::{error_in, why_it_failed, yt_dlp_args};
     use std::path::Path;
 
     fn args(target: &str) -> Vec<String> {
@@ -698,6 +735,26 @@ mod download_tests {
     fn a_link_to_one_video_of_a_playlist_downloads_that_video() {
         let args = args("https://www.youtube.com/watch?v=abc&list=PL123");
         assert!(args.iter().any(|a| a == "--no-playlist"), "{args:?}");
+    }
+
+    #[test]
+    fn a_failed_download_says_what_yt_dlp_said() {
+        let line = "ERROR: [youtube] abc: Private video. Sign in if you've been granted access";
+        let said = error_in(line);
+        assert_eq!(
+            said,
+            Some("[youtube] abc: Private video. Sign in if you've been granted access")
+        );
+        assert_eq!(error_in("[download]  42.0% of 3.5MiB"), None);
+        assert_eq!(error_in("ERROR:   "), None);
+
+        assert_eq!(why_it_failed(said, "exit status: 1"), said.unwrap());
+        assert_eq!(
+            why_it_failed(None, "exit status: 1"),
+            "yt-dlp failed (exit status: 1)"
+        );
+        let long = "x".repeat(500);
+        assert_eq!(why_it_failed(Some(&long), "").chars().count(), 161);
     }
 
     #[test]
