@@ -20,6 +20,7 @@ use crate::{
     clock::TimeKeeper,
     effects::{AudioParams, create_audio_graph},
     output::{self, Output},
+    position::{Counted, Position},
     reaper::Reaper,
     source::FundspSource,
     tap::SpectrumSniffer,
@@ -286,7 +287,15 @@ struct AudioEngine {
     /// Whether the player is connected to a device that is running. Without
     /// one nothing answers a seek, which rodio waits for.
     live: bool,
+    /// Where the audio taken from the playing file has got to.
+    position: Option<Position>,
 }
+
+/// How far the clock may be from the audio before it is moved to it: more
+/// than the device takes at once, which is how far ahead of the clock the
+/// count of the audio runs anyway, and little enough that lyrics a stall
+/// has left behind are caught up within a line.
+const CLOCK_WITHIN: Duration = Duration::from_millis(750);
 
 impl AudioEngine {
     pub fn new(sink: Player, spectrum_producer: SpectrumProducer, fft_size: usize) -> Self {
@@ -302,6 +311,7 @@ impl AudioEngine {
             reaper: Reaper::spawn(),
             current: None,
             live: false,
+            position: None,
         }
     }
 
@@ -437,6 +447,10 @@ impl AudioEngine {
         let channels = decoder.channels().get();
         let sample_rate = decoder.sample_rate().get();
         let unit: Box<dyn AudioUnit> = create_audio_graph(channels, &self.dsp_params);
+        // Counted straight from the decoder, before the effects and the
+        // speed control: a frame there is a frame of the file.
+        let (decoder, position) = Counted::new(decoder);
+        self.position = Some(position);
         let dsp_source = FundspSource::new(decoder, unit, self.bypass.clone());
 
         // A second of audio: room for the biggest lump the device pulls at
@@ -460,6 +474,7 @@ impl AudioEngine {
 
     fn do_stop(&mut self) {
         self.current = None;
+        self.position = None;
         self.sink.stop();
         self.time_keeper.stop();
         self.vis_manager.detach_source();
@@ -512,6 +527,16 @@ impl AudioEngine {
             self.do_stop();
             worker.send(IpcEvent::PlaybackFinished);
             return;
+        }
+
+        // With a device running, the clock is held to the audio it takes.
+        // Without one nothing is taken, and the clock alone says where a
+        // seek has put things for the next device.
+        if self.live
+            && let Some(position) = &self.position
+            && self.time_keeper.hold_to(position.get(), CLOCK_WITHIN)
+        {
+            tracing::debug!("Playback clock moved to the audio, at {:?}", position.get());
         }
 
         let pos = self.time_keeper.get_position();
@@ -637,6 +662,41 @@ mod tests {
             .filter(|e| matches!(e, IpcEvent::PlaybackStarted { .. }))
             .count();
         assert_eq!(started, 1);
+    }
+
+    #[test]
+    fn the_clock_follows_the_audio_when_the_device_stops_taking_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = wav(dir.path());
+        let (bus_tx, bus_rx) = mpsc::channel();
+        let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+        let mut engine = engine();
+        let (player, device) = live_player();
+        engine.reconnect(player, &mut worker);
+        engine.do_play(path, &mut worker);
+
+        // The device goes quiet without saying it is lost: its thread stops
+        // taking audio, and the clock runs on by itself.
+        drop(device);
+        thread::sleep(Duration::from_millis(100));
+        let taken = engine.position.as_ref().unwrap().get();
+        engine.time_keeper.seek(taken + Duration::from_secs(5));
+
+        engine.tick(&mut worker);
+
+        let reported = bus_rx
+            .try_iter()
+            .filter_map(|e| match e {
+                IpcEvent::PlaybackProgress { position_ms, .. } => Some(position_ms),
+                _ => None,
+            })
+            .last()
+            .expect("no progress reported");
+        let taken = engine.position.as_ref().unwrap().get().as_millis() as u64;
+        assert!(
+            reported.abs_diff(taken) < 200,
+            "the clock says {reported} ms, the audio is at {taken} ms"
+        );
     }
 
     #[test]
