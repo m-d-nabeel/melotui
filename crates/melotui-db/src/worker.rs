@@ -544,22 +544,25 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
         .ok()?
         .as_secs() as i64;
 
-    Some(TrackData {
-        file_path,
-        title,
-        artist,
-        album,
-        genre,
-        year,
-        track_number,
-        duration_ms,
-        bitrate,
-        sample_rate,
-        format,
-        has_cover,
-        file_size,
-        modified_at,
-    })
+    Some(
+        TrackData {
+            file_path,
+            title,
+            artist,
+            album,
+            genre,
+            year,
+            track_number,
+            duration_ms,
+            bitrate,
+            sample_rate,
+            format,
+            has_cover,
+            file_size,
+            modified_at,
+        }
+        .storable(),
+    )
 }
 
 struct TrackData {
@@ -577,6 +580,24 @@ struct TrackData {
     has_cover: bool,
     file_size: i64,
     modified_at: i64,
+}
+
+impl TrackData {
+    /// The track with whatever the library's table would refuse left out.
+    ///
+    /// The table checks its numbers — a year from 1900 to 2100, a track
+    /// number and rates above nothing — and a file tagged with a year of 0,
+    /// or as track 0 of its album, failed the check and was left out of the
+    /// library altogether, with only the log to say so. A number that makes
+    /// no sense is not known, which the table has room for; the song is
+    /// still a song.
+    fn storable(mut self) -> Self {
+        self.year = self.year.filter(|year| (1900..=2100).contains(year));
+        self.track_number = self.track_number.filter(|&n| n > 0);
+        self.bitrate = self.bitrate.filter(|&rate| rate > 0);
+        self.sample_rate = self.sample_rate.filter(|&rate| rate > 0);
+        self
+    }
 }
 
 // Upsert, to keep IDs stable. Everything read from the file is written
@@ -1064,6 +1085,46 @@ mod tests {
             Some(false),
             "read again though nothing changed"
         );
+    }
+
+    #[test]
+    fn a_track_with_tags_that_make_no_sense_is_still_in_the_library() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open(&dir.path().join("library.db")).unwrap();
+        let odd = TrackData {
+            file_path: "/music/odd.mp3".into(),
+            title: "Odd".into(),
+            artist: None,
+            album: None,
+            genre: None,
+            year: Some(0),
+            track_number: Some(0),
+            duration_ms: 1_000,
+            bitrate: Some(0),
+            sample_rate: Some(0),
+            format: "MP3".into(),
+            has_cover: false,
+            file_size: 10,
+            modified_at: 0,
+        }
+        .storable();
+        insert_or_replace_track(&conn, &odd).expect("refused by the table");
+        let (year, number): (Option<u32>, Option<u32>) = conn
+            .query_row("SELECT year, track_number FROM tracks", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((year, number), (None, None));
+
+        // What does make sense is kept.
+        let fine = TrackData {
+            file_path: "/music/fine.mp3".into(),
+            year: Some(1999),
+            track_number: Some(7),
+            ..odd
+        }
+        .storable();
+        assert_eq!((fine.year, fine.track_number), (Some(1999), Some(7)));
     }
 
     #[test]
