@@ -2096,6 +2096,7 @@ dependencies = [
  "melotui-tui",
  "notify",
  "souvlaki",
+ "tempfile",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
