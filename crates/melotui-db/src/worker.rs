@@ -579,7 +579,9 @@ struct TrackData {
     modified_at: i64,
 }
 
-// upsert to keep IDs stable
+// Upsert, to keep IDs stable. Everything read from the file is written
+// again: a column left out stays as it was when the file was first seen, and
+// the size left out had a changed file read again on every scan for good.
 fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Result<()> {
     conn.execute(
         "INSERT INTO tracks (
@@ -591,10 +593,16 @@ fn insert_or_replace_track(conn: &rusqlite::Connection, data: &TrackData) -> Res
             title=excluded.title,
             artist=excluded.artist,
             album=excluded.album,
-            file_modified_at=excluded.file_modified_at,
-            has_cover=excluded.has_cover,
+            genre=excluded.genre,
+            year=excluded.year,
+            track_number=excluded.track_number,
+            duration_ms=excluded.duration_ms,
             bitrate_kbps=excluded.bitrate_kbps,
             sample_rate_hz=excluded.sample_rate_hz,
+            format=excluded.format,
+            has_cover=excluded.has_cover,
+            file_size_bytes=excluded.file_size_bytes,
+            file_modified_at=excluded.file_modified_at,
             updated_at=strftime('%s', 'now')",
         params![
             data.file_path,
@@ -794,7 +802,12 @@ mod tests {
 
     /// A second of silent mono 8 kHz audio, as a WAV file.
     fn wav(path: &Path) {
-        let data_len: u32 = 8_000 * 2;
+        wav_of(path, 1);
+    }
+
+    /// `seconds` of silent mono 8 kHz audio, as a WAV file.
+    fn wav_of(path: &Path, seconds: u32) {
+        let data_len: u32 = 8_000 * 2 * seconds;
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"RIFF");
         bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
@@ -1012,6 +1025,45 @@ mod tests {
         run_commands(&db, vec![scan()]);
 
         assert_eq!(titles(&db), ["kept", "kept"]);
+    }
+
+    #[test]
+    fn a_file_that_changed_is_read_again_once_and_all_of_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        wav(&music.join("song.wav"));
+        let db = dir.path().join("library.db");
+        let scan = || DatabaseCommand::ScanLibrary {
+            roots: vec![music.clone()],
+        };
+        run_commands(&db, vec![scan()]);
+
+        // Edited: longer, and so larger.
+        wav_of(&music.join("song.wav"), 3);
+        assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(true));
+
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let (duration, size): (i64, i64) = conn
+            .query_row(
+                "SELECT duration_ms, file_size_bytes FROM tracks",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(duration, 3_000, "the length is the old file's");
+        assert_eq!(
+            size as u64,
+            std::fs::metadata(music.join("song.wav")).unwrap().len()
+        );
+        drop(conn);
+
+        // And then it is as it is in the library: nothing more to read.
+        assert_eq!(
+            rescanned(&run_commands(&db, vec![scan()])),
+            Some(false),
+            "read again though nothing changed"
+        );
     }
 
     #[test]
