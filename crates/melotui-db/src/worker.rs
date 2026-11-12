@@ -79,22 +79,44 @@ fn handle_command(
         }
         DatabaseCommand::ScanLibrary { roots } => {
             tracing::info!("Starting Library Scan for {} directories...", roots.len());
-            let mut scan_failed = false;
             let mut changed = 0;
             let mut unreadable = 0;
+            // Roots whose tracks are not to be pruned this time.
+            let mut kept: Vec<PathBuf> = Vec::new();
             for root in &roots {
                 tracing::info!("Scanning {:?}...", root);
                 match handle_scan_library(conn, worker, root) {
                     Ok(outcome) => {
                         changed += outcome.processed;
                         unreadable += outcome.unreadable;
+                        // A folder with nothing at all in it, that the library
+                        // has music from, is a drive that is not mounted: its
+                        // mount point is there and empty. Pruning then would
+                        // take every one of its tracks, and with them their
+                        // favorites, play counts and places in playlists.
+                        let known = tracks_under(conn, root);
+                        let empty = fs::read_dir(root).is_ok_and(|mut dir| dir.next().is_none());
+                        if empty && known > 0 {
+                            tracing::warn!("{root:?} is empty; keeping its {known} tracks");
+                            worker.send(IpcEvent::Error {
+                                message: format!(
+                                    "No music found in {} — is it mounted? Keeping its {known} tracks",
+                                    root.display()
+                                ),
+                            });
+                            kept.push(root.clone());
+                        } else if outcome.unreadable > 0 {
+                            // What is in a folder that could not be read
+                            // cannot be told from what is gone.
+                            kept.push(root.clone());
+                        }
                     }
                     Err(e) => {
                         tracing::error!("Failed to scan {:?}: {:?}", root, e);
                         worker.send(IpcEvent::Error {
                             message: format!("Failed to scan {}: {}", root.display(), e),
                         });
-                        scan_failed = true;
+                        kept.push(root.clone());
                     }
                 }
             }
@@ -105,15 +127,14 @@ fn handle_command(
                     ),
                 });
             }
-            // Pruning after a failed scan would drop every track under the
-            // folder that failed — an unplugged drive, say — so it waits for a
-            // scan that went through.
-            if !scan_failed {
-                let pruned = prune_library(conn, &[]).unwrap_or(0);
-                if pruned > 0 {
-                    tracing::info!("Pruned {} dead tracks", pruned);
+            match prune_library(conn, &kept) {
+                Ok(pruned) => {
+                    if pruned > 0 {
+                        tracing::info!("Pruned {} dead tracks", pruned);
+                    }
+                    changed += pruned;
                 }
-                changed += pruned;
+                Err(e) => tracing::error!("Failed to prune: {e:?}"),
             }
             tracing::info!("Library Scan Complete: {changed} changed");
             worker.send(IpcEvent::LibraryRescanned {
@@ -257,8 +278,6 @@ fn handle_command(
 struct ScanOutcome {
     /// Tracks read and written: new files, and files that had changed.
     processed: usize,
-    /// Audio files seen at all, changed or not.
-    seen: usize,
     /// Folders inside the root that could not be read, and were passed over.
     unreadable: usize,
 }
@@ -366,6 +385,20 @@ fn prune_library(conn: &rusqlite::Connection, kept: &[PathBuf]) -> Result<usize>
     Ok(dead_ids.len())
 }
 
+/// How many tracks the library holds under `root`.
+fn tracks_under(conn: &rusqlite::Connection, root: &Path) -> usize {
+    let Ok(mut stmt) = conn.prepare("SELECT file_path FROM tracks") else {
+        return 0;
+    };
+    stmt.query_map([], |row| row.get::<_, String>(0))
+        .map(|rows| {
+            rows.flatten()
+                .filter(|path| Path::new(path).starts_with(root))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
 impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
     /// Scans `dir` and the folders in it. A folder that cannot be read — no
     /// permission, a `lost+found`, a link to nowhere — is passed over and
@@ -410,7 +443,6 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
             && let Some(&cached) = self.cache.get(&path_str)
             && cached == (meta.len() as i64, modified_secs(&meta))
         {
-            self.outcome.seen += 1;
             self.skipped += 1;
             self.progress();
             return;
@@ -428,7 +460,6 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
                 tracing::error!("Failed to insert track {:?}: {:?}", path, e);
                 return; // resilient scan, do not fail transaction
             }
-            self.outcome.seen += 1;
             self.outcome.processed += 1;
             self.progress();
         }
@@ -818,7 +849,10 @@ mod tests {
         assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(true));
         assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(false));
 
-        // Removing it is a change again.
+        // Removing it is a change again. (Something else stays in the
+        // folder: one left with nothing in it is taken for a drive that is
+        // not mounted.)
+        std::fs::write(music.join("notes.txt"), "not music").unwrap();
         std::fs::remove_file(music.join("song.wav")).unwrap();
         assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(true));
     }
@@ -920,6 +954,64 @@ mod tests {
 
         assert_eq!(titles(&db), ["song"], "each file once");
         assert!(!events.iter().any(|e| matches!(e, IpcEvent::Error { .. })));
+    }
+
+    #[test]
+    fn a_music_folder_found_empty_keeps_its_tracks() {
+        // A drive that is not mounted leaves its mount point behind, empty:
+        // the scan goes through, and every file in the library is missing.
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        wav(&music.join("song.wav"));
+        let db = dir.path().join("library.db");
+        let scan = || DatabaseCommand::ScanLibrary {
+            roots: vec![music.clone()],
+        };
+        run_commands(&db, vec![scan()]);
+
+        std::fs::rename(music.join("song.wav"), dir.path().join("away.wav")).unwrap();
+        let events = run_commands(&db, vec![scan()]);
+
+        assert_eq!(titles(&db), ["song"], "pruned with the drive away");
+        assert_eq!(rescanned(&events), Some(false));
+        assert!(
+            events.iter().any(
+                |e| matches!(e, IpcEvent::Error { message } if message.contains("is it mounted"))
+            ),
+            "nothing said about the empty folder"
+        );
+
+        // Back again, nothing has changed; and a song really deleted, with
+        // others still there, is pruned as before.
+        std::fs::rename(dir.path().join("away.wav"), music.join("song.wav")).unwrap();
+        wav(&music.join("other.wav"));
+        run_commands(&db, vec![scan()]);
+        std::fs::remove_file(music.join("song.wav")).unwrap();
+        run_commands(&db, vec![scan()]);
+        assert_eq!(titles(&db), ["other"]);
+    }
+
+    #[test]
+    fn a_folder_that_fails_to_scan_does_not_stop_another_being_pruned() {
+        let dir = tempfile::tempdir().unwrap();
+        let (here, away) = (dir.path().join("here"), dir.path().join("away"));
+        for folder in [&here, &away] {
+            std::fs::create_dir(folder).unwrap();
+            wav(&folder.join("kept.wav"));
+        }
+        wav(&here.join("deleted.wav"));
+        let db = dir.path().join("library.db");
+        let scan = || DatabaseCommand::ScanLibrary {
+            roots: vec![here.clone(), away.clone()],
+        };
+        run_commands(&db, vec![scan()]);
+
+        std::fs::remove_file(here.join("deleted.wav")).unwrap();
+        std::fs::rename(&away, dir.path().join("unplugged")).unwrap();
+        run_commands(&db, vec![scan()]);
+
+        assert_eq!(titles(&db), ["kept", "kept"]);
     }
 
     #[test]
