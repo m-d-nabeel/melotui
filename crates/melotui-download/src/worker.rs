@@ -200,25 +200,7 @@ fn download_task(
     )));
 
     let cmd = Command::new("yt-dlp")
-        .arg("-x")
-        .arg("-f")
-        .arg("bestaudio/best")
-        .arg("--extract-audio")
-        .arg("--audio-format")
-        .arg("flac")
-        .arg("--embed-thumbnail")
-        .arg("--add-metadata")
-        .arg("--output")
-        .arg(format!("{}/%(title)s.%(ext)s", dl_path.display()))
-        // Reported before the --exec below runs, so each item's report is
-        // there by the time it is said to be finished.
-        .arg("--print-to-file")
-        .arg(REPORT)
-        .arg(reports.template())
-        .arg("--exec")
-        .arg("echo MELOTUI_ITEM_FINISHED")
-        .arg(target)
-        .arg("--newline") // needed for parsing
+        .args(yt_dlp_args(&target, &dl_path, &reports.template()))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
@@ -311,6 +293,41 @@ fn download_task(
             }
         }
     }
+}
+
+/// What yt-dlp is run with to download `target` into `dl_path`, reporting
+/// each item to `report_template`.
+fn yt_dlp_args(target: &str, dl_path: &std::path::Path, report_template: &str) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "-x",
+        "-f",
+        "bestaudio/best",
+        "--audio-format",
+        "flac",
+        // A link to one video of a playlist is a request for that video;
+        // without this it brought the whole playlist down with it.
+        "--no-playlist",
+        "--embed-thumbnail",
+        "--add-metadata",
+        "--newline", // needed for parsing
+    ]
+    .map(String::from)
+    .to_vec();
+    args.extend([
+        "--output".into(),
+        format!("{}/%(title)s.%(ext)s", dl_path.display()),
+        // Reported before the --exec below runs, so each item's report is
+        // there by the time it is said to be finished.
+        "--print-to-file".into(),
+        REPORT.into(),
+        report_template.into(),
+        "--exec".into(),
+        "echo MELOTUI_ITEM_FINISHED".into(),
+        // After `--`, so that nothing in it is taken for an option.
+        "--".into(),
+        target.into(),
+    ]);
+    args
 }
 
 const USER_AGENT: &str = concat!(
@@ -664,6 +681,30 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
         lrclib_results,
         ovh_results,
     });
+}
+
+#[cfg(test)]
+mod download_tests {
+    use super::yt_dlp_args;
+    use std::path::Path;
+
+    fn args(target: &str) -> Vec<String> {
+        yt_dlp_args(target, Path::new("/music"), "/tmp/report.jsonl")
+    }
+
+    #[test]
+    fn a_link_to_one_video_of_a_playlist_downloads_that_video() {
+        let args = args("https://www.youtube.com/watch?v=abc&list=PL123");
+        assert!(args.iter().any(|a| a == "--no-playlist"), "{args:?}");
+    }
+
+    #[test]
+    fn what_is_downloaded_comes_last_where_it_cannot_be_an_option() {
+        let args = args("ytsearch1:--exec rm");
+        let n = args.len();
+        assert_eq!(&args[n - 2..], ["--", "ytsearch1:--exec rm"]);
+        assert!(args.contains(&"/music/%(title)s.%(ext)s".to_string()));
+    }
 }
 
 #[cfg(test)]
