@@ -49,3 +49,12 @@ strip = true
 # nobody catches still ends the process, from the panic hook in `main`.
 overflow-checks = false
 incremental = false
+
+# The effects' tests push seconds of audio through the DSP graph, and
+# unoptimised that took half a minute of every test run. The crates doing the
+# arithmetic are built optimised in development too; melotui's own stay as
+# they are, quick to build and to step through.
+[profile.dev.package.fundsp]
+opt-level = 3
+[profile.dev.package.melotui-audio]
+opt-level = 2
