@@ -14,8 +14,8 @@ image.workspace = true
 lofty = "0.22"
 tracing = "0.1"
 anyhow = "1"
-dirs = "6"
-sha2 = "0.10.9"
+dirs = "7"
+sha2 = "0.11"
 hex = "0.4.3"
 
 [dev-dependencies]
