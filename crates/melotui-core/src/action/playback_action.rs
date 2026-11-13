@@ -496,7 +496,9 @@ fn fetch_missing_lyrics(
 /// Points the lyrics at the line for where playback is — after progress, and
 /// after a seek, which while paused brings no progress to do it.
 fn sync_lyrics_line(state: &mut AppState) {
-    let position = state.session.playback.progress_ms as i64;
+    // Shown later than the position by the configured offset: the position
+    // is of audio on its way to being heard.
+    let position = state.session.playback.progress_ms as i64 - state.config.lyrics.offset_ms;
     state.session.lyrics.active_line_index = match &state.session.lyrics.data {
         crate::state::lyrics::LyricsData::Synced(lyrics) => lyrics.find_timed_line_index(position),
         _ => None,
@@ -1342,6 +1344,30 @@ mod lyrics_tests {
     use std::{collections::HashMap, path::PathBuf};
 
     const SYNCED: &str = "[00:01.00] First line\n[00:03.00] Second line";
+
+    #[test]
+    fn lyrics_are_shown_later_by_the_offset_asked_for() {
+        let (mut state, _dir, song) = playing(Some(SYNCED));
+        handle_audio_started(&mut state, song);
+        state.session.playback.status = PlaybackStatus::Playing;
+        let line_at = |state: &mut AppState, ms: u64| {
+            handle_audio_progress(state, ms, state.session.seek_epoch);
+            state.session.lyrics.active_line_index
+        };
+
+        // In step with the position: the second line at its three seconds.
+        let second = line_at(&mut state, 3_050);
+        assert_ne!(second, line_at(&mut state, 2_950));
+
+        // Headphones a quarter of a second late: the line waits for them.
+        state.config.lyrics.offset_ms = 250;
+        assert_ne!(
+            line_at(&mut state, 3_050),
+            second,
+            "shown before it is heard"
+        );
+        assert_eq!(line_at(&mut state, 3_300), second);
+    }
 
     /// A song playing, LiSA's 紅蓮華, with lyrics kept in the test's folder.
     fn playing(lyrics_beside: Option<&str>) -> (AppState, tempfile::TempDir, String) {

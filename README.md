@@ -148,6 +148,13 @@ A song's lyrics come from a `.lrc` file in melotui's `lyrics` folder (`melotui -
 auto_fetch = false
 ```
 
+Lyrics follow the audio as it is sent to the output, which is heard a moment later: through Bluetooth headphones the words can run a few tenths of a second ahead of the voice. Hold them back by that much (or bring them forward with a negative number):
+
+```toml
+[lyrics]
+offset_ms = 250
+```
+
 ### Lyrics size
 
 On terminals that can show images (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole), lyrics are drawn larger than the terminal's text: twice the size in the lyrics panel and three times in the full lyrics view (`:focus lyrics`) by default. Change them for the session with `:lyrics zoom <1-4>`, or for good in `config.toml` (`~/.config/melotui/config.toml` on Linux):

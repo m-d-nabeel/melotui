@@ -78,11 +78,21 @@ pub struct LyricsConfig {
     /// lyrics are kept in the data folder's `lyrics` folder (see `--paths`),
     /// never beside the music.
     pub auto_fetch: bool,
+    /// How much later than the playback position the lyrics are shown, in
+    /// milliseconds; negative shows them earlier. The position is that of
+    /// the audio handed to the output, which is heard a little after — a
+    /// fifth of a second through a sound card, several through Bluetooth —
+    /// so synced lyrics run that much ahead of the voice. Setting this to
+    /// the delay puts them back in step.
+    pub offset_ms: i64,
 }
 
 impl Default for LyricsConfig {
     fn default() -> Self {
-        Self { auto_fetch: true }
+        Self {
+            auto_fetch: true,
+            offset_ms: 0,
+        }
     }
 }
 
@@ -334,6 +344,7 @@ impl AppConfig {
         // The analyser takes a power of two; anything else gave no
         // spectrum at all, with nothing to say why.
         self.audio.fft_size = self.audio.fft_size.clamp(512, 16_384).next_power_of_two();
+        self.lyrics.offset_ms = self.lyrics.offset_ms.clamp(-10_000, 10_000);
         self.audio.default_speed = self.audio.default_speed.clamp(0.5, 2.0);
         self.audio.default_bass = self.audio.default_bass.clamp(0.1, 5.0);
         self.audio.default_treble = self.audio.default_treble.clamp(0.1, 5.0);
