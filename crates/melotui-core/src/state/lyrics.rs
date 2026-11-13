@@ -128,9 +128,13 @@ fn embedded_lyrics(audio: &std::path::Path) -> Option<String> {
         .read_properties(false)
         .read_cover_art(false);
     let file = Probe::open(audio).ok()?.options(options).read().ok()?;
-    file.tags()
-        .iter()
-        .find_map(|tag| tag.get_string(&ItemKey::Lyrics))
+    // Under either of the two names the tag library has for them: ID3's
+    // USLT is "unsynchronised lyrics" to it whatever is in it, and the
+    // others' LYRICS are plain "lyrics". Read as one name only, an MP3's
+    // lyrics were not found at all.
+    [ItemKey::Lyrics, ItemKey::UnsyncLyrics]
+        .into_iter()
+        .find_map(|key| file.tags().iter().find_map(|tag| tag.get_string(key)))
         .map(str::to_string)
 }
 
@@ -286,7 +290,8 @@ mod tests {
         };
         let mut file = Probe::open(path).unwrap().read().unwrap();
         let mut tag = Tag::new(TagType::Id3v2);
-        tag.insert_text(ItemKey::Lyrics, lyrics.to_string());
+        // As an MP3 holds them: in a USLT frame.
+        tag.insert_text(ItemKey::UnsyncLyrics, lyrics.to_string());
         file.insert_tag(tag);
         file.save_to_path(path, WriteOptions::default()).unwrap();
     }

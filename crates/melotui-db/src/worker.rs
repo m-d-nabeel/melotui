@@ -761,7 +761,8 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
     let artist = tag.and_then(|t| t.artist().map(|s| s.to_string()));
     let album = tag.and_then(|t| t.album().map(|s| s.to_string()));
     let genre = tag.and_then(|t| t.genre().map(|s| s.to_string()));
-    let year = tag.and_then(|t| t.year());
+    // The year of the recording date; lofty reads the plain year tag as one.
+    let year = tag.and_then(|t| t.date()).map(|date| u32::from(date.year));
     let track_number = tag.and_then(|t| t.track());
     let has_cover = tag.map(|t| !t.pictures().is_empty()).unwrap_or(false);
 
