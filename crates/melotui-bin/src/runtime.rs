@@ -162,40 +162,37 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
             Duration::from_millis(100)
         };
 
-        // event coalescing loop
-        // drain up to 50 events - non-blocking after first
-        let mut events = Vec::with_capacity(10);
-
         if quit_requested.swap(false, Ordering::SeqCst) {
             tracing::info!("Termination signal received, quitting");
             runtime.effect_queue.push_back(AppMsg::RequestQuit);
         }
 
-        // blocking poll for first event, then whatever else is waiting. A
-        // terminal that has gone away quits, session saved.
-        match tui.poll_event(&state, timeout) {
-            Ok(Some(msg)) => {
-                events.push(msg);
-                for _ in 0..50 {
-                    match tui.poll_event(&state, Duration::ZERO) {
-                        Ok(Some(msg)) => events.push(msg),
-                        _ => break,
-                    }
-                }
-            }
-            Ok(None) => {}
+        // What has been typed, each key read as the state stands once the
+        // keys before it have been acted on. A terminal that has gone away
+        // quits, session saved.
+        let debounce = state.config.ui.search_debounce_ms;
+        let taken = take_input(
+            |state, wait| tui.poll_event(state, wait),
+            |messages, state| {
+                let messages = runtime.input_processor.coalesce(messages, debounce);
+                runtime.effect_queue.extend(messages);
+                process_effects(&mut runtime, state);
+                runtime.running
+            },
+            &mut state,
+            timeout,
+        );
+        match taken {
+            Ok(true) => should_render = true,
+            Ok(false) => {}
             Err(e) => {
                 tracing::warn!("Lost the terminal ({e}), quitting");
                 terminal_lost = true;
                 runtime.effect_queue.push_back(AppMsg::RequestQuit);
             }
         }
-
-        if !events.is_empty() {
-            let debounce = state.config.ui.search_debounce_ms;
-            let processed = runtime.input_processor.coalesce(events, debounce);
-            runtime.effect_queue.extend(processed);
-            should_render = true;
+        if !runtime.running {
+            break;
         }
 
         if runtime.engine_alive && handle_ipc_events(&mut runtime, &mut state) {
@@ -314,6 +311,66 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
 
 /// How long quitting waits for the workers to finish.
 const WORKERS_FINISH_WITHIN: Duration = Duration::from_secs(3);
+
+/// The most keys taken in one go, so that a held key cannot keep the loop
+/// from drawing.
+const MOST_INPUT_AT_ONCE: usize = 50;
+
+/// Whether `msg` is one of those that merge with their like when several
+/// come together — a held seek key, a held volume key — and so can wait for
+/// the rest of the burst.
+fn merges(msg: &AppMsg) -> bool {
+    use melotui_core::message::{audio::AudioMsg, playback::PlaybackMsg};
+    matches!(
+        msg,
+        AppMsg::Playback(PlaybackMsg::RequestSeekRelative(_) | PlaybackMsg::RequestSeekAbsolute(_))
+            | AppMsg::Audio(AudioMsg::AdjustVolume(_))
+            | AppMsg::Library(LibraryMsg::AddToQueue(_))
+    )
+}
+
+/// Takes what has been typed: waits up to `timeout` for the first key, then
+/// takes whatever else is waiting. `poll` reads a key as the state stands;
+/// `apply` acts on messages, and says whether the app is still running.
+/// `true` if anything was typed.
+///
+/// What a key means depends on the state — `f` is a favorite in the tree
+/// and a letter in the command bar — so each is read only once those before
+/// it have been acted on. They used to be read all together, as the state
+/// stood before any of them: `:find`, arriving at once, opened the command
+/// bar and then made a favorite, opened the track's info and stepped the
+/// search, leaving `d` typed.
+fn take_input(
+    mut poll: impl FnMut(&AppState, Duration) -> Result<Option<AppMsg>>,
+    mut apply: impl FnMut(Vec<AppMsg>, &mut AppState) -> bool,
+    state: &mut AppState,
+    timeout: Duration,
+) -> Result<bool> {
+    let mut any = false;
+    // Seeks and volume steps, held back to be merged into one.
+    let mut held: Vec<AppMsg> = Vec::new();
+    for taken in 0..=MOST_INPUT_AT_ONCE {
+        let wait = if taken == 0 { timeout } else { Duration::ZERO };
+        let Some(msg) = poll(state, wait)? else {
+            break;
+        };
+        any = true;
+        if merges(&msg) {
+            held.push(msg);
+            continue;
+        }
+        // In the order typed: what was held goes first.
+        let mut now = std::mem::take(&mut held);
+        now.push(msg);
+        if !apply(now, state) {
+            return Ok(true);
+        }
+    }
+    if !held.is_empty() {
+        apply(held, state);
+    }
+    Ok(any)
+}
 
 /// Saves the session, logging rather than failing if it cannot.
 fn save_session(state: &AppState) {
@@ -563,4 +620,133 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
         ctx.effect_queue.extend(next_effects);
     }
     changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use melotui_core::state::UIMode;
+    use melotui_tui::{input::InputHandler, keybinding::KeyRegistry};
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn state() -> AppState {
+        let library = Library::new(vec![], vec![], HashMap::new());
+        AppState::new(library, &melotui_core::config::AppConfig::default())
+    }
+
+    /// Types `keys` all at once, as a paste or a quick hand does, through
+    /// the app's own keys and reducer. What the reducer was given, in order.
+    fn typed(state: &mut AppState, keys: &str) -> Vec<String> {
+        let registry = KeyRegistry::default();
+        let mut waiting: VecDeque<char> = keys.chars().collect();
+        let mut given = Vec::new();
+        take_input(
+            |state, _| {
+                Ok(waiting.pop_front().and_then(|c| {
+                    let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+                    // A key that means nothing here is passed over, as the
+                    // terminal's reader passes over it.
+                    InputHandler::handle(key, state, &registry).or(Some(AppMsg::Noop))
+                }))
+            },
+            |messages, state| {
+                let mut queue: VecDeque<AppMsg> = messages.into();
+                while let Some(msg) = queue.pop_front() {
+                    given.push(format!("{msg:?}"));
+                    queue.extend(reducer::reduce(state, msg));
+                }
+                true
+            },
+            state,
+            Duration::ZERO,
+        )
+        .unwrap();
+        given
+    }
+
+    #[test]
+    fn keys_typed_with_the_one_that_opens_the_command_bar_are_typed_into_it() {
+        let mut state = state();
+        let given = typed(&mut state, ":find");
+
+        assert_eq!(*state.ui_mode(), UIMode::Command);
+        assert_eq!(state.ui_command_buffer().value(), "find");
+        // None of them was taken for the key it is elsewhere: f a favorite,
+        // i the track's info, n the next match.
+        for shortcut in ["Favorite", "TrackInfo", "SearchNext"] {
+            assert!(
+                !given.iter().any(|msg| msg.contains(shortcut)),
+                "{shortcut} among {given:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_search_key_and_what_follows_it_are_one_search() {
+        let mut state = state();
+        typed(&mut state, "/kuch");
+        assert_eq!(state.ui_command_buffer().value(), "find kuch");
+    }
+
+    #[test]
+    fn held_seek_and_volume_keys_are_still_merged_and_kept_in_order() {
+        use melotui_core::message::{audio::AudioMsg, playback::PlaybackMsg};
+        let seek = || AppMsg::Playback(PlaybackMsg::RequestSeekRelative(5));
+        let mut waiting: VecDeque<AppMsg> = vec![
+            seek(),
+            seek(),
+            seek(),
+            AppMsg::Audio(AudioMsg::ToggleMute),
+            seek(),
+        ]
+        .into();
+        let mut batches: Vec<usize> = Vec::new();
+        let mut state = state();
+        let any = take_input(
+            |_, _| Ok(waiting.pop_front()),
+            |messages, _| {
+                batches.push(messages.len());
+                true
+            },
+            &mut state,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert!(any);
+        // The three seeks go with the key that ended their run, to be merged
+        // ahead of it; the last seek after.
+        assert_eq!(batches, [4, 1]);
+    }
+
+    #[test]
+    fn quitting_stops_the_rest_from_being_read() {
+        let mut waiting: VecDeque<AppMsg> =
+            vec![AppMsg::RequestQuit, AppMsg::Noop, AppMsg::Noop].into();
+        let mut state = state();
+        take_input(
+            |_, _| Ok(waiting.pop_front()),
+            |_, _| false,
+            &mut state,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(waiting.len(), 2, "read on after quitting");
+    }
+
+    #[test]
+    fn a_held_key_does_not_keep_the_loop_for_ever() {
+        let mut polled = 0;
+        let mut state = state();
+        take_input(
+            |_, _| {
+                polled += 1;
+                Ok(Some(AppMsg::Noop))
+            },
+            |_, _| true,
+            &mut state,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(polled, MOST_INPUT_AT_ONCE + 1);
+    }
 }
