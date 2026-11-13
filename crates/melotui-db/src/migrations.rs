@@ -5,7 +5,7 @@ use rusqlite::Connection;
 use tracing::info;
 
 /// current schema version
-const CURRENT_VERSION: i32 = 2;
+const CURRENT_VERSION: i32 = 3;
 
 /// run migrations
 pub fn run_migrations(conn: &Connection) -> Result<()> {
@@ -27,6 +27,26 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         info!("Database migrated to version 2");
     }
 
+    if user_version < 3 {
+        migrate_v3(conn)?;
+        conn.pragma_update(None, "user_version", 3)?;
+        info!("Database migrated to version 3");
+    }
+
+    Ok(())
+}
+
+/// v3: a fingerprint of each file's contents, by which a file that has been
+/// moved or renamed is known for the track it was. Empty for the tracks
+/// already there; the next scan fills it in.
+fn migrate_v3(conn: &Connection) -> Result<()> {
+    info!("Applying migration V3: Fingerprints");
+    conn.execute_batch(
+        "
+        ALTER TABLE tracks ADD COLUMN fingerprint TEXT;
+        CREATE INDEX IF NOT EXISTS idx_tracks_fingerprint ON tracks(fingerprint);
+        ",
+    )?;
     Ok(())
 }
 

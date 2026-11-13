@@ -128,6 +128,7 @@ fn handle_command(
             tracing::info!("Starting Library Scan for {} directories...", roots.len());
             let mut changed = 0;
             let mut unreadable = 0;
+            let mut unnameable = 0;
             // Roots whose tracks are not to be pruned this time.
             let mut kept: Vec<PathBuf> = Vec::new();
             for root in &roots {
@@ -142,6 +143,7 @@ fn handle_command(
                     Ok(outcome) => {
                         changed += outcome.processed;
                         unreadable += outcome.unreadable;
+                        unnameable += outcome.unnameable;
                         // A folder with nothing at all in it, that the library
                         // has music from, is a drive that is not mounted: its
                         // mount point is there and empty. Pruning then would
@@ -177,6 +179,13 @@ fn handle_command(
                 worker.send(IpcEvent::Error {
                     message: format!(
                         "{unreadable} folder(s) could not be read and were passed over; the log names them"
+                    ),
+                });
+            }
+            if unnameable > 0 {
+                worker.send(IpcEvent::Error {
+                    message: format!(
+                        "{unnameable} file(s) with names that are not valid UTF-8 were passed over; the log names them"
                     ),
                 });
             }
@@ -333,6 +342,8 @@ struct ScanOutcome {
     processed: usize,
     /// Folders inside the root that could not be read, and were passed over.
     unreadable: usize,
+    /// Files whose names are not text, which the library cannot hold.
+    unnameable: usize,
 }
 
 /// One scan of one root, as it walks the folders.
@@ -346,6 +357,9 @@ struct Scan<'a, W> {
     /// Folders walked already, by their real path: a symlink back up the
     /// tree would otherwise be walked for ever.
     visited: HashSet<PathBuf>,
+    /// Known files with no fingerprint yet: those from before there were
+    /// fingerprints, given one as the scan passes them.
+    unfingerprinted: &'a HashSet<String>,
     /// Every root of the library, for showing it as it stands.
     roots: &'a [PathBuf],
     pacing: ScanPacing,
@@ -376,17 +390,21 @@ fn handle_scan_library(
 
     // load cache
     let mut cache: HashMap<String, (i64, i64)> = HashMap::new();
-    if let Ok(mut stmt) =
-        conn.prepare("SELECT file_path, file_size_bytes, file_modified_at FROM tracks")
-        && let Ok(rows) = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, i64>(2)?,
-            ))
-        })
-    {
+    let mut unfingerprinted: HashSet<String> = HashSet::new();
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT file_path, file_size_bytes, file_modified_at, fingerprint IS NULL FROM tracks",
+    ) && let Ok(rows) = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, bool>(3)?,
+        ))
+    }) {
         for row in rows.flatten() {
+            if row.3 {
+                unfingerprinted.insert(row.0.clone());
+            }
             cache.insert(row.0, (row.1, row.2));
         }
     }
@@ -399,6 +417,7 @@ fn handle_scan_library(
         outcome: ScanOutcome::default(),
         skipped: 0,
         visited: HashSet::new(),
+        unfingerprinted: &unfingerprinted,
         roots,
         pacing,
         waiting,
@@ -558,14 +577,43 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
         if self.waiting.stop {
             return;
         }
-        let path_str = path.to_string_lossy().into_owned();
+        // The library keeps paths as text. A name that is not — left over
+        // from another encoding — used to be kept with the bytes that are
+        // not text replaced: a path to no file, that could not be played,
+        // was pruned as missing and found again as new at every scan.
+        let Some(path_str) = path.to_str().map(str::to_owned) else {
+            tracing::warn!("Passing over {path:?}: its name is not valid UTF-8");
+            self.outcome.unnameable += 1;
+            return;
+        };
         if let Ok(meta) = fs::metadata(path)
             && let Some(&cached) = self.cache.get(&path_str)
             && cached == (meta.len() as i64, modified_secs(&meta))
         {
+            if self.unfingerprinted.contains(&path_str)
+                && let Some(print) = fingerprint(path)
+            {
+                let _ = set_fingerprint(self.conn, &path_str, &print);
+            }
             self.skipped += 1;
             self.progress();
             return;
+        }
+        let print = fingerprint(path);
+        // Not a file the library has at this path. If it has one with these
+        // contents whose own file is gone, this is that file, moved or
+        // renamed: the track follows it, and keeps what it had.
+        if !self.cache.contains_key(&path_str)
+            && let Some(print) = &print
+            && let Some((id, was)) = moved_from(self.conn, print)
+        {
+            match self.conn.execute(
+                "UPDATE tracks SET file_path = ? WHERE id = ?",
+                params![path_str, id],
+            ) {
+                Ok(_) => tracing::info!("{was:?} is now {path:?}"),
+                Err(e) => tracing::warn!("Could not follow {was:?} to {path:?}: {e}"),
+            }
         }
 
         // A tag library that panics over some odd file must not take the
@@ -579,6 +627,9 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
             if let Err(e) = insert_or_replace_track(self.conn, &track_data) {
                 tracing::error!("Failed to insert track {:?}: {:?}", path, e);
                 return; // resilient scan, do not fail transaction
+            }
+            if let Some(print) = &print {
+                let _ = set_fingerprint(self.conn, &path_str, print);
             }
             self.outcome.processed += 1;
             self.progress();
@@ -595,6 +646,65 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
             });
         }
     }
+}
+
+/// How much of each end of a file goes into its fingerprint.
+const FINGERPRINT_BYTES: u64 = 64 * 1024;
+
+/// A fingerprint of what is in the file at `path`: its length, and its
+/// first and last 64 KiB. The same for a file moved or renamed, which is
+/// what it is for; different once the file is edited, tags included. Cheap
+/// enough to take of every file, where reading each one whole would make a
+/// first scan many times longer.
+fn fingerprint(path: &Path) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    let mut hasher = Sha256::new();
+    hasher.update(len.to_le_bytes());
+    let mut chunk = Vec::with_capacity(FINGERPRINT_BYTES as usize);
+    file.by_ref()
+        .take(FINGERPRINT_BYTES)
+        .read_to_end(&mut chunk)
+        .ok()?;
+    hasher.update(&chunk);
+    if len > FINGERPRINT_BYTES {
+        file.seek(SeekFrom::Start(
+            len.saturating_sub(FINGERPRINT_BYTES).max(FINGERPRINT_BYTES),
+        ))
+        .ok()?;
+        chunk.clear();
+        file.take(FINGERPRINT_BYTES).read_to_end(&mut chunk).ok()?;
+        hasher.update(&chunk);
+    }
+    let digest = hasher.finalize();
+    Some(digest[..16].iter().map(|b| format!("{b:02x}")).collect())
+}
+
+fn set_fingerprint(conn: &rusqlite::Connection, path: &str, print: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks SET fingerprint = ? WHERE file_path = ?",
+        params![print, path],
+    )?;
+    Ok(())
+}
+
+/// The track with this fingerprint whose own file is gone, if there is
+/// one: its id, and where its file was. A track whose file is still there
+/// is another copy of the same audio, and stays as it is.
+fn moved_from(conn: &rusqlite::Connection, print: &str) -> Option<(i64, String)> {
+    let mut stmt = conn
+        .prepare("SELECT id, file_path FROM tracks WHERE fingerprint = ?")
+        .ok()?;
+    let rows = stmt
+        .query_map(params![print], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .ok()?;
+    rows.flatten()
+        .find(|(_, was)| matches!(Path::new(was).try_exists(), Ok(false)))
 }
 
 /// Whether `path` has the extension of a format melotui plays.
@@ -1455,6 +1565,182 @@ mod tests {
 
         let kept = titles(&db).len();
         assert_eq!(kept, outcome.processed, "what it read was not all kept");
+    }
+
+    #[test]
+    fn a_file_moved_or_renamed_is_still_the_track_it_was() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        wav_of(&music.join("song.wav"), 2);
+        wav_of(&music.join("other.wav"), 3);
+        let db = dir.path().join("library.db");
+        let scan = || DatabaseCommand::ScanLibrary {
+            roots: vec![music.clone()],
+        };
+        run_commands(&db, vec![scan()]);
+
+        // Loved, played, and in a playlist.
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let id: i64 = conn
+            .query_row("SELECT id FROM tracks WHERE title = 'song'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        conn.execute_batch(&format!(
+            "UPDATE tracks SET is_favorite = 1, play_count = 7 WHERE id = {id};
+             INSERT INTO playlists (id, name) VALUES (1, 'P');
+             INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (1, {id}, 0);"
+        ))
+        .unwrap();
+        drop(conn);
+
+        // Tidied away into an album's folder, under a better name.
+        std::fs::create_dir(music.join("album")).unwrap();
+        std::fs::rename(
+            music.join("song.wav"),
+            music.join("album").join("01 Song.wav"),
+        )
+        .unwrap();
+        run_commands(&db, vec![scan()]);
+
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let (now, path, favorite, plays): (i64, String, bool, i64) = conn
+            .query_row(
+                "SELECT id, file_path, is_favorite, play_count FROM tracks WHERE title = '01 Song'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .expect("the moved file is not in the library");
+        assert_eq!(now, id, "it came back as a new track");
+        assert!(path.ends_with("01 Song.wav"));
+        assert!(favorite && plays == 7, "it lost what it had");
+        let in_playlist: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM playlist_tracks WHERE track_id = ?",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(in_playlist, 1);
+        assert_eq!(
+            titles(&db),
+            ["01 Song", "other"],
+            "the old one was left behind"
+        );
+    }
+
+    #[test]
+    fn a_copy_of_a_file_is_a_track_of_its_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        wav(&music.join("song.wav"));
+        let db = dir.path().join("library.db");
+        let scan = || DatabaseCommand::ScanLibrary {
+            roots: vec![music.clone()],
+        };
+        run_commands(&db, vec![scan()]);
+        std::fs::copy(music.join("song.wav"), music.join("song again.wav")).unwrap();
+        run_commands(&db, vec![scan()]);
+        assert_eq!(titles(&db), ["song", "song again"]);
+    }
+
+    #[test]
+    fn a_library_from_before_fingerprints_is_given_them_without_a_fuss() {
+        // As version 2 left it: no fingerprint column at all.
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        wav(&music.join("song.wav"));
+        let db = dir.path().join("library.db");
+        let meta = std::fs::metadata(music.join("song.wav")).unwrap();
+        let old = rusqlite::Connection::open(&db).unwrap();
+        old.execute_batch(include_str!("queries/schema.sql"))
+            .unwrap();
+        old.execute_batch(
+            "CREATE TABLE play_history (
+                 id INTEGER PRIMARY KEY,
+                 track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                 played_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+                 duration_s INTEGER);
+             PRAGMA user_version = 2;",
+        )
+        .unwrap();
+        old.execute(
+            "INSERT INTO tracks (id, file_path, title, duration_ms, format, file_size_bytes, file_modified_at, is_favorite)
+             VALUES (41, ?, 'song', 1000, 'WAV', ?, ?, 1)",
+            params![
+                music.join("song.wav").to_string_lossy(),
+                meta.len() as i64,
+                modified_secs(&meta)
+            ],
+        )
+        .unwrap();
+        drop(old);
+
+        let events = run_commands(
+            &db,
+            vec![DatabaseCommand::ScanLibrary {
+                roots: vec![music.clone()],
+            }],
+        );
+        assert_eq!(rescanned(&events), Some(false), "said to have changed");
+
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let (id, favorite, print): (i64, bool, Option<String>) = conn
+            .query_row("SELECT id, is_favorite, fingerprint FROM tracks", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!((id, favorite), (41, true));
+        assert_eq!(print.map(|p| p.len()), Some(32));
+    }
+
+    #[test]
+    fn the_fingerprint_is_of_the_contents_not_the_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let big = |name: &str, fill: u8, len: usize| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, vec![fill; len]).unwrap();
+            path
+        };
+        let a = fingerprint(&big("a", 1, 300_000)).unwrap();
+        assert_eq!(fingerprint(&big("renamed", 1, 300_000)).unwrap(), a);
+        assert_ne!(fingerprint(&big("longer", 1, 300_001)).unwrap(), a);
+        assert_ne!(fingerprint(&big("other", 2, 300_000)).unwrap(), a);
+        // Shorter than one end, between one and two, and empty.
+        for len in [0, 10, 100_000] {
+            assert!(fingerprint(&big("short", 1, len)).is_some(), "{len} bytes");
+        }
+        assert_eq!(fingerprint(&dir.path().join("missing")), None);
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_file_whose_name_is_not_text_is_passed_over_and_said() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        wav(&music.join("fine.wav"));
+        wav(&music.join(std::ffi::OsStr::from_bytes(b"caf\xe9.wav")));
+        let db = dir.path().join("library.db");
+        let scan = || DatabaseCommand::ScanLibrary {
+            roots: vec![music.clone()],
+        };
+
+        let events = run_commands(&db, vec![scan()]);
+        assert_eq!(titles(&db), ["fine"]);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, IpcEvent::Error { message } if message.contains("UTF-8"))),
+            "nothing said about it"
+        );
+        // And not found again as new, and pruned, at every scan after.
+        assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(false));
     }
 
     #[test]
