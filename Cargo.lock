@@ -2174,6 +2174,7 @@ dependencies = [
  "melotui-bus",
  "melotui-core",
  "rusqlite",
+ "sha2",
  "tempfile",
  "tracing",
 ]
