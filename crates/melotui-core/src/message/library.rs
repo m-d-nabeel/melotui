@@ -3,6 +3,19 @@ use crate::domain::{PlaylistId, TrackId};
 
 #[derive(Debug, Clone)]
 pub enum LibraryMsg {
+    /// The library has been read from the database. With it, the first time,
+    /// comes the session saved at the last quit, if there is one and it is
+    /// to be restored.
+    Loaded {
+        snapshot: Box<crate::library::Library>,
+        session: Option<Box<crate::state::PersistedSession>>,
+    },
+    /// A scan still under way has more to show: the library as it stands.
+    Grew(Box<crate::library::Library>),
+    /// A scan finished; `changed` if it added, updated or removed tracks.
+    Rescanned {
+        changed: bool,
+    },
     AddToQueue(TrackId),
     PlayNext(TrackId),
     ToggleRepeatMode,

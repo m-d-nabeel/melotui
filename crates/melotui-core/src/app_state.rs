@@ -588,6 +588,11 @@ impl AppState {
     }
 
     /// Whether the scan under way is a background one.
+    /// Whether the library has been read from the database.
+    pub fn library_loaded(&self) -> bool {
+        self.session.library_loaded
+    }
+
     pub fn is_scanning_quietly(&self) -> bool {
         self.session.scan_quietly
     }

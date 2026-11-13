@@ -227,21 +227,6 @@ impl Engine {
         }
         names
     }
-
-    /// Sync all audio DSP controls to match the given AudioState.
-    pub fn sync_dsp(&self, audio: &melotui_core::state::AudioState) {
-        self.set_volume(audio.volume);
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetSpeed(audio.speed)));
-        for effect in melotui_core::state::audio::Effect::ALL {
-            self.dispatch(IpcCommand::Audio(AudioCommand::SetEffect(
-                effect,
-                effect.get(audio),
-            )));
-        }
-        for (i, &gain) in audio.eq_bands.iter().enumerate() {
-            self.dispatch(IpcCommand::Audio(AudioCommand::SetEqBand { band: i, gain }));
-        }
-    }
 }
 
 #[cfg(test)]

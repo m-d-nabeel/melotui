@@ -127,6 +127,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                 roots: library_roots.to_vec(),
             }))
         }
+        AppMsg::Database(DatabaseMsg::DispatchLoadLibrary) => {
+            Some(IpcCommand::Database(DatabaseCommand::LoadLibrary {
+                roots: library_roots.to_vec(),
+            }))
+        }
         AppMsg::Database(DatabaseMsg::DispatchSetFavorite { id, favorite }) => {
             Some(IpcCommand::Database(DatabaseCommand::SetFavorite {
                 track_id: id.0 as i64,

@@ -16,6 +16,29 @@ fn show_unless_mixer_shown(state: &mut AppState, message: String) {
     }
 }
 
+/// What brings the audio thread into line with the state: the volume, the
+/// speed, every effect and every band of the EQ, as they stand.
+pub fn sync_audio_thread(state: &AppState) -> Vec<AppMsg> {
+    let audio = state.audio();
+    let mut messages = vec![
+        AudioMsg::DispatchSetVolume(audio.volume),
+        AudioMsg::DispatchSetSpeed(audio.speed),
+    ];
+    messages.extend(
+        Effect::ALL
+            .into_iter()
+            .map(|effect| AudioMsg::DispatchSet(effect, effect.get(audio))),
+    );
+    messages.extend(
+        audio
+            .eq_bands
+            .iter()
+            .enumerate()
+            .map(|(band, &gain)| AudioMsg::DispatchSetEqBand { band, gain }),
+    );
+    messages.into_iter().map(AppMsg::Audio).collect()
+}
+
 pub fn handle_adjust_volume(state: &mut AppState, delta: f32) -> Vec<AppMsg> {
     // Turned up or down, it is no longer muted.
     state.session.audio.muted_from = None;

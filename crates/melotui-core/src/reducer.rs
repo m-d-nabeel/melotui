@@ -224,6 +224,13 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
 }
 fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> {
     match msg {
+        LibraryMsg::Loaded { snapshot, session } => {
+            library_action::handle_library_loaded(state, *snapshot, session.map(|s| *s))
+        }
+        LibraryMsg::Grew(snapshot) => library_action::handle_library_grew(state, *snapshot),
+        LibraryMsg::Rescanned { changed } => {
+            library_action::handle_library_rescanned(state, changed)
+        }
         LibraryMsg::AddToQueue(track) => library_action::handle_add_to_queue(state, track),
         LibraryMsg::PlayNext(track) => library_action::handle_play_next(state, track),
         LibraryMsg::ToggleRepeatMode => library_action::handle_toggle_repeat_mode(state),
@@ -325,7 +332,8 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
 
 fn handle_database_message(state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
     match msg {
-        DatabaseMsg::DispatchSetFavorite { .. }
+        DatabaseMsg::DispatchLoadLibrary
+        | DatabaseMsg::DispatchSetFavorite { .. }
         | DatabaseMsg::DispatchCreatePlaylist(_)
         | DatabaseMsg::DispatchDeletePlaylist(_)
         | DatabaseMsg::DispatchAddToPlaylist { .. }

@@ -3,11 +3,7 @@ use melotui_bus::{event::IpcEvent, spectrum_bridge};
 use melotui_core::{
     AppMsg, AppState,
     library::Library,
-    message::{
-        cover::{CoverContext, CoverMsg},
-        library::LibraryMsg,
-        ui::UIMsg,
-    },
+    message::{library::LibraryMsg, ui::UIMsg},
     reducer,
     state::{NotificationKind, visualizer::update_visualizer_physics},
 };
@@ -90,9 +86,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         input_processor: InputProcessor::new(),
         music_roots,
         session_restored: false,
-        library_loaded: false,
         last_saved: Instant::now(),
-        startup_scan_requested: false,
     };
 
     // Changes in the music folders while running are scanned for a few
@@ -250,7 +244,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         }
         if let Some(at) = folders_changed_at
             && at.elapsed() >= FOLDERS_SETTLE
-            && runtime.library_loaded
+            && state.library_loaded()
         {
             folders_changed_at = None;
             tracing::info!("Music folders changed, scanning");
@@ -259,7 +253,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
                 .push_back(AppMsg::Library(LibraryMsg::RequestBackgroundScan));
         }
 
-        if runtime.library_loaded && runtime.last_saved.elapsed() >= AUTOSAVE_EVERY {
+        if state.library_loaded() && runtime.last_saved.elapsed() >= AUTOSAVE_EVERY {
             save_session(&state);
             runtime.last_saved = Instant::now();
         }
@@ -389,12 +383,7 @@ struct RuntimeContext {
     input_processor: InputProcessor,
     music_roots: Vec<PathBuf>,
     session_restored: bool,
-    /// Whether the library is in. Until it is, the state has none of the
-    /// saved session in it, and saving would overwrite that with nothing.
-    library_loaded: bool,
     last_saved: Instant,
-    /// Whether the scan at start has been asked for.
-    startup_scan_requested: bool,
 }
 
 /// How long the music folders have to be still after a change before they
@@ -453,129 +442,35 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
     while let Ok(evt) = ctx.engine.event_rx.try_recv() {
         changed = true;
         match evt {
+            // The session file is read here, at the edge, the first time
+            // the library arrives; what is done with it is the reducer's.
             IpcEvent::LibraryLoaded { snapshot } => {
-                tracing::info!("Library loaded with {} tracks", snapshot.tracks.len());
-                state.library = *snapshot;
-                ctx.library_loaded = true;
+                let mut session = None;
                 if !ctx.session_restored && state.config.ui.restore_session {
                     ctx.session_restored = true;
-                    let session = melotui_core::PersistedSession::load();
-                    if let Err(e) = &session {
-                        // No file is a first run, and nothing to remark on;
-                        // a file that cannot be read is a session lost,
-                        // which should at least be said.
-                        let there = melotui_core::PersistedSession::file_path()
-                            .is_ok_and(|path| path.exists());
-                        if there {
-                            tracing::warn!("Session not restored: {e:#}");
-                        }
-                    }
-                    if let Ok(session) = session {
-                        let count = session.apply_to_app_state(state);
-                        // A device chosen with :device last time is chosen again.
-                        if let Some(device) = session.output_device.clone() {
-                            ctx.effect_queue.push_back(AppMsg::Audio(
-                                melotui_core::message::audio::AudioMsg::SetOutputDevice(Some(
-                                    device,
-                                )),
-                            ));
-                        }
-                        if let Some(active_id) = state.get_playing_track_id()
-                            && let Some(track) = state.library.tracks.get(&active_id)
-                        {
-                            ctx.engine.play(track.file_path.clone());
-                            ctx.engine.pause();
-                            if state.progress_ms() > 0 {
-                                ctx.engine.seek(state.progress_ms(), state.seek_epoch());
-                            }
-                            if track.has_cover {
-                                ctx.effect_queue
-                                    .push_back(AppMsg::Cover(CoverMsg::RequestLoad {
-                                        id: active_id,
-                                        path: track.file_path.clone(),
-                                        context: CoverContext::Playback,
-                                    }));
+                    match melotui_core::PersistedSession::load() {
+                        Ok(saved) => session = Some(Box::new(saved)),
+                        Err(e) => {
+                            // No file is a first run, and nothing to remark
+                            // on; a file that cannot be read is a session
+                            // lost, which should at least be said.
+                            let there = melotui_core::PersistedSession::file_path()
+                                .is_ok_and(|path| path.exists());
+                            if there {
+                                tracing::warn!("Session not restored: {e:#}");
                             }
                         }
-                        ctx.engine.sync_dsp(state.audio());
-
-                        if state.should_draw_spectrum() {
-                            ctx.effect_queue.push_back(AppMsg::Playback(
-                                melotui_core::message::playback::PlaybackMsg::DispatchSetVisualizer {
-                                    spectrum_style: Some(state.spectrum_style().clone()),
-                                },
-                            ));
-                        }
-
-                        state.set_notification(
-                            NotificationKind::Info,
-                            format!("Session restored ({} tracks in queue)", count),
-                        );
-                    } else {
-                        state.set_notification(NotificationKind::Info, "Library loaded");
-                    }
-                } else if state.take_quiet_scan() {
-                    // A background scan found something.
-                    state.set_notification(NotificationKind::Info, "Library updated");
-                } else {
-                    state.set_notification(NotificationKind::Info, "Library loaded");
-                }
-
-                // Music added while melotui was closed is picked up at start;
-                // an empty library is a first run, so that scan shows.
-                if !ctx.startup_scan_requested
-                    && !ctx.music_roots.is_empty()
-                    && state.config.library.scan_on_startup
-                {
-                    ctx.startup_scan_requested = true;
-                    let scan = if state.library.tracks.is_empty() {
-                        LibraryMsg::RequestScanLibrary
-                    } else {
-                        LibraryMsg::RequestBackgroundScan
-                    };
-                    ctx.effect_queue.push_back(AppMsg::Library(scan));
-                }
-
-                state.ensure_library_selection();
-
-                if state.is_showing_track_info()
-                    && let Some(tid) = state.get_track_info_target_id()
-                    && let Some(info_track) = state.library.get_track(tid).cloned()
-                    && info_track.has_cover
-                {
-                    ctx.effect_queue
-                        .push_back(AppMsg::Cover(CoverMsg::RequestLoad {
-                            id: tid,
-                            path: info_track.file_path,
-                            context: CoverContext::Info,
-                        }));
-                }
-            }
-            IpcEvent::LibraryGrew { snapshot } => {
-                // A scan under way has more to show. Nothing is said: the
-                // scan's own progress is on the screen.
-                state.library = *snapshot;
-                state.ensure_library_selection();
-            }
-            IpcEvent::LibraryRescanned { changed } => {
-                let quiet = state.is_scanning_quietly();
-                if changed {
-                    // Reloaded only when the scan found something, so a
-                    // background scan of an unchanged library disturbs nothing.
-                    ctx.engine.load_library(ctx.music_roots.clone());
-                    if !quiet {
-                        state.set_notification(
-                            NotificationKind::Info,
-                            "Scan complete, reloading...",
-                        );
-                    }
-                } else {
-                    state.take_quiet_scan();
-                    if !quiet {
-                        state.set_notification(NotificationKind::Info, "Library is up to date");
                     }
                 }
+                ctx.effect_queue
+                    .push_back(AppMsg::Library(LibraryMsg::Loaded { snapshot, session }));
             }
+            IpcEvent::LibraryGrew { snapshot } => ctx
+                .effect_queue
+                .push_back(AppMsg::Library(LibraryMsg::Grew(snapshot))),
+            IpcEvent::LibraryRescanned { changed } => ctx
+                .effect_queue
+                .push_back(AppMsg::Library(LibraryMsg::Rescanned { changed })),
             _ => ctx.effect_queue.push_back(bridge::ipc_to_appmsg(evt)),
         }
     }
@@ -588,7 +483,7 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
         changed = true;
         // lifecycle
         if matches!(msg, AppMsg::RequestQuit) {
-            if ctx.library_loaded {
+            if state.library_loaded() {
                 save_session(state);
             }
 
