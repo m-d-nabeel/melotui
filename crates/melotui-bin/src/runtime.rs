@@ -404,9 +404,14 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                     ctx.session_restored = true;
                     let session = melotui_core::PersistedSession::load();
                     if let Err(e) = &session {
-                        // No file is a first run; a file that cannot be read
-                        // is a session lost, which should at least be said.
-                        tracing::warn!("Session not restored: {e:#}");
+                        // No file is a first run, and nothing to remark on;
+                        // a file that cannot be read is a session lost,
+                        // which should at least be said.
+                        let there = melotui_core::PersistedSession::file_path()
+                            .is_ok_and(|path| path.exists());
+                        if there {
+                            tracing::warn!("Session not restored: {e:#}");
+                        }
                     }
                     if let Ok(session) = session {
                         let count = session.apply_to_app_state(state);
