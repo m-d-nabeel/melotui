@@ -2184,6 +2184,7 @@ dependencies = [
  "melotui-engine",
  "melotui-tui",
  "notify",
+ "ratatui",
  "souvlaki",
  "tempfile",
  "tracing",

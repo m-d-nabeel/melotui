@@ -203,21 +203,6 @@ fn handle_command(
                 changed: changed > 0,
             });
         }
-        DatabaseCommand::PruneLibrary => {
-            info!("Manual prune requested");
-            match prune_library(conn, &[]) {
-                Ok(count) => {
-                    info!("Pruned {} dead tracks", count);
-                    worker.send(IpcEvent::LibraryRescanned { changed: count > 0 });
-                }
-                Err(e) => {
-                    tracing::error!("Failed to prune: {:?}", e);
-                    worker.send(IpcEvent::Error {
-                        message: e.to_string(),
-                    });
-                }
-            }
-        }
         DatabaseCommand::SetFavorite { track_id, favorite } => {
             match set_favorite(conn, TrackId(track_id as u64), favorite) {
                 Ok(is_favorite) => {
@@ -309,26 +294,6 @@ fn handle_command(
             let tid = TrackId(track_id as u64);
             if let Err(e) = increment_play_count(conn, tid) {
                 tracing::error!("Failed to increment play count: {:?}", e);
-            }
-        }
-        DatabaseCommand::SearchTracks { query } => {
-            match conn.prepare("SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?") {
-                Ok(mut stmt) => {
-                    match stmt.query_map(params![query], |row| {
-                        Ok(TrackId(row.get::<_, i64>(0)? as u64))
-                    }) {
-                        Ok(rows) => {
-                            let results: Vec<TrackId> = rows.flatten().collect();
-                            worker.send(IpcEvent::SearchResults { query, results });
-                        }
-                        Err(e) => {
-                            tracing::error!("Failed to query FTS: {:?}", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to prepare FTS query: {:?}", e);
-                }
             }
         }
         DatabaseCommand::Shutdown => unreachable!("handled above"),
@@ -539,8 +504,7 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
             match cmd {
                 DatabaseCommand::Shutdown => self.waiting.stop = true,
                 cmd @ (DatabaseCommand::ScanLibrary { .. }
-                | DatabaseCommand::LoadLibrary { .. }
-                | DatabaseCommand::PruneLibrary) => self.waiting.deferred.push_back(cmd),
+                | DatabaseCommand::LoadLibrary { .. }) => self.waiting.deferred.push_back(cmd),
                 cmd => handle_command(self.conn, self.worker, cmd, self.waiting),
             }
         }
@@ -1695,6 +1659,10 @@ mod tests {
             })
             .unwrap();
         assert_eq!((id, favorite), (41, true));
+        let version: i64 = conn
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .unwrap();
+        assert_eq!(version, 4, "not brought up to the current version");
         assert_eq!(print.map(|p| p.len()), Some(32));
     }
 
@@ -1742,6 +1710,39 @@ mod tests {
         );
         // And not found again as new, and pruned, at every scan after.
         assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(false));
+    }
+
+    #[test]
+    fn the_full_text_index_is_gone_and_tracks_are_written_without_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        wav(&music.join("song.wav"));
+        let db = dir.path().join("library.db");
+        let scan = || DatabaseCommand::ScanLibrary {
+            roots: vec![music.clone()],
+        };
+        run_commands(&db, vec![scan()]);
+
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        let left: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE name LIKE 'tracks_fts%' OR name IN ('tracks_ai', 'tracks_ad', 'tracks_au')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0, "something of the index is still there");
+        drop(conn);
+
+        // Written, changed and removed all the same.
+        wav_of(&music.join("song.wav"), 2);
+        std::fs::write(music.join("notes.txt"), "kept, so the folder is not empty").unwrap();
+        assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(true));
+        std::fs::remove_file(music.join("song.wav")).unwrap();
+        assert_eq!(rescanned(&run_commands(&db, vec![scan()])), Some(true));
+        assert!(titles(&db).is_empty());
     }
 
     #[test]

@@ -41,7 +41,7 @@ pub fn draw(
             .constraints([Constraint::Fill(1), Constraint::Length(playback_height)])
             .split(area);
 
-        dsp_studio_view::draw(frame, layout[0], state, image_cache);
+        dsp_studio_view::draw(frame, layout[0], state, image_cache, registry);
         playback_view::draw_compact(frame, layout[1], state);
     } else {
         // Dispatch to focus mode layout
@@ -229,7 +229,7 @@ fn draw_overlays(
 
     if *state.ui_mode() == UIMode::Confirm {
         frame.render_widget(dim_block.clone(), area);
-        confirm_view::draw(frame, area, state);
+        confirm_view::draw(frame, area, state, registry);
     }
 
     if state.ui_show_help() {

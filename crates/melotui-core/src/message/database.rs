@@ -9,6 +9,8 @@ pub enum DatabaseMsg {
         id: TrackId,
         favorite: bool,
     },
+    /// Read the library from the database again.
+    DispatchLoadLibrary,
     DispatchCreatePlaylist(String),
     DispatchDeletePlaylist(PlaylistId),
     DispatchAddToPlaylist {
@@ -20,5 +22,4 @@ pub enum DatabaseMsg {
         track_id: TrackId,
     },
     DispatchIncrementPlayCount(TrackId),
-    DispatchSearchTracks(String),
 }

@@ -63,9 +63,6 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                     }
 
                     tracing::info!("Starting download for: {}", query);
-                    worker.send(IpcEvent::DownloadStarted {
-                        query: query.clone(),
-                    });
 
                     let flag = Arc::new(AtomicBool::new(false));
                     cancel_flag = Some(flag.clone());

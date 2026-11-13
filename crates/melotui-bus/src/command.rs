@@ -64,8 +64,6 @@ pub enum DownloadCommand {
 pub enum DatabaseCommand {
     LoadLibrary { roots: Vec<PathBuf> },
     ScanLibrary { roots: Vec<PathBuf> },
-    PruneLibrary,
-    SearchTracks { query: String },
     CreatePlaylist { name: String },
     AddTrackToPlaylist { playlist_id: i64, track_id: i64 },
     DeletePlaylist { playlist_id: i64 },

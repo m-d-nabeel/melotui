@@ -224,6 +224,13 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
 }
 fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> {
     match msg {
+        LibraryMsg::Loaded { snapshot, session } => {
+            library_action::handle_library_loaded(state, *snapshot, session.map(|s| *s))
+        }
+        LibraryMsg::Grew(snapshot) => library_action::handle_library_grew(state, *snapshot),
+        LibraryMsg::Rescanned { changed } => {
+            library_action::handle_library_rescanned(state, changed)
+        }
         LibraryMsg::AddToQueue(track) => library_action::handle_add_to_queue(state, track),
         LibraryMsg::PlayNext(track) => library_action::handle_play_next(state, track),
         LibraryMsg::ToggleRepeatMode => library_action::handle_toggle_repeat_mode(state),
@@ -275,9 +282,6 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
             skipped,
             total,
         } => library_action::handle_update_scan_progress(state, scanned, skipped, total),
-        LibraryMsg::SetSearchResults { query, results } => {
-            library_action::handle_set_search_results(state, query, results)
-        }
     }
 }
 
@@ -301,9 +305,8 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         DownloadMsg::RequestCancelDownload => {
             download_action::handle_request_cancel_download(state)
         }
-        DownloadMsg::RequestFetchLyrics { .. } | DownloadMsg::DispatchFetchLyrics { .. } => {
-            vec![]
-        }
+        // Sent on to the download worker by the engine's bridge.
+        DownloadMsg::RequestFetchLyrics { .. } => vec![],
         DownloadMsg::LyricsFetched { save_path } => {
             download_action::handle_lyrics_fetched(state, save_path)
         }
@@ -312,9 +315,6 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         }
         DownloadMsg::RequestSearchLyrics { query } => {
             download_action::handle_request_search_lyrics(state, query)
-        }
-        DownloadMsg::DispatchSearchLyrics { .. } => {
-            vec![]
         }
         DownloadMsg::LyricsSearchResults {
             lrclib_results,
@@ -325,12 +325,12 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
 
 fn handle_database_message(state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
     match msg {
-        DatabaseMsg::DispatchSetFavorite { .. }
+        DatabaseMsg::DispatchLoadLibrary
+        | DatabaseMsg::DispatchSetFavorite { .. }
         | DatabaseMsg::DispatchCreatePlaylist(_)
         | DatabaseMsg::DispatchDeletePlaylist(_)
         | DatabaseMsg::DispatchAddToPlaylist { .. }
-        | DatabaseMsg::DispatchRemoveFromPlaylist { .. }
-        | DatabaseMsg::DispatchSearchTracks(_) => vec![],
+        | DatabaseMsg::DispatchRemoveFromPlaylist { .. } => vec![],
         DatabaseMsg::DispatchIncrementPlayCount(track_id) => {
             // The one place this happens in memory — see `Library::record_play`
             // for why this used to poke `play_count` directly and why that was

@@ -127,6 +127,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                 roots: library_roots.to_vec(),
             }))
         }
+        AppMsg::Database(DatabaseMsg::DispatchLoadLibrary) => {
+            Some(IpcCommand::Database(DatabaseCommand::LoadLibrary {
+                roots: library_roots.to_vec(),
+            }))
+        }
         AppMsg::Database(DatabaseMsg::DispatchSetFavorite { id, favorite }) => {
             Some(IpcCommand::Database(DatabaseCommand::SetFavorite {
                 track_id: id.0 as i64,
@@ -162,11 +167,6 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
         AppMsg::Database(DatabaseMsg::DispatchIncrementPlayCount(track_id)) => {
             Some(IpcCommand::Database(DatabaseCommand::IncrementPlayCount {
                 track_id: track_id.0 as i64,
-            }))
-        }
-        AppMsg::Database(DatabaseMsg::DispatchSearchTracks(query)) => {
-            Some(IpcCommand::Database(DatabaseCommand::SearchTracks {
-                query: query.clone(),
             }))
         }
 
@@ -265,9 +265,6 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             skipped,
             total,
         }),
-        IpcEvent::SearchResults { query, results } => {
-            AppMsg::Library(LibraryMsg::SetSearchResults { query, results })
-        }
         // A worker that failed says so, rather than the failure only reaching
         // the log.
         IpcEvent::AudioOutputOpened { name } => AppMsg::Audio(AudioMsg::OutputOpened(name)),
@@ -277,7 +274,16 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             kind: NotificationKind::Error,
             message,
         }),
-        _ => AppMsg::Noop,
+        // The library, as the database sends it. The session saved at the
+        // last quit is the frontend's to read and add to the first of these.
+        IpcEvent::LibraryLoaded { snapshot } => AppMsg::Library(LibraryMsg::Loaded {
+            snapshot,
+            session: None,
+        }),
+        IpcEvent::LibraryGrew { snapshot } => AppMsg::Library(LibraryMsg::Grew(snapshot)),
+        IpcEvent::LibraryRescanned { changed } => {
+            AppMsg::Library(LibraryMsg::Rescanned { changed })
+        }
     }
 }
 

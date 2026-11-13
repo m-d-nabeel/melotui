@@ -1,5 +1,5 @@
 mod image_cache;
-mod input;
+pub mod input;
 pub mod key_parser;
 pub mod keybinding;
 mod lyrics;

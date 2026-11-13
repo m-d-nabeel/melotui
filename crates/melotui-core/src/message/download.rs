@@ -20,13 +20,6 @@ pub enum DownloadMsg {
         provider: Option<String>,
         provider_id: Option<String>,
     },
-    DispatchFetchLyrics {
-        track_name: String,
-        artist_name: String,
-        save_path: PathBuf,
-        provider: Option<String>,
-        provider_id: Option<String>,
-    },
     DownloadProgress {
         percent: u8,
     },
@@ -43,9 +36,6 @@ pub enum DownloadMsg {
     },
     RequestCancelDownload,
     RequestSearchLyrics {
-        query: String,
-    },
-    DispatchSearchLyrics {
         query: String,
     },
     LyricsSearchResults {
