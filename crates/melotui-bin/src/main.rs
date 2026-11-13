@@ -71,16 +71,8 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let log_guard = logging::init();
-    std::panic::set_hook(Box::new(|panic| {
-        let _ = melotui_tui::restore_terminal();
-        tracing::error!(
-            "panic: {panic}\n{}",
-            std::backtrace::Backtrace::force_capture()
-        );
-        // Not eprintln!, which panics itself if the terminal has gone.
-        let _ = writeln!(std::io::stderr(), "panic: {panic}");
-    }));
+    logging::init();
+    std::panic::set_hook(Box::new(on_panic));
 
     let mut config = match load() {
         Ok(config) => config,
@@ -90,16 +82,40 @@ fn main() -> ExitCode {
         config.ui.restore_session = false;
     }
 
-    match runtime::run(config) {
+    let code = match runtime::run(config) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("melotui: {e}");
-            // Flush the buffered log writer before exiting, so the lines that
-            // explain the failure are written.
-            drop(log_guard);
             ExitCode::FAILURE
         }
+    };
+    // The lines that explain a failure are among the last ones logged.
+    logging::flush();
+    code
+}
+
+/// What a panic comes to, on whichever thread it happens.
+///
+/// One that is caught where it happens — a tag library failing on one file
+/// — is logged and nothing more. Any other ends the app: the terminal is
+/// handed back, the panic logged and the log written, and the process exits.
+/// Left to unwind, a panic on a worker's thread took that worker and left
+/// the rest running: no sound, or no library, on a screen this hook had
+/// already taken back from the app.
+fn on_panic(panic: &std::panic::PanicHookInfo) {
+    if melotui_core::utils::panic::is_guarded() {
+        tracing::warn!("caught a panic: {panic}");
+        return;
     }
+    let _ = melotui_tui::restore_terminal();
+    tracing::error!(
+        "panic: {panic}\n{}",
+        std::backtrace::Backtrace::force_capture()
+    );
+    logging::flush();
+    // Not eprintln!, which panics itself if the terminal has gone.
+    let _ = writeln!(std::io::stderr(), "melotui: panic: {panic}");
+    std::process::exit(101);
 }
 
 /// Every file and directory melotui reads or writes, one per line, noting
@@ -153,6 +169,50 @@ mod tests {
     fn parse(args: &[&str]) -> Result<Cli, ErrorKind> {
         Cli::try_parse_from(std::iter::once("melotui").chain(args.iter().copied()))
             .map_err(|e| e.kind())
+    }
+
+    /// Runs this test binary again as `role`, a process of its own to
+    /// panic in, and returns how it ended and what it wrote to stderr.
+    fn in_a_process_of_its_own(test: &str, role: &str) -> (Option<i32>, String) {
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test, "--nocapture", "--test-threads=1"])
+            .env("MELOTUI_TEST_PANICS", role)
+            .output()
+            .unwrap();
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    }
+
+    #[test]
+    fn a_panic_ends_the_process_and_a_caught_one_does_not() {
+        const TEST: &str = "tests::a_panic_ends_the_process_and_a_caught_one_does_not";
+        match std::env::var("MELOTUI_TEST_PANICS").as_deref() {
+            // A worker's thread panics: the hook ends the process there and
+            // then, and the line after is never reached.
+            Ok("worker") => {
+                std::panic::set_hook(Box::new(on_panic));
+                let _ = std::thread::spawn(|| panic!("a worker fell over")).join();
+                std::process::exit(0);
+            }
+            // A panic that is caught is logged, and everything carries on.
+            Ok("caught") => {
+                std::panic::set_hook(Box::new(on_panic));
+                let caught = melotui_core::utils::panic::guarded(|| panic!("an odd file"));
+                std::process::exit(if caught.is_err() { 0 } else { 3 });
+            }
+            _ => {}
+        }
+
+        let (code, stderr) = in_a_process_of_its_own(TEST, "worker");
+        assert_eq!(code, Some(101), "{stderr}");
+        assert!(stderr.contains("melotui: panic:"), "{stderr}");
+        assert!(stderr.contains("a worker fell over"), "{stderr}");
+
+        let (code, stderr) = in_a_process_of_its_own(TEST, "caught");
+        assert_eq!(code, Some(0), "{stderr}");
+        assert!(!stderr.contains("melotui: panic:"), "{stderr}");
     }
 
     #[test]

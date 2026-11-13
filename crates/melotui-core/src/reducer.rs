@@ -92,7 +92,9 @@ fn handle_playback_message(state: &mut AppState, msg: PlaybackMsg) -> Vec<AppMsg
         PlaybackMsg::AudioPaused => playback_action::handle_audio_paused(state),
         PlaybackMsg::AudioResumed => playback_action::handle_audio_resumed(state),
         PlaybackMsg::AudioFinished => playback_action::handle_audio_finished(state),
-        PlaybackMsg::AudioError { error } => playback_action::handle_audio_error(state, error),
+        PlaybackMsg::AudioError { path, error } => {
+            playback_action::handle_audio_error(state, path, error)
+        }
         PlaybackMsg::RequestPlayNext => playback_action::handle_request_next(state),
         PlaybackMsg::RequestPlayPrev => playback_action::handle_request_prev(state),
     }
@@ -363,7 +365,7 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
 
 fn handle_database_message(state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
     match msg {
-        DatabaseMsg::DispatchToggleFavorite(_)
+        DatabaseMsg::DispatchSetFavorite { .. }
         | DatabaseMsg::DispatchCreatePlaylist(_)
         | DatabaseMsg::DispatchDeletePlaylist(_)
         | DatabaseMsg::DispatchAddToPlaylist { .. }

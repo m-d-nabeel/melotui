@@ -80,7 +80,7 @@ pub enum DatabaseCommand {
     DeletePlaylist { playlist_id: i64 },
     RemoveTrackFromPlaylist { playlist_id: i64, track_id: i64 },
     IncrementPlayCount { track_id: i64 },
-    ToggleFavorite { track_id: i64 },
+    SetFavorite { track_id: i64, favorite: bool },
     Shutdown,
 }
 

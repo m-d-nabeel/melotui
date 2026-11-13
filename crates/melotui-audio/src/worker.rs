@@ -10,7 +10,6 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
-    thread,
     time::{Duration, Instant},
 };
 
@@ -20,6 +19,7 @@ use crate::{
     clock::TimeKeeper,
     effects::{AudioParams, create_audio_graph},
     output::{self, Output},
+    position::{Counted, Position},
     reaper::Reaper,
     source::FundspSource,
     tap::SpectrumSniffer,
@@ -204,7 +204,17 @@ pub fn run(
             engine.reconnect(Player::connect_new(output.sink.mixer()), &mut worker);
         }
 
-        let commands = fetch_and_coalesce_commands(&mut worker);
+        // Waited for here, so a command is acted on as it comes. Playing, the
+        // wait is the tick: the position is told and the spectrum analysed
+        // a hundred times a second. With nothing playing there is only the
+        // device to keep an eye on, and the thread need not wake a hundred
+        // times a second to do nothing.
+        let wait = if engine.time_keeper.is_playing {
+            TICK
+        } else {
+            IDLE_TICK
+        };
+        let commands = fetch_and_coalesce_commands(&mut worker, wait);
         for cmd in commands {
             match cmd {
                 AudioCommand::SetOutputDevice(device) => {
@@ -231,14 +241,24 @@ pub fn run(
         while let Ok(kind) = output_kinds.try_recv() {
             worker.send(IpcEvent::AudioOutputKind(kind));
         }
-
-        // 10ms sleep covers ~100Hz
-        thread::sleep(Duration::from_millis(10));
     }
 }
 
-fn fetch_and_coalesce_commands(worker: &mut impl IpcWorker<AudioCommand>) -> Vec<AudioCommand> {
+/// How long the worker waits for a command while something plays.
+const TICK: Duration = Duration::from_millis(10);
+/// And while nothing does.
+const IDLE_TICK: Duration = Duration::from_millis(100);
+
+/// The commands waiting, having waited up to `wait` for the first, with
+/// those a later one makes pointless left out.
+fn fetch_and_coalesce_commands(
+    worker: &mut impl IpcWorker<AudioCommand>,
+    wait: Duration,
+) -> Vec<AudioCommand> {
     let mut raw_batch = Vec::new();
+    if let Some(cmd) = worker.recv_timeout(wait) {
+        raw_batch.push(cmd);
+    }
     while let Some(cmd) = worker.try_recv() {
         raw_batch.push(cmd);
     }
@@ -286,7 +306,15 @@ struct AudioEngine {
     /// Whether the player is connected to a device that is running. Without
     /// one nothing answers a seek, which rodio waits for.
     live: bool,
+    /// Where the audio taken from the playing file has got to.
+    position: Option<Position>,
 }
+
+/// How far the clock may be from the audio before it is moved to it: more
+/// than the device takes at once, which is how far ahead of the clock the
+/// count of the audio runs anyway, and little enough that lyrics a stall
+/// has left behind are caught up within a line.
+const CLOCK_WITHIN: Duration = Duration::from_millis(750);
 
 impl AudioEngine {
     pub fn new(sink: Player, spectrum_producer: SpectrumProducer, fft_size: usize) -> Self {
@@ -302,6 +330,7 @@ impl AudioEngine {
             reaper: Reaper::spawn(),
             current: None,
             live: false,
+            position: None,
         }
     }
 
@@ -410,7 +439,15 @@ impl AudioEngine {
             Ok(()) => worker.send(IpcEvent::PlaybackStarted {
                 path: path.to_string_lossy().to_string(),
             }),
-            Err(message) => worker.send(IpcEvent::Error { message }),
+            Err(error) => {
+                // Nothing is playing now, and nothing is there to carry on
+                // with on another device.
+                self.current = None;
+                worker.send(IpcEvent::PlaybackFailed {
+                    path: path.to_string_lossy().to_string(),
+                    error,
+                });
+            }
         }
     }
 
@@ -429,6 +466,10 @@ impl AudioEngine {
         let channels = decoder.channels().get();
         let sample_rate = decoder.sample_rate().get();
         let unit: Box<dyn AudioUnit> = create_audio_graph(channels, &self.dsp_params);
+        // Counted straight from the decoder, before the effects and the
+        // speed control: a frame there is a frame of the file.
+        let (decoder, position) = Counted::new(decoder);
+        self.position = Some(position);
         let dsp_source = FundspSource::new(decoder, unit, self.bypass.clone());
 
         // A second of audio: room for the biggest lump the device pulls at
@@ -452,6 +493,7 @@ impl AudioEngine {
 
     fn do_stop(&mut self) {
         self.current = None;
+        self.position = None;
         self.sink.stop();
         self.time_keeper.stop();
         self.vis_manager.detach_source();
@@ -506,6 +548,16 @@ impl AudioEngine {
             return;
         }
 
+        // With a device running, the clock is held to the audio it takes.
+        // Without one nothing is taken, and the clock alone says where a
+        // seek has put things for the next device.
+        if self.live
+            && let Some(position) = &self.position
+            && self.time_keeper.hold_to(position.get(), CLOCK_WITHIN)
+        {
+            tracing::debug!("Playback clock moved to the audio, at {:?}", position.get());
+        }
+
         let pos = self.time_keeper.get_position();
         worker.send(IpcEvent::PlaybackProgress {
             position_ms: pos.as_millis() as u64,
@@ -555,6 +607,7 @@ mod tests {
     use super::*;
     use melotui_bus::{channel::inprocess, command::AudioCommand, spectrum_bridge};
     use std::sync::mpsc;
+    use std::thread;
 
     /// Ten seconds of quiet stereo at 44.1 kHz, as a WAV file.
     fn wav(dir: &std::path::Path) -> PathBuf {
@@ -632,6 +685,64 @@ mod tests {
     }
 
     #[test]
+    fn the_clock_follows_the_audio_when_the_device_stops_taking_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = wav(dir.path());
+        let (bus_tx, bus_rx) = mpsc::channel();
+        let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+        let mut engine = engine();
+        let (player, device) = live_player();
+        engine.reconnect(player, &mut worker);
+        engine.do_play(path, &mut worker);
+
+        // The device goes quiet without saying it is lost: its thread stops
+        // taking audio, and the clock runs on by itself.
+        drop(device);
+        thread::sleep(Duration::from_millis(100));
+        let taken = engine.position.as_ref().unwrap().get();
+        engine.time_keeper.seek(taken + Duration::from_secs(5));
+
+        engine.tick(&mut worker);
+
+        let reported = bus_rx
+            .try_iter()
+            .filter_map(|e| match e {
+                IpcEvent::PlaybackProgress { position_ms, .. } => Some(position_ms),
+                _ => None,
+            })
+            .last()
+            .expect("no progress reported");
+        let taken = engine.position.as_ref().unwrap().get().as_millis() as u64;
+        assert!(
+            reported.abs_diff(taken) < 200,
+            "the clock says {reported} ms, the audio is at {taken} ms"
+        );
+    }
+
+    #[test]
+    fn a_command_is_taken_as_it_comes_and_the_wait_is_the_wait() {
+        let (bus_tx, _bus_rx) = mpsc::channel();
+        let (tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+
+        // Nothing sent: the whole wait, and nothing to do.
+        let started = Instant::now();
+        assert!(fetch_and_coalesce_commands(&mut worker, Duration::from_millis(30)).is_empty());
+        assert!(started.elapsed() >= Duration::from_millis(30));
+
+        // Sent part way through a long wait: taken then, not at its end.
+        let sender = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(20));
+            tx.send(AudioCommand::Pause).unwrap();
+            tx
+        });
+        let started = Instant::now();
+        let commands = fetch_and_coalesce_commands(&mut worker, Duration::from_secs(5));
+        assert!(matches!(commands[..], [AudioCommand::Pause]));
+        assert!(started.elapsed() < Duration::from_secs(2));
+        drop(sender.join());
+    }
+
+    #[test]
     fn a_paused_track_stays_paused_on_the_new_device() {
         let dir = tempfile::tempdir().unwrap();
         let path = wav(dir.path());
@@ -689,8 +800,9 @@ mod tests {
         let mut engine = engine();
         engine.do_play(PathBuf::from("/nonexistent/song.flac"), &mut worker);
         match bus_rx.try_recv() {
-            Ok(IpcEvent::Error { message }) => {
-                assert!(message.starts_with("Cannot play song.flac:"), "{message}")
+            Ok(IpcEvent::PlaybackFailed { path, error }) => {
+                assert_eq!(path, "/nonexistent/song.flac");
+                assert!(error.starts_with("Cannot play song.flac:"), "{error}")
             }
             other => panic!("{other:?}"),
         }

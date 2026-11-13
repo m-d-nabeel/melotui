@@ -151,9 +151,10 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                 roots: library_roots.to_vec(),
             }))
         }
-        AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(track_id)) => {
-            Some(IpcCommand::Database(DatabaseCommand::ToggleFavorite {
-                track_id: track_id.0 as i64,
+        AppMsg::Database(DatabaseMsg::DispatchSetFavorite { id, favorite }) => {
+            Some(IpcCommand::Database(DatabaseCommand::SetFavorite {
+                track_id: id.0 as i64,
+                favorite: *favorite,
             }))
         }
         AppMsg::Database(DatabaseMsg::DispatchCreatePlaylist(name)) => {
@@ -237,6 +238,9 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms, epoch })
         }
         IpcEvent::PlaybackFinished => AppMsg::Playback(PlaybackMsg::AudioFinished),
+        IpcEvent::PlaybackFailed { path, error } => {
+            AppMsg::Playback(PlaybackMsg::AudioError { path, error })
+        }
         IpcEvent::PlaybackPaused => AppMsg::Playback(PlaybackMsg::AudioPaused),
         IpcEvent::PlaybackResumed => AppMsg::Playback(PlaybackMsg::AudioResumed),
         IpcEvent::FavoriteToggled {
@@ -319,6 +323,18 @@ mod tests {
     }
 
     #[test]
+    fn a_file_that_could_not_be_played_reaches_playback_not_only_the_screen() {
+        let msg = ipc_to_appmsg(IpcEvent::PlaybackFailed {
+            path: "/music/broken.mp3".into(),
+            error: "Cannot play broken.mp3: bad header".into(),
+        });
+        assert!(
+            matches!(&msg, AppMsg::Playback(PlaybackMsg::AudioError { path, .. }) if path == "/music/broken.mp3"),
+            "{msg:?}"
+        );
+    }
+
+    #[test]
     fn test_ipc_to_appmsg_translation() {
         // Test playback progress translation
         let evt = IpcEvent::PlaybackProgress {
@@ -357,16 +373,19 @@ mod tests {
             _ => panic!("Expected Audio Stop command"),
         }
 
-        // Test Database toggle favorite command
+        // Test Database set favorite command
         let msg = AppMsg::Database(
-            melotui_core::message::database::DatabaseMsg::DispatchToggleFavorite(TrackId(42)),
+            melotui_core::message::database::DatabaseMsg::DispatchSetFavorite {
+                id: TrackId(42),
+                favorite: true,
+            },
         );
         let cmd = appmsg_to_ipc(&msg, &roots).unwrap();
         match cmd {
-            IpcCommand::Database(DatabaseCommand::ToggleFavorite { track_id }) => {
-                assert_eq!(track_id, 42);
+            IpcCommand::Database(DatabaseCommand::SetFavorite { track_id, favorite }) => {
+                assert_eq!((track_id, favorite), (42, true));
             }
-            _ => panic!("Expected Database ToggleFavorite command"),
+            _ => panic!("Expected Database SetFavorite command"),
         }
 
         // Test FetchLyrics command translation

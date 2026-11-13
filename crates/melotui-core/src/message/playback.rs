@@ -41,7 +41,9 @@ pub enum PlaybackMsg {
     AudioPaused,
     AudioResumed,
     AudioFinished,
+    /// The file at `path` could not be played.
     AudioError {
+        path: String,
         error: String,
     },
 }

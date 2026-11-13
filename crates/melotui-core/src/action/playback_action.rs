@@ -319,13 +319,52 @@ pub fn handle_audio_progress(state: &mut AppState, position_ms: u64, epoch: u64)
     vec![]
 }
 
-pub fn handle_audio_error(state: &mut AppState, error: String) -> Vec<AppMsg> {
+/// How many tracks in a row may fail to play before playback stops rather
+/// than moving on: with the music's drive gone every track fails, and moving
+/// on would run through the whole library in a moment.
+const MAX_FAILED_IN_A_ROW: u8 = 3;
+
+/// The file at `path` could not be played: playback moves on to the next
+/// track, as if this one had ended, rather than staying on "playing" a track
+/// that is not.
+pub fn handle_audio_error(state: &mut AppState, path: String, error: String) -> Vec<AppMsg> {
+    let failed = std::path::Path::new(&path);
+    let is_current = state
+        .get_playing_track()
+        .is_some_and(|track| track.file_path == failed);
+    if !is_current {
+        // Something else has been asked for since; only say what happened.
+        state.set_notification(NotificationKind::Error, error);
+        return vec![];
+    }
+
     state.session.playback.status = PlaybackStatus::Stopped;
-    state.session.notification.current = Some(Notification::new(
-        NotificationKind::Error,
-        format!("Audio Error: {}", error),
-    ));
-    vec![]
+    state.session.playback.progress_ms = 0;
+    state.session.failed_in_a_row = state.session.failed_in_a_row.saturating_add(1);
+    // Let the next track start at once, though it comes within a second.
+    state.session.last_play_time = None;
+
+    let gives_up = state.session.failed_in_a_row >= MAX_FAILED_IN_A_ROW;
+    // Repeating this track, or ending after it, there is no next to move to.
+    let stays = !matches!(
+        state.session.repeat_mode,
+        RepeatMode::Off | RepeatMode::Playlist
+    );
+    if gives_up || stays {
+        let message = if gives_up {
+            format!("{error} — stopped after {MAX_FAILED_IN_A_ROW} tracks that could not be played")
+        } else {
+            error
+        };
+        state.set_notification(NotificationKind::Error, message);
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchStop)];
+    }
+
+    advance::retire_active_queue_entry(&mut state.session);
+    let effects = play_next_up(state);
+    // Said after moving on, so it is not covered by "Playing …".
+    state.set_notification(NotificationKind::Error, format!("{error} — skipped"));
+    effects
 }
 
 pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
@@ -373,6 +412,7 @@ pub fn handle_dispatch_seek(_: &mut AppState, _: u64, _: u64) -> Vec<AppMsg> {
     vec![]
 }
 pub fn handle_audio_started(state: &mut AppState, path: String) -> Vec<AppMsg> {
+    state.session.failed_in_a_row = 0;
     let audio = std::path::PathBuf::from(&path);
     let track = state
         .get_playing_track()
@@ -880,6 +920,77 @@ mod tests {
                 .iter()
                 .any(|e| matches!(e, AppMsg::Playback(PlaybackMsg::DispatchStop)))
         );
+    }
+
+    /// The path of the track playing, as the audio worker reports it.
+    fn playing_path(state: &AppState) -> String {
+        state
+            .get_playing_track()
+            .unwrap()
+            .file_path
+            .to_string_lossy()
+            .to_string()
+    }
+
+    fn plays(effects: &[AppMsg]) -> bool {
+        effects
+            .iter()
+            .any(|e| matches!(e, AppMsg::Playback(PlaybackMsg::DispatchPlay { .. })))
+    }
+
+    #[test]
+    fn a_track_that_cannot_be_played_is_skipped() {
+        let mut state = playing_context(&[1, 2, 3], 0);
+        let broken = playing_path(&state);
+
+        let effects = handle_audio_error(&mut state, broken, "Cannot play it: bad".into());
+
+        assert_eq!(state.session.playback.current, Some(TrackId(2)));
+        assert!(plays(&effects), "the next track was not started");
+        assert!(matches!(state.playback_status(), PlaybackStatus::Playing));
+        let said = &state.current_notification().unwrap().message;
+        assert!(said.contains("Cannot play it"), "{said}");
+        // No play is counted for a track that did not play.
+        assert!(!effects.iter().any(|e| matches!(e, AppMsg::Database(_))));
+    }
+
+    #[test]
+    fn with_every_track_failing_playback_stops_instead_of_running_through_them_all() {
+        let mut state = playing_context(&[1, 2, 3, 4, 5, 6], 0);
+        let mut last = vec![];
+        for _ in 0..MAX_FAILED_IN_A_ROW {
+            let broken = playing_path(&state);
+            last = handle_audio_error(&mut state, broken, "Cannot play it".into());
+        }
+        assert!(!plays(&last), "still moving on");
+        assert!(matches!(state.playback_status(), PlaybackStatus::Stopped));
+        assert_eq!(state.session.playback.current, Some(TrackId(3)));
+
+        // One that plays starts the count again.
+        let path = playing_path(&state);
+        handle_audio_started(&mut state, path);
+        assert_eq!(state.session.failed_in_a_row, 0);
+    }
+
+    #[test]
+    fn a_failure_of_a_track_no_longer_wanted_changes_nothing() {
+        let mut state = playing_context(&[1, 2, 3], 1);
+        let before = state.playback_status().clone();
+        let effects = handle_audio_error(&mut state, "/gone/earlier.mp3".into(), "Cannot".into());
+        assert!(effects.is_empty());
+        assert_eq!(state.session.playback.current, Some(TrackId(2)));
+        assert_eq!(*state.playback_status(), before);
+        assert_eq!(state.session.failed_in_a_row, 0);
+    }
+
+    #[test]
+    fn repeating_a_track_that_cannot_be_played_stops_rather_than_trying_for_ever() {
+        let mut state = playing_context(&[1, 2, 3], 0);
+        state.session.repeat_mode = RepeatMode::Track;
+        let broken = playing_path(&state);
+        let effects = handle_audio_error(&mut state, broken, "Cannot".into());
+        assert!(!plays(&effects));
+        assert!(matches!(state.playback_status(), PlaybackStatus::Stopped));
     }
 
     #[test]

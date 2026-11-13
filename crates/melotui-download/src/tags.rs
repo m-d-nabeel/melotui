@@ -75,7 +75,7 @@ pub fn retag(report: &str) -> Result<PathBuf, String> {
     });
     // A tagging library that panics over some odd file must not take the
     // download's progress down with it.
-    std::panic::catch_unwind(|| write_tags(&path, &song.title, song.artist.as_deref()))
+    melotui_core::utils::panic::guarded(|| write_tags(&path, &song.title, song.artist.as_deref()))
         .map_err(|_| format!("the tag library failed on {path:?}"))??;
     Ok(path)
 }

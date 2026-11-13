@@ -17,6 +17,32 @@ const MAX_CACHE_BYTES: u64 = 256 * 1024 * 1024;
 /// trimmed again at the next start.
 const TRIM_TO_BYTES: u64 = MAX_CACHE_BYTES / 10 * 8;
 
+/// The widest and tallest cover that is decoded, and the most memory
+/// decoding one may take. A cover is a few thousand pixels across at most;
+/// a picture claiming to be tens of thousands is a mistake or an attack, and
+/// decoding it would take gigabytes.
+const MAX_COVER_SIDE: u32 = 10_000;
+const MAX_DECODE_BYTES: u64 = 256 * 1024 * 1024;
+
+/// Decodes a picture from a file's tags, within those limits.
+fn decode_cover(bytes: &[u8]) -> Option<DynamicImage> {
+    let mut limits = image::Limits::default();
+    limits.max_image_width = Some(MAX_COVER_SIDE);
+    limits.max_image_height = Some(MAX_COVER_SIDE);
+    limits.max_alloc = Some(MAX_DECODE_BYTES);
+    let mut reader = image::ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?;
+    reader.limits(limits);
+    match reader.decode() {
+        Ok(img) => Some(img),
+        Err(e) => {
+            tracing::debug!("Cover not decoded: {e}");
+            None
+        }
+    }
+}
+
 pub struct CoverCache {
     cache_dir: PathBuf,
     max_cover_dim: u32,
@@ -119,7 +145,7 @@ impl CoverCache {
         );
 
         // Stage 3: Decode the image
-        let img = image::load_from_memory(&picture_data).ok()?;
+        let img = decode_cover(&picture_data)?;
         drop(picture_data); // Free compressed bytes before resize
 
         // Stage 4: Resize if needed — then immediately drop the original
@@ -247,6 +273,21 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
     use tempfile::tempdir;
+
+    #[test]
+    fn a_cover_is_decoded_but_not_one_of_an_absurd_size() {
+        let png = |width, height| {
+            let mut bytes = Vec::new();
+            DynamicImage::new_rgb8(width, height)
+                .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
+                .unwrap();
+            bytes
+        };
+        assert!(decode_cover(&png(4, 4)).is_some());
+        // A real picture, and a small file: refused for its size alone.
+        assert!(decode_cover(&png(MAX_COVER_SIDE + 1, 1)).is_none());
+        assert!(decode_cover(b"not a picture").is_none());
+    }
 
     #[test]
     fn test_compute_cache_key_and_path() {

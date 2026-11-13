@@ -42,6 +42,8 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
 
     // cancellation flag
     let mut cancel_flag: Option<Arc<AtomicBool>> = None;
+    // The download running, to wait on at shutdown.
+    let mut download: Option<thread::JoinHandle<()>> = None;
 
     loop {
         // Always use timeout so we can periodically check internal_rx for background task events
@@ -70,9 +72,9 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
 
                     let tx = internal_tx.clone();
 
-                    thread::spawn(move || {
+                    download = Some(thread::spawn(move || {
                         download_task(query, download_path, tx, flag);
-                    });
+                    }));
                 }
 
                 DownloadCommand::FetchLyrics {
@@ -123,6 +125,13 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                     tracing::info!("Worker: shutdown requested");
                     if let Some(flag) = &cancel_flag {
                         flag.store(true, Ordering::SeqCst);
+                    }
+                    // Waited for: the download's thread is what stops yt-dlp,
+                    // and the process ending first left yt-dlp running.
+                    if let Some(download) = download.take()
+                        && download.join().is_err()
+                    {
+                        tracing::error!("The download's thread had panicked");
                     }
                     break;
                 }
@@ -191,25 +200,7 @@ fn download_task(
     )));
 
     let cmd = Command::new("yt-dlp")
-        .arg("-x")
-        .arg("-f")
-        .arg("bestaudio/best")
-        .arg("--extract-audio")
-        .arg("--audio-format")
-        .arg("flac")
-        .arg("--embed-thumbnail")
-        .arg("--add-metadata")
-        .arg("--output")
-        .arg(format!("{}/%(title)s.%(ext)s", dl_path.display()))
-        // Reported before the --exec below runs, so each item's report is
-        // there by the time it is said to be finished.
-        .arg("--print-to-file")
-        .arg(REPORT)
-        .arg(reports.template())
-        .arg("--exec")
-        .arg("echo MELOTUI_ITEM_FINISHED")
-        .arg(target)
-        .arg("--newline") // needed for parsing
+        .args(yt_dlp_args(&target, &dl_path, &reports.template()))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn();
@@ -232,13 +223,22 @@ fn download_task(
 
     let tx_err = tx.clone();
     let cancel_err = cancel.clone();
+    // The last thing yt-dlp said went wrong, for saying why it failed.
+    let last_error = Arc::new(std::sync::Mutex::new(None::<String>));
+    let said = last_error.clone();
 
     // stderr reader
-    thread::spawn(move || {
+    let stderr_reader = thread::spawn(move || {
         let reader = BufReader::new(stderr);
         for line in reader.lines().map_while(Result::ok) {
             if cancel_err.load(Ordering::SeqCst) {
                 return;
+            }
+            if let Some(error) = error_in(&line)
+                && let Ok(mut said) = said.lock()
+            {
+                tracing::warn!("yt-dlp: {line}");
+                *said = Some(error.to_string());
             }
             // check progress on stderr
             if let Some(pct) = parse_progress(&line) {
@@ -289,7 +289,13 @@ fn download_task(
                 if status.success() {
                     let _ = tx.send(InternalEvent::Finished);
                 } else {
-                    let _ = tx.send(InternalEvent::Failed(format!("Exit code: {}", status)));
+                    // Its last words are read to the end first.
+                    let _ = stderr_reader.join();
+                    let said = last_error.lock().ok().and_then(|mut said| said.take());
+                    let _ = tx.send(InternalEvent::Failed(why_it_failed(
+                        said.as_deref(),
+                        &status.to_string(),
+                    )));
                 }
                 return;
             }
@@ -302,6 +308,65 @@ fn download_task(
             }
         }
     }
+}
+
+/// The error in a line of yt-dlp's output, if it is one: what follows
+/// `ERROR:`.
+fn error_in(line: &str) -> Option<&str> {
+    let (_, error) = line.split_once("ERROR:")?;
+    Some(error.trim()).filter(|e| !e.is_empty())
+}
+
+/// Why a download failed, for the screen: what yt-dlp said, shortened to
+/// fit, or failing that how it exited — which was all that was said before,
+/// "Exit code: exit status: 1" for a video that is private, a network that
+/// is down and a missing ffmpeg alike.
+fn why_it_failed(said: Option<&str>, status: &str) -> String {
+    const MOST: usize = 160;
+    match said {
+        Some(said) if said.chars().count() > MOST => {
+            format!("{}…", said.chars().take(MOST).collect::<String>())
+        }
+        Some(said) => said.to_string(),
+        None => format!("yt-dlp failed ({status})"),
+    }
+}
+
+/// What yt-dlp is run with to download `target` into `dl_path`, reporting
+/// each item to `report_template`.
+fn yt_dlp_args(target: &str, dl_path: &std::path::Path, report_template: &str) -> Vec<String> {
+    let mut args: Vec<String> = [
+        // The audio as YouTube has it — Opus, or AAC — taken out of its
+        // container and otherwise left alone. It used to be converted to
+        // FLAC, which cannot give back what the lossy original left out:
+        // the same sound in a file several times the size.
+        "-x",
+        "-f",
+        "bestaudio/best",
+        // A link to one video of a playlist is a request for that video;
+        // without this it brought the whole playlist down with it.
+        "--no-playlist",
+        "--embed-thumbnail",
+        "--add-metadata",
+        "--newline", // needed for parsing
+    ]
+    .map(String::from)
+    .to_vec();
+    args.extend([
+        "--output".into(),
+        format!("{}/%(title)s.%(ext)s", dl_path.display()),
+        // Reported before the --exec below runs, so each item's report is
+        // there by the time it is said to be finished.
+        "--print-to-file".into(),
+        REPORT.into(),
+        report_template.into(),
+        "--exec".into(),
+        "echo MELOTUI_ITEM_FINISHED".into(),
+        // After `--`, so that nothing in it is taken for an option.
+        "--".into(),
+        target.into(),
+    ]);
+    args
 }
 
 const USER_AGENT: &str = concat!(
@@ -655,6 +720,133 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
         lrclib_results,
         ovh_results,
     });
+}
+
+#[cfg(test)]
+mod download_tests {
+    use super::{error_in, why_it_failed, yt_dlp_args};
+    use std::path::Path;
+
+    fn args(target: &str) -> Vec<String> {
+        yt_dlp_args(target, Path::new("/music"), "/tmp/report.jsonl")
+    }
+
+    /// Runs a download to its end, returning what it reported.
+    fn download(target: &str, into: &Path) -> Vec<super::InternalEvent> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        super::download_task(target.into(), into.to_path_buf(), tx, cancel);
+        rx.try_iter().collect()
+    }
+
+    #[test]
+    #[ignore = "needs yt-dlp, ffmpeg and the network: cargo test -p melotui-download -- --ignored"]
+    fn a_real_download_arrives_as_audio_the_player_reads_and_is_tagged() {
+        use lofty::file::{AudioFile, TaggedFileExt};
+        use lofty::tag::Accessor;
+
+        let dir = tempfile::tempdir().unwrap();
+        // "Me at the zoo": nineteen seconds, and there since 2005.
+        let events = download("https://www.youtube.com/watch?v=jNQXAC9IVRw", dir.path());
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, super::InternalEvent::Finished)),
+            "it did not finish"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, super::InternalEvent::ItemFinished)),
+            "the item was not reported"
+        );
+
+        let files: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(files.len(), 1, "{files:?}");
+        let ext = files[0]
+            .extension()
+            .unwrap()
+            .to_string_lossy()
+            .to_lowercase();
+        assert!(
+            ["opus", "m4a", "ogg", "mp3"].contains(&ext.as_str()),
+            "not something the library scans: {files:?}"
+        );
+        let file = lofty::read_from_path(&files[0]).expect("unreadable by the tag library");
+        assert!(file.properties().duration().as_secs() >= 15);
+        let tag = file.primary_tag().expect("no tags");
+        assert!(tag.title().is_some_and(|t| !t.is_empty()));
+        assert!(!tag.pictures().is_empty(), "the thumbnail was not embedded");
+    }
+
+    #[test]
+    #[ignore = "needs yt-dlp and the network"]
+    fn a_real_download_that_fails_says_what_yt_dlp_said() {
+        let dir = tempfile::tempdir().unwrap();
+        let events = download("https://www.youtube.com/watch?v=xxxxxxxxxxx", dir.path());
+        let why = events
+            .iter()
+            .find_map(|e| match e {
+                super::InternalEvent::Failed(why) => Some(why.clone()),
+                _ => None,
+            })
+            .expect("it did not fail");
+        assert!(
+            !why.starts_with("yt-dlp failed ("),
+            "only the exit code: {why}"
+        );
+        assert!(
+            why.to_lowercase().contains("unavailable") || why.contains("youtube"),
+            "{why}"
+        );
+    }
+
+    #[test]
+    fn a_link_to_one_video_of_a_playlist_downloads_that_video() {
+        let args = args("https://www.youtube.com/watch?v=abc&list=PL123");
+        assert!(args.iter().any(|a| a == "--no-playlist"), "{args:?}");
+    }
+
+    #[test]
+    fn a_failed_download_says_what_yt_dlp_said() {
+        let line = "ERROR: [youtube] abc: Private video. Sign in if you've been granted access";
+        let said = error_in(line);
+        assert_eq!(
+            said,
+            Some("[youtube] abc: Private video. Sign in if you've been granted access")
+        );
+        assert_eq!(error_in("[download]  42.0% of 3.5MiB"), None);
+        assert_eq!(error_in("ERROR:   "), None);
+
+        assert_eq!(why_it_failed(said, "exit status: 1"), said.unwrap());
+        assert_eq!(
+            why_it_failed(None, "exit status: 1"),
+            "yt-dlp failed (exit status: 1)"
+        );
+        let long = "x".repeat(500);
+        assert_eq!(why_it_failed(Some(&long), "").chars().count(), 161);
+    }
+
+    #[test]
+    fn the_audio_is_kept_as_it_is_not_converted() {
+        let args = args("ytsearch1:a song");
+        assert!(args.iter().any(|a| a == "-x"));
+        assert!(
+            !args.iter().any(|a| a == "--audio-format"),
+            "converting a lossy original only makes it bigger: {args:?}"
+        );
+    }
+
+    #[test]
+    fn what_is_downloaded_comes_last_where_it_cannot_be_an_option() {
+        let args = args("ytsearch1:--exec rm");
+        let n = args.len();
+        assert_eq!(&args[n - 2..], ["--", "ytsearch1:--exec rm"]);
+        assert!(args.contains(&"/music/%(title)s.%(ext)s".to_string()));
+    }
 }
 
 #[cfg(test)]

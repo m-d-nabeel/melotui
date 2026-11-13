@@ -50,6 +50,9 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         sample_rate: config.audio.sample_rate,
         buffer_size: config.audio.buffer_size,
         output_device: config.audio.output_device.clone(),
+        // What a worker sends is acted on as it comes, not when the wait
+        // for a key next runs out.
+        wake: Some(Arc::new(tui.waker())),
     });
 
     // request async library load
@@ -292,14 +295,25 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         std::mem::forget(mgr);
     }
 
-    match tui.shutdown() {
+    let restored = match tui.shutdown() {
         Err(e) if terminal_lost => {
             tracing::debug!("Not restoring a terminal that is gone: {e}");
             Ok(())
         }
         result => result,
+    };
+
+    // With the terminal handed back, so quitting looks as quick as it was:
+    // the workers finish what they were sent — the last favorite, the last
+    // play count — the database is closed, and a download's yt-dlp stopped.
+    if !runtime.engine_alive {
+        runtime.engine.join(WORKERS_FINISH_WITHIN);
     }
+    restored
 }
+
+/// How long quitting waits for the workers to finish.
+const WORKERS_FINISH_WITHIN: Duration = Duration::from_secs(3);
 
 /// Saves the session, logging rather than failing if it cannot.
 fn save_session(state: &AppState) {
@@ -388,7 +402,13 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                 ctx.library_loaded = true;
                 if !ctx.session_restored && state.config.ui.restore_session {
                     ctx.session_restored = true;
-                    if let Ok(session) = melotui_core::PersistedSession::load() {
+                    let session = melotui_core::PersistedSession::load();
+                    if let Err(e) = &session {
+                        // No file is a first run; a file that cannot be read
+                        // is a session lost, which should at least be said.
+                        tracing::warn!("Session not restored: {e:#}");
+                    }
+                    if let Ok(session) = session {
                         let count = session.apply_to_app_state(state);
                         // A device chosen with :device last time is chosen again.
                         if let Some(device) = session.output_device.clone() {

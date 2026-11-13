@@ -5,6 +5,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 anyhow = "1"
@@ -12,6 +13,7 @@ lofty = "0.22"
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 toml = "1.1.2"
+serde_ignored = "0.1"
 dirs = "6"
 image.workspace = true
 rand = "0.10"

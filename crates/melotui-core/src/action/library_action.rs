@@ -298,7 +298,10 @@ pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<
     ));
 
     // dispatch to DB
-    vec![AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(id))]
+    vec![AppMsg::Database(DatabaseMsg::DispatchSetFavorite {
+        id,
+        favorite: new_status,
+    })]
 }
 
 pub fn handle_request_create_playlist(state: &mut AppState, name: String) -> Vec<AppMsg> {
@@ -673,7 +676,7 @@ mod tests {
         assert!(state.library.get_track(track_id).unwrap().is_favorite);
         assert_eq!(effects.len(), 1);
         assert!(
-            matches!(effects[0], AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(id)) if id == track_id)
+            matches!(effects[0], AppMsg::Database(DatabaseMsg::DispatchSetFavorite { id, favorite: true }) if id == track_id)
         );
     }
 
