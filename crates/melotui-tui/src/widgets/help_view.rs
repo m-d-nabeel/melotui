@@ -1,4 +1,4 @@
-use crate::keybinding::{KeyBinding, KeyContext};
+use crate::keybinding::{KeyAction, KeyBinding, KeyContext};
 use crate::theme::Theme;
 use ratatui::{
     Frame,
@@ -11,7 +11,7 @@ use unicode_width::UnicodeWidthStr;
 
 /// One section of the help: a title, and what each key or command does.
 struct Section {
-    title: &'static str,
+    title: String,
     rows: Vec<(String, String)>,
 }
 
@@ -28,13 +28,40 @@ pub fn draw(
     scroll_max: &std::cell::Cell<u16>,
 ) {
     let t = crate::theme::get_theme(state);
+    // The key that leads to a place, named in its title: as it is bound,
+    // not as it was bound when this was written.
+    let reached_by = |title: &str, context, action| match key_for(registry, context, action) {
+        Some(key) => format!("{title}  ( {key} )"),
+        None => title.to_string(),
+    };
+    let keys = |title: String, context| key_section(title, registry.bindings.get(&context));
+    let global = KeyContext::Global;
+    // Every place keys are read, so that none has keys only its own screen
+    // tells of — or, as some had, that nothing tells of.
     let sections = [
-        key_section("Global", registry.bindings.get(&KeyContext::Global)),
-        key_section("Library", registry.bindings.get(&KeyContext::Library)),
-        key_section("Queue", registry.bindings.get(&KeyContext::Queue)),
-        key_section("Mixer  ( Tab )", registry.bindings.get(&KeyContext::Mixer)),
+        keys("Global".into(), global),
+        keys("Library".into(), KeyContext::Library),
+        keys("Queue".into(), KeyContext::Queue),
+        keys(
+            reached_by("Mixer", KeyContext::Library, KeyAction::TogglePanel),
+            KeyContext::Mixer,
+        ),
+        keys(
+            reached_by("DSP studio", global, KeyAction::ToggleDspStudio),
+            KeyContext::DspStudio,
+        ),
+        keys("Track info".into(), KeyContext::TrackInfo),
+        keys("Playlist picker".into(), KeyContext::PlaylistPicker),
+        keys("Preset picker".into(), KeyContext::PresetPicker),
+        keys("Lyrics picker".into(), KeyContext::LyricsSelector),
+        keys("Confirming".into(), KeyContext::Confirm),
+        keys(
+            reached_by("Command bar", global, KeyAction::EnterCommandMode),
+            KeyContext::CommandMode,
+        ),
+        keys("This help".into(), KeyContext::Help),
         Section {
-            title: "Commands  ( : then Tab )",
+            title: reached_by("Commands", global, KeyAction::EnterCommandMode),
             rows: melotui_core::Command::help_entries(),
         },
     ];
@@ -173,7 +200,7 @@ pub fn draw(
 
 /// The bindings of one context, one row per thing they do, keys that do the
 /// same thing together, in the order they are defined: by kind, not by name.
-fn key_section(title: &'static str, bindings: Option<&Vec<KeyBinding>>) -> Section {
+fn key_section(title: String, bindings: Option<&Vec<KeyBinding>>) -> Section {
     let mut rows: Vec<(&str, Vec<String>)> = Vec::new();
     for binding in bindings.into_iter().flatten() {
         let desc = binding.action.description();
@@ -350,6 +377,25 @@ fn natural_width(sections: &[Section]) -> u16 {
         .unwrap_or(20)
 }
 
+/// The key that does `action` in `context`, as it is shown: the first one
+/// bound to it, or `None` if no key is.
+///
+/// For hints on screen — the studio's `[1] Slowed+Reverb`, the dialog's
+/// `[y]` — which were written out by hand and went on saying `1` and `y`
+/// whatever the keys had been changed to.
+pub(crate) fn key_for(
+    registry: &crate::keybinding::KeyRegistry,
+    context: KeyContext,
+    action: KeyAction,
+) -> Option<String> {
+    registry
+        .bindings
+        .get(&context)?
+        .iter()
+        .find(|binding| binding.action == action)
+        .map(format_key)
+}
+
 fn format_key(binding: &KeyBinding) -> String {
     use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
@@ -432,8 +478,75 @@ mod tests {
     }
 
     #[test]
+    fn a_hint_shows_the_key_as_it_is_bound_now() {
+        use crate::keybinding::KeyRegistry;
+        use std::collections::HashMap;
+
+        let mut registry = KeyRegistry::default();
+        let macro_key = |registry: &KeyRegistry| {
+            key_for(
+                registry,
+                KeyContext::DspStudio,
+                KeyAction::DspMacroSlowedReverb,
+            )
+        };
+        assert_eq!(macro_key(&registry).as_deref(), Some("1"));
+        assert_eq!(
+            key_for(&registry, KeyContext::Confirm, KeyAction::ConfirmYes).as_deref(),
+            Some("y")
+        );
+
+        // Moved to another key, and taken off the old one.
+        let overrides = HashMap::from([(
+            "dsp".to_string(),
+            HashMap::from([
+                ("1".to_string(), "none".to_string()),
+                ("F7".to_string(), "DspMacroSlowedReverb".to_string()),
+            ]),
+        )]);
+        assert!(registry.apply_overrides(&overrides).is_empty());
+        assert_eq!(macro_key(&registry).as_deref(), Some("F7"));
+
+        // An action with no key has no hint to show.
+        assert_eq!(
+            key_for(&registry, KeyContext::Global, KeyAction::BassUp),
+            None
+        );
+    }
+
+    #[test]
+    fn every_place_keys_are_read_has_its_keys_in_the_help() {
+        let (text, _) = drawn(200, 400);
+        for title in [
+            "Global",
+            "Library",
+            "Queue",
+            "Mixer",
+            "DSP studio",
+            "Track info",
+            "Playlist picker",
+            "Preset picker",
+            "Lyrics picker",
+            "Confirming",
+            "Command bar",
+            "This help",
+            "Commands",
+        ] {
+            assert!(text.contains(title), "no section for {title}");
+        }
+        // And the keys that lead to the places that have one, as bound.
+        assert!(text.contains("DSP studio  ( F2 )"), "{text}");
+        assert!(text.contains("Command bar  ( : )"));
+        // What only the studio's own screen used to tell of.
+        assert!(
+            text.contains("Slowed"),
+            "the studio's macros are not listed"
+        );
+    }
+
+    #[test]
     fn descriptions_are_drawn_whole() {
-        let (text, _) = drawn(190, 50);
+        let (text, _) = drawn(190, 400);
         assert!(text.contains("Resume, or play the selected track"));
         assert!(text.contains("Shuffle on or off, or toggle it"));
     }
@@ -446,21 +559,19 @@ mod tests {
             text.contains(" 1–") && text.contains("j k scroll"),
             "{text}"
         );
-        let (_, max) = drawn(300, 120);
+        let (_, max) = drawn(300, 400);
         assert_eq!(max, 0, "everything shows at once");
     }
 
     #[test]
     fn two_columns_where_they_fit_and_each_section_boxed() {
         let (text, _) = drawn(115, 46);
+        let boxes = |line: &str| line.matches("╭─").count();
         let first = text.lines().find(|l| l.contains("╭─ Global")).unwrap();
-        assert!(first.contains("╭─ Queue"), "side by side: {first}");
+        assert_eq!(boxes(first), 2, "side by side: {first}");
         let (text, _) = drawn(70, 40);
         let first = text.lines().find(|l| l.contains("╭─ Global")).unwrap();
-        assert!(
-            !first.contains("╭─ Queue"),
-            "one column when narrow: {first}"
-        );
+        assert_eq!(boxes(first), 1, "one column when narrow: {first}");
     }
 
     #[test]

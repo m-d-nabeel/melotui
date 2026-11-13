@@ -1,3 +1,5 @@
+use crate::keybinding::{KeyAction, KeyContext, KeyRegistry};
+use crate::widgets::help_view::key_for;
 use melotui_core::{AppState, state::EQ_BAND_LABELS};
 use ratatui::{
     Frame,
@@ -14,7 +16,13 @@ use crate::{
 };
 
 /// Draw the DSP Studio view occupying the full screen (no sidebar).
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache) {
+pub fn draw(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    cache: &mut ImageCache,
+    registry: &KeyRegistry,
+) {
     let t = get_theme(state);
 
     let main_layout = Layout::default()
@@ -32,37 +40,28 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     draw_controls_grid(frame, main_layout[2], state, t);
 
     let muted = Style::default().fg(t.fg_muted);
-    let legend = Paragraph::new(Line::from(vec![
-        Span::styled(
-            "[1] ",
-            Style::default()
-                .fg(t.accent_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("Slowed+Reverb   ", muted),
-        Span::styled(
-            "[2] ",
-            Style::default()
-                .fg(t.accent_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("Bass Boosted   ", muted),
-        Span::styled(
-            "[3] ",
-            Style::default()
-                .fg(t.accent_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("3D Spatial   ", muted),
-        Span::styled(
-            "[0] ",
-            Style::default()
-                .fg(t.accent_primary)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::styled("Reset All", muted),
-    ]))
-    .alignment(Alignment::Center);
+    let key_style = Style::default()
+        .fg(t.accent_primary)
+        .add_modifier(Modifier::BOLD);
+    // Each with the key it is bound to now; one with no key is left out.
+    let macros = [
+        (KeyAction::DspMacroSlowedReverb, "Slowed+Reverb"),
+        (KeyAction::DspMacroBassBoosted, "Bass Boosted"),
+        (KeyAction::DspMacroSpatial, "3D Spatial"),
+        (KeyAction::DspMacroResetAll, "Reset All"),
+    ];
+    let mut spans = Vec::new();
+    for (action, label) in macros {
+        let Some(key) = key_for(registry, KeyContext::DspStudio, action) else {
+            continue;
+        };
+        if !spans.is_empty() {
+            spans.push(Span::raw("   "));
+        }
+        spans.push(Span::styled(format!("[{key}] "), key_style));
+        spans.push(Span::styled(label, muted));
+    }
+    let legend = Paragraph::new(Line::from(spans)).alignment(Alignment::Center);
     frame.render_widget(legend, main_layout[3]);
 }
 
