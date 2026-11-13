@@ -359,6 +359,15 @@ pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     vec![AppMsg::Audio(AudioMsg::RequestOutputDevices)]
 }
 
+/// Opens the command bar with `find ` typed, ready for what to look for.
+/// Searching was a command among fifty, found by reading the help; this is
+/// the key everyone tries first.
+pub fn handle_enter_search(state: &mut AppState) -> Vec<AppMsg> {
+    let effects = handle_enter_command_mode(state);
+    state.session.ui.command_buffer = tui_input::Input::new("find ".to_string());
+    effects
+}
+
 pub fn handle_exit_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.mode = UIMode::Normal;
     state.session.ui.command_buffer.reset();
@@ -1443,6 +1452,24 @@ pub fn handle_submit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_search_key_opens_the_command_bar_with_a_search_begun() {
+        let library = crate::library::Library::new(vec![], vec![], Default::default());
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
+        handle_enter_search(&mut state);
+        assert!(matches!(state.session.ui.mode, UIMode::Command));
+        assert_eq!(state.session.ui.command_buffer.value(), "find ");
+        // Typed on from there, it is the search it says it is.
+        let parsed = "find way back".parse::<crate::command::Command>();
+        assert!(
+            matches!(
+                parsed,
+                Ok(crate::command::Command::Search { field: crate::command::SearchField::Any, ref query }) if query == "way back"
+            ),
+            "{parsed:?}"
+        );
+    }
     use super::*;
     use crate::library::snapshot::Library;
     use std::collections::HashMap;

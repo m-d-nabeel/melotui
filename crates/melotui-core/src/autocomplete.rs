@@ -189,7 +189,8 @@ mod tests {
         assert_eq!(
             labels("s"),
             [
-                "stop", "seek", "speed", "shuffle", "song", "sort", "scan", "studio", "sidebar"
+                "stop", "seek", "speed", "shuffle", "search", "song", "sort", "scan", "studio",
+                "sidebar"
             ]
         );
         // An alias is offered when only it fits.

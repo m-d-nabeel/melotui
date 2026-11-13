@@ -4,6 +4,8 @@ use tui_input::InputRequest;
 #[derive(Debug, Clone)]
 pub enum UIMsg {
     EnterCommandMode,
+    /// Open the command bar with a search begun: what `/` does.
+    EnterSearch,
     ExitCommandMode,
     CommandInput(InputRequest),
     SubmitCommand(String),
