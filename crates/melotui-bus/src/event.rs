@@ -8,9 +8,6 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub enum IpcEvent {
     // downloads
-    DownloadStarted {
-        query: String,
-    },
     DownloadProgress {
         percent: u8,
     },
@@ -37,7 +34,6 @@ pub enum IpcEvent {
     },
     PlaybackPaused,
     PlaybackResumed,
-    PlaybackStopped,
     PlaybackProgress {
         position_ms: u64,
         epoch: u64,
@@ -94,10 +90,6 @@ pub enum IpcEvent {
         scanned: u32,
         skipped: u32,
         total: u32,
-    },
-    SearchResults {
-        query: String,
-        results: Vec<TrackId>,
     },
 
     // playlists

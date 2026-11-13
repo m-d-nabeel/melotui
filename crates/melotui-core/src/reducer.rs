@@ -282,9 +282,6 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
             skipped,
             total,
         } => library_action::handle_update_scan_progress(state, scanned, skipped, total),
-        LibraryMsg::SetSearchResults { query, results } => {
-            library_action::handle_set_search_results(state, query, results)
-        }
     }
 }
 
@@ -308,9 +305,8 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         DownloadMsg::RequestCancelDownload => {
             download_action::handle_request_cancel_download(state)
         }
-        DownloadMsg::RequestFetchLyrics { .. } | DownloadMsg::DispatchFetchLyrics { .. } => {
-            vec![]
-        }
+        // Sent on to the download worker by the engine's bridge.
+        DownloadMsg::RequestFetchLyrics { .. } => vec![],
         DownloadMsg::LyricsFetched { save_path } => {
             download_action::handle_lyrics_fetched(state, save_path)
         }
@@ -319,9 +315,6 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         }
         DownloadMsg::RequestSearchLyrics { query } => {
             download_action::handle_request_search_lyrics(state, query)
-        }
-        DownloadMsg::DispatchSearchLyrics { .. } => {
-            vec![]
         }
         DownloadMsg::LyricsSearchResults {
             lrclib_results,
@@ -337,8 +330,7 @@ fn handle_database_message(state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg
         | DatabaseMsg::DispatchCreatePlaylist(_)
         | DatabaseMsg::DispatchDeletePlaylist(_)
         | DatabaseMsg::DispatchAddToPlaylist { .. }
-        | DatabaseMsg::DispatchRemoveFromPlaylist { .. }
-        | DatabaseMsg::DispatchSearchTracks(_) => vec![],
+        | DatabaseMsg::DispatchRemoveFromPlaylist { .. } => vec![],
         DatabaseMsg::DispatchIncrementPlayCount(track_id) => {
             // The one place this happens in memory — see `Library::record_play`
             // for why this used to poke `play_count` directly and why that was

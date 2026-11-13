@@ -54,8 +54,4 @@ pub enum LibraryMsg {
         skipped: u32,
         total: u32,
     },
-    SetSearchResults {
-        query: String,
-        results: Vec<TrackId>,
-    },
 }

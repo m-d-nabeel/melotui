@@ -465,12 +465,6 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                 ctx.effect_queue
                     .push_back(AppMsg::Library(LibraryMsg::Loaded { snapshot, session }));
             }
-            IpcEvent::LibraryGrew { snapshot } => ctx
-                .effect_queue
-                .push_back(AppMsg::Library(LibraryMsg::Grew(snapshot))),
-            IpcEvent::LibraryRescanned { changed } => ctx
-                .effect_queue
-                .push_back(AppMsg::Library(LibraryMsg::Rescanned { changed })),
             _ => ctx.effect_queue.push_back(bridge::ipc_to_appmsg(evt)),
         }
     }

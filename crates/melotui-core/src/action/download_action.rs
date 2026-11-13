@@ -117,9 +117,9 @@ pub fn handle_request_search_lyrics(state: &mut AppState, query: String) -> Vec<
     // Auto switch to Lyrics View tab (which acts as the selector)
     crate::action::playback_action::lyrics_panel_set_by_hand(state, true);
 
-    vec![AppMsg::Download(DownloadMsg::DispatchSearchLyrics {
-        query,
-    })]
+    // The search itself is asked of the download worker by the engine's
+    // bridge, from the message this answers.
+    vec![]
 }
 
 pub fn handle_lyrics_search_results(
