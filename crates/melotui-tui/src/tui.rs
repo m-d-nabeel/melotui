@@ -37,6 +37,9 @@ pub struct Tui {
 /// What the app's loop waits on.
 enum Input {
     Terminal(std::io::Result<Event>),
+    /// Nothing from the terminal, but the screen is to be drawn again:
+    /// something it shows has arrived on another thread.
+    Redraw,
     /// Nothing from the terminal: something elsewhere wants the loop to go
     /// round now rather than when its wait runs out.
     Wake,
@@ -81,7 +84,16 @@ impl Tui {
         // The image cache asks the terminal about itself and reads the replies
         // from stdin, so input is only read from here on.
         let image_cache = ImageCache::new(config.ui.lyrics_shaping);
+        let mut image_cache = image_cache;
         let (wake, events) = spawn_input_thread()?;
+        // The fonts for lyrics load from now, and the lyrics are drawn
+        // again once they are in.
+        let redraw = std::sync::Mutex::new(wake.clone());
+        image_cache.preload_lyrics_fonts(Box::new(move || {
+            if let Ok(redraw) = redraw.lock() {
+                let _ = redraw.send(Input::Redraw);
+            }
+        }));
 
         Ok((
             Self {
@@ -160,6 +172,8 @@ impl Tui {
                 Ok(Input::Terminal(event)) => event?,
                 // Woken: back to the loop, with nothing from the terminal.
                 Ok(Input::Wake) => return Ok(None),
+                // A message that changes nothing, which has the loop draw.
+                Ok(Input::Redraw) => return Ok(Some(AppMsg::Noop)),
                 Err(mpsc::RecvTimeoutError::Timeout) => return Ok(None),
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     anyhow::bail!("the terminal input closed")
