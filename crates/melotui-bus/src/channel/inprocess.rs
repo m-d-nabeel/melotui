@@ -131,14 +131,17 @@ mod tests {
 
         // Send a command to the worker
         cmd_tx
-            .send(DatabaseCommand::ToggleFavorite { track_id: 1 })
+            .send(DatabaseCommand::SetFavorite {
+                track_id: 1,
+                favorite: true,
+            })
             .unwrap();
 
         // Worker should receive it
         let cmd = worker.try_recv().expect("Worker should receive command");
         match cmd {
-            DatabaseCommand::ToggleFavorite { track_id } => assert_eq!(track_id, 1),
-            _ => panic!("Expected ToggleFavorite"),
+            DatabaseCommand::SetFavorite { track_id, .. } => assert_eq!(track_id, 1),
+            _ => panic!("Expected SetFavorite"),
         }
 
         // Worker sends an event back

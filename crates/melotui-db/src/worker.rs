@@ -168,8 +168,8 @@ fn handle_command(
                 }
             }
         }
-        DatabaseCommand::ToggleFavorite { track_id } => {
-            match toggle_favorite(conn, TrackId(track_id as u64)) {
+        DatabaseCommand::SetFavorite { track_id, favorite } => {
+            match set_favorite(conn, TrackId(track_id as u64), favorite) {
                 Ok(is_favorite) => {
                     worker.send(IpcEvent::FavoriteToggled {
                         track_id: TrackId(track_id as u64),
@@ -177,9 +177,9 @@ fn handle_command(
                     });
                 }
                 Err(e) => {
-                    tracing::error!("Failed to toggle favorite: {:?}", e);
+                    tracing::error!("Failed to set favorite: {:?}", e);
                     worker.send(IpcEvent::Error {
-                        message: format!("Failed to toggle favorite: {}", e),
+                        message: format!("Failed to set favorite: {}", e),
                     });
                 }
             }
@@ -761,18 +761,13 @@ fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Re
     Ok(Library::new(roots, playlists_vec, tracks_map))
 }
 
-/// toggle favorite
-fn toggle_favorite(conn: &rusqlite::Connection, id: TrackId) -> Result<bool> {
+/// Makes the track a favorite, or not, and says which it now is.
+fn set_favorite(conn: &rusqlite::Connection, id: TrackId, favorite: bool) -> Result<bool> {
     conn.execute(
-        "UPDATE tracks SET is_favorite = 1 - is_favorite, updated_at = strftime('%s', 'now') WHERE id = ?",
-        params![id.0 as i64],
+        "UPDATE tracks SET is_favorite = ?, updated_at = strftime('%s', 'now') WHERE id = ?",
+        params![favorite, id.0 as i64],
     )?;
-    let new_state: i32 = conn.query_row(
-        "SELECT is_favorite FROM tracks WHERE id = ?",
-        params![id.0 as i64],
-        |row| row.get(0),
-    )?;
-    Ok(new_state == 1)
+    Ok(favorite)
 }
 
 fn create_playlist(conn: &rusqlite::Connection, name: &str) -> Result<PlaylistId> {
@@ -1168,6 +1163,28 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM playlist_tracks", [], |row| row.get(0))
             .unwrap();
         assert_eq!(left, 0);
+    }
+
+    #[test]
+    fn a_favorite_is_what_it_is_told_to_be_however_often() {
+        let dir = tempfile::tempdir().unwrap();
+        let conn = open(&dir.path().join("library.db")).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tracks (id, file_path, title, duration_ms, format, file_size_bytes, file_modified_at)
+                 VALUES (1, '/a.mp3', 'A', 1, 'MP3', 1, 0);",
+        )
+        .unwrap();
+        let stored = || -> bool {
+            conn.query_row("SELECT is_favorite FROM tracks", [], |row| row.get(0))
+                .unwrap()
+        };
+        // Sent twice — a write retried, a key held down — it is still a
+        // favorite, where toggling would have undone it.
+        set_favorite(&conn, TrackId(1), true).unwrap();
+        set_favorite(&conn, TrackId(1), true).unwrap();
+        assert!(stored());
+        set_favorite(&conn, TrackId(1), false).unwrap();
+        assert!(!stored());
     }
 
     #[test]

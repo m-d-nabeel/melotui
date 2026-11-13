@@ -151,9 +151,10 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                 roots: library_roots.to_vec(),
             }))
         }
-        AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(track_id)) => {
-            Some(IpcCommand::Database(DatabaseCommand::ToggleFavorite {
-                track_id: track_id.0 as i64,
+        AppMsg::Database(DatabaseMsg::DispatchSetFavorite { id, favorite }) => {
+            Some(IpcCommand::Database(DatabaseCommand::SetFavorite {
+                track_id: id.0 as i64,
+                favorite: *favorite,
             }))
         }
         AppMsg::Database(DatabaseMsg::DispatchCreatePlaylist(name)) => {
@@ -372,16 +373,19 @@ mod tests {
             _ => panic!("Expected Audio Stop command"),
         }
 
-        // Test Database toggle favorite command
+        // Test Database set favorite command
         let msg = AppMsg::Database(
-            melotui_core::message::database::DatabaseMsg::DispatchToggleFavorite(TrackId(42)),
+            melotui_core::message::database::DatabaseMsg::DispatchSetFavorite {
+                id: TrackId(42),
+                favorite: true,
+            },
         );
         let cmd = appmsg_to_ipc(&msg, &roots).unwrap();
         match cmd {
-            IpcCommand::Database(DatabaseCommand::ToggleFavorite { track_id }) => {
-                assert_eq!(track_id, 42);
+            IpcCommand::Database(DatabaseCommand::SetFavorite { track_id, favorite }) => {
+                assert_eq!((track_id, favorite), (42, true));
             }
-            _ => panic!("Expected Database ToggleFavorite command"),
+            _ => panic!("Expected Database SetFavorite command"),
         }
 
         // Test FetchLyrics command translation
