@@ -98,16 +98,8 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
         AppMsg::Audio(audio_msg) => match audio_msg {
             AudioMsg::DispatchSetVolume(v) => Some(IpcCommand::Audio(AudioCommand::SetVolume(*v))),
             AudioMsg::DispatchSetSpeed(v) => Some(IpcCommand::Audio(AudioCommand::SetSpeed(*v))),
-            AudioMsg::DispatchSetBass(v) => Some(IpcCommand::Audio(AudioCommand::SetBass(*v))),
-            AudioMsg::DispatchSetTreble(v) => Some(IpcCommand::Audio(AudioCommand::SetTreble(*v))),
-            AudioMsg::DispatchSetReverb(v) => Some(IpcCommand::Audio(AudioCommand::SetReverb(*v))),
-            AudioMsg::DispatchSetEcho(v) => Some(IpcCommand::Audio(AudioCommand::SetEcho(*v))),
-            AudioMsg::DispatchSetPan(v) => Some(IpcCommand::Audio(AudioCommand::SetPan(*v))),
-            AudioMsg::DispatchSetLowpass(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetLowpass(*v)))
-            }
-            AudioMsg::DispatchSetHighpass(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetHighpass(*v)))
+            AudioMsg::DispatchSet(effect, v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetEffect(*effect, *v)))
             }
             AudioMsg::DispatchSetEqBand { band, gain } => {
                 Some(IpcCommand::Audio(AudioCommand::SetEqBand {
@@ -115,27 +107,6 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                     gain: *gain,
                 }))
             }
-            AudioMsg::DispatchSetAutoPanRate(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetAutoPanRate(*v)))
-            }
-            AudioMsg::DispatchSetAutoPanDepth(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetAutoPanDepth(*v)))
-            }
-            AudioMsg::DispatchSetWobble(v) => Some(IpcCommand::Audio(AudioCommand::SetWobble(*v))),
-            AudioMsg::DispatchSetKaraoke(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetKaraoke(*v)))
-            }
-            AudioMsg::DispatchSetWidth(v) => Some(IpcCommand::Audio(AudioCommand::SetWidth(*v))),
-            AudioMsg::DispatchSetBitcrush(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetBitcrush(*v)))
-            }
-            AudioMsg::DispatchSetExciter(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetExciter(*v)))
-            }
-            AudioMsg::DispatchSetPingPong(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetPingPong(*v)))
-            }
-            AudioMsg::DispatchSetPhaser(v) => Some(IpcCommand::Audio(AudioCommand::SetPhaser(*v))),
             AudioMsg::SetOutputDevice(device) => Some(IpcCommand::Audio(
                 AudioCommand::SetOutputDevice(device.clone()),
             )),
@@ -416,6 +387,20 @@ mod tests {
                 assert_eq!(save_path, std::path::PathBuf::from("/path/to/lyrics.lrc"));
             }
             _ => panic!("Expected FetchLyrics command"),
+        }
+    }
+
+    #[test]
+    fn every_effect_set_reaches_the_audio_thread_as_itself() {
+        use melotui_core::state::audio::Effect;
+        for effect in Effect::ALL {
+            let msg = AppMsg::Audio(AudioMsg::DispatchSet(effect, 0.5));
+            match appmsg_to_ipc(&msg, &[]) {
+                Some(IpcCommand::Audio(AudioCommand::SetEffect(sent, value))) => {
+                    assert_eq!((sent, value), (effect, 0.5));
+                }
+                other => panic!("{effect:?} was sent as {other:?}"),
+            }
         }
     }
 

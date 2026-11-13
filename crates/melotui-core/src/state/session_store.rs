@@ -527,6 +527,24 @@ mod tests {
     }
 
     #[test]
+    fn every_effect_is_kept_between_runs() {
+        use crate::state::audio::Effect;
+        // Each set to something it is not at rest: an effect added to the
+        // table and not to what is saved comes back at rest, and fails here.
+        let mut audio = AudioState::default();
+        for effect in Effect::ALL {
+            let (min, max) = effect.range();
+            let moved = if effect.neutral() == max { min } else { max };
+            effect.set(&mut audio, moved);
+        }
+        let mut restored = AudioState::default();
+        PersistedDspParams::from_audio_state(&audio).apply_to_audio_state(&mut restored);
+        for effect in Effect::ALL {
+            assert_eq!(effect.get(&restored), effect.get(&audio), "{effect:?}");
+        }
+    }
+
+    #[test]
     fn a_session_with_nothing_in_it_is_not_silent_or_stopped() {
         let session: PersistedSession = toml::from_str("").unwrap();
         let audio = AudioState::default();

@@ -106,64 +106,20 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::AdjustSpeed(delta) => audio_action::handle_adjust_speed(state, delta),
         AudioMsg::ToggleMute => audio_action::handle_toggle_mute(state),
         AudioMsg::ResetSpeed => audio_action::handle_reset_speed(state),
-        AudioMsg::AdjustBass(delta) => audio_action::handle_adjust_bass(state, delta),
-        AudioMsg::AdjustTreble(delta) => audio_action::handle_adjust_treble(state, delta),
-        AudioMsg::AdjustReverb(delta) => audio_action::handle_adjust_reverb(state, delta),
-        AudioMsg::AdjustEcho(delta) => audio_action::handle_adjust_echo(state, delta),
-        AudioMsg::AdjustPan(delta) => audio_action::handle_adjust_pan(state, delta),
-        AudioMsg::AdjustLowpass(delta) => audio_action::handle_adjust_lowpass(state, delta),
-        AudioMsg::AdjustHighpass(delta) => audio_action::handle_adjust_highpass(state, delta),
+        AudioMsg::Adjust(effect, delta) => audio_action::handle_adjust_effect(state, effect, delta),
         AudioMsg::AdjustEqBand { band, delta } => {
             audio_action::handle_adjust_eq_band(state, band, delta)
         }
-        AudioMsg::AdjustAutoPanRate(delta) => {
-            audio_action::handle_adjust_auto_pan_rate(state, delta)
-        }
-        AudioMsg::AdjustAutoPanDepth(delta) => {
-            audio_action::handle_adjust_auto_pan_depth(state, delta)
-        }
-        AudioMsg::AdjustWobble(delta) => audio_action::handle_adjust_wobble(state, delta),
-        AudioMsg::AdjustKaraoke(delta) => audio_action::handle_adjust_karaoke(state, delta),
-        AudioMsg::AdjustWidth(delta) => audio_action::handle_adjust_width(state, delta),
-        AudioMsg::AdjustBitcrush(delta) => audio_action::handle_adjust_bitcrush(state, delta),
-        AudioMsg::AdjustExciter(delta) => audio_action::handle_adjust_exciter(state, delta),
-        AudioMsg::AdjustPingPong(delta) => audio_action::handle_adjust_ping_pong(state, delta),
-        AudioMsg::AdjustPhaser(delta) => audio_action::handle_adjust_phaser(state, delta),
         AudioMsg::DispatchSetVolume(volume) => {
             audio_action::handle_dispatch_set_volume(state, volume)
         }
         AudioMsg::DispatchSetSpeed(speed) => audio_action::handle_dispatch_set_speed(state, speed),
-        AudioMsg::DispatchSetBass(bass) => audio_action::handle_dispatch_set_bass(state, bass),
-        AudioMsg::DispatchSetTreble(treble) => {
-            audio_action::handle_dispatch_set_treble(state, treble)
-        }
-        AudioMsg::DispatchSetReverb(reverb) => {
-            audio_action::handle_dispatch_set_reverb(state, reverb)
-        }
-        AudioMsg::DispatchSetEcho(echo) => audio_action::handle_dispatch_set_echo(state, echo),
-        AudioMsg::DispatchSetPan(pan) => audio_action::handle_dispatch_set_pan(state, pan),
-        AudioMsg::DispatchSetLowpass(lp) => audio_action::handle_dispatch_set_lowpass(state, lp),
-        AudioMsg::DispatchSetHighpass(hp) => audio_action::handle_dispatch_set_highpass(state, hp),
+        // Sent on to the audio thread by the engine's bridge; the state was
+        // set when the message was made.
+        AudioMsg::DispatchSet(..) => vec![],
         AudioMsg::DispatchSetEqBand { band, gain } => {
             audio_action::handle_dispatch_set_eq_band(state, band, gain)
         }
-        AudioMsg::DispatchSetAutoPanRate(rate) => {
-            audio_action::handle_dispatch_set_auto_pan_rate(state, rate)
-        }
-        AudioMsg::DispatchSetAutoPanDepth(depth) => {
-            audio_action::handle_dispatch_set_auto_pan_depth(state, depth)
-        }
-        AudioMsg::DispatchSetWobble(val) => audio_action::handle_dispatch_set_wobble(state, val),
-        AudioMsg::DispatchSetKaraoke(val) => audio_action::handle_dispatch_set_karaoke(state, val),
-        AudioMsg::DispatchSetWidth(val) => audio_action::handle_dispatch_set_width(state, val),
-        AudioMsg::DispatchSetBitcrush(val) => {
-            audio_action::handle_dispatch_set_bitcrush(state, val)
-        }
-        AudioMsg::DispatchSetExciter(val) => audio_action::handle_dispatch_set_exciter(state, val),
-        AudioMsg::DispatchSetPingPong(val) => {
-            audio_action::handle_dispatch_set_ping_pong(state, val)
-        }
-        AudioMsg::DispatchSetPhaser(val) => audio_action::handle_dispatch_set_phaser(state, val),
         AudioMsg::SetOutputDevice(device) => {
             state.session.output.wanted = device;
             vec![]
