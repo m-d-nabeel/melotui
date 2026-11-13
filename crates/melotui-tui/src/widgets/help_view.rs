@@ -133,10 +133,25 @@ pub fn draw(
         )
         .title_bottom(
             Line::from(Span::styled(
-                if max > 0 {
-                    " ↑↓ j k scroll · g G ends · q close "
-                } else {
-                    " q close "
+                // Its own keys too as they are bound.
+                {
+                    let keys = |actions: &[KeyAction]| {
+                        actions
+                            .iter()
+                            .flat_map(|&action| keys_for(registry, KeyContext::Help, action))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    };
+                    let close = keys(&[KeyAction::CloseHelp]);
+                    if max > 0 {
+                        format!(
+                            " {} scroll · {} ends · {close} close ",
+                            keys(&[KeyAction::HelpDown, KeyAction::HelpUp]),
+                            keys(&[KeyAction::HelpTop, KeyAction::HelpBottom]),
+                        )
+                    } else {
+                        format!(" {close} close ")
+                    }
                 },
                 hint,
             ))
@@ -396,6 +411,22 @@ pub(crate) fn key_for(
         .map(format_key)
 }
 
+/// Every key that does `action` in `context`, as they are shown.
+fn keys_for(
+    registry: &crate::keybinding::KeyRegistry,
+    context: KeyContext,
+    action: KeyAction,
+) -> Vec<String> {
+    registry
+        .bindings
+        .get(&context)
+        .into_iter()
+        .flatten()
+        .filter(|binding| binding.action == action)
+        .map(format_key)
+        .collect()
+}
+
 fn format_key(binding: &KeyBinding) -> String {
     use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
@@ -556,7 +587,7 @@ mod tests {
         let (text, max) = drawn(100, 30);
         assert!(max > 0);
         assert!(
-            text.contains(" 1–") && text.contains("j k scroll"),
+            text.contains(" 1–") && text.contains("scroll ·") && text.contains(" close "),
             "{text}"
         );
         let (_, max) = drawn(300, 400);
