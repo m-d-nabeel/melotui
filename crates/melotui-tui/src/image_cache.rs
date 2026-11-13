@@ -81,7 +81,8 @@ impl ImageState {
             return;
         };
 
-        let (font_w, font_h) = picker.font_size();
+        let font = picker.font_size();
+        let (font_w, font_h) = (font.width, font.height);
         let aspect = (area.width as f32 * font_w as f32) / (area.height as f32 * font_h as f32);
         let (src_w, src_h) = (source.width().max(1), source.height().max(1));
         let (crop_w, crop_h) = if src_w as f32 / src_h as f32 > aspect {

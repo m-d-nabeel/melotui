@@ -160,7 +160,8 @@ impl LyricsRenderer {
     /// can show one over its own background. The fonts load the first time
     /// this answers yes; until they are in, it answers no.
     pub fn should_shape(&mut self, picker: &Picker, lines: &[&str], zoom: f32) -> bool {
-        let (cell_w, cell_h) = picker.font_size();
+        let font = picker.font_size();
+        let (cell_w, cell_h) = (font.width, font.height);
         self.enabled
             && self.route(picker).is_some()
             && cell_w > 0
@@ -172,7 +173,8 @@ impl LyricsRenderer {
     /// Whether lyrics would be drawn as an image, given the terminal and
     /// the settings, whatever they say.
     fn can_shape(&self, picker: &Picker) -> bool {
-        let (cell_w, cell_h) = picker.font_size();
+        let font = picker.font_size();
+        let (cell_w, cell_h) = (font.width, font.height);
         self.enabled && self.route(picker).is_some() && cell_w > 0 && cell_h > 0
     }
 
@@ -238,7 +240,8 @@ impl LyricsRenderer {
         let Some(route) = self.route(picker) else {
             return false;
         };
-        let (cell_w, cell_h) = picker.font_size();
+        let font = picker.font_size();
+        let (cell_w, cell_h) = (font.width, font.height);
         if lines.is_empty() || area.is_empty() || cell_w == 0 || cell_h == 0 {
             return false;
         }
@@ -294,14 +297,14 @@ impl LyricsRenderer {
                 }
                 Route::Transparent => {
                     let image = DynamicImage::ImageRgba8(image);
-                    match picker.new_protocol(image, full, Resize::Fit(None)) {
+                    match picker.new_protocol(image, full.into(), Resize::Fit(None)) {
                         Ok(protocol) => (Shown::Other(protocol), None),
                         Err(_) => return false,
                     }
                 }
                 Route::Opaque(background) => {
                     let image = DynamicImage::ImageRgba8(onto(image, background));
-                    match picker.new_protocol(image, full, Resize::Fit(None)) {
+                    match picker.new_protocol(image, full.into(), Resize::Fit(None)) {
                         Ok(protocol) => (Shown::Other(protocol), None),
                         Err(_) => return false,
                     }
