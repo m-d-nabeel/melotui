@@ -15,7 +15,7 @@ rodio = { version = "0.23", default-features = false, features = [
   "playback",
 ] }
 tracing = "0.1"
-spectrum-analyzer = "1.7"
+spectrum-analyzer = "2.0"
 ringbuf = "0.6"
 anyhow = "1"
 serde_json = "1"
