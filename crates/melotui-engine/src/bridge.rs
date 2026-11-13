@@ -77,6 +77,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             PlaybackMsg::DispatchPlay { path } => {
                 Some(IpcCommand::Audio(AudioCommand::Play { path: path.clone() }))
             }
+            PlaybackMsg::DispatchPreload { path } => {
+                Some(IpcCommand::Audio(AudioCommand::Preload {
+                    path: path.clone(),
+                }))
+            }
             PlaybackMsg::DispatchPause => Some(IpcCommand::Audio(AudioCommand::Pause)),
             PlaybackMsg::DispatchResume => Some(IpcCommand::Audio(AudioCommand::Resume)),
             PlaybackMsg::DispatchStop => Some(IpcCommand::Audio(AudioCommand::Stop)),
@@ -209,6 +214,9 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms, epoch })
         }
         IpcEvent::PlaybackFinished => AppMsg::Playback(PlaybackMsg::AudioFinished),
+        IpcEvent::PlaybackAdvanced { path } => {
+            AppMsg::Playback(PlaybackMsg::AudioAdvanced { path })
+        }
         IpcEvent::PlaybackFailed { path, error } => {
             AppMsg::Playback(PlaybackMsg::AudioError { path, error })
         }
@@ -303,6 +311,24 @@ mod tests {
             matches!(&msg, AppMsg::Playback(PlaybackMsg::AudioError { path, .. }) if path == "/music/broken.mp3"),
             "{msg:?}"
         );
+    }
+
+    #[test]
+    fn making_a_track_ready_and_its_carrying_on_cross_the_bridge() {
+        let msg = AppMsg::Playback(PlaybackMsg::DispatchPreload {
+            path: Some(PathBuf::from("/music/next.flac")),
+        });
+        assert!(matches!(
+            appmsg_to_ipc(&msg, &[]),
+            Some(IpcCommand::Audio(AudioCommand::Preload { path: Some(path) })) if path.ends_with("next.flac")
+        ));
+        let msg = ipc_to_appmsg(IpcEvent::PlaybackAdvanced {
+            path: "/music/next.flac".into(),
+        });
+        assert!(matches!(
+            msg,
+            AppMsg::Playback(PlaybackMsg::AudioAdvanced { path }) if path == "/music/next.flac"
+        ));
     }
 
     #[test]

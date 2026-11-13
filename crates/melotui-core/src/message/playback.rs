@@ -41,6 +41,14 @@ pub enum PlaybackMsg {
     AudioPaused,
     AudioResumed,
     AudioFinished,
+    /// The track ended and the one made ready carried straight on.
+    AudioAdvanced {
+        path: String,
+    },
+    /// Have the audio thread make a track ready to follow the one playing.
+    DispatchPreload {
+        path: Option<std::path::PathBuf>,
+    },
     /// The file at `path` could not be played.
     AudioError {
         path: String,

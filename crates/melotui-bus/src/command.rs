@@ -7,6 +7,11 @@ pub enum AudioCommand {
     Play {
         path: PathBuf,
     },
+    /// Make `path` ready to play the moment the track playing ends, with
+    /// no gap between them; `None` takes back whatever was made ready.
+    Preload {
+        path: Option<std::path::PathBuf>,
+    },
     Pause,
     Resume,
     Stop,
