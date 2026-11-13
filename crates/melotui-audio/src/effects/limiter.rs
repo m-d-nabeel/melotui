@@ -11,7 +11,7 @@
 //! pumps; delaying the audio by the attack window lets the gain arrive first.
 
 use fundsp::buffer::{BufferMut, BufferRef};
-use fundsp::hacker32::*;
+use fundsp::prelude32::*;
 use fundsp::signal::SignalFrame;
 
 /// Ceiling, just under full scale to leave room for inter-sample peaks and the

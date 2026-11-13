@@ -8,8 +8,8 @@ pub mod tone;
 pub mod trim;
 
 use fundsp::DEFAULT_SR;
-use fundsp::hacker32::*;
 use fundsp::net::Net;
+use fundsp::prelude32::*;
 use melotui_core::state::audio::Effect;
 
 use control::control;
@@ -185,10 +185,11 @@ const PING_PONG_TAPS: [(f32, f32); 4] = [(0.25, 0.7), (0.50, 0.5), (0.75, 0.3), 
 /// hear rather than none at all.
 fn wobble(params: &AudioParams) -> An<impl AudioNode<Inputs = U1, Outputs = U1> + use<>> {
     let depth = || control(&params.wobble, |w| w.clamp(0.0, 1.0).sqrt());
-    // `sine_phase(0.25)` is a cosine from a fixed starting point, so
+    // `sine().phase(0.25)` is a cosine from a fixed starting point, so
     // `1 - cos` sweeps the delay up from zero, identically in every channel.
     let sweep = |hz: f32, seconds: f32| {
-        (constant(hz) >> sine_phase(0.25)) >> map(move |c: &Frame<f32, U1>| seconds * (1.0 - c[0]))
+        (constant(hz) >> sine().phase(0.25))
+            >> map(move |c: &Frame<f32, U1>| seconds * (1.0 - c[0]))
     };
     let delay_time = (sweep(WOW_HZ, WOW_SECONDS) + sweep(FLUTTER_HZ, FLUTTER_SECONDS)) * depth();
     let wobbled = (pass() | delay_time) >> tap(0.0, 2.0 * (WOW_SECONDS + FLUTTER_SECONDS));
@@ -212,6 +213,26 @@ fn echo(params: &AudioParams) -> An<impl AudioNode<Inputs = U1, Outputs = U1> + 
                 delay(ECHO_SECONDS) >> lowpass_hz(ECHO_DAMPING_HZ, 0.6),
                 pass() * feedback,
             ))
+}
+
+/// A phaser: the signal summed with itself through ten all-pass stages
+/// swept by `phase`, some of it fed back.
+///
+/// The library has one of its own, and this is it as it stood when
+/// melotui's was tuned by ear and by test. It is kept here because the
+/// library's has since been retuned — the offset each stage adds to the
+/// sweep went from 0.05 to 0.1 — and a library update is no reason for an
+/// effect to sound different.
+fn phaser<X: Fn(f32) -> f32 + Clone + Send + Sync>(
+    feedback_amount: f32,
+    phase: X,
+) -> An<impl AudioNode<Inputs = U1, Outputs = U1>> {
+    pass()
+        & feedback(
+            (pass() | lfo(move |t| lerp(2.0, 20.0, clamp01(phase(t)))))
+                >> pipei::<U10, _, _>(|_i| (pass() | add(0.05)) >> !allpole())
+                >> (mul(feedback_amount) | sink()),
+        )
 }
 
 /// The phaser, blended in by its control.

@@ -1,6 +1,6 @@
 //! Volume, applied as a glide rather than a step.
 
-use fundsp::hacker32::Shared;
+use fundsp::prelude32::Shared;
 use rodio::{Source, source::SeekError};
 use std::time::Duration;
 
@@ -92,7 +92,7 @@ impl<S: Source<Item = f32>> Source for VolumeRamp<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fundsp::hacker32::shared;
+    use fundsp::prelude32::shared;
 
     /// Endless stereo source at a constant level.
     struct Steady;

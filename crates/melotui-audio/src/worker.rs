@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use fundsp::hacker32::{AudioUnit, Shared, shared};
+use fundsp::prelude32::{AudioUnit, Shared, shared};
 
 use crate::{
     clock::TimeKeeper,

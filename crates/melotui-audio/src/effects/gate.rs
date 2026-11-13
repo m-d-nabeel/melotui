@@ -2,7 +2,7 @@
 
 use fundsp::DEFAULT_SR;
 use fundsp::buffer::{BufferMut, BufferRef, BufferVec};
-use fundsp::hacker32::*;
+use fundsp::prelude32::*;
 use fundsp::signal::SignalFrame;
 
 /// How long a unit keeps running after its control reaches zero: long enough
