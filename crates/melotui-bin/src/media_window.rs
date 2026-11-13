@@ -7,10 +7,10 @@
 use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, HMENU, MSG, RegisterClassW,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, RegisterClassW,
     TranslateMessage, WINDOW_EX_STYLE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
-use windows::w;
+use windows::core::w;
 
 unsafe extern "system" fn procedure(window: HWND, message: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     unsafe { DefWindowProcW(window, message, w, l) }
@@ -44,19 +44,20 @@ pub fn spawn() -> Option<isize> {
                 0,
                 0,
                 0,
-                HWND(0),
-                HMENU(0),
-                instance,
+                None,
+                None,
+                Some(instance),
                 None,
             );
-            if window.0 == 0 {
+            let Ok(window) = window else {
                 let _ = tx.send(None);
                 return;
-            }
-            let _ = tx.send(Some(window.0));
+            };
+            // The handle as a number: a pointer does not cross threads.
+            let _ = tx.send(Some(window.0 as isize));
             let mut message = MSG::default();
-            while GetMessageW(&mut message, HWND(0), 0, 0).as_bool() {
-                TranslateMessage(&message);
+            while GetMessageW(&mut message, None, 0, 0).as_bool() {
+                let _ = TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
         })
