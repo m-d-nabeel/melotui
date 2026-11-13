@@ -603,12 +603,9 @@ fn fetch_lyrics_task(
             encode(&artist_name),
             encode(&track_name)
         );
-        let req = ureq::get(&url)
-            .set("User-Agent", USER_AGENT)
-            .timeout(std::time::Duration::from_secs(30));
-        if let Ok(response) = req.call()
+        if let Ok(mut response) = get(&url, &[])
             && response.status() == 200
-            && let Ok(json) = response.into_json::<serde_json::Value>()
+            && let Ok(json) = response.body_mut().read_json::<serde_json::Value>()
             && let Some(lyrics) = json.get("lyrics").and_then(|v| v.as_str())
             && !lyrics.trim().is_empty()
         {
@@ -638,39 +635,80 @@ fn fetch_lyrics_task(
 fn lrclib(url: &str, query: &[(&str, &str)]) -> Result<Option<serde_json::Value>, String> {
     const TRIES: u64 = 6;
     for attempt in 1..=TRIES {
-        let mut req = ureq::get(url)
-            .set("User-Agent", USER_AGENT)
-            .timeout(Duration::from_secs(30));
-        for (key, value) in query {
-            req = req.query(key, value);
-        }
-        match req.call() {
-            Ok(response) => {
+        let mut response =
+            get(url, query).map_err(|e| format!("LRCLIB could not be reached: {e}"))?;
+        let code = response.status().as_u16();
+        let retry_after = response
+            .headers()
+            .get("retry-after")
+            .and_then(|value| value.to_str().ok());
+        match what_to_do(code, attempt, TRIES, retry_after) {
+            Answer::Read => {
                 return response
-                    .into_json()
+                    .body_mut()
+                    .read_json()
                     .map(Some)
                     .map_err(|e| format!("LRCLIB's answer could not be read: {e}"));
             }
-            Err(ureq::Error::Status(404, _)) => return Ok(None),
-            Err(ureq::Error::Status(code, response))
-                if (code == 429 || code >= 500) && attempt < TRIES =>
-            {
-                let wait = response
-                    .header("retry-after")
-                    .and_then(|s| s.trim().parse::<u64>().ok())
-                    .unwrap_or(1)
-                    .max(attempt)
-                    .clamp(1, 5);
+            Answer::Nothing => return Ok(None),
+            Answer::AskAgainIn(wait) => {
                 tracing::debug!("LRCLIB answered {code}, asking again in {wait}s");
                 thread::sleep(Duration::from_secs(wait));
             }
-            Err(ureq::Error::Status(code, _)) => {
-                return Err(format!("LRCLIB is busy (it answered {code})"));
-            }
-            Err(e) => return Err(format!("LRCLIB could not be reached: {e}")),
+            Answer::Busy => return Err(format!("LRCLIB is busy (it answered {code})")),
         }
     }
     Err("LRCLIB is busy".into())
+}
+
+/// What an answer from LRCLIB, by its status, comes to.
+#[derive(Debug, PartialEq, Eq)]
+enum Answer {
+    /// It has what was asked for: read it.
+    Read,
+    /// It has nothing by that name.
+    Nothing,
+    /// It is busy: ask again after this many seconds.
+    AskAgainIn(u64),
+    /// It is busy, or will not answer, and asking again has been tried.
+    Busy,
+}
+
+/// What to do with the answer to the `attempt`th of `tries` requests, given
+/// its status and what it said in Retry-After. Busy, it is asked again,
+/// waiting as long as it says — a second, usually — or a second more each
+/// time if that is longer, and never more than five.
+fn what_to_do(code: u16, attempt: u64, tries: u64, retry_after: Option<&str>) -> Answer {
+    match code {
+        200..=299 => Answer::Read,
+        404 => Answer::Nothing,
+        429 | 500.. if attempt < tries => Answer::AskAgainIn(
+            retry_after
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .unwrap_or(1)
+                .max(attempt)
+                .clamp(1, 5),
+        ),
+        _ => Answer::Busy,
+    }
+}
+
+/// GETs `url` with `query`, answering with whatever came back, whatever its
+/// status: an error is only that nothing came back at all. Thirty seconds
+/// are allowed for all of it.
+fn get(url: &str, query: &[(&str, &str)]) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
+    let mut request = ureq::get(url).header("User-Agent", USER_AGENT);
+    for (key, value) in query {
+        request = request.query(key, value);
+    }
+    request
+        .config()
+        .timeout_global(Some(Duration::from_secs(30)))
+        // A 404 is "no such lyrics" and a 503 "ask again in a second", and
+        // the second says how long in a header: answers to be read, both.
+        .http_status_as_error(false)
+        .build()
+        .call()
 }
 
 /// Saves `lyrics` at `save_path` and says how that went.
@@ -719,16 +757,10 @@ fn search_lyrics_task(query: String, tx: mpsc::Sender<InternalEvent>) {
     }
 
     // 2. OVH Suggest
-    let ovh_req = ureq::get(&format!(
-        "https://api.lyrics.ovh/suggest/{}",
-        encode(&query)
-    ))
-    .set("User-Agent", USER_AGENT)
-    .timeout(std::time::Duration::from_secs(30));
-
-    if let Ok(res) = ovh_req.call()
+    let suggest = format!("https://api.lyrics.ovh/suggest/{}", encode(&query));
+    if let Ok(mut res) = get(&suggest, &[])
         && res.status() == 200
-        && let Ok(json) = res.into_json::<serde_json::Value>()
+        && let Ok(json) = res.body_mut().read_json::<serde_json::Value>()
         && let Some(data) = json.get("data").and_then(|v| v.as_array())
     {
         for item in data.iter().take(MAX_CANDIDATES) {
@@ -922,7 +954,64 @@ mod download_tests {
 
 #[cfg(test)]
 mod lyrics_match_tests {
-    use super::best_match;
+    use super::{Answer, best_match, what_to_do};
+
+    #[test]
+    fn a_busy_lrclib_is_asked_again_and_a_missing_song_is_not() {
+        assert_eq!(what_to_do(200, 1, 6, None), Answer::Read);
+        assert_eq!(what_to_do(404, 1, 6, None), Answer::Nothing);
+        // Busy: as long as it says, a second if it does not, longer as the
+        // tries go on, never more than five.
+        assert_eq!(what_to_do(503, 1, 6, Some("1")), Answer::AskAgainIn(1));
+        assert_eq!(what_to_do(503, 1, 6, None), Answer::AskAgainIn(1));
+        assert_eq!(what_to_do(429, 3, 6, Some(" 1 ")), Answer::AskAgainIn(3));
+        assert_eq!(what_to_do(503, 2, 6, Some("60")), Answer::AskAgainIn(5));
+        assert_eq!(what_to_do(503, 2, 6, Some("soon")), Answer::AskAgainIn(2));
+        // The last try, and what asking again will not mend.
+        assert_eq!(what_to_do(503, 6, 6, Some("1")), Answer::Busy);
+        assert_eq!(what_to_do(400, 1, 6, None), Answer::Busy);
+        assert_eq!(what_to_do(403, 1, 6, None), Answer::Busy);
+    }
+
+    #[test]
+    #[ignore = "needs the network: cargo test -p melotui-download -- --ignored"]
+    fn lrclib_answers_for_real_with_lyrics_and_with_nothing() {
+        // A song it has had for years, by its record's exact name.
+        let found = super::lrclib(
+            "https://lrclib.net/api/get",
+            &[
+                ("track_name", "Never Gonna Give You Up"),
+                ("artist_name", "Rick Astley"),
+            ],
+        )
+        .expect("LRCLIB could not be asked");
+        let lyrics = found
+            .as_ref()
+            .and_then(super::lyrics_of)
+            .expect("no lyrics");
+        assert!(lyrics.to_lowercase().contains("strangers"), "{lyrics}");
+
+        // And one it cannot have: nothing, which is not an error.
+        let missing = super::lrclib(
+            "https://lrclib.net/api/get",
+            &[
+                ("track_name", "zzqx no such song 7f3a"),
+                ("artist_name", "zzqx nobody 7f3a"),
+            ],
+        );
+        assert_eq!(missing, Ok(None));
+
+        // The search, and what is offered from it.
+        let results = super::lrclib(
+            "https://lrclib.net/api/search",
+            &[("q", "rick astley never gonna")],
+        )
+        .unwrap()
+        .unwrap();
+        let offered = super::candidates(serde_json::from_value(results).unwrap());
+        assert!(!offered.is_empty());
+    }
+
     use serde_json::json;
 
     #[test]
