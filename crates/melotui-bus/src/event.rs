@@ -71,6 +71,12 @@ pub enum IpcEvent {
     LibraryLoaded {
         snapshot: Box<Library>,
     },
+    /// A scan still under way has more to show: the library as it stands,
+    /// so a first scan of a large collection fills in as it goes rather
+    /// than being an empty screen until it is over.
+    LibraryGrew {
+        snapshot: Box<Library>,
+    },
     /// A scan finished; `changed` if it added, updated or removed tracks.
     LibraryRescanned {
         changed: bool,

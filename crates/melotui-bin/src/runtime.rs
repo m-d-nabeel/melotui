@@ -489,6 +489,12 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
                         }));
                 }
             }
+            IpcEvent::LibraryGrew { snapshot } => {
+                // A scan under way has more to show. Nothing is said: the
+                // scan's own progress is on the screen.
+                state.library = *snapshot;
+                state.ensure_library_selection();
+            }
             IpcEvent::LibraryRescanned { changed } => {
                 let quiet = state.is_scanning_quietly();
                 if changed {
