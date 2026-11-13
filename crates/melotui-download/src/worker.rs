@@ -731,6 +731,79 @@ mod download_tests {
         yt_dlp_args(target, Path::new("/music"), "/tmp/report.jsonl")
     }
 
+    /// Runs a download to its end, returning what it reported.
+    fn download(target: &str, into: &Path) -> Vec<super::InternalEvent> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        super::download_task(target.into(), into.to_path_buf(), tx, cancel);
+        rx.try_iter().collect()
+    }
+
+    #[test]
+    #[ignore = "needs yt-dlp, ffmpeg and the network: cargo test -p melotui-download -- --ignored"]
+    fn a_real_download_arrives_as_audio_the_player_reads_and_is_tagged() {
+        use lofty::file::{AudioFile, TaggedFileExt};
+        use lofty::tag::Accessor;
+
+        let dir = tempfile::tempdir().unwrap();
+        // "Me at the zoo": nineteen seconds, and there since 2005.
+        let events = download("https://www.youtube.com/watch?v=jNQXAC9IVRw", dir.path());
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, super::InternalEvent::Finished)),
+            "it did not finish"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, super::InternalEvent::ItemFinished)),
+            "the item was not reported"
+        );
+
+        let files: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(files.len(), 1, "{files:?}");
+        let ext = files[0]
+            .extension()
+            .unwrap()
+            .to_string_lossy()
+            .to_lowercase();
+        assert!(
+            ["opus", "m4a", "ogg", "mp3"].contains(&ext.as_str()),
+            "not something the library scans: {files:?}"
+        );
+        let file = lofty::read_from_path(&files[0]).expect("unreadable by the tag library");
+        assert!(file.properties().duration().as_secs() >= 15);
+        let tag = file.primary_tag().expect("no tags");
+        assert!(tag.title().is_some_and(|t| !t.is_empty()));
+        assert!(!tag.pictures().is_empty(), "the thumbnail was not embedded");
+    }
+
+    #[test]
+    #[ignore = "needs yt-dlp and the network"]
+    fn a_real_download_that_fails_says_what_yt_dlp_said() {
+        let dir = tempfile::tempdir().unwrap();
+        let events = download("https://www.youtube.com/watch?v=xxxxxxxxxxx", dir.path());
+        let why = events
+            .iter()
+            .find_map(|e| match e {
+                super::InternalEvent::Failed(why) => Some(why.clone()),
+                _ => None,
+            })
+            .expect("it did not fail");
+        assert!(
+            !why.starts_with("yt-dlp failed ("),
+            "only the exit code: {why}"
+        );
+        assert!(
+            why.to_lowercase().contains("unavailable") || why.contains("youtube"),
+            "{why}"
+        );
+    }
+
     #[test]
     fn a_link_to_one_video_of_a_playlist_downloads_that_video() {
         let args = args("https://www.youtube.com/watch?v=abc&list=PL123");

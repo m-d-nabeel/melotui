@@ -171,6 +171,50 @@ mod tests {
             .map_err(|e| e.kind())
     }
 
+    /// Runs this test binary again as `role`, a process of its own to
+    /// panic in, and returns how it ended and what it wrote to stderr.
+    fn in_a_process_of_its_own(test: &str, role: &str) -> (Option<i32>, String) {
+        let out = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test, "--nocapture", "--test-threads=1"])
+            .env("MELOTUI_TEST_PANICS", role)
+            .output()
+            .unwrap();
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )
+    }
+
+    #[test]
+    fn a_panic_ends_the_process_and_a_caught_one_does_not() {
+        const TEST: &str = "tests::a_panic_ends_the_process_and_a_caught_one_does_not";
+        match std::env::var("MELOTUI_TEST_PANICS").as_deref() {
+            // A worker's thread panics: the hook ends the process there and
+            // then, and the line after is never reached.
+            Ok("worker") => {
+                std::panic::set_hook(Box::new(on_panic));
+                let _ = std::thread::spawn(|| panic!("a worker fell over")).join();
+                std::process::exit(0);
+            }
+            // A panic that is caught is logged, and everything carries on.
+            Ok("caught") => {
+                std::panic::set_hook(Box::new(on_panic));
+                let caught = melotui_core::utils::panic::guarded(|| panic!("an odd file"));
+                std::process::exit(if caught.is_err() { 0 } else { 3 });
+            }
+            _ => {}
+        }
+
+        let (code, stderr) = in_a_process_of_its_own(TEST, "worker");
+        assert_eq!(code, Some(101), "{stderr}");
+        assert!(stderr.contains("melotui: panic:"), "{stderr}");
+        assert!(stderr.contains("a worker fell over"), "{stderr}");
+
+        let (code, stderr) = in_a_process_of_its_own(TEST, "caught");
+        assert_eq!(code, Some(0), "{stderr}");
+        assert!(!stderr.contains("melotui: panic:"), "{stderr}");
+    }
+
     #[test]
     fn help_and_version_are_answered() {
         for args in [&["--help"][..], &["-h"]] {
