@@ -1,3 +1,4 @@
+use crate::state::audio::Effect;
 use crate::{
     AppMsg, AppState, Command, UIMode,
     command::{LyricsView, Macro, Panel, Reset},
@@ -1103,22 +1104,22 @@ pub fn handle_dsp_adjust_up(state: &mut AppState) -> Vec<AppMsg> {
         0..=9 => audio_action::handle_adjust_eq_band(state, idx, 1.0),
         10 => audio_action::handle_adjust_volume(state, 0.05),
         11 => audio_action::handle_adjust_speed(state, 0.1),
-        12 => audio_action::handle_adjust_bass(state, 0.1),
-        13 => audio_action::handle_adjust_treble(state, 0.1),
-        14 => audio_action::handle_adjust_pan(state, 0.1),
-        15 => audio_action::handle_adjust_auto_pan_rate(state, 0.05),
-        16 => audio_action::handle_adjust_auto_pan_depth(state, 0.1),
-        17 => audio_action::handle_adjust_reverb(state, 0.05),
-        18 => audio_action::handle_adjust_echo(state, 0.05),
-        19 => audio_action::handle_adjust_lowpass(state, 500.0),
-        20 => audio_action::handle_adjust_highpass(state, 50.0),
-        21 => audio_action::handle_adjust_exciter(state, 0.2),
-        22 => audio_action::handle_adjust_bitcrush(state, 0.05),
-        23 => audio_action::handle_adjust_width(state, 0.1),
-        24 => audio_action::handle_adjust_karaoke(state, 0.05),
-        25 => audio_action::handle_adjust_wobble(state, 0.05),
-        26 => audio_action::handle_adjust_ping_pong(state, 0.05),
-        27 => audio_action::handle_adjust_phaser(state, 0.05),
+        12 => audio_action::handle_adjust_effect(state, Effect::Bass, 0.1),
+        13 => audio_action::handle_adjust_effect(state, Effect::Treble, 0.1),
+        14 => audio_action::handle_adjust_effect(state, Effect::Pan, 0.1),
+        15 => audio_action::handle_adjust_effect(state, Effect::AutoPanRate, 0.05),
+        16 => audio_action::handle_adjust_effect(state, Effect::AutoPanDepth, 0.1),
+        17 => audio_action::handle_adjust_effect(state, Effect::Reverb, 0.05),
+        18 => audio_action::handle_adjust_effect(state, Effect::Echo, 0.05),
+        19 => audio_action::handle_adjust_effect(state, Effect::Lowpass, 500.0),
+        20 => audio_action::handle_adjust_effect(state, Effect::Highpass, 50.0),
+        21 => audio_action::handle_adjust_effect(state, Effect::Exciter, 0.2),
+        22 => audio_action::handle_adjust_effect(state, Effect::Bitcrush, 0.05),
+        23 => audio_action::handle_adjust_effect(state, Effect::Width, 0.1),
+        24 => audio_action::handle_adjust_effect(state, Effect::Karaoke, 0.05),
+        25 => audio_action::handle_adjust_effect(state, Effect::Wobble, 0.05),
+        26 => audio_action::handle_adjust_effect(state, Effect::PingPong, 0.05),
+        27 => audio_action::handle_adjust_effect(state, Effect::Phaser, 0.05),
         _ => vec![],
     }
 }
@@ -1130,22 +1131,22 @@ pub fn handle_dsp_adjust_down(state: &mut AppState) -> Vec<AppMsg> {
         0..=9 => audio_action::handle_adjust_eq_band(state, idx, -1.0),
         10 => audio_action::handle_adjust_volume(state, -0.05),
         11 => audio_action::handle_adjust_speed(state, -0.1),
-        12 => audio_action::handle_adjust_bass(state, -0.1),
-        13 => audio_action::handle_adjust_treble(state, -0.1),
-        14 => audio_action::handle_adjust_pan(state, -0.1),
-        15 => audio_action::handle_adjust_auto_pan_rate(state, -0.05),
-        16 => audio_action::handle_adjust_auto_pan_depth(state, -0.1),
-        17 => audio_action::handle_adjust_reverb(state, -0.05),
-        18 => audio_action::handle_adjust_echo(state, -0.05),
-        19 => audio_action::handle_adjust_lowpass(state, -500.0),
-        20 => audio_action::handle_adjust_highpass(state, -50.0),
-        21 => audio_action::handle_adjust_exciter(state, -0.2),
-        22 => audio_action::handle_adjust_bitcrush(state, -0.05),
-        23 => audio_action::handle_adjust_width(state, -0.1),
-        24 => audio_action::handle_adjust_karaoke(state, -0.05),
-        25 => audio_action::handle_adjust_wobble(state, -0.05),
-        26 => audio_action::handle_adjust_ping_pong(state, -0.05),
-        27 => audio_action::handle_adjust_phaser(state, -0.05),
+        12 => audio_action::handle_adjust_effect(state, Effect::Bass, -0.1),
+        13 => audio_action::handle_adjust_effect(state, Effect::Treble, -0.1),
+        14 => audio_action::handle_adjust_effect(state, Effect::Pan, -0.1),
+        15 => audio_action::handle_adjust_effect(state, Effect::AutoPanRate, -0.05),
+        16 => audio_action::handle_adjust_effect(state, Effect::AutoPanDepth, -0.1),
+        17 => audio_action::handle_adjust_effect(state, Effect::Reverb, -0.05),
+        18 => audio_action::handle_adjust_effect(state, Effect::Echo, -0.05),
+        19 => audio_action::handle_adjust_effect(state, Effect::Lowpass, -500.0),
+        20 => audio_action::handle_adjust_effect(state, Effect::Highpass, -50.0),
+        21 => audio_action::handle_adjust_effect(state, Effect::Exciter, -0.2),
+        22 => audio_action::handle_adjust_effect(state, Effect::Bitcrush, -0.05),
+        23 => audio_action::handle_adjust_effect(state, Effect::Width, -0.1),
+        24 => audio_action::handle_adjust_effect(state, Effect::Karaoke, -0.05),
+        25 => audio_action::handle_adjust_effect(state, Effect::Wobble, -0.05),
+        26 => audio_action::handle_adjust_effect(state, Effect::PingPong, -0.05),
+        27 => audio_action::handle_adjust_effect(state, Effect::Phaser, -0.05),
         _ => vec![],
     }
 }
@@ -1172,67 +1173,76 @@ pub fn handle_dsp_reset_control(state: &mut AppState) -> Vec<AppMsg> {
         }
         12 => {
             state.session.audio.bass = 1.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetBass(1.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bass, 1.0))]
         }
         13 => {
             state.session.audio.treble = 1.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(1.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Treble, 1.0))]
         }
         14 => {
             state.session.audio.pan = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetPan(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Pan, 0.0))]
         }
         15 => {
             state.session.audio.auto_pan_rate = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(
+                Effect::AutoPanRate,
+                0.0,
+            ))]
         }
         16 => {
             state.session.audio.auto_pan_depth = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(
+                Effect::AutoPanDepth,
+                0.0,
+            ))]
         }
         17 => {
             state.session.audio.reverb = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetReverb(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Reverb, 0.0))]
         }
         18 => {
             state.session.audio.echo = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Echo, 0.0))]
         }
         19 => {
             state.session.audio.lowpass = 20000.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetLowpass(20000.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(
+                Effect::Lowpass,
+                20000.0,
+            ))]
         }
         20 => {
             state.session.audio.highpass = 20.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetHighpass(20.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Highpass, 20.0))]
         }
         21 => {
             state.session.audio.exciter = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetExciter(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Exciter, 0.0))]
         }
         22 => {
             state.session.audio.bitcrush = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetBitcrush(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bitcrush, 0.0))]
         }
         23 => {
             state.session.audio.width = 1.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetWidth(1.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Width, 1.0))]
         }
         24 => {
             state.session.audio.karaoke = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetKaraoke(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Karaoke, 0.0))]
         }
         25 => {
             state.session.audio.wobble = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetWobble(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Wobble, 0.0))]
         }
         26 => {
             state.session.audio.ping_pong = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetPingPong(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::PingPong, 0.0))]
         }
         27 => {
             state.session.audio.phaser = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetPhaser(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Phaser, 0.0))]
         }
         _ => vec![],
     }
@@ -1281,22 +1291,28 @@ fn sync_audio_msgs(audio: &crate::state::AudioState) -> Vec<AppMsg> {
     let mut msgs = vec![
         AppMsg::Audio(AudioMsg::DispatchSetVolume(audio.volume)),
         AppMsg::Audio(AudioMsg::DispatchSetSpeed(audio.speed)),
-        AppMsg::Audio(AudioMsg::DispatchSetBass(audio.bass)),
-        AppMsg::Audio(AudioMsg::DispatchSetTreble(audio.treble)),
-        AppMsg::Audio(AudioMsg::DispatchSetReverb(audio.reverb)),
-        AppMsg::Audio(AudioMsg::DispatchSetEcho(audio.echo)),
-        AppMsg::Audio(AudioMsg::DispatchSetPan(audio.pan)),
-        AppMsg::Audio(AudioMsg::DispatchSetLowpass(audio.lowpass)),
-        AppMsg::Audio(AudioMsg::DispatchSetHighpass(audio.highpass)),
-        AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(audio.auto_pan_rate)),
-        AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(audio.auto_pan_depth)),
-        AppMsg::Audio(AudioMsg::DispatchSetExciter(audio.exciter)),
-        AppMsg::Audio(AudioMsg::DispatchSetBitcrush(audio.bitcrush)),
-        AppMsg::Audio(AudioMsg::DispatchSetWidth(audio.width)),
-        AppMsg::Audio(AudioMsg::DispatchSetKaraoke(audio.karaoke)),
-        AppMsg::Audio(AudioMsg::DispatchSetWobble(audio.wobble)),
-        AppMsg::Audio(AudioMsg::DispatchSetPingPong(audio.ping_pong)),
-        AppMsg::Audio(AudioMsg::DispatchSetPhaser(audio.phaser)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bass, audio.bass)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Treble, audio.treble)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Reverb, audio.reverb)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Echo, audio.echo)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Pan, audio.pan)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Lowpass, audio.lowpass)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Highpass, audio.highpass)),
+        AppMsg::Audio(AudioMsg::DispatchSet(
+            Effect::AutoPanRate,
+            audio.auto_pan_rate,
+        )),
+        AppMsg::Audio(AudioMsg::DispatchSet(
+            Effect::AutoPanDepth,
+            audio.auto_pan_depth,
+        )),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Exciter, audio.exciter)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bitcrush, audio.bitcrush)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Width, audio.width)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Karaoke, audio.karaoke)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Wobble, audio.wobble)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::PingPong, audio.ping_pong)),
+        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Phaser, audio.phaser)),
     ];
     for (i, &gain) in audio.eq_bands.iter().enumerate() {
         msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand { band: i, gain }));
@@ -1573,10 +1589,9 @@ mod tests {
         let mut state = test_state();
         let msgs = run(&mut state, "fx bass 9");
         assert_eq!(state.session.audio.bass, 5.0);
-        assert!(
-            msgs.iter()
-                .any(|m| matches!(m, AppMsg::Audio(AudioMsg::DispatchSetBass(v)) if *v == 5.0))
-        );
+        assert!(msgs.iter().any(
+            |m| matches!(m, AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bass, v)) if *v == 5.0)
+        ));
         run(&mut state, "fx bass -1.5");
         assert_eq!(state.session.audio.bass, 3.5);
         run(&mut state, "fx eq 2 +20");

@@ -2,6 +2,7 @@ use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use melotui_core::state::audio::Effect;
 use melotui_core::{
     AppMsg,
     message::{
@@ -387,14 +388,14 @@ impl KeyAction {
             KeyAction::SpeedDown => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(
                 -config.audio.speed_step,
             ))),
-            KeyAction::BassUp => Some(AppMsg::Audio(AudioMsg::AdjustBass(0.1))),
-            KeyAction::BassDown => Some(AppMsg::Audio(AudioMsg::AdjustBass(-0.1))),
-            KeyAction::TrebleUp => Some(AppMsg::Audio(AudioMsg::AdjustTreble(0.1))),
-            KeyAction::TrebleDown => Some(AppMsg::Audio(AudioMsg::AdjustTreble(-0.1))),
-            KeyAction::ReverbUp => Some(AppMsg::Audio(AudioMsg::AdjustReverb(0.05))),
-            KeyAction::ReverbDown => Some(AppMsg::Audio(AudioMsg::AdjustReverb(-0.05))),
-            KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::AdjustEcho(0.05))),
-            KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::AdjustEcho(-0.05))),
+            KeyAction::BassUp => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Bass, 0.1))),
+            KeyAction::BassDown => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Bass, -0.1))),
+            KeyAction::TrebleUp => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Treble, 0.1))),
+            KeyAction::TrebleDown => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Treble, -0.1))),
+            KeyAction::ReverbUp => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Reverb, 0.05))),
+            KeyAction::ReverbDown => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Reverb, -0.05))),
+            KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Echo, 0.05))),
+            KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Echo, -0.05))),
 
             KeyAction::EnterPlaylistPicker => Some(AppMsg::UI(UIMsg::EnterPlaylistPicker)),
             KeyAction::ExitPlaylistPicker => Some(AppMsg::UI(UIMsg::ExitPlaylistPicker)),

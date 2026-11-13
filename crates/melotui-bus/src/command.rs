@@ -19,26 +19,12 @@ pub enum AudioCommand {
     },
     SetVolume(f32),
     SetSpeed(f32),
-    SetBass(f32),
-    SetTreble(f32),
-    SetReverb(f32),
-    SetEcho(f32),
-    SetPan(f32),
-    SetLowpass(f32),
-    SetHighpass(f32),
+    /// Set one of the effects to a value.
+    SetEffect(melotui_core::state::audio::Effect, f32),
     SetEqBand {
         band: usize,
         gain: f32,
     },
-    SetAutoPanRate(f32),
-    SetAutoPanDepth(f32),
-    SetWobble(f32),
-    SetKaraoke(f32),
-    SetWidth(f32),
-    SetBitcrush(f32),
-    SetExciter(f32),
-    SetPingPong(f32),
-    SetPhaser(f32),
     /// Plays through the device with this name, or part of it; `None`
     /// follows the system default.
     SetOutputDevice(Option<String>),

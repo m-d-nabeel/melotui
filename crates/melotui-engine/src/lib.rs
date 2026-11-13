@@ -232,31 +232,15 @@ impl Engine {
     pub fn sync_dsp(&self, audio: &melotui_core::state::AudioState) {
         self.set_volume(audio.volume);
         self.dispatch(IpcCommand::Audio(AudioCommand::SetSpeed(audio.speed)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetBass(audio.bass)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetTreble(audio.treble)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetReverb(audio.reverb)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetEcho(audio.echo)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetPan(audio.pan)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetLowpass(audio.lowpass)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetHighpass(audio.highpass)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetAutoPanRate(
-            audio.auto_pan_rate,
-        )));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetAutoPanDepth(
-            audio.auto_pan_depth,
-        )));
+        for effect in melotui_core::state::audio::Effect::ALL {
+            self.dispatch(IpcCommand::Audio(AudioCommand::SetEffect(
+                effect,
+                effect.get(audio),
+            )));
+        }
         for (i, &gain) in audio.eq_bands.iter().enumerate() {
             self.dispatch(IpcCommand::Audio(AudioCommand::SetEqBand { band: i, gain }));
         }
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetExciter(audio.exciter)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetBitcrush(audio.bitcrush)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetWidth(audio.width)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetKaraoke(audio.karaoke)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetWobble(audio.wobble)));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetPingPong(
-            audio.ping_pong,
-        )));
-        self.dispatch(IpcCommand::Audio(AudioCommand::SetPhaser(audio.phaser)));
     }
 }
 

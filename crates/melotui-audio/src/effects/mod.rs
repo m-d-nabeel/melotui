@@ -10,6 +10,7 @@ pub mod trim;
 use fundsp::DEFAULT_SR;
 use fundsp::hacker32::*;
 use fundsp::net::Net;
+use melotui_core::state::audio::Effect;
 
 use control::control;
 use gate::OnDemand;
@@ -62,24 +63,41 @@ impl AudioParams {
         }
     }
 
+    /// The control of `effect`, as the graph reads it.
+    pub fn of(&self, effect: Effect) -> &Shared {
+        match effect {
+            Effect::Bass => &self.bass,
+            Effect::Treble => &self.treble,
+            Effect::Reverb => &self.reverb,
+            Effect::Echo => &self.echo,
+            Effect::Pan => &self.pan,
+            Effect::Lowpass => &self.lowpass,
+            Effect::Highpass => &self.highpass,
+            Effect::AutoPanRate => &self.auto_pan_rate,
+            Effect::AutoPanDepth => &self.auto_pan_depth,
+            Effect::Exciter => &self.exciter,
+            Effect::Bitcrush => &self.bitcrush,
+            Effect::Width => &self.width,
+            Effect::Karaoke => &self.karaoke,
+            Effect::Wobble => &self.wobble,
+            Effect::PingPong => &self.ping_pong,
+            Effect::Phaser => &self.phaser,
+        }
+    }
+
+    /// Whether every control is where it does nothing, and the graph can be
+    /// passed by. By the effects' own neutral values, so that one added to
+    /// the table is counted here without being remembered.
     pub fn is_all_default(&self) -> bool {
-        (self.bass.value() - 1.0).abs() < 0.001
-            && (self.treble.value() - 1.0).abs() < 0.001
-            && self.reverb.value() < 0.001
-            && self.echo.value() < 0.001
-            && self.pan.value().abs() < 0.001
-            && (self.lowpass.value() - 20000.0).abs() < 1.0
-            && (self.highpass.value() - 20.0).abs() < 1.0
-            && self.eq_bands.iter().all(|b| b.value().abs() < 0.001)
-            && self.auto_pan_rate.value() < 0.001
-            && self.auto_pan_depth.value() < 0.001
-            && self.wobble.value() < 0.001
-            && self.karaoke.value() < 0.001
-            && (self.width.value() - 1.0).abs() < 0.001
-            && self.bitcrush.value() < 0.001
-            && self.exciter.value() < 0.001
-            && self.ping_pong.value() < 0.001
-            && self.phaser.value() < 0.001
+        Effect::ALL.into_iter().all(|effect| {
+            // The cutoffs are in hertz, thousands of them; the rest are
+            // within a few units of nothing.
+            let close = match effect {
+                Effect::Lowpass | Effect::Highpass => 1.0,
+                _ => 0.001,
+            };
+            (self.of(effect).value() - effect.neutral()).abs() < close
+        }) && self.eq_bands.iter().all(|b| b.value().abs() < 0.001)
     }
 }
 
@@ -438,6 +456,23 @@ mod tests {
             .windows(3)
             .map(|w| d2(w[0].0, w[1].0, w[2].0).max(d2(w[0].1, w[1].1, w[2].1)))
             .fold(0.0, f32::max)
+    }
+
+    #[test]
+    fn the_controls_start_where_the_app_says_each_effect_does_nothing() {
+        let params = AudioParams::new();
+        for effect in Effect::ALL {
+            assert_eq!(params.of(effect).value(), effect.neutral(), "{effect:?}");
+        }
+        assert!(params.is_all_default());
+        // And any one of them moved is noticed.
+        for effect in Effect::ALL {
+            let (min, max) = effect.range();
+            let moved = if effect.neutral() == max { min } else { max };
+            params.of(effect).set_value(moved);
+            assert!(!params.is_all_default(), "{effect:?} moved unnoticed");
+            params.of(effect).set_value(effect.neutral());
+        }
     }
 
     #[test]
