@@ -308,6 +308,78 @@ struct AudioEngine {
     live: bool,
     /// Where the audio taken from the playing file has got to.
     position: Option<Position>,
+    /// The track made ready behind the one playing, to follow it without
+    /// a gap.
+    next: Option<Preloaded>,
+}
+
+/// A track decoded, wrapped in the effects and queued behind the one
+/// playing. The player goes straight from the end of one source to the
+/// start of the next, on the audio thread, so nothing — the app's loop,
+/// opening the file, the decoder finding its feet — comes between them.
+struct Preloaded {
+    path: PathBuf,
+    /// Set by the source itself when the first of it is taken: it is the
+    /// track playing from then on.
+    entered: Arc<AtomicBool>,
+    /// Set to have the source end at once instead of playing, when what
+    /// should follow has changed.
+    cancelled: Arc<AtomicBool>,
+    position: Position,
+    spectrum: <HeapRb<f32> as Split>::Cons,
+    sample_rate: u32,
+}
+
+/// What [`AudioEngine::build`] makes of a file: the source to play, and the
+/// ends of it the worker keeps hold of.
+struct Built {
+    source: Box<dyn Source + Send>,
+    position: Position,
+    spectrum: <HeapRb<f32> as Split>::Cons,
+    sample_rate: u32,
+}
+
+/// A source that says when it has been entered, and can be told not to be.
+struct Gate<S> {
+    inner: S,
+    entered: Arc<AtomicBool>,
+    cancelled: Arc<AtomicBool>,
+    said: bool,
+}
+
+impl<S: Source<Item = f32>> Iterator for Gate<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        if !self.said {
+            // Decided once, as it is reached: taken back before then it is
+            // passed over without a sample of it heard; after, it plays.
+            if self.cancelled.load(Ordering::Relaxed) {
+                return None;
+            }
+            self.said = true;
+            self.entered.store(true, Ordering::Relaxed);
+        }
+        self.inner.next()
+    }
+}
+
+impl<S: Source<Item = f32>> Source for Gate<S> {
+    fn current_span_len(&self) -> Option<usize> {
+        self.inner.current_span_len()
+    }
+    fn channels(&self) -> rodio::ChannelCount {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> rodio::SampleRate {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        self.inner.try_seek(pos)
+    }
 }
 
 /// How far the clock may be from the audio before it is moved to it: more
@@ -331,6 +403,7 @@ impl AudioEngine {
             current: None,
             live: false,
             position: None,
+            next: None,
         }
     }
 
@@ -344,6 +417,7 @@ impl AudioEngine {
                 self.time_keeper.is_playing,
             )
         });
+        self.forget_next();
         self.sink.stop();
         self.sink = player;
         self.live = true;
@@ -371,6 +445,7 @@ impl AudioEngine {
         let is_setter = cmd.is_setter();
         match cmd {
             AudioCommand::Play { path } => self.do_play(path, worker),
+            AudioCommand::Preload { path } => self.do_preload(path),
             AudioCommand::Stop => self.do_stop(),
             AudioCommand::Pause => self.do_pause(worker),
             AudioCommand::Resume => self.do_resume(worker),
@@ -393,6 +468,7 @@ impl AudioEngine {
             // The device is the run loop's business, which takes these first.
             AudioCommand::SetOutputDevice(_) | AudioCommand::ListOutputDevices => {}
             AudioCommand::Shutdown => {
+                self.forget_next();
                 if !self.sink.empty() {
                     self.sink.stop();
                 }
@@ -413,6 +489,7 @@ impl AudioEngine {
     }
 
     fn do_play<W: IpcWorker<AudioCommand>>(&mut self, path: PathBuf, worker: &mut W) {
+        self.forget_next();
         if !self.sink.empty() {
             self.sink.stop();
         }
@@ -436,8 +513,9 @@ impl AudioEngine {
         }
     }
 
-    /// Decodes `path` and starts it playing through the effects.
-    fn start(&mut self, path: &std::path::Path) -> Result<(), String> {
+    /// Decodes `path` and wraps it in the effects, the volume and the tap
+    /// for the spectrum: everything but playing it.
+    fn build(&self, path: &std::path::Path) -> Result<Built, String> {
         let name = path
             .file_name()
             .unwrap_or(path.as_os_str())
@@ -445,8 +523,6 @@ impl AudioEngine {
         let decoder = File::open(path)
             .map_err(|e| format!("Cannot play {name}: {e}"))
             .and_then(|f| Decoder::try_from(f).map_err(|e| format!("Cannot play {name}: {e}")))?;
-        self.current = Some(path.to_path_buf());
-        self.time_keeper.start();
 
         let channels = decoder.channels().get();
         let sample_rate = decoder.sample_rate().get();
@@ -454,29 +530,117 @@ impl AudioEngine {
         // Counted straight from the decoder, before the effects and the
         // speed control: a frame there is a frame of the file.
         let (decoder, position) = Counted::new(decoder);
-        self.position = Some(position);
         let dsp_source = FundspSource::new(decoder, unit, self.bypass.clone());
 
         // A second of audio: room for the biggest lump the device pulls at
         // once plus the backlog the analyser keeps behind it.
         let ring = HeapRb::<f32>::new((sample_rate as usize).max(8192));
-        let (producer, consumer) = ring.split();
-        self.vis_manager.attach_source(consumer, sample_rate);
+        let (producer, spectrum) = ring.split();
 
         let source_with_sniffer = SpectrumSniffer::new(dsp_source, producer);
         let source_with_volume = VolumeRamp::new(source_with_sniffer, self.volume.clone());
+        Ok(Built {
+            source: Box::new(source_with_volume),
+            position,
+            spectrum,
+            sample_rate,
+        })
+    }
 
-        // Box here, on the worker thread, so that when rodio drops this
+    /// Decodes `path` and starts it playing through the effects.
+    fn start(&mut self, path: &std::path::Path) -> Result<(), String> {
+        let built = self.build(path)?;
+        self.current = Some(path.to_path_buf());
+        self.position = Some(built.position);
+        self.time_keeper.start();
+        self.vis_manager
+            .attach_source(built.spectrum, built.sample_rate);
+
+        // Boxed here, on the worker thread, so that when rodio drops this
         // source on the audio callback thread the handoff to the reaper
         // is a bare pointer move instead of ~1 MB of `free()` calls.
-        self.sink
-            .append(self.reaper.guard(Box::new(source_with_volume)));
+        self.sink.append(self.reaper.guard(built.source));
         self.sink.play();
         self.sink.set_speed(self.time_keeper.current_speed);
         Ok(())
     }
 
+    /// Takes back the track made ready, if there is one: it ends the moment
+    /// it is reached, unheard.
+    fn forget_next(&mut self) {
+        if let Some(next) = self.next.take() {
+            next.cancelled.store(true, Ordering::Relaxed);
+        }
+    }
+
+    /// Makes `path` ready behind the track playing, in place of whatever
+    /// was; `None` only takes that back.
+    fn do_preload(&mut self, path: Option<PathBuf>) {
+        if self.next.as_ref().map(|next| &next.path) == path.as_ref() {
+            return;
+        }
+        self.forget_next();
+        let Some(path) = path else {
+            return;
+        };
+        // Only behind a track that is playing through a device: otherwise
+        // there is nothing for it to follow.
+        if self.current.is_none() || !self.live || self.sink.empty() {
+            return;
+        }
+        match self.build(&path) {
+            Ok(built) => {
+                let entered = Arc::new(AtomicBool::new(false));
+                let cancelled = Arc::new(AtomicBool::new(false));
+                let gated = Gate {
+                    inner: built.source,
+                    entered: entered.clone(),
+                    cancelled: cancelled.clone(),
+                    said: false,
+                };
+                self.sink.append(self.reaper.guard(Box::new(gated)));
+                tracing::debug!("Made ready to follow: {path:?}");
+                self.next = Some(Preloaded {
+                    path,
+                    entered,
+                    cancelled,
+                    position: built.position,
+                    spectrum: built.spectrum,
+                    sample_rate: built.sample_rate,
+                });
+            }
+            // It is found out again, and said, when it comes to be played.
+            Err(e) => tracing::debug!("Not made ready: {e}"),
+        }
+    }
+
+    /// If the track made ready has been reached, it is the track playing:
+    /// the clock, the position and the spectrum are its own from here.
+    fn follow_on<W: IpcWorker<AudioCommand>>(&mut self, worker: &mut W) {
+        if !self
+            .next
+            .as_ref()
+            .is_some_and(|next| next.entered.load(Ordering::Relaxed))
+        {
+            return;
+        }
+        let Some(next) = self.next.take() else {
+            return;
+        };
+        self.current = Some(next.path.clone());
+        self.position = Some(next.position);
+        self.time_keeper.stop();
+        self.time_keeper.start();
+        self.vis_manager.detach_source();
+        self.vis_manager
+            .attach_source(next.spectrum, next.sample_rate);
+        worker.send(IpcEvent::PlaybackAdvanced {
+            path: next.path.to_string_lossy().to_string(),
+        });
+    }
+
     fn do_stop(&mut self) {
+        self.forget_next();
         self.current = None;
         self.position = None;
         self.sink.stop();
@@ -526,6 +690,10 @@ impl AudioEngine {
         if !self.time_keeper.is_playing {
             return;
         }
+
+        // Before the check for the end: with a track made ready, the end of
+        // one is the start of the next, and the player never runs empty.
+        self.follow_on(worker);
 
         if self.sink.empty() {
             self.do_stop();
@@ -581,8 +749,13 @@ mod tests {
 
     /// Ten seconds of quiet stereo at 44.1 kHz, as a WAV file.
     fn wav(dir: &std::path::Path) -> PathBuf {
-        let path = dir.join("quiet.wav");
-        let frames: u32 = 44_100 * 10;
+        wav_of(dir, "quiet.wav", 10_000)
+    }
+
+    /// `millis` of quiet stereo at 44.1 kHz, as a WAV file called `name`.
+    fn wav_of(dir: &std::path::Path, name: &str, millis: u32) -> PathBuf {
+        let path = dir.join(name);
+        let frames: u32 = 44_100 * millis / 1000;
         let data_len = frames * 4;
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"RIFF");
@@ -710,6 +883,158 @@ mod tests {
         assert!(matches!(commands[..], [AudioCommand::Pause]));
         assert!(started.elapsed() < Duration::from_secs(2));
         drop(sender.join());
+    }
+
+    /// Ticks the engine until `wanted` is among what it has sent, or two
+    /// seconds have passed; everything it sent meanwhile.
+    fn tick_until(
+        engine: &mut AudioEngine,
+        worker: &mut impl IpcWorker<AudioCommand>,
+        bus_rx: &mpsc::Receiver<IpcEvent>,
+        wanted: impl Fn(&IpcEvent) -> bool,
+    ) -> Vec<IpcEvent> {
+        let mut events = Vec::new();
+        let started = Instant::now();
+        while started.elapsed() < Duration::from_secs(2) {
+            engine.tick(worker);
+            events.extend(bus_rx.try_iter());
+            if events.iter().any(&wanted) {
+                break;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        events
+            .into_iter()
+            .filter(|e| !matches!(e, IpcEvent::PlaybackProgress { .. }))
+            .collect()
+    }
+
+    /// An engine on a running device, with what it sends.
+    fn playing_engine() -> (
+        AudioEngine,
+        impl IpcWorker<AudioCommand>,
+        mpsc::Receiver<IpcEvent>,
+        Arc<()>,
+    ) {
+        let (bus_tx, bus_rx) = mpsc::channel();
+        let (tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
+        std::mem::forget(tx);
+        let mut engine = engine();
+        let (player, device) = live_player();
+        engine.reconnect(player, &mut worker);
+        (engine, worker, bus_rx, device)
+    }
+
+    #[test]
+    fn a_track_made_ready_follows_with_no_end_in_between() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = wav_of(dir.path(), "first.wav", 200);
+        let second = wav_of(dir.path(), "second.wav", 300);
+        let (mut engine, mut worker, bus_rx, _device) = playing_engine();
+
+        engine.do_play(first, &mut worker);
+        engine.do_preload(Some(second.clone()));
+        let advanced = |e: &IpcEvent| matches!(e, IpcEvent::PlaybackAdvanced { .. });
+        let events = tick_until(&mut engine, &mut worker, &bus_rx, advanced);
+
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, IpcEvent::PlaybackFinished)),
+            "playback ended between the two: {events:?}"
+        );
+        assert!(
+            matches!(events.last(), Some(IpcEvent::PlaybackAdvanced { path }) if *path == second.to_string_lossy()),
+            "{events:?}"
+        );
+        assert_eq!(engine.current.as_deref(), Some(second.as_path()));
+        assert!(engine.time_keeper.is_playing && engine.next.is_none());
+        assert!(
+            engine.time_keeper.get_position() < Duration::from_millis(250),
+            "the clock was not started over for the new track"
+        );
+
+        // And the second ends as any track does.
+        let finished = |e: &IpcEvent| matches!(e, IpcEvent::PlaybackFinished);
+        let events = tick_until(&mut engine, &mut worker, &bus_rx, finished);
+        assert!(events.iter().any(finished), "{events:?}");
+    }
+
+    #[test]
+    fn a_track_made_ready_and_taken_back_is_never_heard() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = wav_of(dir.path(), "first.wav", 200);
+        let second = wav_of(dir.path(), "second.wav", 5_000);
+        let (mut engine, mut worker, bus_rx, _device) = playing_engine();
+
+        engine.do_play(first, &mut worker);
+        engine.do_preload(Some(second));
+        engine.do_preload(None);
+        let finished = |e: &IpcEvent| matches!(e, IpcEvent::PlaybackFinished);
+        let events = tick_until(&mut engine, &mut worker, &bus_rx, finished);
+
+        assert!(events.iter().any(finished), "it played on: {events:?}");
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, IpcEvent::PlaybackAdvanced { .. })),
+            "{events:?}"
+        );
+    }
+
+    #[test]
+    fn what_follows_can_be_changed_until_it_is_reached() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = wav_of(dir.path(), "first.wav", 200);
+        let second = wav_of(dir.path(), "second.wav", 5_000);
+        let third = wav_of(dir.path(), "third.wav", 5_000);
+        let (mut engine, mut worker, bus_rx, _device) = playing_engine();
+
+        engine.do_play(first, &mut worker);
+        engine.do_preload(Some(second));
+        engine.do_preload(Some(third.clone()));
+        let advanced = |e: &IpcEvent| matches!(e, IpcEvent::PlaybackAdvanced { .. });
+        let events = tick_until(&mut engine, &mut worker, &bus_rx, advanced);
+
+        assert!(
+            matches!(events.last(), Some(IpcEvent::PlaybackAdvanced { path }) if *path == third.to_string_lossy()),
+            "{events:?}"
+        );
+    }
+
+    #[test]
+    fn starting_another_track_drops_what_was_made_ready() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = wav_of(dir.path(), "first.wav", 5_000);
+        let second = wav_of(dir.path(), "second.wav", 5_000);
+        let third = wav_of(dir.path(), "third.wav", 200);
+        let (mut engine, mut worker, bus_rx, _device) = playing_engine();
+
+        engine.do_play(first, &mut worker);
+        engine.do_preload(Some(second));
+        engine.do_play(third, &mut worker);
+        assert!(engine.next.is_none());
+        // The third ends, and nothing left over from before plays after it.
+        let finished = |e: &IpcEvent| matches!(e, IpcEvent::PlaybackFinished);
+        let events = tick_until(&mut engine, &mut worker, &bus_rx, finished);
+        assert!(events.iter().any(finished), "{events:?}");
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, IpcEvent::PlaybackAdvanced { .. }))
+        );
+    }
+
+    #[test]
+    fn nothing_is_made_ready_with_nothing_playing_or_for_a_file_that_is_not_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mut engine, mut worker, _bus_rx, _device) = playing_engine();
+        engine.do_preload(Some(wav_of(dir.path(), "a.wav", 200)));
+        assert!(engine.next.is_none(), "with nothing playing");
+
+        engine.do_play(wav_of(dir.path(), "b.wav", 5_000), &mut worker);
+        engine.do_preload(Some(dir.path().join("missing.wav")));
+        assert!(engine.next.is_none(), "for a file that is not there");
     }
 
     #[test]

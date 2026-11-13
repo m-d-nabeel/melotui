@@ -37,6 +37,10 @@ pub struct SessionState {
 
     pub last_play_time: Option<std::time::Instant>,
 
+    /// What the audio thread has been told to make ready behind the track
+    /// playing, so that it is told again only when that changes.
+    pub preloaded: Option<std::path::PathBuf>,
+
     /// How many tracks in a row could not be played, since one last did.
     pub failed_in_a_row: u8,
 }
@@ -63,6 +67,7 @@ impl Default for SessionState {
             scan_quietly: false,
             last_play_time: None,
             failed_in_a_row: 0,
+            preloaded: None,
         }
     }
 }

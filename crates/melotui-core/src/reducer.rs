@@ -92,6 +92,9 @@ fn handle_playback_message(state: &mut AppState, msg: PlaybackMsg) -> Vec<AppMsg
         PlaybackMsg::AudioPaused => playback_action::handle_audio_paused(state),
         PlaybackMsg::AudioResumed => playback_action::handle_audio_resumed(state),
         PlaybackMsg::AudioFinished => playback_action::handle_audio_finished(state),
+        PlaybackMsg::AudioAdvanced { path } => playback_action::handle_audio_advanced(state, path),
+        // Sent on to the audio thread by the engine's bridge.
+        PlaybackMsg::DispatchPreload { .. } => vec![],
         PlaybackMsg::AudioError { path, error } => {
             playback_action::handle_audio_error(state, path, error)
         }

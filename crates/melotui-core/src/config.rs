@@ -142,6 +142,10 @@ pub struct AudioConfig {
     pub default_lowpass: f32,
     /// Default high-pass filter cutoff in Hz (20–5000)
     pub default_highpass: f32,
+    /// Play one track straight into the next, with no gap between them: the
+    /// next is made ready a few seconds before the one playing ends. Turn
+    /// off to have each track start only once the one before has ended.
+    pub gapless: bool,
     /// Output sample rate in Hz. `None` uses the device default.
     ///
     /// Set this to your sound server's native rate (PipeWire: check
@@ -210,6 +214,7 @@ impl Default for AudioConfig {
             default_pan: 0.0,
             default_lowpass: 20000.0,
             default_highpass: 20.0,
+            gapless: true,
             sample_rate: Some(48_000),
             buffer_size: Some(8192),
             output_device: None,

@@ -139,6 +139,13 @@ output_device = "USB Audio"   # the name, or part of it
 
 A chosen device that is not there is stood in for by the default until it comes back.
 
+One track plays straight into the next with no gap between them: the next is made ready a few seconds before the one playing ends. To have each start only once the one before has ended:
+
+```toml
+[audio]
+gapless = false
+```
+
 ### Lyrics
 
 A song's lyrics come from a `.lrc` file in melotui's `lyrics` folder (`melotui --paths` shows where), named `Artist - Title.lrc` or after the audio file, from a `.lrc` beside the song, or from the song's own tags. A song with none has them fetched from [LRCLIB](https://lrclib.net) as it starts, into that folder, never into the music folders; the lyrics panel opens when a song has lyrics, unless you have closed it. Fetching sends the song's title, artist, album and length to lrclib.net; turn it off in `config.toml`:

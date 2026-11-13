@@ -43,6 +43,11 @@ pub enum IpcEvent {
         epoch: u64,
     },
     PlaybackFinished,
+    /// The track playing ended and the one made ready behind it carried
+    /// straight on, with no gap: `path` is playing now.
+    PlaybackAdvanced {
+        path: String,
+    },
     /// The file asked for could not be opened or decoded, and nothing is
     /// playing.
     PlaybackFailed {
