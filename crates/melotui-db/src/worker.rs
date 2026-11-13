@@ -9,7 +9,7 @@ use melotui_core::{
     library::Library,
 };
 use rusqlite::params;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::info;
@@ -40,16 +40,50 @@ pub fn run(worker: impl IpcWorker<DatabaseCommand>, db_path: PathBuf) {
     };
     info!("Database worker initialized");
 
-    while let Some(cmd) = worker.recv() {
+    let mut waiting = Waiting::default();
+    // What a scan put aside comes first, in the order it was sent.
+    while let Some(cmd) = waiting.deferred.pop_front().or_else(|| worker.recv()) {
         match cmd {
             DatabaseCommand::Shutdown => {
                 info!("Database worker shutting down");
                 break;
             }
-            cmd => handle_command(&conn, &worker, cmd),
+            cmd => handle_command(&conn, &worker, cmd, &mut waiting),
+        }
+        if waiting.stop {
+            info!("Database worker shutting down, its scan cut short");
+            break;
         }
     }
 }
+
+/// What arrived while a scan was under way.
+///
+/// A scan of a large collection takes minutes, and the worker read no
+/// commands until it was over: quitting waited its three seconds and left
+/// the scan behind, to be rolled back — all of it — at the next start.
+/// The scan looks for commands as it goes. One to shut down stops it there,
+/// with what it has read kept; the others wait their turn here.
+#[derive(Default)]
+struct Waiting {
+    deferred: VecDeque<DatabaseCommand>,
+    stop: bool,
+}
+
+/// How a scan paces what it writes and shows.
+#[derive(Clone, Copy)]
+struct ScanPacing {
+    /// Tracks written before they are committed: what a scan that is cut
+    /// short, by quitting or by a crash, keeps.
+    commit_every: usize,
+    /// How often the library so far is sent to be shown.
+    show_every: std::time::Duration,
+}
+
+const SCAN_PACING: ScanPacing = ScanPacing {
+    commit_every: 200,
+    show_every: std::time::Duration::from_secs(2),
+};
 
 fn open(db_path: &Path) -> Result<rusqlite::Connection> {
     let conn = rusqlite::Connection::open(db_path)?;
@@ -70,6 +104,7 @@ fn handle_command(
     conn: &rusqlite::Connection,
     worker: &impl IpcWorker<DatabaseCommand>,
     cmd: DatabaseCommand,
+    waiting: &mut Waiting,
 ) {
     match cmd {
         DatabaseCommand::LoadLibrary { roots } => {
@@ -97,7 +132,13 @@ fn handle_command(
             let mut kept: Vec<PathBuf> = Vec::new();
             for root in &roots {
                 tracing::info!("Scanning {:?}...", root);
-                match handle_scan_library(conn, worker, root) {
+                let scanned = handle_scan_library(conn, worker, root, &roots, SCAN_PACING, waiting);
+                if waiting.stop {
+                    // Shutting down: what was read is kept, and nothing is
+                    // pruned on the word of a scan that did not finish.
+                    return;
+                }
+                match scanned {
                     Ok(outcome) => {
                         changed += outcome.processed;
                         unreadable += outcome.unreadable;
@@ -305,13 +346,26 @@ struct Scan<'a, W> {
     /// Folders walked already, by their real path: a symlink back up the
     /// tree would otherwise be walked for ever.
     visited: HashSet<PathBuf>,
+    /// Every root of the library, for showing it as it stands.
+    roots: &'a [PathBuf],
+    pacing: ScanPacing,
+    waiting: &'a mut Waiting,
+    /// Tracks written since the last commit.
+    uncommitted: usize,
+    /// When the library was last sent to be shown, and how many tracks had
+    /// been written by then.
+    shown_at: std::time::Instant,
+    shown: usize,
 }
 
-#[tracing::instrument(skip(conn, worker))]
+#[tracing::instrument(skip(conn, worker, roots, pacing, waiting))]
 fn handle_scan_library(
     conn: &rusqlite::Connection,
     worker: &impl IpcWorker<DatabaseCommand>,
     root: &Path,
+    roots: &[PathBuf],
+    pacing: ScanPacing,
+    waiting: &mut Waiting,
 ) -> Result<ScanOutcome> {
     info!("Scanning library at: {:?}", root);
     let scan_start = std::time::Instant::now();
@@ -337,7 +391,7 @@ fn handle_scan_library(
         }
     }
 
-    let tx = conn.unchecked_transaction()?;
+    conn.execute_batch("BEGIN")?;
     let mut scan = Scan {
         conn,
         worker,
@@ -345,10 +399,16 @@ fn handle_scan_library(
         outcome: ScanOutcome::default(),
         skipped: 0,
         visited: HashSet::new(),
+        roots,
+        pacing,
+        waiting,
+        uncommitted: 0,
+        shown_at: std::time::Instant::now(),
+        shown: 0,
     };
     scan.directory(root);
     let (outcome, skipped) = (scan.outcome, scan.skipped);
-    tx.commit()?;
+    conn.execute_batch("COMMIT")?;
 
     tracing::info!(
         "Scanned directory and processed {} tracks (skipped {}, {} unreadable folders) in {:?}",
@@ -431,6 +491,9 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
             }
         };
         for entry in entries {
+            if self.waiting.stop {
+                return;
+            }
             let path = match entry {
                 Ok(entry) => entry.path(),
                 Err(e) => {
@@ -446,8 +509,53 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
         }
     }
 
+    /// Takes the commands that have arrived since the last look. One to
+    /// shut down stops the scan. Another scan, a load or a prune waits for
+    /// this one to be over. The small ones — a favorite, a playlist, a play
+    /// counted — are done there and then: the library sent to be shown as
+    /// the scan goes would otherwise not have them, and a favorite just set
+    /// would go out again until the scan ended.
+    fn look_for_commands(&mut self) {
+        while let Some(cmd) = self.worker.try_recv() {
+            match cmd {
+                DatabaseCommand::Shutdown => self.waiting.stop = true,
+                cmd @ (DatabaseCommand::ScanLibrary { .. }
+                | DatabaseCommand::LoadLibrary { .. }
+                | DatabaseCommand::PruneLibrary) => self.waiting.deferred.push_back(cmd),
+                cmd => handle_command(self.conn, self.worker, cmd, self.waiting),
+            }
+        }
+    }
+
+    /// With a track written: commits once enough are, and sends the
+    /// library as it stands once long enough has passed.
+    fn written(&mut self) {
+        self.uncommitted += 1;
+        if self.uncommitted >= self.pacing.commit_every {
+            self.uncommitted = 0;
+            if let Err(e) = self.conn.execute_batch("COMMIT; BEGIN") {
+                tracing::error!("Could not commit the scan so far: {e}");
+            }
+        }
+        if self.shown_at.elapsed() >= self.pacing.show_every && self.outcome.processed > self.shown
+        {
+            self.shown_at = std::time::Instant::now();
+            self.shown = self.outcome.processed;
+            match load_library_snapshot(self.conn, self.roots.to_vec()) {
+                Ok(snapshot) => self.worker.send(IpcEvent::LibraryGrew {
+                    snapshot: Box::new(snapshot),
+                }),
+                Err(e) => tracing::warn!("Could not show the scan so far: {e}"),
+            }
+        }
+    }
+
     fn file(&mut self, path: &Path) {
         if !is_audio(path) {
+            return;
+        }
+        self.look_for_commands();
+        if self.waiting.stop {
             return;
         }
         let path_str = path.to_string_lossy().into_owned();
@@ -474,6 +582,7 @@ impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
             }
             self.outcome.processed += 1;
             self.progress();
+            self.written();
         }
     }
 
@@ -853,16 +962,37 @@ mod tests {
         std::fs::write(path, bytes).unwrap();
     }
 
-    /// Runs the worker on `commands`, returning what it sent.
+    /// Runs the worker on `commands`, returning what it sent. It is shut
+    /// down once every scan among them has finished — sent with them, the
+    /// shutdown would cut the scans short, as it is meant to.
     fn run_commands(db: &Path, commands: Vec<DatabaseCommand>) -> Vec<IpcEvent> {
         let (bus_tx, bus_rx) = mpsc::channel();
         let (tx, worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx);
+        let scans = commands
+            .iter()
+            .filter(|c| matches!(c, DatabaseCommand::ScanLibrary { .. }))
+            .count();
         for command in commands {
             tx.send(command).unwrap();
         }
+        let db = db.to_path_buf();
+        let running = std::thread::spawn(move || run(worker, db));
+
+        let mut events = Vec::new();
+        let mut finished = 0;
+        while finished < scans {
+            let event = bus_rx
+                .recv_timeout(std::time::Duration::from_secs(30))
+                .expect("a scan did not finish");
+            if matches!(event, IpcEvent::LibraryRescanned { .. }) {
+                finished += 1;
+            }
+            events.push(event);
+        }
         tx.send(DatabaseCommand::Shutdown).unwrap();
-        run(worker, db.to_path_buf());
-        bus_rx.try_iter().collect()
+        running.join().unwrap();
+        events.extend(bus_rx.try_iter());
+        events
     }
 
     fn rescanned(events: &[IpcEvent]) -> Option<bool> {
@@ -1185,6 +1315,146 @@ mod tests {
         assert!(stored());
         set_favorite(&conn, TrackId(1), false).unwrap();
         assert!(!stored());
+    }
+
+    /// A music folder of `count` songs, and where its library goes.
+    fn collection(count: usize) -> (tempfile::TempDir, PathBuf, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let music = dir.path().join("music");
+        std::fs::create_dir(&music).unwrap();
+        for n in 0..count {
+            wav(&music.join(format!("song {n:03}.wav")));
+        }
+        let db = dir.path().join("library.db");
+        (dir, music, db)
+    }
+
+    #[test]
+    fn a_scan_shows_the_library_as_it_grows() {
+        let (_dir, music, db) = collection(12);
+        let conn = open(&db).unwrap();
+        let (bus_tx, bus_rx) = mpsc::channel();
+        let (_tx, worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx);
+        // Shown at every track, to see it without a collection of thousands.
+        let pacing = ScanPacing {
+            commit_every: 5,
+            show_every: std::time::Duration::ZERO,
+        };
+        let roots = vec![music.clone()];
+
+        let outcome = handle_scan_library(
+            &conn,
+            &worker,
+            &music,
+            &roots,
+            pacing,
+            &mut Waiting::default(),
+        )
+        .unwrap();
+        assert_eq!(outcome.processed, 12);
+
+        let sizes: Vec<usize> = bus_rx
+            .try_iter()
+            .filter_map(|e| match e {
+                IpcEvent::LibraryGrew { snapshot } => Some(snapshot.tracks.len()),
+                _ => None,
+            })
+            .collect();
+        assert!(sizes.len() >= 3, "shown {} times", sizes.len());
+        assert!(sizes.windows(2).all(|w| w[0] < w[1]), "{sizes:?}");
+        assert!(sizes[0] < 12, "nothing shown until it was over: {sizes:?}");
+    }
+
+    #[test]
+    fn quitting_cuts_a_scan_short_and_keeps_what_it_had_read() {
+        let (_dir, music, db) = collection(40);
+        let conn = open(&db).unwrap();
+        let (bus_tx, bus_rx) = mpsc::channel();
+        let (tx, worker) = inprocess::join_worker::<DatabaseCommand>(bus_tx);
+        let pacing = ScanPacing {
+            commit_every: 5,
+            show_every: std::time::Duration::from_secs(3600),
+        };
+        let roots = vec![music.clone()];
+        let mut waiting = Waiting::default();
+
+        // A playlist made, a reload asked for and then `q`, all arriving
+        // while the scan runs: here, waiting for it before its first file.
+        tx.send(DatabaseCommand::CreatePlaylist {
+            name: "Made meanwhile".into(),
+        })
+        .unwrap();
+        tx.send(DatabaseCommand::LoadLibrary {
+            roots: roots.clone(),
+        })
+        .unwrap();
+        tx.send(DatabaseCommand::Shutdown).unwrap();
+        let outcome =
+            handle_scan_library(&conn, &worker, &music, &roots, pacing, &mut waiting).unwrap();
+
+        assert!(waiting.stop, "the scan ran on through a shutdown");
+        assert!(outcome.processed < 40, "it read everything first");
+        // The small thing was done there and then; the reload waits.
+        let events: Vec<IpcEvent> = bus_rx.try_iter().collect();
+        assert!(
+            matches!(&events[..], [IpcEvent::PlaylistCreated { name, .. }] if name == "Made meanwhile"),
+            "{events:?}"
+        );
+        assert!(matches!(
+            waiting.deferred.front(),
+            Some(DatabaseCommand::LoadLibrary { .. })
+        ));
+        drop(conn);
+
+        // Started again, the scan finishes the job.
+        run_commands(
+            &db,
+            vec![DatabaseCommand::ScanLibrary {
+                roots: roots.clone(),
+            }],
+        );
+        assert_eq!(titles(&db).len(), 40);
+    }
+
+    #[test]
+    fn a_scan_cut_short_part_way_keeps_the_tracks_it_committed() {
+        let (_dir, music, db) = collection(30);
+        let conn = open(&db).unwrap();
+        let pacing = ScanPacing {
+            commit_every: 5,
+            show_every: std::time::Duration::from_secs(3600),
+        };
+        let roots = vec![music.clone()];
+
+        /// A worker whose shutdown arrives after it has been asked for
+        /// commands a number of times: part way through a scan.
+        struct QuitsAfter(std::sync::atomic::AtomicUsize);
+        impl IpcWorker<DatabaseCommand> for QuitsAfter {
+            fn recv(&self) -> Option<DatabaseCommand> {
+                None
+            }
+            fn try_recv(&self) -> Option<DatabaseCommand> {
+                use std::sync::atomic::Ordering::SeqCst;
+                let left = self.0.load(SeqCst);
+                self.0.store(left.saturating_sub(1), SeqCst);
+                (left == 1).then_some(DatabaseCommand::Shutdown)
+            }
+            fn recv_timeout(&self, _: std::time::Duration) -> Option<DatabaseCommand> {
+                None
+            }
+            fn send(&self, _: IpcEvent) {}
+        }
+
+        let mut waiting = Waiting::default();
+        let worker = QuitsAfter(std::sync::atomic::AtomicUsize::new(18));
+        let outcome =
+            handle_scan_library(&conn, &worker, &music, &roots, pacing, &mut waiting).unwrap();
+        assert!(waiting.stop);
+        assert!(outcome.processed > 0 && outcome.processed < 30);
+        drop(conn);
+
+        let kept = titles(&db).len();
+        assert_eq!(kept, outcome.processed, "what it read was not all kept");
     }
 
     #[test]
