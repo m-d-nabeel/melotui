@@ -108,6 +108,7 @@ The keys follow what cmus, ncmpcpp and mpv agree on.
 | `i`, `l` | Track info, and lyrics |
 | `v`, `Shift+V` | Album art or visualizer, and the next visualizer style |
 | `F1`, `F2` | Layout, and the DSP studio, where every effect is adjusted |
+| `/`, `n`, `N` | Find a song, artist or album, and the next and previous match |
 | `:`, `?`, `q` | Commands, help, and quit |
 
 Volume, speed and effects changed out of sight of the mixer are shown in a notification. Press `:` for the command bar (e.g., `:dl lofi hip hop` or `:quit`): it lists every command as you type, and `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names. Keys can be changed in `keymaps.toml` (`melotui --paths` shows where).
@@ -126,7 +127,8 @@ Volume, speed and effects changed out of sight of the mixer are shown in a notif
 | `:lyrics zoom 3`, `:lyrics zoom panel 2` | Lyrics size |
 | `:focus lyrics`, `:vis nova`, `:toggle art` | Layout, visualizer and panels |
 | `:device`, `:device <name>`, `:device default` | Audio output device |
-| `:pl add <playlist>`, `:artist <query>` | Playlists and search |
+| `:pl add <playlist>` | Playlists |
+| `:find way back`, `:song fad`, `:artist lisa`, `:album`, `:genre`, `:year`, `:noh` | Search: everything, or one kind; part of a word is enough, and the words can come in any order |
 
 ### Audio output
 

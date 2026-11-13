@@ -154,6 +154,7 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
 fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
     match msg {
         UIMsg::EnterCommandMode => ui_action::handle_enter_command_mode(state),
+        UIMsg::EnterSearch => ui_action::handle_enter_search(state),
         UIMsg::ExitCommandMode => ui_action::handle_exit_command_mode(state),
         UIMsg::CommandInput(key) => ui_action::handle_command_input(state, key),
         UIMsg::SubmitCommand(input) => ui_action::handle_submit_command(state, input),

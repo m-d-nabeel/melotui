@@ -461,10 +461,6 @@ pub fn handle_search(state: &mut AppState, field: SearchField, query: String) ->
         let next = (search.index + 1) % search.matches.len().max(1);
         state.session.nav.library.search.index = next;
     } else {
-        if let SearchField::Song = field {
-            return vec![AppMsg::Database(DatabaseMsg::DispatchSearchTracks(query))];
-        }
-
         let matches = collect_matches(&state.library, &field, &query);
         state.session.nav.library.search = SearchState {
             field: Some(field.clone()),
@@ -563,7 +559,17 @@ fn collect_matches(
             .map(|k| SidebarNodeId::Artist(k.clone()))
             .collect(),
 
-        SearchField::Song => vec![], // Handled via FTS query in handle_search
+        SearchField::Song => matching_songs(snapshot, &q),
+
+        // Songs first, as what is most often looked for, then the artists
+        // and albums of that name.
+        SearchField::Any => {
+            let mut found = matching_songs(snapshot, &q);
+            for field in [SearchField::Artist, SearchField::Album] {
+                found.extend(collect_matches(snapshot, &field, query));
+            }
+            found
+        }
 
         SearchField::Album => snapshot
             .albums
@@ -589,6 +595,58 @@ fn collect_matches(
     }
 }
 
+/// The songs matching `query`, already lowercased: those with every word of
+/// it somewhere in their title, artist or album, so that "lisa gurenge" and
+/// "gurenge lisa" find the same song and half a word is enough. Those whose
+/// title begins with the query come first, then those with it in the title,
+/// then the rest, each in order of title.
+///
+/// Each as it appears in its folder, which every song has: under its artist
+/// a song with no artist tagged had nowhere to be shown.
+///
+/// This used to go to the database's full-text index, which matches whole
+/// words only — "fad" did not find "Faded" — and takes a quote or a hyphen
+/// in the query for its own syntax, finding nothing and saying nothing.
+fn matching_songs(snapshot: &crate::library::Library, query: &str) -> Vec<SidebarNodeId> {
+    let words: Vec<&str> = query.split_whitespace().collect();
+    if words.is_empty() {
+        return vec![];
+    }
+    let mut found: Vec<(u8, String, SidebarNodeId)> = snapshot
+        .tracks
+        .values()
+        .filter_map(|track| {
+            let title = track.title.to_lowercase();
+            let rest = format!(
+                "{} {}",
+                track.artist.as_deref().unwrap_or_default(),
+                track.album.as_deref().unwrap_or_default()
+            )
+            .to_lowercase();
+            if !words.iter().all(|w| title.contains(w) || rest.contains(w)) {
+                return None;
+            }
+            let rank = if title.starts_with(query) {
+                0
+            } else if title.contains(query) {
+                1
+            } else if words.iter().all(|w| title.contains(w)) {
+                2
+            } else {
+                3
+            };
+            let dir = track.file_path.parent()?;
+            let node = SidebarNodeId::Track {
+                id: track.id,
+                parent: Box::new(SidebarNodeId::Folder(dir.to_path_buf())),
+            };
+            Some((rank, title, node))
+        })
+        .collect();
+    found.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
+    found.into_iter().map(|(_, _, node)| node).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -611,6 +669,119 @@ mod tests {
         handle_update_scan_progress(&mut state, 50, 10, 0);
         let message = &state.session.notification.current.as_ref().unwrap().message;
         assert!(message.starts_with("Scanning Library..."), "{message}");
+    }
+
+    /// A library of these songs: (id, title, artist, album).
+    fn songs(list: &[(u64, &str, Option<&str>, Option<&str>)]) -> AppState {
+        let tracks = list
+            .iter()
+            .map(|&(id, title, artist, album)| {
+                let id = TrackId(id);
+                let track = TrackMeta {
+                    id,
+                    file_path: format!("/music/{}/{title}.mp3", artist.unwrap_or("Unknown")).into(),
+                    title: title.into(),
+                    artist: artist.map(Into::into),
+                    album: album.map(Into::into),
+                    genre: None,
+                    year: None,
+                    is_favorite: false,
+                    track_number: None,
+                    play_count: 0,
+                    last_played_at: None,
+                    duration_ms: 1000,
+                    bitrate: None,
+                    sample_rate: None,
+                    format: "mp3".into(),
+                    has_cover: false,
+                    file_size_bytes: 1,
+                };
+                (id, track)
+            })
+            .collect::<HashMap<_, _>>();
+        let library = Library::new(vec!["/music".into()], vec![], tracks);
+        AppState::new(library, &crate::config::AppConfig::default())
+    }
+
+    /// The ids of the songs a search finds, in order; `None` for a match
+    /// that is not a song.
+    fn found(state: &AppState) -> Vec<Option<u64>> {
+        state
+            .session
+            .nav
+            .library
+            .search
+            .matches
+            .iter()
+            .map(|node| match node {
+                SidebarNodeId::Track { id, .. } => Some(id.0),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_song_is_found_by_part_of_a_word_and_by_words_in_any_order() {
+        let mut state = songs(&[
+            (1, "Faded", Some("Alan Walker"), None),
+            (2, "Gurenge", Some("LiSA"), Some("LEO-NiNE")),
+            (3, "Way Back Home", Some("SHAUN"), None),
+            (4, "Untagged", None, None),
+        ]);
+
+        // Half a word: the full-text index wanted the whole of it.
+        assert!(handle_search(&mut state, SearchField::Song, "fad".into()).is_empty());
+        assert_eq!(found(&state), [Some(1)]);
+
+        // By artist and title together, either way round, whatever the case.
+        for query in ["lisa gurenge", "GURENGE lisa", "leo gur"] {
+            handle_search(&mut state, SearchField::Song, query.into());
+            assert_eq!(found(&state), [Some(2)], "{query}");
+        }
+
+        // Characters the index took for its own syntax find nothing, quietly.
+        for query in ["\"", "way-back", "a\" OR", "*"] {
+            handle_search(&mut state, SearchField::Song, query.into());
+            assert!(found(&state).is_empty(), "{query}");
+        }
+
+        // A song with no artist is found, and has somewhere to be shown.
+        handle_search(&mut state, SearchField::Song, "untag".into());
+        assert_eq!(found(&state), [Some(4)]);
+        assert!(matches!(
+            state.session.nav.library.selected_id,
+            Some(SidebarNodeId::Track { id: TrackId(4), ref parent }) if matches!(**parent, SidebarNodeId::Folder(_))
+        ));
+    }
+
+    #[test]
+    fn the_closest_titles_come_first_and_find_looks_everywhere() {
+        let mut state = songs(&[
+            (1, "Home", Some("Someone"), None),
+            (2, "Way Back Home", Some("SHAUN"), None),
+            (3, "Homecoming", Some("Kanye"), None),
+            (4, "Stronger", Some("Homer"), Some("Graduation")),
+        ]);
+        handle_search(&mut state, SearchField::Song, "home".into());
+        // Beginning with it, in order of title; then containing it; then
+        // only its artist does.
+        assert_eq!(found(&state), [Some(1), Some(3), Some(2), Some(4)]);
+
+        // Everything: the songs, then the artist of that name.
+        handle_search(&mut state, SearchField::Any, "homer".into());
+        assert_eq!(found(&state), [Some(4), None]);
+        assert!(matches!(
+            state.session.nav.library.search.matches[1],
+            SidebarNodeId::Artist(ref name) if name == "Homer"
+        ));
+
+        // The selection goes to the first, and the next match to the next.
+        handle_search(&mut state, SearchField::Song, "home".into());
+        handle_search_next(&mut state);
+        assert!(matches!(
+            state.session.nav.library.selected_id,
+            Some(SidebarNodeId::Track { id: TrackId(3), .. })
+        ));
     }
 
     fn test_state() -> AppState {

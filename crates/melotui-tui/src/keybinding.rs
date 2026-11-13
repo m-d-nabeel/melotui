@@ -144,6 +144,7 @@ pub enum KeyAction {
 
     // panel resize
     ShrinkSidebar,
+    Search,
     GrowSidebar,
 
     // DSP Studio
@@ -261,6 +262,7 @@ impl KeyAction {
             KeyAction::ConfirmNo => "Cancel",
             KeyAction::CycleFocusMode => "Focus Mode",
             KeyAction::ShrinkSidebar => "Sidebar-",
+            KeyAction::Search => "Search",
             KeyAction::GrowSidebar => "Sidebar+",
             KeyAction::ToggleDspStudio => "DSP Studio",
             KeyAction::DspSelectUp => "DSP Up",
@@ -415,6 +417,7 @@ impl KeyAction {
             KeyAction::ConfirmNo => Some(AppMsg::UI(UIMsg::ConfirmNo)),
             KeyAction::CycleFocusMode => Some(AppMsg::UI(UIMsg::CycleFocusMode)),
             KeyAction::ShrinkSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(-2))),
+            KeyAction::Search => Some(AppMsg::UI(UIMsg::EnterSearch)),
             KeyAction::GrowSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(2))),
             KeyAction::ToggleDspStudio => Some(AppMsg::UI(UIMsg::ToggleDspStudio)),
             KeyAction::DspSelectUp => Some(AppMsg::UI(UIMsg::DspSelectUp)),
@@ -757,6 +760,7 @@ impl Default for KeyRegistry {
                     .with_mod(KeyModifiers::CONTROL),
                 KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary),
                 KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode),
+                KeyBinding::new(KeyCode::Char('/'), KeyAction::Search),
                 KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp),
                 KeyBinding::new(KeyCode::Esc, KeyAction::CancelDownload),
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit),

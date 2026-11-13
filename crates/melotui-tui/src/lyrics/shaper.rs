@@ -24,6 +24,9 @@ struct Engine {
     glyphs: SwashCache,
 }
 
+/// What is called once the fonts are in.
+type Arrived = Box<dyn Fn() + Send>;
+
 /// Shapes and rasterises lines once the system's fonts are loaded.
 ///
 /// Loading them takes about a quarter of a second for a few hundred faces, so
@@ -32,6 +35,12 @@ struct Engine {
 pub struct Shaper {
     engine: Arc<OnceLock<Mutex<Engine>>>,
     loading: bool,
+    /// Whether the fonts will never come: the thread to load them could not
+    /// be started.
+    failed: bool,
+    /// Called once the fonts are in, for the screen to be drawn again with
+    /// them: nothing else would say they had arrived.
+    arrived: Arc<Mutex<Option<Arrived>>>,
 }
 
 impl Shaper {
@@ -39,7 +48,21 @@ impl Shaper {
         Self {
             engine: Arc::new(OnceLock::new()),
             loading: false,
+            failed: false,
+            arrived: Arc::new(Mutex::new(None)),
         }
+    }
+
+    /// Has `call` called, on the loading thread, once the fonts are in.
+    pub fn when_ready(&mut self, call: Arrived) {
+        if let Ok(mut arrived) = self.arrived.lock() {
+            *arrived = Some(call);
+        }
+    }
+
+    /// Whether the fonts are on their way and not yet in.
+    pub fn loading(&self) -> bool {
+        self.loading && !self.failed && self.engine.get().is_none()
     }
 
     /// Whether the fonts are in. The first call starts loading them.
@@ -50,16 +73,23 @@ impl Shaper {
         if !self.loading {
             self.loading = true;
             let engine = Arc::clone(&self.engine);
+            let arrived = Arc::clone(&self.arrived);
             // If the thread cannot be started the fonts never arrive, and the
             // lyrics simply stay text.
-            let _ = std::thread::Builder::new()
+            let started = std::thread::Builder::new()
                 .name("lyrics-fonts".into())
                 .spawn(move || {
                     let _ = engine.set(Mutex::new(Engine {
                         fonts: FontSystem::new(),
                         glyphs: SwashCache::new(),
                     }));
+                    if let Ok(arrived) = arrived.lock()
+                        && let Some(call) = arrived.as_ref()
+                    {
+                        call();
+                    }
                 });
+            self.failed = started.is_err();
         }
         false
     }

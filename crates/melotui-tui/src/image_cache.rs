@@ -187,6 +187,12 @@ fn passthrough_is_off(answer: Option<&str>) -> bool {
 }
 
 impl ImageCache {
+    /// Starts loading the fonts lyrics are drawn with, if this terminal
+    /// will have them drawn as images; `redraw` is called once they are in.
+    pub fn preload_lyrics_fonts(&mut self, redraw: Box<dyn Fn() + Send>) {
+        self.lyrics.preload(&self.picker, redraw);
+    }
+
     pub fn new(lyrics_shaping: bool) -> Self {
         let picker = if terminal_will_not_answer() {
             tracing::info!("In tmux without allow-passthrough: images as half blocks");
