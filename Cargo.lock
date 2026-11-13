@@ -2182,6 +2182,7 @@ dependencies = [
 name = "melotui-download"
 version = "0.6.1"
 dependencies = [
+ "libc",
  "lofty",
  "melotui-bus",
  "melotui-core",

@@ -199,11 +199,13 @@ fn download_task(
             .map_or(0, |d| d.as_nanos())
     )));
 
-    let cmd = Command::new("yt-dlp")
+    let mut command = Command::new("yt-dlp");
+    command
         .args(yt_dlp_args(&target, &dl_path, &reports.template()))
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn();
+        .stderr(Stdio::piped());
+    in_a_group_of_its_own(&mut command);
+    let cmd = command.spawn();
 
     let mut child = match cmd {
         Ok(c) => c,
@@ -278,8 +280,7 @@ fn download_task(
     loop {
         if cancel.load(Ordering::SeqCst) {
             tracing::info!("Killing yt-dlp process...");
-            let _ = child.kill();
-            let _ = child.wait();
+            kill_with_its_children(&mut child);
             let _ = tx.send(InternalEvent::Failed("Cancelled".into()));
             return;
         }
@@ -308,6 +309,43 @@ fn download_task(
             }
         }
     }
+}
+
+/// Has `command` start its process as the head of a process group of its
+/// own, so that it and whatever it starts can be stopped together.
+fn in_a_group_of_its_own(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+    #[cfg(not(unix))]
+    let _ = command;
+}
+
+/// Stops `child` and the processes it started.
+///
+/// yt-dlp runs ffmpeg to take the audio out and embed the cover, and killing
+/// yt-dlp alone left an ffmpeg that was part way through running on, writing
+/// to a file nobody wanted any more.
+fn kill_with_its_children(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    // SAFETY: `kill` only sends a signal. The group is the child's own —
+    // it was started with `process_group(0)`, so its group id is its pid —
+    // and the child has not been waited for, so the pid is still its own.
+    unsafe {
+        libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+    }
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &child.id().to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// The error in a line of yt-dlp's output, if it is one: what follows
@@ -737,6 +775,39 @@ mod download_tests {
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         super::download_task(target.into(), into.to_path_buf(), tx, cancel);
         rx.try_iter().collect()
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn stopping_a_download_stops_what_it_started_too() {
+        use std::io::{BufRead, BufReader};
+        use std::process::{Command, Stdio};
+
+        // A shell that starts a process of its own, as yt-dlp starts ffmpeg,
+        // and says which.
+        let mut command = Command::new("sh");
+        command
+            .args(["-c", "sleep 60 & echo $!; wait"])
+            .stdout(Stdio::piped());
+        super::in_a_group_of_its_own(&mut command);
+        let mut child = command.spawn().unwrap();
+        let mut line = String::new();
+        BufReader::new(child.stdout.take().unwrap())
+            .read_line(&mut line)
+            .unwrap();
+        let grandchild: i32 = line.trim().parse().unwrap();
+        // SAFETY: signal 0 sends nothing; it only asks whether the process
+        // is there.
+        let alive = || unsafe { libc::kill(grandchild, 0) == 0 };
+        assert!(alive());
+
+        super::kill_with_its_children(&mut child);
+
+        let gone = (0..200).any(|_| {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            !alive()
+        });
+        assert!(gone, "the process it started is still running");
     }
 
     #[test]
