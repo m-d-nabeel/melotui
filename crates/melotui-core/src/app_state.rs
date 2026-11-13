@@ -25,9 +25,12 @@ pub struct AppState {
     pub(crate) session: SessionState,
 
     // runtime buffers
-    pub time_elapsed: f32,
+    /// Seconds since the app started. An `f64`: an `f32` added to sixty
+    /// times a second is a frame out after a day and stands still after a
+    /// few, and a music player is left running for days.
+    pub time_elapsed: f64,
     pub swirl_phase: f32,
-    pub last_nav_time: f32,
+    pub last_nav_time: f64,
     pub spectrum_raw: Vec<f32>,
     pub spectrum_smooth: Vec<f32>,
     pub spectrum_peaks: Vec<f32>,
@@ -311,7 +314,7 @@ impl AppState {
         self.session.nav.active_panel == LeftPanelMode::Queue
     }
 
-    pub fn time_elapsed(&self) -> f32 {
+    pub fn time_elapsed(&self) -> f64 {
         self.time_elapsed
     }
 

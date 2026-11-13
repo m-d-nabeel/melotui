@@ -164,7 +164,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         // What has been typed, each key read as the state stands once the
         // keys before it have been acted on. A terminal that has gone away
         // quits, session saved.
-        let debounce = state.config.ui.search_debounce_ms;
+        let debounce = state.config.ui.queue_add_debounce_ms;
         let taken = take_input(
             |state, wait| tui.poll_event(state, wait),
             |messages, state| {
@@ -213,7 +213,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         let dt = now.duration_since(last_tick).as_secs_f32();
         last_tick = now;
 
-        state.time_elapsed += dt;
+        state.time_elapsed += f64::from(dt);
         if tick_state(&mut state) {
             should_render = true;
         }
@@ -605,6 +605,18 @@ mod tests {
         // The three seeks go with the key that ended their run, to be merged
         // ahead of it; the last seek after.
         assert_eq!(batches, [4, 1]);
+    }
+
+    #[test]
+    fn the_clock_still_moves_after_days_of_running() {
+        // Four and a half days in, a frame's sixtieth of a second: as an
+        // f32 the clock had stopped by now, and animations with it.
+        let mut state = state();
+        state.time_elapsed = 400_000.0;
+        let before = state.time_elapsed();
+        state.time_elapsed += f64::from(1.0_f32 / 60.0);
+        let moved = state.time_elapsed() - before;
+        assert!((moved - 1.0 / 60.0).abs() < 1e-6, "moved {moved}");
     }
 
     #[test]

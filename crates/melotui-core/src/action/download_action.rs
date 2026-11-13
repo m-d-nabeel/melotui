@@ -12,8 +12,8 @@ pub fn handle_request_download(state: &mut AppState, query: String) -> Vec<AppMs
 }
 
 fn enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
-    let root = match state.library.roots.first() {
-        Some(r) => r,
+    let download_dir = match state.config.download_dir(&state.library.roots) {
+        Some(dir) => dir,
         None => {
             state.session.notification.current = Some(
                 Notification::new(
@@ -25,8 +25,6 @@ fn enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
             return vec![];
         }
     };
-    let download_dir = root.join("Downloads");
-
     if !download_dir.exists()
         && let Err(e) = fs::create_dir_all(&download_dir)
     {

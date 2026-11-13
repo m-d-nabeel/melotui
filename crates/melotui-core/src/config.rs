@@ -47,8 +47,12 @@ pub struct UiConfig {
     pub notification_duration_secs: u64,
     /// Maximum cover art height percentage in sidebar (e.g. 40 means 40%)
     pub art_max_height_percent: u16,
-    /// Debounce time in ms before search triggers
-    pub search_debounce_ms: u64,
+    /// How soon the same track can be added to the queue again, in
+    /// milliseconds: a key held a moment too long adds it once. It was
+    /// called `search_debounce_ms`, which it never was; that name still
+    /// works.
+    #[serde(alias = "search_debounce_ms")]
+    pub queue_add_debounce_ms: u64,
     /// Target frames per second for rendering
     pub fps_limit: u64,
     /// Max visible items in playlist picker
@@ -101,6 +105,10 @@ impl Default for LyricsConfig {
 pub struct LibraryConfig {
     /// Directories to scan for music. If empty, falls back to `dirs::audio_dir()`.
     pub music_directories: Vec<String>,
+    /// Where `:dl` puts what it downloads. Unset, a `Downloads` folder in
+    /// the first music directory. It has to be inside one of the music
+    /// directories for what is downloaded to be found by the scan.
+    pub download_directory: Option<String>,
     /// Custom database path. If None, falls back to `dirs::data_dir()/melotui/library.db`.
     pub db_path: Option<String>,
     /// Max resolution for cover art downscaling
@@ -175,7 +183,7 @@ impl Default for UiConfig {
             theme: "default".into(),
             notification_duration_secs: 2,
             art_max_height_percent: 40,
-            search_debounce_ms: 500,
+            queue_add_debounce_ms: 500,
             fps_limit: 60,
             playlist_picker_max_visible: 10,
             restore_session: true,
@@ -190,6 +198,7 @@ impl Default for LibraryConfig {
     fn default() -> Self {
         Self {
             music_directories: Vec::new(),
+            download_directory: None,
             db_path: None,
             max_cover_resolution: 512,
             picker_viewport_size: 20,
@@ -350,6 +359,18 @@ impl AppConfig {
         // spectrum at all, with nothing to say why.
         self.audio.fft_size = self.audio.fft_size.clamp(512, 16_384).next_power_of_two();
         self.lyrics.offset_ms = self.lyrics.offset_ms.clamp(-10_000, 10_000);
+        // Downloaded anywhere else, a song is never scanned, and never
+        // appears: said at start rather than wondered at later.
+        if let Some(dir) = &self.library.download_directory {
+            let dir = expand_tilde(dir);
+            let roots = self.resolve_music_dirs();
+            if !roots.iter().any(|root| dir.starts_with(root)) {
+                self.startup_errors.push(format!(
+                    "download_directory {} is not inside a music directory: downloads will not appear in the library",
+                    dir.display()
+                ));
+            }
+        }
         self.audio.default_speed = self.audio.default_speed.clamp(0.5, 2.0);
         self.audio.default_bass = self.audio.default_bass.clamp(0.1, 5.0);
         self.audio.default_treble = self.audio.default_treble.clamp(0.1, 5.0);
@@ -380,6 +401,15 @@ impl AppConfig {
                 .iter()
                 .map(|s| expand_tilde(s))
                 .collect()
+        }
+    }
+
+    /// Where downloads go, given the library's music folders: the folder
+    /// configured, or `Downloads` in the first of them. `None` with neither.
+    pub fn download_dir(&self, roots: &[PathBuf]) -> Option<PathBuf> {
+        match &self.library.download_directory {
+            Some(dir) => Some(expand_tilde(dir)),
+            None => roots.first().map(|root| root.join("Downloads")),
         }
     }
 
@@ -526,6 +556,53 @@ mod tests {
         );
         assert!(fine.startup_errors.is_empty(), "{:?}", fine.startup_errors);
         assert_eq!(fine.ui.fps_limit, 30);
+    }
+
+    #[test]
+    fn downloads_go_where_they_are_told_or_into_the_first_music_folder() {
+        let roots = vec![PathBuf::from("/music"), PathBuf::from("/more")];
+        let mut config = AppConfig::default();
+        assert_eq!(config.download_dir(&roots), Some("/music/Downloads".into()));
+        assert_eq!(config.download_dir(&[]), None);
+
+        config.library.music_directories = vec!["/music".into()];
+        config.library.download_directory = Some("/music/From YouTube".into());
+        let config = config.validated();
+        assert_eq!(
+            config.download_dir(&roots),
+            Some("/music/From YouTube".into())
+        );
+        assert!(
+            config.startup_errors.is_empty(),
+            "{:?}",
+            config.startup_errors
+        );
+
+        // Somewhere the scan never looks: said.
+        let mut elsewhere = AppConfig::default();
+        elsewhere.library.music_directories = vec!["/music".into()];
+        elsewhere.library.download_directory = Some("/tmp/dl".into());
+        let said = elsewhere.validated().startup_errors.join("; ");
+        assert!(said.contains("not inside a music directory"), "{said}");
+    }
+
+    #[test]
+    fn the_old_name_of_the_queue_debounce_still_sets_it() {
+        let config = AppConfig::parse(
+            std::path::Path::new("config.toml"),
+            "[ui]\nsearch_debounce_ms = 123\n",
+        );
+        assert_eq!(config.ui.queue_add_debounce_ms, 123);
+        assert!(
+            config.startup_errors.is_empty(),
+            "{:?}",
+            config.startup_errors
+        );
+        let config = AppConfig::parse(
+            std::path::Path::new("config.toml"),
+            "[ui]\nqueue_add_debounce_ms = 77\n",
+        );
+        assert_eq!(config.ui.queue_add_debounce_ms, 77);
     }
 
     #[test]

@@ -44,7 +44,7 @@ sudo dnf install alsa-lib-devel dbus-devel pkgconf-pkg-config
 
 ### 2. Install yt-dlp (Optional but Recommended)
 
-To use the in-app YouTube download feature (`:dl <query>`), you must have `yt-dlp` installed and available in your system's PATH.
+To use the in-app YouTube download feature (`:dl <query>`), you must have `yt-dlp` installed and available in your system's PATH. Downloads go into a `Downloads` folder in your first music directory, or wherever `[library] download_directory` in `config.toml` says, which has to be inside one of your music directories.
 
 - [yt-dlp installation guide](https://github.com/yt-dlp/yt-dlp/wiki/Installation)
 
