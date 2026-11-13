@@ -57,7 +57,43 @@ impl LyricsData {
 /// others losing their timing and showing as text, timestamps and all. An
 /// `[offset:]` is applied as players apply it: a positive one, in
 /// milliseconds, brings every line that much sooner.
+/// `text` without the times of single words that some lyrics carry inside
+/// their lines — `[00:18.89] <00:18.89>We're <00:19.25>no <00:19.53>strangers`
+/// — which are for karaoke players, and were otherwise shown as they stand,
+/// between every two words.
+fn without_word_times(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('<') {
+        return text.into();
+    }
+    // Whether `tag`, the inside of `<…>`, is a time: digits, a colon,
+    // digits, and perhaps a point and more digits.
+    fn is_time(tag: &str) -> bool {
+        let Some((minutes, seconds)) = tag.split_once(':') else {
+            return false;
+        };
+        let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+        let (whole, fraction) = seconds.split_once('.').unwrap_or((seconds, "0"));
+        digits(minutes) && digits(whole) && digits(fraction)
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(open) = rest.find('<') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        match after.find('>') {
+            Some(close) if is_time(&after[..close]) => rest = &after[close + 1..],
+            _ => {
+                out.push('<');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out.into()
+}
+
 fn parse_lrc(text: &str) -> Option<Lyrics> {
+    let text = &*without_word_times(text);
     let lyrics = text.parse::<Lyrics>().ok().or_else(|| {
         let taken: Vec<&str> = text
             .lines()
@@ -294,6 +330,28 @@ mod tests {
         tag.insert_text(ItemKey::UnsyncLyrics, lyrics.to_string());
         file.insert_tag(tag);
         file.save_to_path(path, WriteOptions::default()).unwrap();
+    }
+
+    #[test]
+    fn the_times_of_single_words_are_not_shown_among_them() {
+        // As LRCLIB has "Never Gonna Give You Up".
+        let text = "[00:18.89] <00:18.89>We're <00:19.25>no <00:19.53>strangers <00:20.07>to <00:20.33>love\n\
+                    [00:22.82] <00:22.82>You <00:23.23>know <00:23.48>the <00:23.76>rules";
+        let LyricsData::Synced(lyrics) = LyricsData::from_text(text.into()) else {
+            panic!("not read as synced");
+        };
+        let lines: Vec<String> = lyrics
+            .get_timed_lines()
+            .iter()
+            .map(|(_, line)| line.trim().to_string())
+            .collect();
+        assert_eq!(lines, ["We're no strangers to love", "You know the rules"]);
+
+        // What only looks like one stays: a heart, a tag, an unclosed bracket.
+        for kept in ["I <3 you", "<i>softly</i>", "a < b", "<12:xx>", "<:30>"] {
+            assert_eq!(without_word_times(kept), kept);
+        }
+        assert_eq!(without_word_times("<1:02>one <01:03.5>two"), "one two");
     }
 
     #[test]
