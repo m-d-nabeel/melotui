@@ -295,6 +295,7 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         DownloadMsg::DispatchDownload {
             query,
             download_path,
+            ..
         } => download_action::handle_dispatch_download(state, query, download_path),
         DownloadMsg::DownloadProgress { percent } => {
             download_action::handle_download_progress(state, percent)

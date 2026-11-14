@@ -40,9 +40,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             DownloadMsg::DispatchDownload {
                 query,
                 download_path,
+                cookies_from_browser,
             } => Some(IpcCommand::Download(DownloadCommand::Request {
                 query: query.clone(),
                 download_path: download_path.clone(),
+                cookies_from_browser: cookies_from_browser.clone(),
             })),
             DownloadMsg::RequestCancelDownload => {
                 Some(IpcCommand::Download(DownloadCommand::Cancel))

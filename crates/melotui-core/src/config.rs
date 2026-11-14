@@ -109,6 +109,13 @@ pub struct LibraryConfig {
     /// the first music directory. It has to be inside one of the music
     /// directories for what is downloaded to be found by the scan.
     pub download_directory: Option<String>,
+    /// A browser yt-dlp is to take its YouTube cookies from for `:dl` —
+    /// `"firefox"`, `"chrome"`, `"brave"`, or anything else its
+    /// `--cookies-from-browser` takes, a profile included
+    /// (`"firefox:work"`). Signed in to a Premium account there, downloads
+    /// come at YouTube Music's 256 kbps where anyone else is sent 128.
+    /// Unset, yt-dlp is given no cookies, and nothing of the account.
+    pub download_cookies_from_browser: Option<String>,
     /// Custom database path. If None, falls back to `dirs::data_dir()/melotui/library.db`.
     pub db_path: Option<String>,
     /// Max resolution for cover art downscaling
@@ -199,6 +206,7 @@ impl Default for LibraryConfig {
         Self {
             music_directories: Vec::new(),
             download_directory: None,
+            download_cookies_from_browser: None,
             db_path: None,
             max_cover_resolution: 512,
             picker_viewport_size: 20,

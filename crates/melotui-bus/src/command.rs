@@ -43,6 +43,8 @@ pub enum DownloadCommand {
     Request {
         query: String,
         download_path: PathBuf,
+        /// The browser whose cookies yt-dlp is to use; `None` for none.
+        cookies_from_browser: Option<String>,
     },
     FetchLyrics {
         track_name: String,
