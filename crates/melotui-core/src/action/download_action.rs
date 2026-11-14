@@ -64,6 +64,7 @@ pub fn handle_begin_next_download(state: &mut AppState) -> Vec<AppMsg> {
     vec![AppMsg::Download(DownloadMsg::DispatchDownload {
         query: job.query,
         download_path: job.download_path,
+        cookies_from_browser: state.config.library.download_cookies_from_browser.clone(),
     })]
 }
 

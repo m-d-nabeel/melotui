@@ -1089,6 +1089,16 @@ mod tests {
     }
 
     #[test]
+    fn what_a_download_arrives_as_can_be_decoded() {
+        // Downloads are asked for as AAC in an .m4a because this decodes
+        // it. They were once left as Opus, on the word of the tag library,
+        // which reads Opus; the decoder does not, and nothing checked it.
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tone.m4a");
+        let decoder = Decoder::try_from(File::open(path).unwrap()).expect("AAC is not decoded");
+        assert!(decoder.count() > 10_000, "next to nothing came out of it");
+    }
+
+    #[test]
     fn a_file_that_cannot_be_played_is_named_in_the_error() {
         let (bus_tx, bus_rx) = mpsc::channel();
         let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);

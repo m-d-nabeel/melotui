@@ -56,6 +56,7 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                 DownloadCommand::Request {
                     query,
                     download_path,
+                    cookies_from_browser,
                 } => {
                     if cancel_flag.is_some() {
                         tracing::warn!("Download already running, ignoring");
@@ -70,7 +71,7 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                     let tx = internal_tx.clone();
 
                     download = Some(thread::spawn(move || {
-                        download_task(query, download_path, tx, flag);
+                        download_task(query, download_path, cookies_from_browser, tx, flag);
                     }));
                 }
 
@@ -177,6 +178,7 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
 fn download_task(
     query: String,
     dl_path: PathBuf,
+    cookies_from_browser: Option<String>,
     tx: mpsc::Sender<InternalEvent>,
     cancel: Arc<AtomicBool>,
 ) {
@@ -198,7 +200,12 @@ fn download_task(
 
     let mut command = Command::new("yt-dlp");
     command
-        .args(yt_dlp_args(&target, &dl_path, &reports.template()))
+        .args(yt_dlp_args(
+            &target,
+            &dl_path,
+            &reports.template(),
+            cookies_from_browser.as_deref(),
+        ))
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     in_a_group_of_its_own(&mut command);
@@ -369,18 +376,26 @@ fn why_it_failed(said: Option<&str>, status: &str) -> String {
 }
 
 /// What yt-dlp is run with to download `target` into `dl_path`, reporting
-/// each item to `report_template`.
-fn yt_dlp_args(target: &str, dl_path: &std::path::Path, report_template: &str) -> Vec<String> {
+/// each item to `report_template`, with the cookies of `cookies_from_browser`
+/// if a browser is named.
+fn yt_dlp_args(
+    target: &str,
+    dl_path: &std::path::Path,
+    report_template: &str,
+    cookies_from_browser: Option<&str>,
+) -> Vec<String> {
     let mut args: Vec<String> = [
-        // The best audio there is, kept in FLAC. That is a larger file than
-        // the Opus YouTube sends, and no better a sound; but Opus is what
-        // the best audio nearly always is, and the player has no decoder
-        // for it: left as it came, a download could not be played.
+        // The best AAC there is, kept exactly as it is sent: no larger
+        // than it came, and nothing lost to a second encoding. YouTube
+        // sends Opus too, and counts it the better of the two, but the
+        // player has no decoder for Opus. Only where there is no AAC at
+        // all is the audio put into FLAC, which keeps what it is given at
+        // several times the size.
         "-x",
         "-f",
-        "bestaudio/best",
+        "bestaudio[ext=m4a]/bestaudio/best",
         "--audio-format",
-        "flac",
+        "m4a>m4a/flac",
         // A link to one video of a playlist is a request for that video;
         // without this it brought the whole playlist down with it.
         "--no-playlist",
@@ -390,6 +405,9 @@ fn yt_dlp_args(target: &str, dl_path: &std::path::Path, report_template: &str) -
     ]
     .map(String::from)
     .to_vec();
+    if let Some(browser) = cookies_from_browser {
+        args.extend(["--cookies-from-browser".into(), browser.into()]);
+    }
     args.extend([
         "--output".into(),
         format!("{}/%(title)s.%(ext)s", dl_path.display()),
@@ -798,14 +816,14 @@ mod download_tests {
     use std::path::Path;
 
     fn args(target: &str) -> Vec<String> {
-        yt_dlp_args(target, Path::new("/music"), "/tmp/report.jsonl")
+        yt_dlp_args(target, Path::new("/music"), "/tmp/report.jsonl", None)
     }
 
     /// Runs a download to its end, returning what it reported.
     fn download(target: &str, into: &Path) -> Vec<super::InternalEvent> {
         let (tx, rx) = std::sync::mpsc::channel();
         let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        super::download_task(target.into(), into.to_path_buf(), tx, cancel);
+        super::download_task(target.into(), into.to_path_buf(), None, tx, cancel);
         rx.try_iter().collect()
     }
 
@@ -874,7 +892,7 @@ mod download_tests {
             .to_string_lossy()
             .to_lowercase();
         assert_eq!(
-            ext, "flac",
+            ext, "m4a",
             "not what the player is known to play: {files:?}"
         );
         let file = lofty::read_from_path(&files[0]).expect("unreadable by the tag library");
@@ -934,16 +952,30 @@ mod download_tests {
 
     #[test]
     fn a_download_arrives_in_a_format_the_player_decodes() {
-        // Left as YouTube sends it, it is Opus, which the player cannot
+        // Left as YouTube counts best, it is Opus, which the player cannot
         // decode: the song arrived, was listed, and would not play.
         let args = args("ytsearch1:a song");
-        assert!(args.iter().any(|a| a == "-x"));
-        let format = args.iter().position(|a| a == "--audio-format");
-        assert_eq!(
-            format.map(|at| args[at + 1].as_str()),
-            Some("flac"),
-            "{args:?}"
+        let after = |option: &str| {
+            let at = args.iter().position(|a| a == option).expect(option);
+            args[at + 1].as_str()
+        };
+        // AAC first, as it is; anything else into FLAC.
+        assert!(after("-f").starts_with("bestaudio[ext=m4a]/"), "{args:?}");
+        assert_eq!(after("--audio-format"), "m4a>m4a/flac");
+    }
+
+    #[test]
+    fn a_browsers_cookies_are_used_only_when_one_is_named() {
+        assert!(
+            !args("ytsearch1:a song")
+                .iter()
+                .any(|a| a.contains("cookies"))
         );
+        let with = yt_dlp_args("ytsearch1:a song", Path::new("/music"), "/r", Some("brave"));
+        let at = with.iter().position(|a| a == "--cookies-from-browser");
+        assert_eq!(at.map(|at| with[at + 1].as_str()), Some("brave"));
+        // And what is downloaded is still last, after `--`.
+        assert_eq!(with[with.len() - 2], "--");
     }
 
     #[test]

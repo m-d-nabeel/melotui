@@ -9,6 +9,8 @@ pub enum DownloadMsg {
     DispatchDownload {
         query: String,
         download_path: PathBuf,
+        /// The browser whose cookies yt-dlp is to use, if one is configured.
+        cookies_from_browser: Option<String>,
     },
     RequestFetchLyrics {
         track_name: String,
