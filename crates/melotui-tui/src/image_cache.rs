@@ -158,35 +158,6 @@ pub struct ImageCache {
     overlay: Option<(bool, UIMode, bool)>,
 }
 
-/// Whether asking the terminal what images it can show would go unanswered.
-///
-/// Inside tmux the question is wrapped for tmux to pass through to the
-/// terminal outside, and tmux, unless told to `allow-passthrough`, drops
-/// it. No answer comes, the two seconds allowed for one run out at every
-/// start — and the thread left reading for it takes the first key pressed
-/// afterwards, which then did nothing.
-fn terminal_will_not_answer() -> bool {
-    let in_tmux = std::env::var_os("TMUX").is_some_and(|v| !v.is_empty());
-    if !in_tmux {
-        return false;
-    }
-    let allowed = std::process::Command::new("tmux")
-        .args(["show-options", "-pAv", "allow-passthrough"])
-        .stderr(std::process::Stdio::null())
-        .output()
-        .ok()
-        .filter(|out| out.status.success())
-        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned());
-    passthrough_is_off(allowed.as_deref())
-}
-
-/// Whether tmux's answer about `allow-passthrough` says it is off. A tmux
-/// that does not know the option — before 3.3, which always passed
-/// through — or that could not be asked, is taken to allow it.
-fn passthrough_is_off(answer: Option<&str>) -> bool {
-    answer.is_some_and(|answer| answer.trim() == "off")
-}
-
 impl ImageCache {
     /// Starts loading the fonts lyrics are drawn with, if this terminal
     /// will have them drawn as images; `redraw` is called once they are in.
@@ -195,12 +166,15 @@ impl ImageCache {
     }
 
     pub fn new(lyrics_shaping: bool) -> Self {
-        let picker = if terminal_will_not_answer() {
-            tracing::info!("In tmux without allow-passthrough: images as half blocks");
-            Picker::halfblocks()
-        } else {
-            Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks())
-        };
+        // Inside tmux the image library turns the pane's passthrough on
+        // first, so the question reaches the terminal outside; don't skip it.
+        let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
+        tracing::info!(
+            "Images: {:?}, cells {}x{} px",
+            picker.protocol_type(),
+            picker.font_size().width,
+            picker.font_size().height
+        );
 
         let mut lyrics = LyricsRenderer::new(lyrics_shaping);
         // Sixel has no transparency, so lyrics drawn through it are blended
@@ -325,16 +299,6 @@ impl ImageCache {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn only_a_tmux_that_says_passthrough_is_off_is_not_asked() {
-        assert!(super::passthrough_is_off(Some("off\n")));
-        assert!(!super::passthrough_is_off(Some("on\n")));
-        assert!(!super::passthrough_is_off(Some("all\n")));
-        // An old tmux, or one that could not be asked.
-        assert!(!super::passthrough_is_off(Some("")));
-        assert!(!super::passthrough_is_off(None));
-    }
-
     use super::*;
     use melotui_core::library::Library;
     use std::path::PathBuf;
