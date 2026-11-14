@@ -2,7 +2,9 @@
 //! then the rest of YouTube, filling in as the results come. It is drawn
 //! where lyrics are, as the list a search for lyrics finds is.
 
+use crate::keybinding::{KeyAction, KeyContext, KeyRegistry};
 use crate::lyrics::bidi;
+use crate::widgets::help_view::key_for;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
@@ -21,6 +23,30 @@ pub fn title(search: &DownloadSearch) -> String {
     } else {
         format!(" Download: {query} ")
     }
+}
+
+/// The keys that pick from the list, as they are bound, for the panel's
+/// border.
+pub fn keys(registry: &KeyRegistry, t: &crate::theme::Theme) -> Vec<Span<'static>> {
+    let key = |action| {
+        key_for(registry, KeyContext::DownloadPicker, action).unwrap_or_else(|| "—".to_string())
+    };
+    let hint = |action, does: &'static str| {
+        [
+            Span::styled(
+                format!(" {}", key(action)),
+                Style::default().fg(t.accent_info),
+            ),
+            Span::styled(format!(" {does} "), Style::default().fg(t.fg_muted)),
+        ]
+    };
+    [
+        hint(KeyAction::DownloadPickerSubmit, "download"),
+        hint(KeyAction::DownloadPickerCancel, "close"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 /// How a result says where it is from.

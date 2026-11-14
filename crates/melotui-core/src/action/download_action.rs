@@ -6,7 +6,7 @@ use crate::{
     state::ui::FocusMode,
     state::{
         DownloadCandidate, DownloadJob, DownloadSearch, DownloadSource, DownloadStatus,
-        Notification, NotificationKind,
+        Notification, NotificationKind, PutAside,
     },
 };
 
@@ -33,19 +33,18 @@ pub fn handle_request_search_downloads(state: &mut AppState, query: String) -> V
     }
 
     // The list is shown where lyrics are, as a search for lyrics is; a
-    // search already open gives way to this one, and what it put aside is
-    // kept.
-    let panel_before = match close_search(state) {
-        Some(before) => before,
-        None => {
-            let (ui, lyrics) = (&state.session.ui, &state.session.lyrics);
-            (
-                ui.show_lyrics,
-                lyrics.panel_closed,
-                lyrics.panel_opened_for_lyrics,
-            )
+    // search already open gives way to this one, and what that one put
+    // aside is kept.
+    let before = close_search(state).unwrap_or_else(|| {
+        let (ui, lyrics) = (&state.session.ui, &state.session.lyrics);
+        PutAside {
+            show_lyrics: ui.show_lyrics,
+            panel_closed: lyrics.panel_closed,
+            panel_opened_for_lyrics: lyrics.panel_opened_for_lyrics,
+            show_dsp_studio: ui.show_dsp_studio,
+            focus_mode: ui.focus_mode,
         }
-    };
+    });
     crate::action::playback_action::lyrics_panel_set_by_hand(state, true);
     // Where the panel is not on screen, the list would be picked from
     // unseen.
@@ -64,7 +63,7 @@ pub fn handle_request_search_downloads(state: &mut AppState, query: String) -> V
         id,
         query: query.clone(),
         searching: true,
-        panel_before,
+        before,
         ..Default::default()
     });
     vec![AppMsg::Download(DownloadMsg::DispatchSearchDownloads {
@@ -73,15 +72,20 @@ pub fn handle_request_search_downloads(state: &mut AppState, query: String) -> V
     })]
 }
 
-/// Closes the list, if it is open, and puts the lyrics panel back as it
-/// was; what it was, for a search that takes this one's place.
-fn close_search(state: &mut AppState) -> Option<(bool, bool, bool)> {
-    let search = state.session.download.search.take()?;
-    let (shown, closed, opened_for_lyrics) = search.panel_before;
-    state.session.ui.show_lyrics = shown;
-    state.session.lyrics.panel_closed = closed;
-    state.session.lyrics.panel_opened_for_lyrics = opened_for_lyrics;
-    Some(search.panel_before)
+/// Closes the list, if it is open, and puts the screen back as it was;
+/// what it was, for a search that takes this one's place.
+fn close_search(state: &mut AppState) -> Option<PutAside> {
+    let before = state.session.download.search.take()?.before;
+    let ui = &mut state.session.ui;
+    ui.show_lyrics = before.show_lyrics;
+    ui.show_dsp_studio = before.show_dsp_studio;
+    ui.focus_mode = before.focus_mode;
+    state.session.lyrics.panel_closed = before.panel_closed;
+    state.session.lyrics.panel_opened_for_lyrics = before.panel_opened_for_lyrics;
+    // The song may have changed while the list was open: the panel is
+    // open or not for the one playing now.
+    crate::action::playback_action::fit_lyrics_panel(state);
+    Some(before)
 }
 
 fn is_link(query: &str) -> bool {
@@ -559,18 +563,24 @@ mod download_search_tests {
     }
 
     #[test]
-    fn the_list_takes_the_lyrics_panels_place_and_gives_it_back() {
+    fn the_list_takes_the_lyrics_panels_place_and_gives_the_screen_back() {
         let (mut state, _music) = state();
         state.session.ui.show_dsp_studio = true;
+        state.session.ui.focus_mode = FocusMode::Visualizer;
         assert!(!state.session.ui.show_lyrics);
 
         search(&mut state, "first");
-        assert!(state.session.ui.show_lyrics);
-        assert!(!state.session.ui.show_dsp_studio, "it would be unseen");
+        let ui_now = &state.session.ui;
+        assert!(ui_now.show_lyrics);
+        assert!(!ui_now.show_dsp_studio, "it would be unseen");
+        assert_eq!(ui_now.focus_mode, FocusMode::Full);
         // A second search in its place remembers what the first put aside.
         search(&mut state, "second");
         ui(&mut state, UIMsg::DownloadPickerCancel);
-        assert!(!state.session.ui.show_lyrics);
+        let ui_now = &state.session.ui;
+        assert!(!ui_now.show_lyrics);
+        assert!(ui_now.show_dsp_studio);
+        assert_eq!(ui_now.focus_mode, FocusMode::Visualizer);
 
         // Open before, the panel is open after — picked or not found alike.
         crate::action::playback_action::lyrics_panel_set_by_hand(&mut state, true);
@@ -579,6 +589,18 @@ mod download_search_tests {
         find(&mut state, id, DownloadSource::Songs, "song");
         ui(&mut state, UIMsg::DownloadPickerSubmit);
         assert!(state.session.ui.show_lyrics);
+    }
+
+    #[test]
+    fn a_song_with_lyrics_that_started_under_the_list_has_its_panel_after() {
+        let (mut state, _music) = state();
+        assert!(!state.session.ui.show_lyrics);
+        search(&mut state, "first");
+        // As playback loads them when a song starts.
+        state.session.lyrics.data = crate::state::LyricsData::Unsynced("la la".into());
+        ui(&mut state, UIMsg::DownloadPickerCancel);
+        assert!(state.session.ui.show_lyrics);
+        assert!(state.session.lyrics.panel_opened_for_lyrics);
     }
 
     #[test]

@@ -18,8 +18,14 @@ use crate::worker::{
     InternalEvent, error_in, in_a_group_of_its_own, kill_with_its_children, why_it_failed,
 };
 
-/// How many results are asked of each place.
-const MOST: usize = 8;
+/// How many songs are asked for. Each is looked up in full, a request and
+/// about a second apiece, and past the first few YouTube Music's matches
+/// are covers and other songs: these are found in some six seconds.
+const SONGS: usize = 5;
+
+/// How many of YouTube's own results are asked for: one request however
+/// many, and where a live set or an upload that is not a song is looked for.
+const UPLOADS: usize = 10;
 
 /// What yt-dlp is to say of each result: one line of JSON with these fields
 /// and no others, where what it says by default runs to hundreds of
@@ -56,7 +62,7 @@ fn yt_dlp_args(source: DownloadSource, query: &str) -> Vec<String> {
         // called "Get Lucky" cannot be told apart.
         DownloadSource::Songs => {
             args.extend(["--ignore-errors", "--playlist-end"].map(String::from));
-            args.push(MOST.to_string());
+            args.push(SONGS.to_string());
             format!(
                 "https://music.youtube.com/search?q={}#songs",
                 percent_encoded(query)
@@ -66,7 +72,7 @@ fn yt_dlp_args(source: DownloadSource, query: &str) -> Vec<String> {
         // it is.
         DownloadSource::YouTube => {
             args.push("--flat-playlist".into());
-            format!("ytsearch{MOST}:{query}")
+            format!("ytsearch{UPLOADS}:{query}")
         }
     };
     args.extend([
@@ -260,9 +266,14 @@ mod tests {
             "https://music.youtube.com/search?q=--exec%20x%20%26%20y%2F%C3%B1%20%231#songs"
         );
         assert_eq!(songs[songs.len() - 2], "--");
+        let most = songs
+            .iter()
+            .position(|arg| arg == "--playlist-end")
+            .unwrap();
+        assert_eq!(songs[most + 1], "5");
 
         let youtube = yt_dlp_args(DownloadSource::YouTube, "--exec x");
-        assert_eq!(youtube.last().unwrap(), "ytsearch8:--exec x");
+        assert_eq!(youtube.last().unwrap(), "ytsearch10:--exec x");
         assert_eq!(youtube[youtube.len() - 2], "--");
         assert!(youtube.contains(&"--flat-playlist".to_string()));
     }

@@ -17,6 +17,7 @@ pub use audio::{
 };
 pub use download::{
     DownloadCandidate, DownloadJob, DownloadSearch, DownloadSource, DownloadState, DownloadStatus,
+    PutAside,
 };
 pub use lyrics::{LyricsData, LyricsState};
 pub use notification::{Notification, NotificationKind, NotificationState};

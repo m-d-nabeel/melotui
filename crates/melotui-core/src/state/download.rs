@@ -50,6 +50,18 @@ pub struct DownloadCandidate {
     pub duration_secs: Option<u64>,
 }
 
+/// What the list of results takes the place of, to be put back when it
+/// closes: the lyrics panel as it was — shown, closed by hand, opened for
+/// a song's lyrics — and the layout, where it was one without that panel.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct PutAside {
+    pub show_lyrics: bool,
+    pub panel_closed: bool,
+    pub panel_opened_for_lyrics: bool,
+    pub show_dsp_studio: bool,
+    pub focus_mode: crate::state::ui::FocusMode,
+}
+
 /// A search for something to download, and the list its results are
 /// picked from: the songs, then the rest of YouTube. They come one at a
 /// time, and can be picked as they come.
@@ -67,9 +79,8 @@ pub struct DownloadSearch {
     pub searching: bool,
     /// A row was chosen by hand, and the selection stays on that result.
     pub moved: bool,
-    /// The lyrics panel as it was before the list took its place — shown,
-    /// closed by hand, opened for a song's lyrics — to be put back.
-    pub panel_before: (bool, bool, bool),
+    /// The screen as it was before the list took the lyrics panel's place.
+    pub before: PutAside,
 }
 
 impl DownloadSearch {
