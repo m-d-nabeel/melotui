@@ -229,7 +229,8 @@ mod tests {
 
     fn empty() -> AppState {
         AppState::new(
-            Library::new(vec![], vec![], HashMap::new()),
+            // A music directory, as nothing is searched for without one.
+            Library::new(vec![std::env::temp_dir()], vec![], HashMap::new()),
             &melotui_core::config::AppConfig::default(),
         )
     }

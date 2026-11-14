@@ -19,6 +19,12 @@ pub fn handle_request_download(state: &mut AppState, query: String) -> Vec<AppMs
         return enqueue_download(state, query, &named);
     }
 
+    // Said before searching, not after something has been picked.
+    if state.config.download_dir(&state.library.roots).is_none() {
+        nowhere_to_download_to(state);
+        return vec![];
+    }
+
     let download = &mut state.session.download;
     download.searches += 1;
     let id = download.searches;
@@ -153,18 +159,22 @@ pub fn handle_download_picker_cancel(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+fn nowhere_to_download_to(state: &mut AppState) {
+    state.session.notification.current = Some(
+        Notification::new(
+            NotificationKind::Error,
+            "No music directory configured for downloads",
+        )
+        .with_duration(4),
+    );
+}
+
 /// Puts `query` in the queue of downloads, saying so by the name `named`.
 fn enqueue_download(state: &mut AppState, query: String, named: &str) -> Vec<AppMsg> {
     let download_dir = match state.config.download_dir(&state.library.roots) {
         Some(dir) => dir,
         None => {
-            state.session.notification.current = Some(
-                Notification::new(
-                    NotificationKind::Error,
-                    "No music directory configured for downloads",
-                )
-                .with_duration(4),
-            );
+            nowhere_to_download_to(state);
             return vec![];
         }
     };
@@ -488,6 +498,16 @@ mod download_search_tests {
             (search.id, search.songs.len(), search.searching),
             (2, 0, true)
         );
+    }
+
+    #[test]
+    fn with_nowhere_to_download_to_nothing_is_searched_for() {
+        let library = Library::new(vec![], vec![], HashMap::new());
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
+        assert!(ask(&mut state, "get lucky").is_empty());
+        assert!(state.download_search().is_none());
+        let said = state.session.notification.current.as_ref().unwrap();
+        assert_eq!(said.message, "No music directory configured for downloads");
     }
 
     #[test]
