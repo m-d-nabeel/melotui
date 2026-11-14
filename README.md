@@ -1,63 +1,25 @@
 # melotui
 
-`melotui` is a fast, responsive, and feature-rich terminal-based music player written in Rust. It features real-time audio visualization, DSP effects (like Nightcore and Slowed+Reverb), integrated YouTube downloading, and system media controls.
+A fast terminal music player written in Rust: your local library, synced lyrics, a spectrum visualizer, a full effects studio, and downloads from YouTube.
 
-![Screenshot 1](assets/screenshot_1.png)
-![Screenshot 2](assets/screenshot_2.png)
-![Screenshot 3](assets/screenshot_3.png)
+![The player: library, album art, lyrics and the track playing](assets/player.png)
 
-## Core Features
+| | |
+| --- | --- |
+| ![Visualizer](assets/visualizer.png) | ![Full-screen lyrics](assets/lyrics.png) |
+| ![DSP studio](assets/dsp-studio.png) | ![Searching YouTube](assets/youtube-search.png) |
 
-- **Local Library & Playlists**: Your music folders are scanned at start and watched while running, so new music appears by itself.
-- **Audio Playback**: Support for MP3, FLAC, M4A, WAV, OGG, and OPUS.
-- **Spectrum Visualizer**: Six styles, cycled with `Shift+V` or picked with `:vis <style>`: Particle (the default, a fountain of droplets thrown up by the music), Default and Bar (mirrored bars with falling caps), Radial (a turning ring), Nova (particles sprayed out of a pulsing core, with a burst on every kick), and Cava when [CAVA](https://github.com/karlstav/cava) is installed. It follows the music, not the volume slider, and rests when playback is paused.
-- **Synced Lyrics**: Time-synced lyrics from `.lrc` files, the lyrics in your files' own tags, or fetched from LRCLIB as a song starts. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
-- **DSP Studio**: Real-time audio processing (speed, bass, treble, reverb, echo, panning, width, filters and more) with a 10-band EQ and presets.
-- **System Integration**: Shows in the desktop's media controls on Linux, macOS and Windows, and answers media keys and headset buttons.
-- **Download Support**: Integrated YouTube downloads via `yt-dlp`, tagged with the song's title and artist rather than the video's title and channel.
+## Features
 
----
+- **Library and playlists** — your music folders are scanned at start and watched while running, so new music appears by itself. MP3, FLAC, M4A, WAV and OGG.
+- **Visualizer** — six styles, cycled with `Shift+V` or picked with `:vis <style>`: Particle, Default, Bar, Radial, Nova, and Cava when [CAVA](https://github.com/karlstav/cava) is installed.
+- **Synced lyrics** — from `.lrc` files, the tags in your files, or fetched from LRCLIB as a song starts. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
+- **DSP studio** — speed, bass, treble, reverb, echo, panning, width, filters and more, with a 10-band EQ and presets.
+- **Gapless playback** that carries on through the default output when headphones or Bluetooth go away.
+- **Media controls** — shows in the desktop's media controls on Linux, macOS and Windows, and answers media keys and headset buttons.
+- **YouTube downloads** — search and pick, or download a link, through `yt-dlp`; tagged with the song's title and artist.
 
 ## Installation
-
-> [!IMPORTANT]
-> **Dependencies are required!**
-> Since `melotui` interfaces directly with your system's audio devices and DBUS for media controls, you **must** install the native development libraries before building.
-
-### 1. Install System Dependencies
-
-**Ubuntu / Debian:**
-
-```bash
-sudo apt-get update
-sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config
-```
-
-**Fedora / RHEL:**
-
-```bash
-sudo dnf install alsa-lib-devel dbus-devel pkgconf-pkg-config
-```
-
-**macOS:**
-*(macOS handles audio and media controls natively via CoreAudio/CoreMedia, so no additional system libraries are required for compilation!)*
-
-### 2. Install yt-dlp (Optional but Recommended)
-
-To use the in-app YouTube download feature (`:dl <words or link>`), you must have `yt-dlp` installed and available in your system's PATH. `:dl` with a link downloads it; with words it searches, and lists what it finds to pick from — YouTube Music's songs, with their artist, album and length, and YouTube's videos on a second tab (`Tab`). Results appear as they are found, `Enter` downloads the one selected and `Esc` closes the list. Downloads go into a `Downloads` folder in your first music directory, or wherever `[library] download_directory` in `config.toml` says, which has to be inside one of your music directories.
-
-Downloads are kept as YouTube's AAC audio (`.m4a`), exactly as it is sent: about a megabyte a minute, with nothing re-encoded. Signed in to YouTube Premium in your browser, you can have yt-dlp use that browser's cookies, and downloads then come at 256 kbps instead of 128:
-
-```toml
-[library]
-download_cookies_from_browser = "firefox"   # or "chrome", "brave", "edge", ... ; "firefox:profile" for a profile
-```
-
-This is off unless you set it, and is passed to yt-dlp's `--cookies-from-browser` as it stands. Firefox is the most dependable; Chrome on Windows keeps its cookies locked while it is running, and yt-dlp then says so when the download fails.
-
-- [yt-dlp installation guide](https://github.com/yt-dlp/yt-dlp/wiki/Installation)
-
-### 3. Install
 
 **Prebuilt binary** — download the archive for your platform from the [latest release](https://github.com/m-d-nabeel/melotui/releases/latest) (Linux x86_64, macOS Intel and Apple Silicon, Windows x86_64), or let [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) fetch it:
 
@@ -65,10 +27,17 @@ This is off unless you set it, and is passed to yt-dlp's `--cookies-from-browser
 cargo binstall --git https://github.com/m-d-nabeel/melotui melotui
 ```
 
-**From source** — with [Rust installed](https://rustup.rs/):
+**From source** — with [Rust installed](https://rustup.rs/). On Linux, install the audio and D-Bus development libraries first:
 
 ```bash
-cargo install --git https://github.com/m-d-nabeel/melotui melotui
+sudo apt-get install -y libasound2-dev libdbus-1-dev pkg-config   # Ubuntu / Debian
+sudo dnf install alsa-lib-devel dbus-devel pkgconf-pkg-config     # Fedora / RHEL
+```
+
+macOS and Windows need nothing extra. Then:
+
+```bash
+cargo install --profile production --git https://github.com/m-d-nabeel/melotui melotui
 ```
 
 or clone the repository and build it:
@@ -76,12 +45,12 @@ or clone the repository and build it:
 ```bash
 git clone https://github.com/m-d-nabeel/melotui.git
 cd melotui
-cargo build --release
+cargo build --profile production
 ```
 
-The compiled binary will be at `./target/release/melotui`.
+The binary will be at `./target/production/melotui`. `production` is the profile the releases are built with: fully optimized and stripped, and slower to compile. `cargo build --release` is quicker and fine for trying things out.
 
----
+**For downloads** — install [yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/Installation) and have it in your PATH.
 
 ## Usage
 
@@ -120,7 +89,7 @@ The keys follow what cmus, ncmpcpp and mpv agree on.
 | `/`, `n`, `N` | Find a song, artist or album, and the next and previous match |
 | `:`, `?`, `q` | Commands, help, and quit |
 
-Volume, speed and effects changed out of sight of the mixer are shown in a notification. Press `:` for the command bar (e.g., `:dl lofi hip hop` or `:quit`): it lists every command as you type, and `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names. Keys can be changed in `keymaps.toml` (`melotui --paths` shows where).
+Volume, speed and effects changed out of sight of the mixer are shown in a notification. Press `:` for the command bar (e.g., `:vol 80` or `:quit`): it lists every command as you type, and `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names. Keys can be changed in `keymaps.toml` (`melotui --paths` shows where).
 
 ### Commands
 
@@ -137,7 +106,23 @@ Volume, speed and effects changed out of sight of the mixer are shown in a notif
 | `:focus lyrics`, `:vis nova`, `:toggle art` | Layout, visualizer and panels |
 | `:device`, `:device <name>`, `:device default` | Audio output device |
 | `:pl add <playlist>` | Playlists |
+| `:yt search <words>`, `:yt dl <words or link>` | Search YouTube and pick what to download, or download a link or the first match |
 | `:find way back`, `:song fad`, `:artist lisa`, `:album`, `:genre`, `:year`, `:noh` | Search: everything, or one kind; part of a word is enough, and the words can come in any order |
+
+### Downloads
+
+`:yt search <words>` lists what YouTube Music (`[M]`: songs, with their artist, album and length) and YouTube (`[Y]`) have, in the lyrics panel, as the results are found: `j` `k` move, `Enter` downloads the one selected, `Esc` closes the list. `:yt dl <words or link>` downloads a link, or the first match for some words, without asking.
+
+Downloads go into a `Downloads` folder in your first music directory, or wherever `[library] download_directory` in `config.toml` says, which has to be inside one of your music directories. They are kept as YouTube's AAC audio (`.m4a`), exactly as it is sent: about a megabyte a minute, with nothing re-encoded.
+
+Signed in to YouTube Premium in your browser, you can have yt-dlp use that browser's cookies, and downloads then come at 256 kbps instead of 128:
+
+```toml
+[library]
+download_cookies_from_browser = "firefox"   # or "chrome", "brave", "edge", ... ; "firefox:profile" for a profile
+```
+
+This is off unless you set it, and is passed to yt-dlp's `--cookies-from-browser` as it stands. Firefox is the most dependable; Chrome on Windows keeps its cookies locked while it is running, and yt-dlp then says so when the download fails.
 
 ### Audio output
 
