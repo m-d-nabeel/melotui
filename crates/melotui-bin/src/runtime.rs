@@ -152,6 +152,9 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         let animating = state.should_draw_spectrum() && (state.is_playing() || spectrum_moving);
         let timeout = if animating {
             frames.wait(Instant::now())
+        } else if should_render {
+            // Something is waiting to be drawn: no waiting for a key first.
+            Duration::ZERO
         } else {
             Duration::from_millis(100)
         };
@@ -258,9 +261,10 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
             runtime.last_saved = Instant::now();
         }
 
-        // While animating, drawn on the frame's time: what changed in between
-        // waits at most a frame, and frames stay even.
-        if should_render && runtime.running && (frame_due || !animating) {
+        // Whether it is animating now, with this turn's keys acted on: `v`
+        // may just have put the album art where the spectrum was.
+        let animating_now = state.should_draw_spectrum() && (state.is_playing() || spectrum_moving);
+        if runtime.running && draws_now(should_render, frame_due, animating, animating_now) {
             if let Err(e) = tui.draw(&state) {
                 tracing::warn!("Lost the terminal ({e}), quitting");
                 terminal_lost = true;
@@ -305,6 +309,23 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
 
 /// How long quitting waits for the workers to finish.
 const WORKERS_FINISH_WITHIN: Duration = Duration::from_secs(3);
+
+/// Whether the screen is drawn this turn of the loop.
+///
+/// While the spectrum is animating, frames come on its clock: what changes
+/// between two of them waits for the next, at most a sixtieth of a second,
+/// and the frames stay even. Otherwise a change is drawn at once.
+///
+/// "Animating" used to be asked once, at the top of the turn, before the
+/// keys were read. Press `v` to put the album art where the spectrum was,
+/// and that turn still thought itself animating and waited for a frame
+/// that was not due; the next knew better, but by then was waiting a tenth
+/// of a second for a key. The art came a tenth of a second late, every
+/// time — the one toggle that felt slow. A turn in which the animating
+/// starts or stops is drawn at once.
+fn draws_now(changed: bool, frame_due: bool, was_animating: bool, is_animating: bool) -> bool {
+    changed && (frame_due || !(was_animating && is_animating))
+}
 
 /// The most keys taken in one go, so that a held key cannot keep the loop
 /// from drawing.
@@ -617,6 +638,22 @@ mod tests {
         state.time_elapsed += f64::from(1.0_f32 / 60.0);
         let moved = state.time_elapsed() - before;
         assert!((moved - 1.0 / 60.0).abs() < 1e-6, "moved {moved}");
+    }
+
+    #[test]
+    fn a_change_is_drawn_at_once_unless_the_next_frame_will_carry_it() {
+        // Nothing changed: nothing drawn, whatever else.
+        assert!(!draws_now(false, true, true, true));
+        // Not animating: at once.
+        assert!(draws_now(true, false, false, false));
+        // Animating throughout: on the frame, and only on it.
+        assert!(draws_now(true, true, true, true));
+        assert!(!draws_now(true, false, true, true));
+        // The spectrum just gave way to the album art, or the music was
+        // paused and it came to rest: no frame is coming to wait for.
+        assert!(draws_now(true, false, true, false));
+        // And the other way: the spectrum just came back.
+        assert!(draws_now(true, false, false, true));
     }
 
     #[test]

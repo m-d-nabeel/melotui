@@ -361,6 +361,12 @@ pub static COMMANDS: &[Spec] = &[
     ),
     spec(&["studio"], "", "Show or hide the DSP studio", NOTHING),
     spec(
+        &["mini", "minimize", "min"],
+        "",
+        "Minimize to the now-playing strip, or bring everything back (the F4 key)",
+        NOTHING,
+    ),
+    spec(
         &["device", "output"],
         "[name|default]",
         "Audio output device, or list them",
@@ -543,6 +549,7 @@ pub enum Command {
     },
     PresetPicker,
     ToggleStudio,
+    ToggleMinimal,
     /// Plays through a device — `None` follows the system default.
     SetOutputDevice(Option<String>),
     /// Says which device is playing and which there are.
@@ -844,6 +851,7 @@ fn parse(input: &str) -> Result<Command, Command> {
             }
         }
         "studio" => Command::ToggleStudio,
+        "mini" => Command::ToggleMinimal,
         "device" => match rest.join(" ").trim() {
             "" => Command::ShowOutputDevices,
             "default" => Command::SetOutputDevice(None),

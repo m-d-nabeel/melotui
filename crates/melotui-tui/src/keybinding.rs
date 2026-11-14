@@ -141,6 +141,7 @@ pub enum KeyAction {
 
     // focus mode
     CycleFocusMode,
+    ToggleMinimal,
 
     // panel resize
     ShrinkSidebar,
@@ -261,6 +262,7 @@ impl KeyAction {
             KeyAction::ConfirmYes => "Confirm",
             KeyAction::ConfirmNo => "Cancel",
             KeyAction::CycleFocusMode => "Focus Mode",
+            KeyAction::ToggleMinimal => "Minimize / Restore",
             KeyAction::ShrinkSidebar => "Sidebar-",
             KeyAction::Search => "Search",
             KeyAction::GrowSidebar => "Sidebar+",
@@ -416,6 +418,7 @@ impl KeyAction {
             KeyAction::ConfirmYes => Some(AppMsg::UI(UIMsg::ConfirmYes)),
             KeyAction::ConfirmNo => Some(AppMsg::UI(UIMsg::ConfirmNo)),
             KeyAction::CycleFocusMode => Some(AppMsg::UI(UIMsg::CycleFocusMode)),
+            KeyAction::ToggleMinimal => Some(AppMsg::UI(UIMsg::ToggleMinimal)),
             KeyAction::ShrinkSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(-2))),
             KeyAction::Search => Some(AppMsg::UI(UIMsg::EnterSearch)),
             KeyAction::GrowSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(2))),
@@ -763,6 +766,7 @@ impl Default for KeyRegistry {
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::F(3), KeyAction::CycleVisualizerStyle),
                 KeyBinding::new(KeyCode::F(1), KeyAction::CycleFocusMode),
+                KeyBinding::new(KeyCode::F(4), KeyAction::ToggleMinimal),
                 KeyBinding::new(KeyCode::F(2), KeyAction::ToggleDspStudio),
                 KeyBinding::new(KeyCode::Char('l'), KeyAction::GrowSidebar)
                     .with_mod(KeyModifiers::CONTROL),
