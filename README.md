@@ -2,11 +2,11 @@
 
 A fast terminal music player written in Rust: your local library, synced lyrics, a spectrum visualizer, a full effects studio, and downloads from YouTube.
 
-![The player: library, album art, lyrics and the track playing](assets/player.png)
+![The player: library, visualizer, lyrics and the track playing](assets/player.png)
 
 | | |
 | --- | --- |
-| ![Visualizer](assets/visualizer.png) | ![Full-screen lyrics](assets/lyrics.png) |
+| ![Album art](assets/album-art.png) | ![Full-screen lyrics](assets/lyrics.png) |
 | ![DSP studio](assets/dsp-studio.png) | ![Searching YouTube](assets/youtube-search.png) |
 
 ## Features
@@ -15,7 +15,7 @@ A fast terminal music player written in Rust: your local library, synced lyrics,
 - **Visualizer** — six styles, cycled with `Shift+V` or picked with `:vis <style>`: Particle, Default, Bar, Radial, Nova, and Cava when [CAVA](https://github.com/karlstav/cava) is installed.
 - **Synced lyrics** — from `.lrc` files, the tags in your files, or fetched from LRCLIB as a song starts. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
 - **DSP studio** — speed, bass, treble, reverb, echo, panning, width, filters and more, with a 10-band EQ and presets.
-- **Gapless playback** that carries on through the default output when headphones or Bluetooth go away.
+- **Gapless playback**, which carries on through the default output when headphones or Bluetooth go away.
 - **Media controls** — shows in the desktop's media controls on Linux, macOS and Windows, and answers media keys and headset buttons.
 - **YouTube downloads** — search and pick, or download a link, through `yt-dlp`; tagged with the song's title and artist.
 
@@ -79,7 +79,7 @@ The keys follow what cmus, ncmpcpp and mpv agree on.
 | `[` `]`, `Backspace` | Slower and faster, and normal speed |
 | `s`, `r`, `Shift+S` | Shuffle, repeat mode, and stop |
 | `j` `k` (or `↑` `↓`), `g` `G` (or `Home` `End`), `PgUp` `PgDn` | Move in the tree or queue |
-| `Enter`, `` ` `` | Play or open, and switch the sidebar between the tree and the queue |
+| `Enter`, `z`, `` ` `` | Play or open, close everything open in the tree, and switch the sidebar between the tree and the queue |
 | `Tab` | Move between the sidebar and the mixer |
 | In the mixer: arrows (or `h` `j` `k` `l`), `+` `-`, `Backspace` (or `r`), `Esc` | Pick a control, turn it up or down, reset it, and leave |
 | `a`, `A`, `f`, `p` | Add to the queue, play next, favorite, add to a playlist |
@@ -106,12 +106,13 @@ Volume, speed and effects changed out of sight of the mixer are shown in a notif
 | `:focus lyrics`, `:vis nova`, `:toggle art` | Layout, visualizer and panels |
 | `:device`, `:device <name>`, `:device default` | Audio output device |
 | `:pl add <playlist>` | Playlists |
+| `:sort`, `:collapse` | The next sort order, and closing everything open in the tree |
 | `:yt search <words>`, `:yt dl <words or link>` | Search YouTube and pick what to download, or download a link or the first match |
 | `:find way back`, `:song fad`, `:artist lisa`, `:album`, `:genre`, `:year`, `:noh` | Search: everything, or one kind; part of a word is enough, and the words can come in any order |
 
 ### Downloads
 
-`:yt search <words>` lists what YouTube Music (`[M]`: songs, with their artist, album and length) and YouTube (`[Y]`) have, in the lyrics panel, as the results are found: `j` `k` move, `Enter` downloads the one selected, `Esc` closes the list. `:yt dl <words or link>` downloads a link, or the first match for some words, without asking.
+`:yt search <words>` lists what YouTube Music (`[M]`: songs, with their artist, album and length) and YouTube (`[Y]`) have, in the lyrics panel, as the results are found: `j` `k` move, `Enter` downloads the one selected, `Esc` closes the list and puts the screen back as it was. `:yt dl <words or link>` downloads a link, or the first match for some words, without asking.
 
 Downloads go into a `Downloads` folder in your first music directory, or wherever `[library] download_directory` in `config.toml` says, which has to be inside one of your music directories. They are kept as YouTube's AAC audio (`.m4a`), exactly as it is sent: about a megabyte a minute, with nothing re-encoded.
 
