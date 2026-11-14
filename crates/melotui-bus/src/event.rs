@@ -23,6 +23,17 @@ pub enum IpcEvent {
         save_path: std::path::PathBuf,
         error: String,
     },
+    /// Something the search `id` found to download.
+    DownloadSearchResult {
+        id: u64,
+        candidate: melotui_core::state::DownloadCandidate,
+    },
+    /// The search `id` is over; `error` is what went wrong, if it found
+    /// nothing because something did.
+    DownloadSearchFinished {
+        id: u64,
+        error: Option<String>,
+    },
     LyricsSearchResults {
         lrclib_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,
         ovh_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,

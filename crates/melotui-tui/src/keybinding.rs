@@ -22,6 +22,7 @@ pub enum KeyContext {
     PresetPicker,
     Confirm,
     LyricsSelector,
+    DownloadPicker,
     DspStudio,
     Mixer,
     Global,
@@ -130,6 +131,12 @@ pub enum KeyAction {
     LyricsSelectorRight,
     LyricsSelectorSubmit,
     LyricsSelectorCancel,
+    // download picker
+    DownloadPickerUp,
+    DownloadPickerDown,
+    DownloadPickerSwitchTab,
+    DownloadPickerSubmit,
+    DownloadPickerCancel,
 
     // playlist management
     DeletePlaylist,
@@ -257,6 +264,11 @@ impl KeyAction {
             KeyAction::LyricsSelectorRight => "Right",
             KeyAction::LyricsSelectorSubmit => "Select",
             KeyAction::LyricsSelectorCancel => "Cancel",
+            KeyAction::DownloadPickerUp => "Up",
+            KeyAction::DownloadPickerDown => "Down",
+            KeyAction::DownloadPickerSwitchTab => "Songs / videos",
+            KeyAction::DownloadPickerSubmit => "Download",
+            KeyAction::DownloadPickerCancel => "Close",
             KeyAction::DeletePlaylist => "Delete Playlist",
             KeyAction::RemoveFromPlaylist => "Rm from Playlist",
             KeyAction::ConfirmYes => "Confirm",
@@ -346,6 +358,11 @@ impl KeyAction {
             KeyAction::LyricsSelectorRight => Some(AppMsg::UI(UIMsg::LyricsSelectorMoveRight)),
             KeyAction::LyricsSelectorSubmit => Some(AppMsg::UI(UIMsg::LyricsSelectorSubmit)),
             KeyAction::LyricsSelectorCancel => Some(AppMsg::UI(UIMsg::LyricsSelectorCancel)),
+            KeyAction::DownloadPickerUp => Some(AppMsg::UI(UIMsg::DownloadPickerMoveUp)),
+            KeyAction::DownloadPickerDown => Some(AppMsg::UI(UIMsg::DownloadPickerMoveDown)),
+            KeyAction::DownloadPickerSwitchTab => Some(AppMsg::UI(UIMsg::DownloadPickerSwitchTab)),
+            KeyAction::DownloadPickerSubmit => Some(AppMsg::UI(UIMsg::DownloadPickerSubmit)),
+            KeyAction::DownloadPickerCancel => Some(AppMsg::UI(UIMsg::DownloadPickerCancel)),
             KeyAction::Interact => None, // handled in input.rs
             KeyAction::ShowTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
             KeyAction::HideTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
@@ -502,6 +519,7 @@ impl KeyRegistry {
                 "preset" | "presetpicker" => KeyContext::PresetPicker,
                 "confirm" => KeyContext::Confirm,
                 "lyrics" | "lyricsselector" => KeyContext::LyricsSelector,
+                "download" | "downloadpicker" => KeyContext::DownloadPicker,
                 "dspstudio" | "dsp" => KeyContext::DspStudio,
                 "mixer" => KeyContext::Mixer,
                 "global" => KeyContext::Global,
@@ -684,6 +702,25 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('y'), KeyAction::ConfirmYes),
                 KeyBinding::new(KeyCode::Char('n'), KeyAction::ConfirmNo),
                 KeyBinding::new(KeyCode::Esc, KeyAction::ConfirmNo),
+            ],
+        );
+
+        // download picker context
+        bindings.insert(
+            KeyContext::DownloadPicker,
+            vec![
+                KeyBinding::new(KeyCode::Up, KeyAction::DownloadPickerUp),
+                KeyBinding::new(KeyCode::Char('k'), KeyAction::DownloadPickerUp),
+                KeyBinding::new(KeyCode::Down, KeyAction::DownloadPickerDown),
+                KeyBinding::new(KeyCode::Char('j'), KeyAction::DownloadPickerDown),
+                KeyBinding::new(KeyCode::Tab, KeyAction::DownloadPickerSwitchTab),
+                KeyBinding::new(KeyCode::Left, KeyAction::DownloadPickerSwitchTab),
+                KeyBinding::new(KeyCode::Right, KeyAction::DownloadPickerSwitchTab),
+                KeyBinding::new(KeyCode::Char('h'), KeyAction::DownloadPickerSwitchTab),
+                KeyBinding::new(KeyCode::Char('l'), KeyAction::DownloadPickerSwitchTab),
+                KeyBinding::new(KeyCode::Enter, KeyAction::DownloadPickerSubmit),
+                KeyBinding::new(KeyCode::Esc, KeyAction::DownloadPickerCancel),
+                KeyBinding::new(KeyCode::Char('q'), KeyAction::DownloadPickerCancel),
             ],
         );
 
@@ -940,6 +977,7 @@ mod tests {
             "preset",
             "confirm",
             "lyrics",
+            "download",
             "dsp",
             "mixer",
             "global",
@@ -954,7 +992,7 @@ mod tests {
         }
         assert_eq!(
             KeyRegistry::default().bindings.len(),
-            12,
+            13,
             "a context was added"
         );
     }

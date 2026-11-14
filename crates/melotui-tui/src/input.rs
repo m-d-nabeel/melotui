@@ -44,6 +44,11 @@ impl InputHandler {
             return contexts;
         }
 
+        if state.download_search().is_some() {
+            contexts.push(KeyContext::DownloadPicker);
+            return contexts; // modal, blocks other inputs
+        }
+
         if state.is_showing_track_info() {
             contexts.push(KeyContext::TrackInfo);
         }

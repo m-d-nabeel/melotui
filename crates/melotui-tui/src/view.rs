@@ -11,8 +11,9 @@ use crate::{
     image_cache::ImageCache,
     theme::Theme,
     widgets::{
-        command_view, confirm_view, dsp_studio_view, help_view, notification_popup, playback_view,
-        playlist_picker_view, preset_picker_view, sidebar, sound_control_view, visualizer_view,
+        command_view, confirm_view, download_picker_view, dsp_studio_view, help_view,
+        notification_popup, playback_view, playlist_picker_view, preset_picker_view, sidebar,
+        sound_control_view, visualizer_view,
     },
 };
 
@@ -225,6 +226,11 @@ fn draw_overlays(
     if *state.ui_mode() == UIMode::PresetPicker {
         frame.render_widget(dim_block.clone(), area);
         preset_picker_view::draw(frame, area, state);
+    }
+
+    if state.download_search().is_some() {
+        frame.render_widget(dim_block.clone(), area);
+        download_picker_view::draw(frame, area, state, registry);
     }
 
     if *state.ui_mode() == UIMode::Confirm {

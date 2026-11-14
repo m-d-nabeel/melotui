@@ -418,10 +418,6 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::Library(LibraryMsg::RequestScanLibrary)]
         }
         Command::Download { query } => {
-            state.session.notification.current = Some(Notification::new(
-                NotificationKind::Info,
-                format!("Downloading: {}", query),
-            ));
             vec![AppMsg::Download(DownloadMsg::RequestDownload { query })]
         }
         Command::FetchLyrics { query } => {

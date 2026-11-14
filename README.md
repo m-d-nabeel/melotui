@@ -44,7 +44,7 @@ sudo dnf install alsa-lib-devel dbus-devel pkgconf-pkg-config
 
 ### 2. Install yt-dlp (Optional but Recommended)
 
-To use the in-app YouTube download feature (`:dl <query>`), you must have `yt-dlp` installed and available in your system's PATH. Downloads go into a `Downloads` folder in your first music directory, or wherever `[library] download_directory` in `config.toml` says, which has to be inside one of your music directories.
+To use the in-app YouTube download feature (`:dl <words or link>`), you must have `yt-dlp` installed and available in your system's PATH. `:dl` with a link downloads it; with words it searches, and lists what it finds to pick from — YouTube Music's songs, with their artist, album and length, and YouTube's videos on a second tab (`Tab`). Results appear as they are found, `Enter` downloads the one selected and `Esc` closes the list. Downloads go into a `Downloads` folder in your first music directory, or wherever `[library] download_directory` in `config.toml` says, which has to be inside one of your music directories.
 
 Downloads are kept as YouTube's AAC audio (`.m4a`), exactly as it is sent: about a megabyte a minute, with nothing re-encoded. Signed in to YouTube Premium in your browser, you can have yt-dlp use that browser's cookies, and downloads then come at 256 kbps instead of 128:
 

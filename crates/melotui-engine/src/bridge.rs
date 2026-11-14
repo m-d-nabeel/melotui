@@ -71,6 +71,15 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                     query: query.clone(),
                 }))
             }
+            DownloadMsg::DispatchSearchDownloads { id, query } => {
+                Some(IpcCommand::Download(DownloadCommand::Search {
+                    id: *id,
+                    query: query.clone(),
+                }))
+            }
+            DownloadMsg::CancelSearchDownloads => {
+                Some(IpcCommand::Download(DownloadCommand::CancelSearch))
+            }
             _ => None,
         },
 
@@ -203,6 +212,12 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
         }
         IpcEvent::LyricsFetchFailed { save_path, error } => {
             AppMsg::Download(DownloadMsg::LyricsFetchFailed { save_path, error })
+        }
+        IpcEvent::DownloadSearchResult { id, candidate } => {
+            AppMsg::Download(DownloadMsg::DownloadSearchResult { id, candidate })
+        }
+        IpcEvent::DownloadSearchFinished { id, error } => {
+            AppMsg::Download(DownloadMsg::DownloadSearchFinished { id, error })
         }
         IpcEvent::LyricsSearchResults {
             lrclib_results,

@@ -1,4 +1,5 @@
 pub mod progress;
+mod search;
 mod tags;
 pub mod worker;
 

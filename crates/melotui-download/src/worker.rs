@@ -12,13 +12,14 @@ use std::{
 };
 
 use melotui_bus::{channel::IpcWorker, command::DownloadCommand, event::IpcEvent};
+use melotui_core::state::DownloadCandidate;
 
 use crate::{
     progress::parse_progress,
     tags::{REPORT, Reports, retag},
 };
 
-enum InternalEvent {
+pub(crate) enum InternalEvent {
     Progress(u8),
     ItemFinished,
     Finished,
@@ -32,6 +33,30 @@ enum InternalEvent {
         lrclib_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,
         ovh_results: Vec<melotui_core::state::lyrics::LyricsCandidate>,
     },
+    SearchResult {
+        id: u64,
+        candidate: DownloadCandidate,
+    },
+    SearchFinished {
+        id: u64,
+        error: Option<String>,
+    },
+}
+
+/// A search under way: the flag that stops it, and its thread.
+struct Search {
+    cancel: Arc<AtomicBool>,
+    thread: thread::JoinHandle<()>,
+}
+
+impl Search {
+    /// Stops the search, waiting until the yt-dlp it runs are gone.
+    fn stop(self) {
+        self.cancel.store(true, Ordering::SeqCst);
+        if self.thread.join().is_err() {
+            tracing::error!("The search's thread had panicked");
+        }
+    }
 }
 
 pub fn run(worker: impl IpcWorker<DownloadCommand>) {
@@ -44,6 +69,8 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
     let mut cancel_flag: Option<Arc<AtomicBool>> = None;
     // The download running, to wait on at shutdown.
     let mut download: Option<thread::JoinHandle<()>> = None;
+    // The search for something to download under way.
+    let mut search: Option<Search> = None;
 
     loop {
         // Always use timeout so we can periodically check internal_rx for background task events
@@ -112,6 +139,25 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                     });
                 }
 
+                DownloadCommand::Search { id, query } => {
+                    tracing::info!("Searching for downloads: {}", query);
+                    if let Some(search) = search.take() {
+                        search.stop();
+                    }
+                    let cancel = Arc::new(AtomicBool::new(false));
+                    let (tx, flag) = (internal_tx.clone(), cancel.clone());
+                    search = Some(Search {
+                        cancel,
+                        thread: thread::spawn(move || crate::search::run(id, &query, &tx, &flag)),
+                    });
+                }
+
+                DownloadCommand::CancelSearch => {
+                    if let Some(search) = search.take() {
+                        search.stop();
+                    }
+                }
+
                 DownloadCommand::Cancel => {
                     if let Some(flag) = &cancel_flag {
                         tracing::info!("Signaling cancellation...");
@@ -123,6 +169,9 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                     tracing::info!("Worker: shutdown requested");
                     if let Some(flag) = &cancel_flag {
                         flag.store(true, Ordering::SeqCst);
+                    }
+                    if let Some(search) = search.take() {
+                        search.stop();
                     }
                     // Waited for: the download's thread is what stops yt-dlp,
                     // and the process ending first left yt-dlp running.
@@ -158,6 +207,12 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                 }
                 InternalEvent::LyricsFailed { save_path, error } => {
                     worker.send(IpcEvent::LyricsFetchFailed { save_path, error });
+                }
+                InternalEvent::SearchResult { id, candidate } => {
+                    worker.send(IpcEvent::DownloadSearchResult { id, candidate });
+                }
+                InternalEvent::SearchFinished { id, error } => {
+                    worker.send(IpcEvent::DownloadSearchFinished { id, error });
                 }
                 InternalEvent::LyricsSearchResults {
                     lrclib_results,
@@ -317,7 +372,7 @@ fn download_task(
 
 /// Has `command` start its process as the head of a process group of its
 /// own, so that it and whatever it starts can be stopped together.
-fn in_a_group_of_its_own(command: &mut Command) {
+pub(crate) fn in_a_group_of_its_own(command: &mut Command) {
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -332,7 +387,7 @@ fn in_a_group_of_its_own(command: &mut Command) {
 /// yt-dlp runs ffmpeg to take the audio out and embed the cover, and killing
 /// yt-dlp alone left an ffmpeg that was part way through running on, writing
 /// to a file nobody wanted any more.
-fn kill_with_its_children(child: &mut std::process::Child) {
+pub(crate) fn kill_with_its_children(child: &mut std::process::Child) {
     // The group is the child's own: it was started with `process_group(0)`,
     // so the group's id is its pid — still its own, as it has not yet been
     // waited for.
@@ -355,7 +410,7 @@ fn kill_with_its_children(child: &mut std::process::Child) {
 
 /// The error in a line of yt-dlp's output, if it is one: what follows
 /// `ERROR:`.
-fn error_in(line: &str) -> Option<&str> {
+pub(crate) fn error_in(line: &str) -> Option<&str> {
     let (_, error) = line.split_once("ERROR:")?;
     Some(error.trim()).filter(|e| !e.is_empty())
 }
@@ -364,7 +419,7 @@ fn error_in(line: &str) -> Option<&str> {
 /// fit, or failing that how it exited — which was all that was said before,
 /// "Exit code: exit status: 1" for a video that is private, a network that
 /// is down and a missing ffmpeg alike.
-fn why_it_failed(said: Option<&str>, status: &str) -> String {
+pub(crate) fn why_it_failed(said: Option<&str>, status: &str) -> String {
     const MOST: usize = 160;
     match said {
         Some(said) if said.chars().count() > MOST => {

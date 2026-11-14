@@ -65,6 +65,12 @@ pub enum UIMsg {
     LyricsSelectorMoveRight,
     LyricsSelectorSubmit,
     LyricsSelectorCancel,
+    // Download picker
+    DownloadPickerMoveUp,
+    DownloadPickerMoveDown,
+    DownloadPickerSwitchTab,
+    DownloadPickerSubmit,
+    DownloadPickerCancel,
     // DSP Studio
     ToggleDspStudio,
     DspSelectUp,

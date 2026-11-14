@@ -54,6 +54,7 @@ pub fn draw(
         keys("Playlist picker".into(), KeyContext::PlaylistPicker),
         keys("Preset picker".into(), KeyContext::PresetPicker),
         keys("Lyrics picker".into(), KeyContext::LyricsSelector),
+        keys("Download picker".into(), KeyContext::DownloadPicker),
         keys("Confirming".into(), KeyContext::Confirm),
         keys(
             reached_by("Command bar", global, KeyAction::EnterCommandMode),

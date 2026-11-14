@@ -58,6 +58,14 @@ pub enum DownloadCommand {
     SearchLyrics {
         query: String,
     },
+    /// Looks for what there is to download for `query`, as the search `id`;
+    /// a search still under way gives way to it.
+    Search {
+        id: u64,
+        query: String,
+    },
+    /// Stops the search under way, if there is one.
+    CancelSearch,
     Cancel,
     Shutdown,
 }

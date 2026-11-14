@@ -273,8 +273,8 @@ pub static COMMANDS: &[Spec] = &[
     spec(&["rescan", "r", "scan"], "", "Rescan the library", NOTHING),
     spec(
         &["dl", "download"],
-        "<query>",
-        "Download from YouTube",
+        "<words or link>",
+        "Find on YouTube and download",
         TEXT,
     ),
     spec(

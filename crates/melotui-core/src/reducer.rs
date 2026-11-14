@@ -205,6 +205,11 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::LyricsSelectorMoveRight => ui_action::handle_lyrics_selector_move_right(state),
         UIMsg::LyricsSelectorSubmit => ui_action::handle_lyrics_selector_submit(state),
         UIMsg::LyricsSelectorCancel => ui_action::handle_lyrics_selector_cancel(state),
+        UIMsg::DownloadPickerMoveUp => download_action::handle_download_picker_move(state, -1),
+        UIMsg::DownloadPickerMoveDown => download_action::handle_download_picker_move(state, 1),
+        UIMsg::DownloadPickerSwitchTab => download_action::handle_download_picker_switch_tab(state),
+        UIMsg::DownloadPickerSubmit => download_action::handle_download_picker_submit(state),
+        UIMsg::DownloadPickerCancel => download_action::handle_download_picker_cancel(state),
         UIMsg::ToggleDspStudio => ui_action::handle_toggle_dsp_studio(state),
         UIMsg::ToggleMinimal => ui_action::handle_toggle_minimal(state),
         UIMsg::DspSelectUp => ui_action::handle_dsp_select_up(state),
@@ -317,6 +322,14 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         }
         DownloadMsg::RequestSearchLyrics { query } => {
             download_action::handle_request_search_lyrics(state, query)
+        }
+        // Sent on to the download worker by the engine's bridge.
+        DownloadMsg::DispatchSearchDownloads { .. } | DownloadMsg::CancelSearchDownloads => vec![],
+        DownloadMsg::DownloadSearchResult { id, candidate } => {
+            download_action::handle_download_search_result(state, id, candidate)
+        }
+        DownloadMsg::DownloadSearchFinished { id, error } => {
+            download_action::handle_download_search_finished(state, id, error)
         }
         DownloadMsg::LyricsSearchResults {
             lrclib_results,

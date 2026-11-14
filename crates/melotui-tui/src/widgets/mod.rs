@@ -1,5 +1,6 @@
 pub mod command_view;
 pub mod confirm_view;
+pub mod download_picker_view;
 pub mod dsp_studio_view;
 pub mod help_view;
 pub mod lyrics_view;
