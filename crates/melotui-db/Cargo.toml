@@ -5,15 +5,17 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 melotui-core.workspace = true
 melotui-bus.workspace = true
-rusqlite = { version = "0.38", features = ["bundled", "time"] }
+rusqlite = { version = "0.42", features = ["bundled", "time"] }
 anyhow = "1"
 tracing = "0.1"
-lofty = "0.22"
-dirs = "6"
+lofty = "0.25"
+dirs = "7"
+sha2 = "0.11"
 
 [dev-dependencies]
 tempfile = "3.12"

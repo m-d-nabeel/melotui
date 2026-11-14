@@ -1,3 +1,5 @@
+use crate::keybinding::{KeyAction, KeyContext, KeyRegistry};
+use crate::widgets::help_view::key_for;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -8,7 +10,7 @@ use ratatui::{
 
 use melotui_core::AppState;
 
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
+pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, registry: &KeyRegistry) {
     let dialog = match state.confirm_dialog() {
         Some(d) => d,
         None => return,
@@ -33,6 +35,10 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);
 
+    // The keys as they are bound, not as they once were.
+    let key =
+        |action| key_for(registry, KeyContext::Confirm, action).unwrap_or_else(|| "—".to_string());
+    let (yes, no) = (key(KeyAction::ConfirmYes), key(KeyAction::ConfirmNo));
     let line = Line::from(vec![
         Span::styled(
             &dialog.message,
@@ -41,10 +47,10 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
                 .add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
-        Span::styled("[y]", Style::default().fg(t.accent_playing)),
-        Span::raw("es / "),
-        Span::styled("[n]", Style::default().fg(t.accent_error)),
-        Span::raw("o"),
+        Span::styled(format!("[{yes}]"), Style::default().fg(t.accent_playing)),
+        Span::raw(" yes / "),
+        Span::styled(format!("[{no}]"), Style::default().fg(t.accent_error)),
+        Span::raw(" no"),
     ]);
 
     let paragraph = Paragraph::new(line).alignment(Alignment::Center);

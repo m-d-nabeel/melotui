@@ -77,8 +77,14 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let picker = &cache.picker;
     let shaped = &mut cache.lyrics;
 
-    // As one image where the terminal can show it; as text where it cannot,
-    // or while the fonts are still loading.
+    // As one image where the terminal can show it, and as text where it
+    // cannot. In the moment the fonts for the image are still loading the
+    // panel is left empty: text drawn then would be replaced a blink later,
+    // and for the scripts that need the image it would be mangled text.
+    if shaped.waiting_for_fonts(picker, &texts, zoom) {
+        shaped.clear();
+        return;
+    }
     let drawn = shaped.should_shape(picker, &texts, zoom)
         && shaped.draw(frame, inner, picker, &lines, anchor, zoom);
     if !drawn {

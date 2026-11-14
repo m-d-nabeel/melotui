@@ -5,7 +5,7 @@ use rusqlite::Connection;
 use tracing::info;
 
 /// current schema version
-const CURRENT_VERSION: i32 = 2;
+const CURRENT_VERSION: i32 = 4;
 
 /// run migrations
 pub fn run_migrations(conn: &Connection) -> Result<()> {
@@ -27,6 +27,49 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         info!("Database migrated to version 2");
     }
 
+    if user_version < 3 {
+        migrate_v3(conn)?;
+        conn.pragma_update(None, "user_version", 3)?;
+        info!("Database migrated to version 3");
+    }
+
+    if user_version < 4 {
+        migrate_v4(conn)?;
+        conn.pragma_update(None, "user_version", 4)?;
+        info!("Database migrated to version 4");
+    }
+
+    Ok(())
+}
+
+/// v4: the full-text index goes. Songs are searched for in memory now — the
+/// index matched whole words only — and nothing reads it any more, while
+/// every track written or changed was still written to it as well, by
+/// three triggers.
+fn migrate_v4(conn: &Connection) -> Result<()> {
+    info!("Applying migration V4: No full-text index");
+    conn.execute_batch(
+        "
+        DROP TRIGGER IF EXISTS tracks_ai;
+        DROP TRIGGER IF EXISTS tracks_ad;
+        DROP TRIGGER IF EXISTS tracks_au;
+        DROP TABLE IF EXISTS tracks_fts;
+        ",
+    )?;
+    Ok(())
+}
+
+/// v3: a fingerprint of each file's contents, by which a file that has been
+/// moved or renamed is known for the track it was. Empty for the tracks
+/// already there; the next scan fills it in.
+fn migrate_v3(conn: &Connection) -> Result<()> {
+    info!("Applying migration V3: Fingerprints");
+    conn.execute_batch(
+        "
+        ALTER TABLE tracks ADD COLUMN fingerprint TEXT;
+        CREATE INDEX IF NOT EXISTS idx_tracks_fingerprint ON tracks(fingerprint);
+        ",
+    )?;
     Ok(())
 }
 

@@ -47,8 +47,12 @@ pub struct UiConfig {
     pub notification_duration_secs: u64,
     /// Maximum cover art height percentage in sidebar (e.g. 40 means 40%)
     pub art_max_height_percent: u16,
-    /// Debounce time in ms before search triggers
-    pub search_debounce_ms: u64,
+    /// How soon the same track can be added to the queue again, in
+    /// milliseconds: a key held a moment too long adds it once. It was
+    /// called `search_debounce_ms`, which it never was; that name still
+    /// works.
+    #[serde(alias = "search_debounce_ms")]
+    pub queue_add_debounce_ms: u64,
     /// Target frames per second for rendering
     pub fps_limit: u64,
     /// Max visible items in playlist picker
@@ -78,11 +82,21 @@ pub struct LyricsConfig {
     /// lyrics are kept in the data folder's `lyrics` folder (see `--paths`),
     /// never beside the music.
     pub auto_fetch: bool,
+    /// How much later than the playback position the lyrics are shown, in
+    /// milliseconds; negative shows them earlier. The position is that of
+    /// the audio handed to the output, which is heard a little after — a
+    /// fifth of a second through a sound card, several through Bluetooth —
+    /// so synced lyrics run that much ahead of the voice. Setting this to
+    /// the delay puts them back in step.
+    pub offset_ms: i64,
 }
 
 impl Default for LyricsConfig {
     fn default() -> Self {
-        Self { auto_fetch: true }
+        Self {
+            auto_fetch: true,
+            offset_ms: 0,
+        }
     }
 }
 
@@ -91,6 +105,17 @@ impl Default for LyricsConfig {
 pub struct LibraryConfig {
     /// Directories to scan for music. If empty, falls back to `dirs::audio_dir()`.
     pub music_directories: Vec<String>,
+    /// Where `:dl` puts what it downloads. Unset, a `Downloads` folder in
+    /// the first music directory. It has to be inside one of the music
+    /// directories for what is downloaded to be found by the scan.
+    pub download_directory: Option<String>,
+    /// A browser yt-dlp is to take its YouTube cookies from for `:dl` —
+    /// `"firefox"`, `"chrome"`, `"brave"`, or anything else its
+    /// `--cookies-from-browser` takes, a profile included
+    /// (`"firefox:work"`). Signed in to a Premium account there, downloads
+    /// come at YouTube Music's 256 kbps where anyone else is sent 128.
+    /// Unset, yt-dlp is given no cookies, and nothing of the account.
+    pub download_cookies_from_browser: Option<String>,
     /// Custom database path. If None, falls back to `dirs::data_dir()/melotui/library.db`.
     pub db_path: Option<String>,
     /// Max resolution for cover art downscaling
@@ -132,6 +157,10 @@ pub struct AudioConfig {
     pub default_lowpass: f32,
     /// Default high-pass filter cutoff in Hz (20–5000)
     pub default_highpass: f32,
+    /// Play one track straight into the next, with no gap between them: the
+    /// next is made ready a few seconds before the one playing ends. Turn
+    /// off to have each track start only once the one before has ended.
+    pub gapless: bool,
     /// Output sample rate in Hz. `None` uses the device default.
     ///
     /// Set this to your sound server's native rate (PipeWire: check
@@ -161,7 +190,7 @@ impl Default for UiConfig {
             theme: "default".into(),
             notification_duration_secs: 2,
             art_max_height_percent: 40,
-            search_debounce_ms: 500,
+            queue_add_debounce_ms: 500,
             fps_limit: 60,
             playlist_picker_max_visible: 10,
             restore_session: true,
@@ -176,6 +205,8 @@ impl Default for LibraryConfig {
     fn default() -> Self {
         Self {
             music_directories: Vec::new(),
+            download_directory: None,
+            download_cookies_from_browser: None,
             db_path: None,
             max_cover_resolution: 512,
             picker_viewport_size: 20,
@@ -200,6 +231,7 @@ impl Default for AudioConfig {
             default_pan: 0.0,
             default_lowpass: 20000.0,
             default_highpass: 20.0,
+            gapless: true,
             sample_rate: Some(48_000),
             buffer_size: Some(8192),
             output_device: None,
@@ -240,9 +272,24 @@ impl AppConfig {
     }
 
     fn parse(path: &std::path::Path, contents: &str) -> Self {
-        match toml::from_str::<AppConfig>(contents) {
-            Ok(config) => {
+        // Settings the file has that melotui does not: a misspelt name was
+        // passed over without a word, and the setting it was meant to be
+        // stayed at its default with nothing to say why.
+        let mut unknown: Vec<String> = Vec::new();
+        let parsed = toml::Deserializer::parse(contents).and_then(|file| {
+            serde_ignored::deserialize::<_, _, AppConfig>(file, |setting| {
+                unknown.push(setting.to_string())
+            })
+        });
+        match parsed {
+            Ok(mut config) => {
                 tracing::info!("Loaded config from {:?}", path);
+                for setting in unknown {
+                    tracing::warn!("Unknown setting in {path:?}: {setting}");
+                    config
+                        .startup_errors
+                        .push(format!("Unknown setting `{setting}` (misspelt?)"));
+                }
                 config.finished()
             }
             Err(e) => {
@@ -316,6 +363,22 @@ impl AppConfig {
         self.ui.scrolloff = self.ui.scrolloff.clamp(0, 20);
         self.ui.lyrics_zoom = clamp_lyrics_zoom(self.ui.lyrics_zoom, 2.0);
         self.ui.lyrics_zoom_focus = clamp_lyrics_zoom(self.ui.lyrics_zoom_focus, 3.0);
+        // The analyser takes a power of two; anything else gave no
+        // spectrum at all, with nothing to say why.
+        self.audio.fft_size = self.audio.fft_size.clamp(512, 16_384).next_power_of_two();
+        self.lyrics.offset_ms = self.lyrics.offset_ms.clamp(-10_000, 10_000);
+        // Downloaded anywhere else, a song is never scanned, and never
+        // appears: said at start rather than wondered at later.
+        if let Some(dir) = &self.library.download_directory {
+            let dir = expand_tilde(dir);
+            let roots = self.resolve_music_dirs();
+            if !roots.iter().any(|root| dir.starts_with(root)) {
+                self.startup_errors.push(format!(
+                    "download_directory {} is not inside a music directory: downloads will not appear in the library",
+                    dir.display()
+                ));
+            }
+        }
         self.audio.default_speed = self.audio.default_speed.clamp(0.5, 2.0);
         self.audio.default_bass = self.audio.default_bass.clamp(0.1, 5.0);
         self.audio.default_treble = self.audio.default_treble.clamp(0.1, 5.0);
@@ -346,6 +409,15 @@ impl AppConfig {
                 .iter()
                 .map(|s| expand_tilde(s))
                 .collect()
+        }
+    }
+
+    /// Where downloads go, given the library's music folders: the folder
+    /// configured, or `Downloads` in the first of them. `None` with neither.
+    pub fn download_dir(&self, roots: &[PathBuf]) -> Option<PathBuf> {
+        match &self.library.download_directory {
+            Some(dir) => Some(expand_tilde(dir)),
+            None => roots.first().map(|root| root.join("Downloads")),
         }
     }
 
@@ -472,6 +544,86 @@ mod tests {
         assert_eq!(config.ui.sidebar_width, 35);
         assert_eq!(config.ui.scrolloff, 4);
         assert_eq!(config.audio.default_speed, 1.5);
+    }
+
+    #[test]
+    fn a_misspelt_setting_is_said_and_the_rest_still_read() {
+        let config = AppConfig::parse(
+            std::path::Path::new("config.toml"),
+            "[ui]\nfps_limt = 30\nscrolloff = 3\n\n[audoi]\nfft_size = 2048\n",
+        );
+        assert_eq!(config.ui.scrolloff, 3, "the rest of the file was dropped");
+        assert_eq!(config.ui.fps_limit, 60);
+        let said = config.startup_errors.join("; ");
+        assert!(said.contains("ui.fps_limt"), "{said}");
+        assert!(said.contains("audoi"), "{said}");
+
+        let fine = AppConfig::parse(
+            std::path::Path::new("config.toml"),
+            "[ui]\nfps_limit = 30\n\n[lyrics]\nauto_fetch = false\n",
+        );
+        assert!(fine.startup_errors.is_empty(), "{:?}", fine.startup_errors);
+        assert_eq!(fine.ui.fps_limit, 30);
+    }
+
+    #[test]
+    fn downloads_go_where_they_are_told_or_into_the_first_music_folder() {
+        let roots = vec![PathBuf::from("/music"), PathBuf::from("/more")];
+        let mut config = AppConfig::default();
+        assert_eq!(config.download_dir(&roots), Some("/music/Downloads".into()));
+        assert_eq!(config.download_dir(&[]), None);
+
+        config.library.music_directories = vec!["/music".into()];
+        config.library.download_directory = Some("/music/From YouTube".into());
+        let config = config.validated();
+        assert_eq!(
+            config.download_dir(&roots),
+            Some("/music/From YouTube".into())
+        );
+        assert!(
+            config.startup_errors.is_empty(),
+            "{:?}",
+            config.startup_errors
+        );
+
+        // Somewhere the scan never looks: said.
+        let mut elsewhere = AppConfig::default();
+        elsewhere.library.music_directories = vec!["/music".into()];
+        elsewhere.library.download_directory = Some("/tmp/dl".into());
+        let said = elsewhere.validated().startup_errors.join("; ");
+        assert!(said.contains("not inside a music directory"), "{said}");
+    }
+
+    #[test]
+    fn the_old_name_of_the_queue_debounce_still_sets_it() {
+        let config = AppConfig::parse(
+            std::path::Path::new("config.toml"),
+            "[ui]\nsearch_debounce_ms = 123\n",
+        );
+        assert_eq!(config.ui.queue_add_debounce_ms, 123);
+        assert!(
+            config.startup_errors.is_empty(),
+            "{:?}",
+            config.startup_errors
+        );
+        let config = AppConfig::parse(
+            std::path::Path::new("config.toml"),
+            "[ui]\nqueue_add_debounce_ms = 77\n",
+        );
+        assert_eq!(config.ui.queue_add_debounce_ms, 77);
+    }
+
+    #[test]
+    fn the_analyser_is_given_a_size_it_can_use() {
+        let sized = |size: usize| {
+            let mut config = AppConfig::default();
+            config.audio.fft_size = size;
+            config.validated().audio.fft_size
+        };
+        assert_eq!(sized(4096), 4096);
+        assert_eq!(sized(3000), 4096);
+        assert_eq!(sized(0), 512);
+        assert_eq!(sized(1_000_000), 16_384);
     }
 
     #[test]

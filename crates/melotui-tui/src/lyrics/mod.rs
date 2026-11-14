@@ -160,13 +160,47 @@ impl LyricsRenderer {
     /// can show one over its own background. The fonts load the first time
     /// this answers yes; until they are in, it answers no.
     pub fn should_shape(&mut self, picker: &Picker, lines: &[&str], zoom: f32) -> bool {
-        let (cell_w, cell_h) = picker.font_size();
+        let font = picker.font_size();
+        let (cell_w, cell_h) = (font.width, font.height);
         self.enabled
             && self.route(picker).is_some()
             && cell_w > 0
             && cell_h > 0
             && (zoom > 1.0 || lines.iter().any(|line| needs_shaping(line)))
             && self.shaper.ready()
+    }
+
+    /// Whether lyrics would be drawn as an image, given the terminal and
+    /// the settings, whatever they say.
+    fn can_shape(&self, picker: &Picker) -> bool {
+        let font = picker.font_size();
+        let (cell_w, cell_h) = (font.width, font.height);
+        self.enabled && self.route(picker).is_some() && cell_w > 0 && cell_h > 0
+    }
+
+    /// Starts the fonts loading now, where lyrics will be drawn with them,
+    /// and has `redraw` called once they are in.
+    ///
+    /// They used to start loading when the first lyrics needing them came
+    /// to be drawn, and those lyrics were drawn as terminal text meanwhile:
+    /// Hindi or Urdu as the terminal mangles them, or zoomed lyrics at text
+    /// size, for a moment at the start of the first song, before the image
+    /// took their place.
+    pub fn preload(&mut self, picker: &Picker, redraw: Box<dyn Fn() + Send>) {
+        if self.can_shape(picker) {
+            self.shaper.when_ready(redraw);
+            self.shaper.ready();
+        }
+    }
+
+    /// Whether lyrics made of `lines` are to be drawn as an image whose
+    /// fonts are still on their way. The panel is left empty for that
+    /// moment rather than filled with text that is about to be replaced.
+    pub fn waiting_for_fonts(&mut self, picker: &Picker, lines: &[&str], zoom: f32) -> bool {
+        self.can_shape(picker)
+            && (zoom > 1.0 || lines.iter().any(|line| needs_shaping(line)))
+            && !self.shaper.ready()
+            && self.shaper.loading()
     }
 
     /// How many slots `text` takes, `width` pixels wide with lines `pitch`
@@ -206,7 +240,8 @@ impl LyricsRenderer {
         let Some(route) = self.route(picker) else {
             return false;
         };
-        let (cell_w, cell_h) = picker.font_size();
+        let font = picker.font_size();
+        let (cell_w, cell_h) = (font.width, font.height);
         if lines.is_empty() || area.is_empty() || cell_w == 0 || cell_h == 0 {
             return false;
         }
@@ -262,14 +297,14 @@ impl LyricsRenderer {
                 }
                 Route::Transparent => {
                     let image = DynamicImage::ImageRgba8(image);
-                    match picker.new_protocol(image, full, Resize::Fit(None)) {
+                    match picker.new_protocol(image, full.into(), Resize::Fit(None)) {
                         Ok(protocol) => (Shown::Other(protocol), None),
                         Err(_) => return false,
                     }
                 }
                 Route::Opaque(background) => {
                     let image = DynamicImage::ImageRgba8(onto(image, background));
-                    match picker.new_protocol(image, full, Resize::Fit(None)) {
+                    match picker.new_protocol(image, full.into(), Resize::Fit(None)) {
                         Ok(protocol) => (Shown::Other(protocol), None),
                         Err(_) => return false,
                     }
@@ -498,6 +533,61 @@ mod tests {
             .draw(|f| drawn = r.draw(f, f.area(), picker, lines, active, zoom))
             .unwrap();
         (drawn, frame.buffer.clone())
+    }
+
+    use std::sync::Arc;
+
+    #[test]
+    fn while_the_fonts_load_the_panel_waits_rather_than_showing_text() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let kitty = picker(ProtocolType::Kitty);
+        let hindi = ["कुछ तो है"];
+        let latin = ["Some words"];
+        let mut r = LyricsRenderer::new(true);
+
+        // Asked to load at start, and to say when they are in.
+        let said = Arc::new(AtomicUsize::new(0));
+        let count = said.clone();
+        r.preload(
+            &kitty,
+            Box::new(move || {
+                count.fetch_add(1, Ordering::SeqCst);
+            }),
+        );
+
+        // What needs the fonts waits for them; what does not is text at once.
+        if !r.shaper.ready() {
+            assert!(r.waiting_for_fonts(&kitty, &hindi, 1.0));
+            assert!(r.waiting_for_fonts(&kitty, &latin, 2.0), "zoomed");
+        }
+        assert!(!r.waiting_for_fonts(&kitty, &latin, 1.0));
+
+        r.wait_for_fonts();
+        assert!(!r.waiting_for_fonts(&kitty, &hindi, 1.0));
+        assert!(r.should_shape(&kitty, &hindi, 1.0));
+        // The call comes from the loading thread, just after the fonts.
+        for _ in 0..200 {
+            if said.load(Ordering::SeqCst) > 0 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(said.load(Ordering::SeqCst), 1, "the screen was not told");
+    }
+
+    #[test]
+    fn a_terminal_without_images_never_waits_and_loads_no_fonts() {
+        let blocks = picker(ProtocolType::Halfblocks);
+        let mut r = LyricsRenderer::new(true);
+        r.preload(&blocks, Box::new(|| panic!("fonts loaded for nothing")));
+        assert!(!r.waiting_for_fonts(&blocks, &["कुछ तो है"], 3.0));
+        assert!(!r.shaper.loading());
+
+        // Nor with shaping turned off.
+        let mut off = LyricsRenderer::new(false);
+        off.preload(&picker(ProtocolType::Kitty), Box::new(|| panic!("loaded")));
+        assert!(!off.waiting_for_fonts(&picker(ProtocolType::Kitty), &["कुछ तो है"], 3.0));
     }
 
     #[test]

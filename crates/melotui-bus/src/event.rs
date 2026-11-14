@@ -8,9 +8,6 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub enum IpcEvent {
     // downloads
-    DownloadStarted {
-        query: String,
-    },
     DownloadProgress {
         percent: u8,
     },
@@ -37,12 +34,22 @@ pub enum IpcEvent {
     },
     PlaybackPaused,
     PlaybackResumed,
-    PlaybackStopped,
     PlaybackProgress {
         position_ms: u64,
         epoch: u64,
     },
     PlaybackFinished,
+    /// The track playing ended and the one made ready behind it carried
+    /// straight on, with no gap: `path` is playing now.
+    PlaybackAdvanced {
+        path: String,
+    },
+    /// The file asked for could not be opened or decoded, and nothing is
+    /// playing.
+    PlaybackFailed {
+        path: String,
+        error: String,
+    },
 
     // errors
     Error {
@@ -65,6 +72,12 @@ pub enum IpcEvent {
     LibraryLoaded {
         snapshot: Box<Library>,
     },
+    /// A scan still under way has more to show: the library as it stands,
+    /// so a first scan of a large collection fills in as it goes rather
+    /// than being an empty screen until it is over.
+    LibraryGrew {
+        snapshot: Box<Library>,
+    },
     /// A scan finished; `changed` if it added, updated or removed tracks.
     LibraryRescanned {
         changed: bool,
@@ -77,10 +90,6 @@ pub enum IpcEvent {
         scanned: u32,
         skipped: u32,
         total: u32,
-    },
-    SearchResults {
-        query: String,
-        results: Vec<TrackId>,
     },
 
     // playlists

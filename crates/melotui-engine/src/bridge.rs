@@ -40,9 +40,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             DownloadMsg::DispatchDownload {
                 query,
                 download_path,
+                cookies_from_browser,
             } => Some(IpcCommand::Download(DownloadCommand::Request {
                 query: query.clone(),
                 download_path: download_path.clone(),
+                cookies_from_browser: cookies_from_browser.clone(),
             })),
             DownloadMsg::RequestCancelDownload => {
                 Some(IpcCommand::Download(DownloadCommand::Cancel))
@@ -77,6 +79,11 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
             PlaybackMsg::DispatchPlay { path } => {
                 Some(IpcCommand::Audio(AudioCommand::Play { path: path.clone() }))
             }
+            PlaybackMsg::DispatchPreload { path } => {
+                Some(IpcCommand::Audio(AudioCommand::Preload {
+                    path: path.clone(),
+                }))
+            }
             PlaybackMsg::DispatchPause => Some(IpcCommand::Audio(AudioCommand::Pause)),
             PlaybackMsg::DispatchResume => Some(IpcCommand::Audio(AudioCommand::Resume)),
             PlaybackMsg::DispatchStop => Some(IpcCommand::Audio(AudioCommand::Stop)),
@@ -98,16 +105,8 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
         AppMsg::Audio(audio_msg) => match audio_msg {
             AudioMsg::DispatchSetVolume(v) => Some(IpcCommand::Audio(AudioCommand::SetVolume(*v))),
             AudioMsg::DispatchSetSpeed(v) => Some(IpcCommand::Audio(AudioCommand::SetSpeed(*v))),
-            AudioMsg::DispatchSetBass(v) => Some(IpcCommand::Audio(AudioCommand::SetBass(*v))),
-            AudioMsg::DispatchSetTreble(v) => Some(IpcCommand::Audio(AudioCommand::SetTreble(*v))),
-            AudioMsg::DispatchSetReverb(v) => Some(IpcCommand::Audio(AudioCommand::SetReverb(*v))),
-            AudioMsg::DispatchSetEcho(v) => Some(IpcCommand::Audio(AudioCommand::SetEcho(*v))),
-            AudioMsg::DispatchSetPan(v) => Some(IpcCommand::Audio(AudioCommand::SetPan(*v))),
-            AudioMsg::DispatchSetLowpass(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetLowpass(*v)))
-            }
-            AudioMsg::DispatchSetHighpass(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetHighpass(*v)))
+            AudioMsg::DispatchSet(effect, v) => {
+                Some(IpcCommand::Audio(AudioCommand::SetEffect(*effect, *v)))
             }
             AudioMsg::DispatchSetEqBand { band, gain } => {
                 Some(IpcCommand::Audio(AudioCommand::SetEqBand {
@@ -115,27 +114,6 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                     gain: *gain,
                 }))
             }
-            AudioMsg::DispatchSetAutoPanRate(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetAutoPanRate(*v)))
-            }
-            AudioMsg::DispatchSetAutoPanDepth(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetAutoPanDepth(*v)))
-            }
-            AudioMsg::DispatchSetWobble(v) => Some(IpcCommand::Audio(AudioCommand::SetWobble(*v))),
-            AudioMsg::DispatchSetKaraoke(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetKaraoke(*v)))
-            }
-            AudioMsg::DispatchSetWidth(v) => Some(IpcCommand::Audio(AudioCommand::SetWidth(*v))),
-            AudioMsg::DispatchSetBitcrush(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetBitcrush(*v)))
-            }
-            AudioMsg::DispatchSetExciter(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetExciter(*v)))
-            }
-            AudioMsg::DispatchSetPingPong(v) => {
-                Some(IpcCommand::Audio(AudioCommand::SetPingPong(*v)))
-            }
-            AudioMsg::DispatchSetPhaser(v) => Some(IpcCommand::Audio(AudioCommand::SetPhaser(*v))),
             AudioMsg::SetOutputDevice(device) => Some(IpcCommand::Audio(
                 AudioCommand::SetOutputDevice(device.clone()),
             )),
@@ -151,9 +129,15 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                 roots: library_roots.to_vec(),
             }))
         }
-        AppMsg::Database(DatabaseMsg::DispatchToggleFavorite(track_id)) => {
-            Some(IpcCommand::Database(DatabaseCommand::ToggleFavorite {
-                track_id: track_id.0 as i64,
+        AppMsg::Database(DatabaseMsg::DispatchLoadLibrary) => {
+            Some(IpcCommand::Database(DatabaseCommand::LoadLibrary {
+                roots: library_roots.to_vec(),
+            }))
+        }
+        AppMsg::Database(DatabaseMsg::DispatchSetFavorite { id, favorite }) => {
+            Some(IpcCommand::Database(DatabaseCommand::SetFavorite {
+                track_id: id.0 as i64,
+                favorite: *favorite,
             }))
         }
         AppMsg::Database(DatabaseMsg::DispatchCreatePlaylist(name)) => {
@@ -185,11 +169,6 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
         AppMsg::Database(DatabaseMsg::DispatchIncrementPlayCount(track_id)) => {
             Some(IpcCommand::Database(DatabaseCommand::IncrementPlayCount {
                 track_id: track_id.0 as i64,
-            }))
-        }
-        AppMsg::Database(DatabaseMsg::DispatchSearchTracks(query)) => {
-            Some(IpcCommand::Database(DatabaseCommand::SearchTracks {
-                query: query.clone(),
             }))
         }
 
@@ -237,6 +216,12 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             AppMsg::Playback(PlaybackMsg::AudioProgress { position_ms, epoch })
         }
         IpcEvent::PlaybackFinished => AppMsg::Playback(PlaybackMsg::AudioFinished),
+        IpcEvent::PlaybackAdvanced { path } => {
+            AppMsg::Playback(PlaybackMsg::AudioAdvanced { path })
+        }
+        IpcEvent::PlaybackFailed { path, error } => {
+            AppMsg::Playback(PlaybackMsg::AudioError { path, error })
+        }
         IpcEvent::PlaybackPaused => AppMsg::Playback(PlaybackMsg::AudioPaused),
         IpcEvent::PlaybackResumed => AppMsg::Playback(PlaybackMsg::AudioResumed),
         IpcEvent::FavoriteToggled {
@@ -282,9 +267,6 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             skipped,
             total,
         }),
-        IpcEvent::SearchResults { query, results } => {
-            AppMsg::Library(LibraryMsg::SetSearchResults { query, results })
-        }
         // A worker that failed says so, rather than the failure only reaching
         // the log.
         IpcEvent::AudioOutputOpened { name } => AppMsg::Audio(AudioMsg::OutputOpened(name)),
@@ -294,7 +276,16 @@ pub fn ipc_to_appmsg(evt: IpcEvent) -> AppMsg {
             kind: NotificationKind::Error,
             message,
         }),
-        _ => AppMsg::Noop,
+        // The library, as the database sends it. The session saved at the
+        // last quit is the frontend's to read and add to the first of these.
+        IpcEvent::LibraryLoaded { snapshot } => AppMsg::Library(LibraryMsg::Loaded {
+            snapshot,
+            session: None,
+        }),
+        IpcEvent::LibraryGrew { snapshot } => AppMsg::Library(LibraryMsg::Grew(snapshot)),
+        IpcEvent::LibraryRescanned { changed } => {
+            AppMsg::Library(LibraryMsg::Rescanned { changed })
+        }
     }
 }
 
@@ -316,6 +307,36 @@ mod tests {
             }
             other => panic!("dropped: {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_file_that_could_not_be_played_reaches_playback_not_only_the_screen() {
+        let msg = ipc_to_appmsg(IpcEvent::PlaybackFailed {
+            path: "/music/broken.mp3".into(),
+            error: "Cannot play broken.mp3: bad header".into(),
+        });
+        assert!(
+            matches!(&msg, AppMsg::Playback(PlaybackMsg::AudioError { path, .. }) if path == "/music/broken.mp3"),
+            "{msg:?}"
+        );
+    }
+
+    #[test]
+    fn making_a_track_ready_and_its_carrying_on_cross_the_bridge() {
+        let msg = AppMsg::Playback(PlaybackMsg::DispatchPreload {
+            path: Some(PathBuf::from("/music/next.flac")),
+        });
+        assert!(matches!(
+            appmsg_to_ipc(&msg, &[]),
+            Some(IpcCommand::Audio(AudioCommand::Preload { path: Some(path) })) if path.ends_with("next.flac")
+        ));
+        let msg = ipc_to_appmsg(IpcEvent::PlaybackAdvanced {
+            path: "/music/next.flac".into(),
+        });
+        assert!(matches!(
+            msg,
+            AppMsg::Playback(PlaybackMsg::AudioAdvanced { path }) if path == "/music/next.flac"
+        ));
     }
 
     #[test]
@@ -357,16 +378,19 @@ mod tests {
             _ => panic!("Expected Audio Stop command"),
         }
 
-        // Test Database toggle favorite command
+        // Test Database set favorite command
         let msg = AppMsg::Database(
-            melotui_core::message::database::DatabaseMsg::DispatchToggleFavorite(TrackId(42)),
+            melotui_core::message::database::DatabaseMsg::DispatchSetFavorite {
+                id: TrackId(42),
+                favorite: true,
+            },
         );
         let cmd = appmsg_to_ipc(&msg, &roots).unwrap();
         match cmd {
-            IpcCommand::Database(DatabaseCommand::ToggleFavorite { track_id }) => {
-                assert_eq!(track_id, 42);
+            IpcCommand::Database(DatabaseCommand::SetFavorite { track_id, favorite }) => {
+                assert_eq!((track_id, favorite), (42, true));
             }
-            _ => panic!("Expected Database ToggleFavorite command"),
+            _ => panic!("Expected Database SetFavorite command"),
         }
 
         // Test FetchLyrics command translation
@@ -397,6 +421,20 @@ mod tests {
                 assert_eq!(save_path, std::path::PathBuf::from("/path/to/lyrics.lrc"));
             }
             _ => panic!("Expected FetchLyrics command"),
+        }
+    }
+
+    #[test]
+    fn every_effect_set_reaches_the_audio_thread_as_itself() {
+        use melotui_core::state::audio::Effect;
+        for effect in Effect::ALL {
+            let msg = AppMsg::Audio(AudioMsg::DispatchSet(effect, 0.5));
+            match appmsg_to_ipc(&msg, &[]) {
+                Some(IpcCommand::Audio(AudioCommand::SetEffect(sent, value))) => {
+                    assert_eq!((sent, value), (effect, 0.5));
+                }
+                other => panic!("{effect:?} was sent as {other:?}"),
+            }
         }
     }
 

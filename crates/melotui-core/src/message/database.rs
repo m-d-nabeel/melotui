@@ -2,7 +2,15 @@ use crate::domain::{PlaylistId, TrackId};
 
 #[derive(Debug, Clone)]
 pub enum DatabaseMsg {
-    DispatchToggleFavorite(TrackId),
+    /// Make the track a favorite, or not: what it is to be, not "the other
+    /// of what it is", which a write that failed once would leave the wrong
+    /// way round against the screen from then on.
+    DispatchSetFavorite {
+        id: TrackId,
+        favorite: bool,
+    },
+    /// Read the library from the database again.
+    DispatchLoadLibrary,
     DispatchCreatePlaylist(String),
     DispatchDeletePlaylist(PlaylistId),
     DispatchAddToPlaylist {
@@ -14,5 +22,4 @@ pub enum DatabaseMsg {
         track_id: TrackId,
     },
     DispatchIncrementPlayCount(TrackId),
-    DispatchSearchTracks(String),
 }

@@ -18,6 +18,10 @@ authors = ["m-d-nabeel"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/m-d-nabeel/melotui"
 edition = "2024"
+# The oldest Rust this builds with: what the newest of its dependencies ask
+# for. CI builds with exactly this version, so raising it is a decision made
+# here, not something a dependency update does unnoticed.
+rust-version = "1.90"
 
 # The workspace's own crates, and dependencies several of them share.
 [workspace.dependencies]
@@ -39,6 +43,18 @@ opt-level = 3
 lto = "fat"
 codegen-units = 1
 strip = true
-panic = "abort"
+# Unwinding, as in the other profiles: the panics that are caught — a tag
+# library failing on one file — could not be under "abort", and a release
+# archive would then behave differently from a `cargo install`. A panic
+# nobody catches still ends the process, from the panic hook in `main`.
 overflow-checks = false
 incremental = false
+
+# The effects' tests push seconds of audio through the DSP graph, and
+# unoptimised that took half a minute of every test run. The crates doing the
+# arithmetic are built optimised in development too; melotui's own stay as
+# they are, quick to build and to step through.
+[profile.dev.package.fundsp]
+opt-level = 3
+[profile.dev.package.melotui-audio]
+opt-level = 2

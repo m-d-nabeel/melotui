@@ -41,7 +41,7 @@ pub fn draw(
             .constraints([Constraint::Fill(1), Constraint::Length(playback_height)])
             .split(area);
 
-        dsp_studio_view::draw(frame, layout[0], state, image_cache);
+        dsp_studio_view::draw(frame, layout[0], state, image_cache, registry);
         playback_view::draw_compact(frame, layout[1], state);
     } else {
         // Dispatch to focus mode layout
@@ -229,7 +229,7 @@ fn draw_overlays(
 
     if *state.ui_mode() == UIMode::Confirm {
         frame.render_widget(dim_block.clone(), area);
-        confirm_view::draw(frame, area, state);
+        confirm_view::draw(frame, area, state, registry);
     }
 
     if state.ui_show_help() {
@@ -348,14 +348,17 @@ mod image_tests {
     fn sent(protocol: ProtocolType) -> ratatui::buffer::Buffer {
         let mut picker = Picker::halfblocks();
         picker.set_protocol_type(protocol);
-        let (w, h) = picker.font_size();
+        let font = picker.font_size();
+        let (w, h) = (font.width, font.height);
         let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
             20 * u32::from(w),
             5 * u32::from(h),
             image::Rgba([200, 100, 50, 255]),
         ));
         let area = Rect::new(0, 0, 20, 5);
-        let art = picker.new_protocol(image, area, Resize::Fit(None)).unwrap();
+        let art = picker
+            .new_protocol(image, area.into(), Resize::Fit(None))
+            .unwrap();
         let mut terminal = Terminal::new(TestBackend::new(30, 7)).unwrap();
         terminal
             .draw(|f| {
@@ -390,7 +393,8 @@ mod image_tests {
         use ratatui::widgets::{Block, Borders, Clear, Paragraph};
         let mut picker = Picker::halfblocks();
         picker.set_protocol_type(ProtocolType::Kitty);
-        let (w, h) = picker.font_size();
+        let font = picker.font_size();
+        let (w, h) = (font.width, font.height);
         let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
             20 * u32::from(w),
             5 * u32::from(h),
@@ -398,7 +402,7 @@ mod image_tests {
         ));
         let art_area = Rect::new(2, 1, 20, 5);
         let art = picker
-            .new_protocol(image, art_area, Resize::Fit(None))
+            .new_protocol(image, art_area.into(), Resize::Fit(None))
             .unwrap();
         let popup = Rect::new(12, 2, 15, 3);
         let mut terminal = Terminal::new(TestBackend::new(30, 7)).unwrap();
@@ -624,7 +628,8 @@ mod image_tests {
         let (width, height) = (60, 16);
         let mut picker = Picker::halfblocks();
         picker.set_protocol_type(ProtocolType::Kitty);
-        let (w, h) = picker.font_size();
+        let font = picker.font_size();
+        let (w, h) = (font.width, font.height);
         let image = DynamicImage::ImageRgba8(RgbaImage::from_pixel(
             60 * u32::from(w),
             14 * u32::from(h),

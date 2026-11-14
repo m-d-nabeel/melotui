@@ -81,7 +81,8 @@ impl ImageState {
             return;
         };
 
-        let (font_w, font_h) = picker.font_size();
+        let font = picker.font_size();
+        let (font_w, font_h) = (font.width, font.height);
         let aspect = (area.width as f32 * font_w as f32) / (area.height as f32 * font_h as f32);
         let (src_w, src_h) = (source.width().max(1), source.height().max(1));
         let (crop_w, crop_h) = if src_w as f32 / src_h as f32 > aspect {
@@ -158,8 +159,22 @@ pub struct ImageCache {
 }
 
 impl ImageCache {
+    /// Starts loading the fonts lyrics are drawn with, if this terminal
+    /// will have them drawn as images; `redraw` is called once they are in.
+    pub fn preload_lyrics_fonts(&mut self, redraw: Box<dyn Fn() + Send>) {
+        self.lyrics.preload(&self.picker, redraw);
+    }
+
     pub fn new(lyrics_shaping: bool) -> Self {
+        // Inside tmux the image library turns the pane's passthrough on
+        // first, so the question reaches the terminal outside; don't skip it.
         let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
+        tracing::info!(
+            "Images: {:?}, cells {}x{} px",
+            picker.protocol_type(),
+            picker.font_size().width,
+            picker.font_size().height
+        );
 
         let mut lyrics = LyricsRenderer::new(lyrics_shaping);
         // Sixel has no transparency, so lyrics drawn through it are blended

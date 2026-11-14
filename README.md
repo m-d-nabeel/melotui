@@ -44,7 +44,16 @@ sudo dnf install alsa-lib-devel dbus-devel pkgconf-pkg-config
 
 ### 2. Install yt-dlp (Optional but Recommended)
 
-To use the in-app YouTube download feature (`:dl <query>`), you must have `yt-dlp` installed and available in your system's PATH.
+To use the in-app YouTube download feature (`:dl <query>`), you must have `yt-dlp` installed and available in your system's PATH. Downloads go into a `Downloads` folder in your first music directory, or wherever `[library] download_directory` in `config.toml` says, which has to be inside one of your music directories.
+
+Downloads are kept as YouTube's AAC audio (`.m4a`), exactly as it is sent: about a megabyte a minute, with nothing re-encoded. Signed in to YouTube Premium in your browser, you can have yt-dlp use that browser's cookies, and downloads then come at 256 kbps instead of 128:
+
+```toml
+[library]
+download_cookies_from_browser = "firefox"   # or "chrome", "brave", "edge", ... ; "firefox:profile" for a profile
+```
+
+This is off unless you set it, and is passed to yt-dlp's `--cookies-from-browser` as it stands. Firefox is the most dependable; Chrome on Windows keeps its cookies locked while it is running, and yt-dlp then says so when the download fails.
 
 - [yt-dlp installation guide](https://github.com/yt-dlp/yt-dlp/wiki/Installation)
 
@@ -107,7 +116,8 @@ The keys follow what cmus, ncmpcpp and mpv agree on.
 | `a`, `A`, `f`, `p` | Add to the queue, play next, favorite, add to a playlist |
 | `i`, `l` | Track info, and lyrics |
 | `v`, `Shift+V` | Album art or visualizer, and the next visualizer style |
-| `F1`, `F2` | Layout, and the DSP studio, where every effect is adjusted |
+| `F1`, `F2`, `F4` | Layout, the DSP studio, where every effect is adjusted, and minimize: everything down to the now-playing strip, and back |
+| `/`, `n`, `N` | Find a song, artist or album, and the next and previous match |
 | `:`, `?`, `q` | Commands, help, and quit |
 
 Volume, speed and effects changed out of sight of the mixer are shown in a notification. Press `:` for the command bar (e.g., `:dl lofi hip hop` or `:quit`): it lists every command as you type, and `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names. Keys can be changed in `keymaps.toml` (`melotui --paths` shows where).
@@ -126,7 +136,8 @@ Volume, speed and effects changed out of sight of the mixer are shown in a notif
 | `:lyrics zoom 3`, `:lyrics zoom panel 2` | Lyrics size |
 | `:focus lyrics`, `:vis nova`, `:toggle art` | Layout, visualizer and panels |
 | `:device`, `:device <name>`, `:device default` | Audio output device |
-| `:pl add <playlist>`, `:artist <query>` | Playlists and search |
+| `:pl add <playlist>` | Playlists |
+| `:find way back`, `:song fad`, `:artist lisa`, `:album`, `:genre`, `:year`, `:noh` | Search: everything, or one kind; part of a word is enough, and the words can come in any order |
 
 ### Audio output
 
@@ -139,6 +150,13 @@ output_device = "USB Audio"   # the name, or part of it
 
 A chosen device that is not there is stood in for by the default until it comes back.
 
+One track plays straight into the next with no gap between them: the next is made ready a few seconds before the one playing ends. To have each start only once the one before has ended:
+
+```toml
+[audio]
+gapless = false
+```
+
 ### Lyrics
 
 A song's lyrics come from a `.lrc` file in melotui's `lyrics` folder (`melotui --paths` shows where), named `Artist - Title.lrc` or after the audio file, from a `.lrc` beside the song, or from the song's own tags. A song with none has them fetched from [LRCLIB](https://lrclib.net) as it starts, into that folder, never into the music folders; the lyrics panel opens when a song has lyrics, unless you have closed it. Fetching sends the song's title, artist, album and length to lrclib.net; turn it off in `config.toml`:
@@ -146,6 +164,13 @@ A song's lyrics come from a `.lrc` file in melotui's `lyrics` folder (`melotui -
 ```toml
 [lyrics]
 auto_fetch = false
+```
+
+Lyrics follow the audio as it is sent to the output, which is heard a moment later: through Bluetooth headphones the words can run a few tenths of a second ahead of the voice. Hold them back by that much (or bring them forward with a negative number):
+
+```toml
+[lyrics]
+offset_ms = 250
 ```
 
 ### Lyrics size

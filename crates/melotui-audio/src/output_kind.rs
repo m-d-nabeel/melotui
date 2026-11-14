@@ -19,6 +19,9 @@ use melotui_core::state::audio::OutputKind;
 
 /// How often to look again: headphones plugged in show within this.
 const LOOK_EVERY: Duration = Duration::from_secs(3);
+/// How many looks a sound server that did not answer is left alone for:
+/// half a minute.
+const LOOKS_BEFORE_ASKING_AGAIN: u32 = 10;
 
 /// The output open now, for the watcher to look at.
 #[derive(Debug, Default)]
@@ -106,18 +109,27 @@ pub fn watch(watched: Arc<Mutex<Watched>>) -> mpsc::Receiver<OutputKind> {
         .name("output-kind".into())
         .spawn(move || {
             let mut last = OutputKind::Unknown;
-            // Without pactl, or a server to answer it, there is no asking
-            // every few seconds.
-            let mut can_ask = true;
+            // Looks left to pass over before asking a sound server that did
+            // not answer. It used to be asked no more for the rest of the
+            // run: a server restarting, or for a moment taking no new
+            // connections, and the icon was gone until melotui was started
+            // again. Now it is asked again after half a minute.
+            let mut waiting = 0;
             loop {
                 let (name, follows_default) = match watched.lock() {
                     Ok(w) => (w.name.clone(), w.follows_default),
                     Err(_) => return,
                 };
                 let mut kind = None;
-                if follows_default && can_ask {
-                    kind = from_sound_server();
-                    can_ask = kind.is_some();
+                if follows_default {
+                    if waiting == 0 {
+                        kind = from_sound_server();
+                        if kind.is_none() {
+                            waiting = LOOKS_BEFORE_ASKING_AGAIN;
+                        }
+                    } else {
+                        waiting -= 1;
+                    }
                 }
                 let kind = kind
                     .filter(|k| *k != OutputKind::Unknown)

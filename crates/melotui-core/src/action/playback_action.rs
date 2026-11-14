@@ -197,6 +197,29 @@ pub fn handle_request_prev(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
+    track_ended(state, None)
+}
+
+/// The track ended and the audio thread went straight on with the one it
+/// had been told to make ready, at `path`. If that is the track that
+/// follows, it is simply the track playing now; if what follows has changed
+/// since — the queue, the repeat mode — the right one is started instead.
+pub fn handle_audio_advanced(state: &mut AppState, path: String) -> Vec<AppMsg> {
+    let mut effects = track_ended(state, Some(std::path::Path::new(&path)));
+    if state
+        .get_playing_track()
+        .is_some_and(|t| t.file_path == std::path::Path::new(&path))
+        && state.is_playing()
+    {
+        // Its lyrics, as for any track that starts.
+        effects.extend(handle_audio_started(state, path));
+    }
+    effects
+}
+
+/// What follows the end of a track. `carried_on` is the file the audio
+/// thread is already playing in its place, if it went on without a gap.
+fn track_ended(state: &mut AppState, carried_on: Option<&std::path::Path>) -> Vec<AppMsg> {
     let mut effects = vec![];
     if let Some(id) = state.session.playback.current {
         effects.push(AppMsg::Database(
@@ -206,13 +229,24 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
 
     state.session.playback.status = PlaybackStatus::Stopped;
     state.session.playback.progress_ms = 0;
+    // Whether the track about to be made current is the one already
+    // playing, and need not be started.
+    let is_carried_on = |state: &AppState, id: TrackId| {
+        carried_on.is_some_and(|path| {
+            state
+                .library
+                .get_track(id)
+                .is_some_and(|track| track.file_path == path)
+        })
+    };
 
     match state.session.repeat_mode {
         // Repeat-one: play the same track again, queue untouched.
         RepeatMode::Track => {
             if let Some(id) = state.session.playback.current {
                 let from_queue = state.is_playing_from_queue();
-                effects.extend(start_playback(state, id, from_queue));
+                let already = is_carried_on(state, id);
+                effects.extend(begin_track(state, id, from_queue, already));
                 return effects;
             }
         }
@@ -220,6 +254,7 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
         // so it keeps meaning what its label says on the next track too.
         RepeatMode::PlayOnce => {
             advance::retire_active_queue_entry(&mut state.session);
+            state.session.preloaded = None;
             state.session.notification.current = Some(Notification::new(
                 NotificationKind::Info,
                 "Stopped — end after track",
@@ -231,8 +266,76 @@ pub fn handle_audio_finished(state: &mut AppState) -> Vec<AppMsg> {
     }
 
     advance::retire_active_queue_entry(&mut state.session);
-    effects.extend(play_next_up(state));
+    let decision = advance::peek(&state.session);
+    let from_queue = matches!(decision, advance::NextUp::Queued { .. });
+    match advance::commit(&mut state.session, &decision) {
+        Some(track) => {
+            if !from_queue {
+                update_active_node(state, track);
+            } else {
+                state.session.playback.active_node = None;
+            }
+            let already = is_carried_on(state, track);
+            effects.extend(begin_track(state, track, from_queue, already));
+        }
+        None => {
+            let source = state.get_playing_source_name().to_string();
+            state.session.playback.status = PlaybackStatus::Stopped;
+            state.session.preloaded = None;
+            state.session.notification.current = Some(Notification::new(
+                NotificationKind::Info,
+                format!("End of {source}"),
+            ));
+            effects.push(AppMsg::Playback(PlaybackMsg::DispatchStop));
+        }
+    }
     effects
+}
+
+/// How long before a track ends the next is made ready.
+const PRELOAD_WITHIN_MS: u64 = 10_000;
+
+/// The file that will follow the track playing, if that can be told now:
+/// the track itself when repeating it, none when ending after it, and
+/// otherwise what is next in the queue or the playlist. Past the end of a
+/// shuffled pass the next track is not chosen until it is dealt.
+fn what_follows(state: &AppState) -> Option<std::path::PathBuf> {
+    let track = match state.session.repeat_mode {
+        RepeatMode::Track => state.session.playback.current?,
+        RepeatMode::PlayOnce => return None,
+        // The queue entry playing now is passed over by `peek` as it is,
+        // so this is what the end of the track will find.
+        RepeatMode::Off | RepeatMode::Playlist => match advance::peek(&state.session) {
+            advance::NextUp::Queued { track, .. } | advance::NextUp::Context(track) => track,
+            advance::NextUp::ContextUnknown | advance::NextUp::Exhausted => return None,
+        },
+    };
+    state.library.get_track(track).map(|t| t.file_path.clone())
+}
+
+/// Near the end of a track, has the audio thread make ready what follows,
+/// and tells it again whenever that changes — a track queued, shuffle
+/// turned on — so that what carries on is what should.
+fn preload_what_follows(state: &mut AppState) -> Vec<AppMsg> {
+    if !state.config.audio.gapless {
+        return vec![];
+    }
+    let playback = &state.session.playback;
+    let near_the_end = playback.duration_ms.is_some_and(|duration| {
+        duration > 0 && duration.saturating_sub(playback.progress_ms) <= PRELOAD_WITHIN_MS
+    });
+    let wanted = if near_the_end {
+        what_follows(state)
+    } else {
+        None
+    };
+    if wanted == state.session.preloaded {
+        return vec![];
+    }
+    state.session.preloaded = wanted.clone();
+    vec![AppMsg::Playback(PlaybackMsg::DispatchPreload {
+        path: wanted,
+    })]
 }
 
 pub fn handle_request_toggle_playback(state: &mut AppState) -> Vec<AppMsg> {
@@ -315,17 +418,73 @@ pub fn handle_audio_progress(state: &mut AppState, position_ms: u64, epoch: u64)
     if state.is_playing() && epoch >= state.session.seek_epoch {
         state.session.playback.progress_ms = position_ms;
         sync_lyrics_line(state);
+        return preload_what_follows(state);
     }
     vec![]
 }
 
-pub fn handle_audio_error(state: &mut AppState, error: String) -> Vec<AppMsg> {
+/// How many tracks in a row may fail to play before playback stops rather
+/// than moving on: with the music's drive gone every track fails, and moving
+/// on would run through the whole library in a moment.
+const MAX_FAILED_IN_A_ROW: u8 = 3;
+
+/// The file at `path` could not be played: playback moves on to the next
+/// track, as if this one had ended, rather than staying on "playing" a track
+/// that is not.
+pub fn handle_audio_error(state: &mut AppState, path: String, error: String) -> Vec<AppMsg> {
+    let failed = std::path::Path::new(&path);
+    let is_current = state
+        .get_playing_track()
+        .is_some_and(|track| track.file_path == failed);
+    if !is_current {
+        // Something else has been asked for since; only say what happened.
+        // Unless the track that was current is no longer in the library —
+        // its file deleted, and a scan finding that out as this arrived:
+        // then nothing is playing, and the bar is not left saying it is
+        // paused part way through a track that is not there.
+        if state.get_playing_track().is_none() {
+            state.session.playback.status = PlaybackStatus::Stopped;
+            state.session.playback.progress_ms = 0;
+        }
+        state.set_notification(NotificationKind::Error, error);
+        return vec![];
+    }
+
+    // Made ready paused — the last session's track, put back at start — it
+    // was not playing, and its file being gone is no reason for the next
+    // track to start up by itself as the app opens.
+    let was_playing = state.is_playing();
     state.session.playback.status = PlaybackStatus::Stopped;
-    state.session.notification.current = Some(Notification::new(
-        NotificationKind::Error,
-        format!("Audio Error: {}", error),
-    ));
-    vec![]
+    state.session.playback.progress_ms = 0;
+    if !was_playing {
+        state.set_notification(NotificationKind::Error, error);
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchStop)];
+    }
+    state.session.failed_in_a_row = state.session.failed_in_a_row.saturating_add(1);
+    // Let the next track start at once, though it comes within a second.
+    state.session.last_play_time = None;
+
+    let gives_up = state.session.failed_in_a_row >= MAX_FAILED_IN_A_ROW;
+    // Repeating this track, or ending after it, there is no next to move to.
+    let stays = !matches!(
+        state.session.repeat_mode,
+        RepeatMode::Off | RepeatMode::Playlist
+    );
+    if gives_up || stays {
+        let message = if gives_up {
+            format!("{error} — stopped after {MAX_FAILED_IN_A_ROW} tracks that could not be played")
+        } else {
+            error
+        };
+        state.set_notification(NotificationKind::Error, message);
+        return vec![AppMsg::Playback(PlaybackMsg::DispatchStop)];
+    }
+
+    advance::retire_active_queue_entry(&mut state.session);
+    let effects = play_next_up(state);
+    // Said after moving on, so it is not covered by "Playing …".
+    state.set_notification(NotificationKind::Error, format!("{error} — skipped"));
+    effects
 }
 
 pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
@@ -373,6 +532,7 @@ pub fn handle_dispatch_seek(_: &mut AppState, _: u64, _: u64) -> Vec<AppMsg> {
     vec![]
 }
 pub fn handle_audio_started(state: &mut AppState, path: String) -> Vec<AppMsg> {
+    state.session.failed_in_a_row = 0;
     let audio = std::path::PathBuf::from(&path);
     let track = state
         .get_playing_track()
@@ -456,7 +616,9 @@ fn fetch_missing_lyrics(
 /// Points the lyrics at the line for where playback is — after progress, and
 /// after a seek, which while paused brings no progress to do it.
 fn sync_lyrics_line(state: &mut AppState) {
-    let position = state.session.playback.progress_ms as i64;
+    // Shown later than the position by the configured offset: the position
+    // is of audio on its way to being heard.
+    let position = state.session.playback.progress_ms as i64 - state.config.lyrics.offset_ms;
     state.session.lyrics.active_line_index = match &state.session.lyrics.data {
         crate::state::lyrics::LyricsData::Synced(lyrics) => lyrics.find_timed_line_index(position),
         _ => None,
@@ -470,9 +632,22 @@ pub fn handle_audio_resumed(_: &mut AppState) -> Vec<AppMsg> {
 }
 
 fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<AppMsg> {
+    begin_track(state, id, from_queue, false)
+}
+
+/// Makes `id` the track playing. `already_playing` when the audio thread
+/// has it playing as this is called — it carried on from the track before,
+/// with no gap — and is not to be told to start it.
+fn begin_track(
+    state: &mut AppState,
+    id: TrackId,
+    from_queue: bool,
+    already_playing: bool,
+) -> Vec<AppMsg> {
     // throttle if same track requested within 1s
     let now = std::time::Instant::now();
-    if state.session.playback.current == Some(id)
+    if !already_playing
+        && state.session.playback.current == Some(id)
         && state
             .session
             .last_play_time
@@ -499,6 +674,8 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
     state.session.playback.status = PlaybackStatus::Playing;
     state.session.playback.progress_ms = 0;
     state.session.playback.duration_ms = Some(duration_ms);
+    // Whatever was made ready to follow the last track is spent, or gone.
+    state.session.preloaded = None;
 
     state.current_cover = None;
 
@@ -515,14 +692,15 @@ fn start_playback(state: &mut AppState, id: TrackId, from_queue: bool) -> Vec<Ap
 
     let active = state.should_draw_spectrum();
     let style = state.session.spectrum_style.clone();
-    let mut effects = vec![
-        AppMsg::Playback(PlaybackMsg::DispatchPlay {
+    let mut effects = vec![];
+    if !already_playing {
+        effects.push(AppMsg::Playback(PlaybackMsg::DispatchPlay {
             path: file_path.clone(),
-        }),
-        AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-            spectrum_style: active.then_some(style),
-        }),
-    ];
+        }));
+    }
+    effects.push(AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+        spectrum_style: active.then_some(style),
+    }));
 
     // request async cover load
     if has_cover {
@@ -882,6 +1060,246 @@ mod tests {
         );
     }
 
+    /// The path of the track playing, as the audio worker reports it.
+    fn playing_path(state: &AppState) -> String {
+        state
+            .get_playing_track()
+            .unwrap()
+            .file_path
+            .to_string_lossy()
+            .to_string()
+    }
+
+    fn plays(effects: &[AppMsg]) -> bool {
+        effects
+            .iter()
+            .any(|e| matches!(e, AppMsg::Playback(PlaybackMsg::DispatchPlay { .. })))
+    }
+
+    /// What the audio thread is told to make ready, if anything is said.
+    fn preload_sent(effects: &[AppMsg]) -> Option<Option<String>> {
+        effects.iter().find_map(|e| match e {
+            AppMsg::Playback(PlaybackMsg::DispatchPreload { path }) => {
+                Some(path.as_ref().map(|p| p.to_string_lossy().to_string()))
+            }
+            _ => None,
+        })
+    }
+
+    /// Playing track 1 of `ids`, ten seconds long, as the audio reports it.
+    fn under_way(ids: &[u64]) -> AppState {
+        let mut state = playing_context(ids, 0);
+        state.session.playback.status = PlaybackStatus::Playing;
+        state.session.playback.duration_ms = Some(60_000);
+        state
+    }
+
+    #[test]
+    fn the_next_track_is_made_ready_as_the_one_playing_nears_its_end() {
+        let mut state = under_way(&[1, 2, 3]);
+
+        // Far from the end: nothing.
+        assert_eq!(
+            preload_sent(&handle_audio_progress(&mut state, 20_000, 0)),
+            None
+        );
+        // Within ten seconds of it: the next track, said once.
+        let said = preload_sent(&handle_audio_progress(&mut state, 51_000, 0));
+        assert_eq!(said, Some(Some("/tmp/2.mp3".to_string())));
+        assert_eq!(
+            preload_sent(&handle_audio_progress(&mut state, 52_000, 0)),
+            None
+        );
+
+        // A track queued meanwhile comes first, and is made ready instead.
+        state.session.playback_queue.add_track(TrackId(3));
+        let said = preload_sent(&handle_audio_progress(&mut state, 53_000, 0));
+        assert_eq!(said, Some(Some("/tmp/3.mp3".to_string())));
+
+        // Sought back from the end, it is taken back.
+        let said = preload_sent(&handle_audio_progress(&mut state, 5_000, 0));
+        assert_eq!(said, Some(None));
+    }
+
+    #[test]
+    fn what_is_made_ready_follows_the_repeat_mode() {
+        let mut state = under_way(&[1, 2, 3]);
+        state.session.repeat_mode = RepeatMode::Track;
+        let said = preload_sent(&handle_audio_progress(&mut state, 55_000, 0));
+        assert_eq!(
+            said,
+            Some(Some("/tmp/1.mp3".to_string())),
+            "repeating: itself"
+        );
+
+        state.session.repeat_mode = RepeatMode::PlayOnce;
+        let said = preload_sent(&handle_audio_progress(&mut state, 56_000, 0));
+        assert_eq!(said, Some(None), "ending after it: nothing");
+
+        // The last track, with nothing after it.
+        let mut state = playing_context(&[1, 2], 1);
+        state.session.playback.status = PlaybackStatus::Playing;
+        state.session.playback.duration_ms = Some(60_000);
+        assert_eq!(
+            preload_sent(&handle_audio_progress(&mut state, 55_000, 0)),
+            None
+        );
+    }
+
+    #[test]
+    fn with_gapless_off_nothing_is_made_ready() {
+        let mut state = under_way(&[1, 2, 3]);
+        state.config.audio.gapless = false;
+        assert_eq!(
+            preload_sent(&handle_audio_progress(&mut state, 55_000, 0)),
+            None
+        );
+    }
+
+    #[test]
+    fn a_track_that_carried_on_is_the_track_playing_and_is_not_started_again() {
+        let mut state = under_way(&[1, 2, 3]);
+        handle_audio_progress(&mut state, 55_000, 0);
+
+        let effects = handle_audio_advanced(&mut state, "/tmp/2.mp3".into());
+
+        assert_eq!(state.session.playback.current, Some(TrackId(2)));
+        assert!(matches!(state.playback_status(), PlaybackStatus::Playing));
+        assert_eq!(state.session.playback.progress_ms, 0);
+        assert!(!plays(&effects), "told to start what is already playing");
+        // The one that ended is counted as played.
+        assert!(effects.iter().any(|e| matches!(
+            e,
+            AppMsg::Database(
+                crate::message::database::DatabaseMsg::DispatchIncrementPlayCount(TrackId(1))
+            )
+        )));
+        assert_eq!(state.session.preloaded, None, "ready for the one after");
+    }
+
+    #[test]
+    fn if_what_follows_changed_at_the_last_moment_the_right_track_is_started() {
+        let mut state = under_way(&[1, 2, 3]);
+        handle_audio_progress(&mut state, 55_000, 0);
+        // Queued in the instant before the end, too late to be made ready.
+        state.session.playback_queue.add_track(TrackId(3));
+
+        let effects = handle_audio_advanced(&mut state, "/tmp/2.mp3".into());
+
+        assert_eq!(state.session.playback.current, Some(TrackId(3)));
+        assert!(
+            effects.iter().any(|e| matches!(
+                e,
+                AppMsg::Playback(PlaybackMsg::DispatchPlay { path }) if path.ends_with("3.mp3")
+            )),
+            "the audio thread was left playing the wrong track"
+        );
+    }
+
+    #[test]
+    fn a_repeated_track_carries_on_into_itself() {
+        let mut state = under_way(&[1, 2, 3]);
+        state.session.repeat_mode = RepeatMode::Track;
+        handle_audio_progress(&mut state, 55_000, 0);
+        let effects = handle_audio_advanced(&mut state, "/tmp/1.mp3".into());
+        assert_eq!(state.session.playback.current, Some(TrackId(1)));
+        assert!(matches!(state.playback_status(), PlaybackStatus::Playing));
+        assert!(!plays(&effects));
+    }
+
+    #[test]
+    fn a_track_that_cannot_be_played_is_skipped() {
+        let mut state = playing_context(&[1, 2, 3], 0);
+        state.session.playback.status = PlaybackStatus::Playing;
+        let broken = playing_path(&state);
+
+        let effects = handle_audio_error(&mut state, broken, "Cannot play it: bad".into());
+
+        assert_eq!(state.session.playback.current, Some(TrackId(2)));
+        assert!(plays(&effects), "the next track was not started");
+        assert!(matches!(state.playback_status(), PlaybackStatus::Playing));
+        let said = &state.current_notification().unwrap().message;
+        assert!(said.contains("Cannot play it"), "{said}");
+        // No play is counted for a track that did not play.
+        assert!(!effects.iter().any(|e| matches!(e, AppMsg::Database(_))));
+    }
+
+    #[test]
+    fn with_every_track_failing_playback_stops_instead_of_running_through_them_all() {
+        let mut state = playing_context(&[1, 2, 3, 4, 5, 6], 0);
+        state.session.playback.status = PlaybackStatus::Playing;
+        let mut last = vec![];
+        for _ in 0..MAX_FAILED_IN_A_ROW {
+            let broken = playing_path(&state);
+            last = handle_audio_error(&mut state, broken, "Cannot play it".into());
+        }
+        assert!(!plays(&last), "still moving on");
+        assert!(matches!(state.playback_status(), PlaybackStatus::Stopped));
+        assert_eq!(state.session.playback.current, Some(TrackId(3)));
+
+        // One that plays starts the count again.
+        let path = playing_path(&state);
+        handle_audio_started(&mut state, path);
+        assert_eq!(state.session.failed_in_a_row, 0);
+    }
+
+    #[test]
+    fn a_failure_of_a_track_no_longer_wanted_changes_nothing() {
+        let mut state = playing_context(&[1, 2, 3], 1);
+        let before = state.playback_status().clone();
+        let effects = handle_audio_error(&mut state, "/gone/earlier.mp3".into(), "Cannot".into());
+        assert!(effects.is_empty());
+        assert_eq!(state.session.playback.current, Some(TrackId(2)));
+        assert_eq!(*state.playback_status(), before);
+        assert_eq!(state.session.failed_in_a_row, 0);
+    }
+
+    #[test]
+    fn a_paused_track_that_cannot_be_played_does_not_start_the_next_one() {
+        // As the last session's track is put back at start: made ready,
+        // paused. With its file gone, the app opened playing the next song.
+        let mut state = playing_context(&[1, 2, 3], 0);
+        state.session.playback.status = PlaybackStatus::Paused;
+        let broken = playing_path(&state);
+
+        let effects = handle_audio_error(&mut state, broken, "Cannot play it: gone".into());
+
+        assert!(!plays(&effects), "the next track started by itself");
+        assert_eq!(state.session.playback.current, Some(TrackId(1)));
+        assert!(matches!(state.playback_status(), PlaybackStatus::Stopped));
+        let said = &state.current_notification().unwrap().message;
+        assert!(said.contains("Cannot play it"), "{said}");
+    }
+
+    #[test]
+    fn a_track_gone_from_the_library_as_it_failed_is_not_left_paused() {
+        // The last session's track, its file deleted since: put back paused
+        // where it was, and pruned by the scan at start before the audio
+        // thread's word that it could not be opened is read.
+        let mut state = playing_context(&[1, 2, 3], 0);
+        state.session.playback.status = PlaybackStatus::Paused;
+        state.session.playback.progress_ms = 2_400;
+        let gone = playing_path(&state);
+        state.library = Library::new(vec![], vec![], HashMap::new());
+
+        let effects = handle_audio_error(&mut state, gone, "Cannot play it: gone".into());
+
+        assert!(effects.is_empty());
+        assert!(matches!(state.playback_status(), PlaybackStatus::Stopped));
+        assert_eq!(state.session.playback.progress_ms, 0);
+    }
+
+    #[test]
+    fn repeating_a_track_that_cannot_be_played_stops_rather_than_trying_for_ever() {
+        let mut state = playing_context(&[1, 2, 3], 0);
+        state.session.playback.status = PlaybackStatus::Playing;
+        state.session.repeat_mode = RepeatMode::Track;
+        let broken = playing_path(&state);
+        let effects = handle_audio_error(&mut state, broken, "Cannot".into());
+        assert!(!plays(&effects));
+        assert!(matches!(state.playback_status(), PlaybackStatus::Stopped));
+    }
+
     #[test]
     fn play_once_ends_playback_after_the_current_track() {
         // The UI labels this mode "End After Track"; nothing used to read it.
@@ -1231,6 +1649,30 @@ mod lyrics_tests {
     use std::{collections::HashMap, path::PathBuf};
 
     const SYNCED: &str = "[00:01.00] First line\n[00:03.00] Second line";
+
+    #[test]
+    fn lyrics_are_shown_later_by_the_offset_asked_for() {
+        let (mut state, _dir, song) = playing(Some(SYNCED));
+        handle_audio_started(&mut state, song);
+        state.session.playback.status = PlaybackStatus::Playing;
+        let line_at = |state: &mut AppState, ms: u64| {
+            handle_audio_progress(state, ms, state.session.seek_epoch);
+            state.session.lyrics.active_line_index
+        };
+
+        // In step with the position: the second line at its three seconds.
+        let second = line_at(&mut state, 3_050);
+        assert_ne!(second, line_at(&mut state, 2_950));
+
+        // Headphones a quarter of a second late: the line waits for them.
+        state.config.lyrics.offset_ms = 250;
+        assert_ne!(
+            line_at(&mut state, 3_050),
+            second,
+            "shown before it is heard"
+        );
+        assert_eq!(line_at(&mut state, 3_300), second);
+    }
 
     /// A song playing, LiSA's 紅蓮華, with lyrics kept in the test's folder.
     fn playing(lyrics_beside: Option<&str>) -> (AppState, tempfile::TempDir, String) {
