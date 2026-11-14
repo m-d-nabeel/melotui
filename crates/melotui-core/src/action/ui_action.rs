@@ -711,7 +711,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                     ..Default::default()
                 };
                 tell(state, "Effects reset");
-                sync_audio_msgs(&state.session.audio)
+                crate::action::audio_action::sync_audio_thread(&state.session.audio)
             }
             Reset::Eq => {
                 state.session.audio.eq_bands = [0.0; 10];
@@ -797,7 +797,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                     NotificationKind::Info,
                     format!("Preset '{}' loaded", name),
                 ));
-                sync_audio_msgs(&state.session.audio)
+                crate::action::audio_action::sync_audio_thread(&state.session.audio)
             }
             Err(e) => {
                 state.session.notification.current = Some(Notification::new(
@@ -867,29 +867,17 @@ pub fn handle_cycle_focus_mode(state: &mut AppState) -> Vec<AppMsg> {
 /// there and the same key back to exactly where it was left.
 pub fn handle_toggle_minimal(state: &mut AppState) -> Vec<AppMsg> {
     let ui = &mut state.session.ui;
-    let message = match ui.minimized_from.take() {
-        Some(before) if ui.focus_mode == FocusMode::Playback => {
-            ui.focus_mode = before;
-            format!("Restored: {}", before.label())
-        }
-        // Not minimized, or minimized and then moved on by hand.
-        _ => {
-            let before = match ui.focus_mode {
-                // Already the strip: there is nothing behind it but the
-                // full layout.
-                FocusMode::Playback => FocusMode::Full,
-                other => other,
-            };
-            if ui.focus_mode == FocusMode::Playback {
-                ui.focus_mode = before;
-                format!("Restored: {}", before.label())
-            } else {
-                ui.minimized_from = Some(before);
-                ui.focus_mode = FocusMode::Playback;
-                ui.show_dsp_studio = false;
-                "Minimized".to_string()
-            }
-        }
+    let message = if ui.focus_mode == FocusMode::Playback {
+        // Back to where it was minimized from; reached by hand instead,
+        // there is nothing behind the strip but the full layout.
+        let before = ui.minimized_from.take().unwrap_or(FocusMode::Full);
+        ui.focus_mode = before;
+        format!("Restored: {}", before.label())
+    } else {
+        ui.minimized_from = Some(ui.focus_mode);
+        ui.focus_mode = FocusMode::Playback;
+        ui.show_dsp_studio = false;
+        "Minimized".to_string()
     };
     state.session.notification.current =
         Some(Notification::new(NotificationKind::Info, message).with_duration(2));
@@ -1337,40 +1325,6 @@ fn grid_col_len(col: usize) -> usize {
     }
 }
 
-fn sync_audio_msgs(audio: &crate::state::AudioState) -> Vec<AppMsg> {
-    use crate::message::audio::AudioMsg;
-    let mut msgs = vec![
-        AppMsg::Audio(AudioMsg::DispatchSetVolume(audio.volume)),
-        AppMsg::Audio(AudioMsg::DispatchSetSpeed(audio.speed)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bass, audio.bass)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Treble, audio.treble)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Reverb, audio.reverb)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Echo, audio.echo)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Pan, audio.pan)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Lowpass, audio.lowpass)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Highpass, audio.highpass)),
-        AppMsg::Audio(AudioMsg::DispatchSet(
-            Effect::AutoPanRate,
-            audio.auto_pan_rate,
-        )),
-        AppMsg::Audio(AudioMsg::DispatchSet(
-            Effect::AutoPanDepth,
-            audio.auto_pan_depth,
-        )),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Exciter, audio.exciter)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bitcrush, audio.bitcrush)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Width, audio.width)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Karaoke, audio.karaoke)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Wobble, audio.wobble)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::PingPong, audio.ping_pong)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Phaser, audio.phaser)),
-    ];
-    for (i, &gain) in audio.eq_bands.iter().enumerate() {
-        msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand { band: i, gain }));
-    }
-    msgs
-}
-
 pub fn handle_enter_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
     let presets = crate::state::DspPreset::list().unwrap_or_default();
     state.session.ui.mode = UIMode::PresetPicker;
@@ -1459,7 +1413,9 @@ pub fn handle_submit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
                     NotificationKind::Info,
                     format!("Preset '{}' loaded", name),
                 ));
-                msgs.extend(sync_audio_msgs(&state.session.audio));
+                msgs.extend(crate::action::audio_action::sync_audio_thread(
+                    &state.session.audio,
+                ));
             }
             Err(e) => {
                 state.session.notification.current = Some(Notification::new(
