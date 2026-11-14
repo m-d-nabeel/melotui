@@ -326,12 +326,13 @@ fn in_a_group_of_its_own(command: &mut Command) {
 /// yt-dlp alone left an ffmpeg that was part way through running on, writing
 /// to a file nobody wanted any more.
 fn kill_with_its_children(child: &mut std::process::Child) {
+    // The group is the child's own: it was started with `process_group(0)`,
+    // so the group's id is its pid — still its own, as it has not yet been
+    // waited for.
     #[cfg(unix)]
-    // SAFETY: `kill` only sends a signal. The group is the child's own —
-    // it was started with `process_group(0)`, so its group id is its pid —
-    // and the child has not been waited for, so the pid is still its own.
-    unsafe {
-        libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
+    if let Ok(group) = i32::try_from(child.id()) {
+        use nix::sys::signal::{Signal, killpg};
+        let _ = killpg(nix::unistd::Pid::from_raw(group), Signal::SIGKILL);
     }
     #[cfg(windows)]
     {
@@ -825,9 +826,8 @@ mod download_tests {
             .read_line(&mut line)
             .unwrap();
         let grandchild: i32 = line.trim().parse().unwrap();
-        // SAFETY: signal 0 sends nothing; it only asks whether the process
-        // is there.
-        let alive = || unsafe { libc::kill(grandchild, 0) == 0 };
+        // No signal: only whether the process is there.
+        let alive = || nix::sys::signal::kill(nix::unistd::Pid::from_raw(grandchild), None).is_ok();
         assert!(alive());
 
         super::kill_with_its_children(&mut child);
