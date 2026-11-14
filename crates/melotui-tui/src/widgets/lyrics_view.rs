@@ -12,7 +12,14 @@ use crate::lyrics::bidi;
 
 /// Draws the lyrics, `zoom` times the text size where the terminal can show
 /// them as images.
-pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCache, zoom: f32) {
+pub fn draw(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    cache: &mut ImageCache,
+    zoom: f32,
+    registry: &crate::keybinding::KeyRegistry,
+) {
     let t = crate::theme::get_theme(state);
 
     // Plain lyrics have no times to follow: said, so their stillness is not
@@ -21,22 +28,41 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         state.lyrics_data(),
         melotui_core::state::lyrics::LyricsData::Unsynced(_)
     ) && state.lyrics_search_state().is_none();
-    let block = Block::default()
-        .title(if plain {
-            " Lyrics · not timed "
-        } else {
-            " Lyrics "
-        })
+    // A search for something to download is shown here too, as a search
+    // for lyrics is.
+    let title = match state.download_search() {
+        Some(search) => crate::widgets::download_picker_view::title(search),
+        None if plain => " Lyrics · not timed ".to_string(),
+        None => " Lyrics ".to_string(),
+    };
+    let mut block = Block::default()
+        .title(title)
         .title_style(Style::default().add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(t.border_inactive))
         .padding(Padding::horizontal(2));
+    if state.download_search().is_some() {
+        // The keys are the list's while it is open: its border says so,
+        // and which keys.
+        block = block
+            .border_style(Style::default().fg(t.border_active))
+            .title_bottom(
+                Line::from(crate::widgets::download_picker_view::keys(registry, t)).right_aligned(),
+            );
+    }
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    if let Some(search) = state.download_search() {
+        // No lyrics drawn as an image are left under the list.
+        cache.lyrics.clear();
+        crate::widgets::download_picker_view::draw(frame, inner, search, t);
+        return;
+    }
     if let Some(search_state) = state.lyrics_search_state() {
+        cache.lyrics.clear();
         draw_search(frame, inner, search_state, t);
         return;
     }
@@ -238,7 +264,16 @@ mod tests {
     fn render_at(state: &AppState, cache: &mut ImageCache, height: u16, zoom: f32) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(50, height)).unwrap();
         let frame = terminal
-            .draw(|f| draw(f, f.area(), state, cache, zoom))
+            .draw(|f| {
+                draw(
+                    f,
+                    f.area(),
+                    state,
+                    cache,
+                    zoom,
+                    &crate::keybinding::KeyRegistry::default(),
+                )
+            })
             .unwrap();
         frame.buffer.clone()
     }
@@ -334,7 +369,16 @@ mod tests {
         let mut cache = kitty_cache();
         let mut terminal = Terminal::new(TestBackend::new(50, 8)).unwrap();
         terminal
-            .draw(|f| draw(f, f.area(), &state, &mut cache, 2.0))
+            .draw(|f| {
+                draw(
+                    f,
+                    f.area(),
+                    &state,
+                    &mut cache,
+                    2.0,
+                    &crate::keybinding::KeyRegistry::default(),
+                )
+            })
             .unwrap();
         let sent = terminal.backend().buffer();
         for y in 1..=6 {
@@ -381,6 +425,54 @@ mod tests {
         assert!(
             !text.contains("Song 2") && !text.contains("Song 7"),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn a_search_for_a_download_is_listed_where_the_lyrics_were() {
+        use melotui_core::message::download::DownloadMsg;
+        use melotui_core::state::{DownloadCandidate, DownloadSource};
+        let mut state = state_with_lyrics(LYRICS, "download-search");
+        reducer::reduce(
+            &mut state,
+            AppMsg::Download(DownloadMsg::RequestSearchDownloads {
+                query: "get lucky".into(),
+            }),
+        );
+        let id = state.download_search().expect("a search is open").id;
+        reducer::reduce(
+            &mut state,
+            AppMsg::Download(DownloadMsg::DownloadSearchResult {
+                id,
+                candidate: DownloadCandidate {
+                    source: DownloadSource::Songs,
+                    url: "https://www.youtube.com/watch?v=abc".into(),
+                    title: "Get Lucky".into(),
+                    by: Some("Daft Punk".into()),
+                    album: None,
+                    duration_secs: Some(248),
+                },
+            }),
+        );
+
+        let mut cache = ImageCache::empty();
+        let buffer = render_at(&state, &mut cache, 6, 1.0);
+        let rows: Vec<String> = (0..6)
+            .map(|y| (0..50).map(|x| buffer[(x, y)].symbol()).collect())
+            .collect();
+        assert!(
+            rows[0].contains("Download: get lucky · searching…"),
+            "{rows:?}"
+        );
+        assert!(rows[2].contains("[M] Get Lucky  ·  Daft Punk"), "{rows:?}");
+        assert!(rows[2].contains("4:08"), "{rows:?}");
+        // The keys, on the border, as they are bound.
+        assert!(rows[5].contains("↵ download"), "{rows:?}");
+        assert!(rows[5].contains("Esc close"), "{rows:?}");
+        let said = rows.join("\n");
+        assert!(
+            !said.contains("Never gonna"),
+            "the lyrics show through: {said}"
         );
     }
 

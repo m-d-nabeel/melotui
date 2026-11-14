@@ -46,11 +46,13 @@ pub fn draw(
     } else {
         // Dispatch to focus mode layout
         match state.focus_mode() {
-            FocusMode::Full => draw_full(frame, area, state, image_cache),
+            FocusMode::Full => draw_full(frame, area, state, image_cache, registry),
             FocusMode::Visualizer => draw_visualizer_only(frame, area, state, image_cache),
             FocusMode::Playback => draw_playback_only(frame, area, state),
             FocusMode::VisualizerPlayback => draw_viz_playback(frame, area, state, image_cache),
-            FocusMode::LyricsPlayback => draw_lyrics_playback(frame, area, state, image_cache),
+            FocusMode::LyricsPlayback => {
+                draw_lyrics_playback(frame, area, state, image_cache, registry)
+            }
         }
     }
 
@@ -79,7 +81,13 @@ fn fit_escape_cells(buffer: &mut ratatui::buffer::Buffer) {
 }
 
 /// Full layout: sidebar + visualizer + mixer + playback
-fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut ImageCache) {
+fn draw_full(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    image_cache: &mut ImageCache,
+    registry: &crate::keybinding::KeyRegistry,
+) {
     let sidebar_width = state.sidebar_width();
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
@@ -108,6 +116,7 @@ fn draw_full(frame: &mut Frame, area: Rect, state: &AppState, image_cache: &mut 
             state,
             image_cache,
             state.lyrics_zoom(),
+            registry,
         );
     } else {
         sound_control_view::draw(frame, control_chunks[0], state);
@@ -171,6 +180,7 @@ fn draw_lyrics_playback(
     area: Rect,
     state: &AppState,
     image_cache: &mut ImageCache,
+    registry: &crate::keybinding::KeyRegistry,
 ) {
     let playback_height = if state.ui_show_playback() { 7 } else { 0 };
     let layout = Layout::default()
@@ -184,6 +194,7 @@ fn draw_lyrics_playback(
         state,
         image_cache,
         state.lyrics_zoom_focus(),
+        registry,
     );
     if state.ui_show_playback() {
         playback_view::draw(frame, layout[1], state);

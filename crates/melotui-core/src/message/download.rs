@@ -40,6 +40,27 @@ pub enum DownloadMsg {
     RequestSearchLyrics {
         query: String,
     },
+    /// Search for `query`, and open the list its results are picked from.
+    RequestSearchDownloads {
+        query: String,
+    },
+    /// Asks the download worker what there is to download for `query`.
+    DispatchSearchDownloads {
+        id: u64,
+        query: String,
+    },
+    /// Tells the download worker the search is no longer wanted.
+    CancelSearchDownloads,
+    DownloadSearchResult {
+        id: u64,
+        candidate: crate::state::DownloadCandidate,
+    },
+    /// The search `id` has nothing more to say; `error` is what went wrong
+    /// if it found nothing because something did.
+    DownloadSearchFinished {
+        id: u64,
+        error: Option<String>,
+    },
     LyricsSearchResults {
         lrclib_results: Vec<crate::state::lyrics::LyricsCandidate>,
         ovh_results: Vec<crate::state::lyrics::LyricsCandidate>,

@@ -44,6 +44,11 @@ impl InputHandler {
             return contexts;
         }
 
+        if state.download_search().is_some() {
+            contexts.push(KeyContext::DownloadPicker);
+            return contexts; // modal, blocks other inputs
+        }
+
         if state.is_showing_track_info() {
             contexts.push(KeyContext::TrackInfo);
         }
@@ -524,8 +529,14 @@ mod tests {
             Some(AppMsg::Navigation(NavigationMsg::MovePage { down: true }))
         ));
 
+        // z folds the tree shut, as it folds in vim.
+        assert!(matches!(
+            press(KeyCode::Char('z'), none),
+            Some(AppMsg::Navigation(NavigationMsg::CollapseTree))
+        ));
+
         // The old effect, shuffle, repeat, stop and style letters are free.
-        for c in ['b', 't', 'e', 'z', 'c', 'x', 'w'] {
+        for c in ['b', 't', 'e', 'c', 'x', 'w'] {
             assert!(press(KeyCode::Char(c), none).is_none(), "{c} still bound");
         }
     }

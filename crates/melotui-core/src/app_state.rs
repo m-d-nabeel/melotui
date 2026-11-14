@@ -490,6 +490,10 @@ impl AppState {
         self.session.lyrics.search_state.as_ref()
     }
 
+    pub fn download_search(&self) -> Option<&crate::state::DownloadSearch> {
+        self.session.download.search.as_ref()
+    }
+
     pub fn active_lyrics_line_index(&self) -> Option<usize> {
         self.session.lyrics.active_line_index
     }

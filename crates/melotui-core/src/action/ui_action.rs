@@ -418,11 +418,12 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             vec![AppMsg::Library(LibraryMsg::RequestScanLibrary)]
         }
         Command::Download { query } => {
-            state.session.notification.current = Some(Notification::new(
-                NotificationKind::Info,
-                format!("Downloading: {}", query),
-            ));
             vec![AppMsg::Download(DownloadMsg::RequestDownload { query })]
+        }
+        Command::DownloadSearch { query } => {
+            vec![AppMsg::Download(DownloadMsg::RequestSearchDownloads {
+                query,
+            })]
         }
         Command::FetchLyrics { query } => {
             if let Some(track) = state.get_playing_track() {
@@ -644,6 +645,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             msgs
         }
         Command::Sort => vec![AppMsg::Library(LibraryMsg::ToggleSort)],
+        Command::CollapseTree => vec![AppMsg::Navigation(NavigationMsg::CollapseTree)],
         Command::ClearQueue => vec![AppMsg::Library(LibraryMsg::ClearQueue)],
         Command::ShowLyrics(show) => {
             let show = show.unwrap_or(!state.session.ui.show_lyrics);

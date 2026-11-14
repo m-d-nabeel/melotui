@@ -22,6 +22,7 @@ pub enum KeyContext {
     PresetPicker,
     Confirm,
     LyricsSelector,
+    DownloadPicker,
     DspStudio,
     Mixer,
     Global,
@@ -56,6 +57,7 @@ pub enum KeyAction {
     TogglePlaybackPanel,
     MoveUp,
     MoveDown,
+    CollapseTree,
     MoveTop,
     MoveBottom,
     MovePageUp,
@@ -130,6 +132,11 @@ pub enum KeyAction {
     LyricsSelectorRight,
     LyricsSelectorSubmit,
     LyricsSelectorCancel,
+    // download picker
+    DownloadPickerUp,
+    DownloadPickerDown,
+    DownloadPickerSubmit,
+    DownloadPickerCancel,
 
     // playlist management
     DeletePlaylist,
@@ -195,6 +202,7 @@ impl KeyAction {
             KeyAction::TogglePlaybackPanel => "Playback Panel",
             KeyAction::MoveUp => "Up",
             KeyAction::MoveDown => "Down",
+            KeyAction::CollapseTree => "Collapse the tree",
             KeyAction::MoveTop => "Top",
             KeyAction::MoveBottom => "Bottom",
             KeyAction::MovePageUp => "Page Up",
@@ -257,6 +265,10 @@ impl KeyAction {
             KeyAction::LyricsSelectorRight => "Right",
             KeyAction::LyricsSelectorSubmit => "Select",
             KeyAction::LyricsSelectorCancel => "Cancel",
+            KeyAction::DownloadPickerUp => "Up",
+            KeyAction::DownloadPickerDown => "Down",
+            KeyAction::DownloadPickerSubmit => "Download",
+            KeyAction::DownloadPickerCancel => "Close",
             KeyAction::DeletePlaylist => "Delete Playlist",
             KeyAction::RemoveFromPlaylist => "Rm from Playlist",
             KeyAction::ConfirmYes => "Confirm",
@@ -312,6 +324,7 @@ impl KeyAction {
 
             KeyAction::MoveUp => Some(AppMsg::Navigation(NavigationMsg::MoveUp)),
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
+            KeyAction::CollapseTree => Some(AppMsg::Navigation(NavigationMsg::CollapseTree)),
             KeyAction::MoveTop => Some(AppMsg::Navigation(NavigationMsg::MoveTop)),
             KeyAction::MoveBottom => Some(AppMsg::Navigation(NavigationMsg::MoveBottom)),
             KeyAction::MovePageUp => {
@@ -346,6 +359,10 @@ impl KeyAction {
             KeyAction::LyricsSelectorRight => Some(AppMsg::UI(UIMsg::LyricsSelectorMoveRight)),
             KeyAction::LyricsSelectorSubmit => Some(AppMsg::UI(UIMsg::LyricsSelectorSubmit)),
             KeyAction::LyricsSelectorCancel => Some(AppMsg::UI(UIMsg::LyricsSelectorCancel)),
+            KeyAction::DownloadPickerUp => Some(AppMsg::UI(UIMsg::DownloadPickerMoveUp)),
+            KeyAction::DownloadPickerDown => Some(AppMsg::UI(UIMsg::DownloadPickerMoveDown)),
+            KeyAction::DownloadPickerSubmit => Some(AppMsg::UI(UIMsg::DownloadPickerSubmit)),
+            KeyAction::DownloadPickerCancel => Some(AppMsg::UI(UIMsg::DownloadPickerCancel)),
             KeyAction::Interact => None, // handled in input.rs
             KeyAction::ShowTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
             KeyAction::HideTrackInfo => Some(AppMsg::Navigation(NavigationMsg::ToggleTrackInfo)),
@@ -502,6 +519,7 @@ impl KeyRegistry {
                 "preset" | "presetpicker" => KeyContext::PresetPicker,
                 "confirm" => KeyContext::Confirm,
                 "lyrics" | "lyricsselector" => KeyContext::LyricsSelector,
+                "download" | "downloadpicker" => KeyContext::DownloadPicker,
                 "dspstudio" | "dsp" => KeyContext::DspStudio,
                 "mixer" => KeyContext::Mixer,
                 "global" => KeyContext::Global,
@@ -650,6 +668,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::DeletePlaylist)
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('o'), KeyAction::ToggleSort),
+                KeyBinding::new(KeyCode::Char('z'), KeyAction::CollapseTree),
             ],
         );
 
@@ -684,6 +703,20 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('y'), KeyAction::ConfirmYes),
                 KeyBinding::new(KeyCode::Char('n'), KeyAction::ConfirmNo),
                 KeyBinding::new(KeyCode::Esc, KeyAction::ConfirmNo),
+            ],
+        );
+
+        // download picker context
+        bindings.insert(
+            KeyContext::DownloadPicker,
+            vec![
+                KeyBinding::new(KeyCode::Up, KeyAction::DownloadPickerUp),
+                KeyBinding::new(KeyCode::Char('k'), KeyAction::DownloadPickerUp),
+                KeyBinding::new(KeyCode::Down, KeyAction::DownloadPickerDown),
+                KeyBinding::new(KeyCode::Char('j'), KeyAction::DownloadPickerDown),
+                KeyBinding::new(KeyCode::Enter, KeyAction::DownloadPickerSubmit),
+                KeyBinding::new(KeyCode::Esc, KeyAction::DownloadPickerCancel),
+                KeyBinding::new(KeyCode::Char('q'), KeyAction::DownloadPickerCancel),
             ],
         );
 
@@ -940,6 +973,7 @@ mod tests {
             "preset",
             "confirm",
             "lyrics",
+            "download",
             "dsp",
             "mixer",
             "global",
@@ -954,7 +988,7 @@ mod tests {
         }
         assert_eq!(
             KeyRegistry::default().bindings.len(),
-            12,
+            13,
             "a context was added"
         );
     }

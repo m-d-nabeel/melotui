@@ -270,12 +270,31 @@ pub static COMMANDS: &[Spec] = &[
         NOTHING,
     ),
     spec(&["sort"], "", "Next sort order", NOTHING),
+    spec(
+        &["collapse", "fold"],
+        "",
+        "Close everything open in the tree",
+        NOTHING,
+    ),
     spec(&["rescan", "r", "scan"], "", "Rescan the library", NOTHING),
     spec(
-        &["dl", "download"],
-        "<query>",
+        &["yt", "youtube"],
+        "",
         "Download from YouTube",
-        TEXT,
+        Then::Sub(&[
+            spec(
+                &["search", "s"],
+                "<words>",
+                "Search YouTube and pick what to download",
+                TEXT,
+            ),
+            spec(
+                &["dl", "download"],
+                "<words or link>",
+                "Download a link, or the first match for some words",
+                TEXT,
+            ),
+        ]),
     ),
     spec(
         &["pl", "playlist"],
@@ -496,7 +515,12 @@ pub enum Command {
     },
     ClearSearch,
     Sort,
+    CollapseTree,
     Download {
+        query: String,
+    },
+    /// Search for something to download, and pick it from what is found.
+    DownloadSearch {
         query: String,
     },
     CreatePlaylist {
@@ -798,9 +822,15 @@ fn parse(input: &str) -> Result<Command, Command> {
         }
         "noh" => Command::ClearSearch,
         "sort" => Command::Sort,
+        "collapse" => Command::CollapseTree,
         "rescan" => Command::Rescan,
-        "dl" => Command::Download {
-            query: text(rest, "dl")?,
+        "yt" => match sub(spec, rest)? {
+            ("search", rest) => Command::DownloadSearch {
+                query: text(rest, "yt search")?,
+            },
+            (_, rest) => Command::Download {
+                query: text(rest, "yt dl")?,
+            },
         },
         "pl" => {
             let (sub, rest) = sub(spec, rest)?;
@@ -1245,5 +1275,28 @@ mod tests {
                 .iter()
                 .any(|(syntax, help)| syntax == ":lyrics …" && help.contains("zoom"))
         );
+    }
+    #[test]
+    fn youtube_is_one_command_that_searches_or_downloads() {
+        assert_eq!(
+            Command::parse("yt search get lucky"),
+            Command::DownloadSearch {
+                query: "get lucky".into()
+            }
+        );
+        for input in ["yt dl get lucky", "youtube download get lucky"] {
+            assert_eq!(
+                Command::parse(input),
+                Command::Download {
+                    query: "get lucky".into()
+                }
+            );
+        }
+        for input in ["yt", "yt search", "yt dl", "dl get lucky"] {
+            assert!(
+                matches!(Command::parse(input), Command::Invalid(_)),
+                "{input}"
+            );
+        }
     }
 }
