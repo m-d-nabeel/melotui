@@ -134,7 +134,6 @@ pub enum KeyAction {
     // download picker
     DownloadPickerUp,
     DownloadPickerDown,
-    DownloadPickerSwitchTab,
     DownloadPickerSubmit,
     DownloadPickerCancel,
 
@@ -266,7 +265,6 @@ impl KeyAction {
             KeyAction::LyricsSelectorCancel => "Cancel",
             KeyAction::DownloadPickerUp => "Up",
             KeyAction::DownloadPickerDown => "Down",
-            KeyAction::DownloadPickerSwitchTab => "Songs / videos",
             KeyAction::DownloadPickerSubmit => "Download",
             KeyAction::DownloadPickerCancel => "Close",
             KeyAction::DeletePlaylist => "Delete Playlist",
@@ -360,7 +358,6 @@ impl KeyAction {
             KeyAction::LyricsSelectorCancel => Some(AppMsg::UI(UIMsg::LyricsSelectorCancel)),
             KeyAction::DownloadPickerUp => Some(AppMsg::UI(UIMsg::DownloadPickerMoveUp)),
             KeyAction::DownloadPickerDown => Some(AppMsg::UI(UIMsg::DownloadPickerMoveDown)),
-            KeyAction::DownloadPickerSwitchTab => Some(AppMsg::UI(UIMsg::DownloadPickerSwitchTab)),
             KeyAction::DownloadPickerSubmit => Some(AppMsg::UI(UIMsg::DownloadPickerSubmit)),
             KeyAction::DownloadPickerCancel => Some(AppMsg::UI(UIMsg::DownloadPickerCancel)),
             KeyAction::Interact => None, // handled in input.rs
@@ -713,11 +710,6 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('k'), KeyAction::DownloadPickerUp),
                 KeyBinding::new(KeyCode::Down, KeyAction::DownloadPickerDown),
                 KeyBinding::new(KeyCode::Char('j'), KeyAction::DownloadPickerDown),
-                KeyBinding::new(KeyCode::Tab, KeyAction::DownloadPickerSwitchTab),
-                KeyBinding::new(KeyCode::Left, KeyAction::DownloadPickerSwitchTab),
-                KeyBinding::new(KeyCode::Right, KeyAction::DownloadPickerSwitchTab),
-                KeyBinding::new(KeyCode::Char('h'), KeyAction::DownloadPickerSwitchTab),
-                KeyBinding::new(KeyCode::Char('l'), KeyAction::DownloadPickerSwitchTab),
                 KeyBinding::new(KeyCode::Enter, KeyAction::DownloadPickerSubmit),
                 KeyBinding::new(KeyCode::Esc, KeyAction::DownloadPickerCancel),
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::DownloadPickerCancel),

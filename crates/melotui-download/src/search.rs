@@ -32,7 +32,7 @@ const FIELDS: &str =
 /// when it stops where it is and says nothing more.
 pub(crate) fn run(id: u64, query: &str, tx: &mpsc::Sender<InternalEvent>, cancel: &AtomicBool) {
     let errors: Vec<Option<String>> = thread::scope(|scope| {
-        let searches = [DownloadSource::Songs, DownloadSource::Videos]
+        let searches = [DownloadSource::Songs, DownloadSource::YouTube]
             .map(|source| scope.spawn(move || search(id, source, query, tx, cancel)));
         searches
             .into_iter()
@@ -62,8 +62,9 @@ fn yt_dlp_args(source: DownloadSource, query: &str) -> Vec<String> {
                 percent_encoded(query)
             )
         }
-        // A list of videos says who posted each and how long it is.
-        DownloadSource::Videos => {
+        // YouTube's own list says whose channel each is on and how long
+        // it is.
+        DownloadSource::YouTube => {
             args.push("--flat-playlist".into());
             format!("ytsearch{MOST}:{query}")
         }
@@ -219,13 +220,13 @@ mod tests {
     }
 
     #[test]
-    fn a_video_is_offered_with_its_channel() {
+    fn what_else_youtube_has_is_offered_with_its_channel() {
         let line = r#"{"id": "abc", "title": "Live at Wembley", "duration": 3601.0, "channel": "Queen Official", "uploader": "Queen", "url": "https://www.youtube.com/watch?v=abc"}"#;
-        let video = candidate_in(line, DownloadSource::Videos).unwrap();
-        assert_eq!(video.by.as_deref(), Some("Queen Official"));
-        assert_eq!(video.album, None);
-        assert_eq!(video.duration_secs, Some(3601));
-        assert_eq!(video.url, "https://www.youtube.com/watch?v=abc");
+        let upload = candidate_in(line, DownloadSource::YouTube).unwrap();
+        assert_eq!(upload.by.as_deref(), Some("Queen Official"));
+        assert_eq!(upload.album, None);
+        assert_eq!(upload.duration_secs, Some(3601));
+        assert_eq!(upload.url, "https://www.youtube.com/watch?v=abc");
     }
 
     #[test]
@@ -260,16 +261,16 @@ mod tests {
         );
         assert_eq!(songs[songs.len() - 2], "--");
 
-        let videos = yt_dlp_args(DownloadSource::Videos, "--exec x");
-        assert_eq!(videos.last().unwrap(), "ytsearch8:--exec x");
-        assert_eq!(videos[videos.len() - 2], "--");
-        assert!(videos.contains(&"--flat-playlist".to_string()));
+        let youtube = yt_dlp_args(DownloadSource::YouTube, "--exec x");
+        assert_eq!(youtube.last().unwrap(), "ytsearch8:--exec x");
+        assert_eq!(youtube[youtube.len() - 2], "--");
+        assert!(youtube.contains(&"--flat-playlist".to_string()));
     }
 
     /// Run by hand: asks YouTube.
     #[test]
     #[ignore = "needs yt-dlp and the network"]
-    fn a_real_search_finds_songs_and_videos_and_says_it_is_over() {
+    fn a_real_search_finds_songs_and_the_rest_and_says_it_is_over() {
         let (tx, rx) = mpsc::channel();
         run(7, "daft punk get lucky", &tx, &AtomicBool::new(false));
         let events: Vec<InternalEvent> = rx.try_iter().collect();
@@ -280,7 +281,7 @@ mod tests {
                 .count()
         };
         assert!(found(DownloadSource::Songs) > 0);
-        assert!(found(DownloadSource::Videos) > 0);
+        assert!(found(DownloadSource::YouTube) > 0);
         assert!(matches!(
             events.last(),
             Some(InternalEvent::SearchFinished { id: 7, error: None })

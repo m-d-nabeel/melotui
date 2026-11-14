@@ -21,12 +21,15 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         state.lyrics_data(),
         melotui_core::state::lyrics::LyricsData::Unsynced(_)
     ) && state.lyrics_search_state().is_none();
+    // A search for something to download is shown here too, as a search
+    // for lyrics is.
+    let title = match state.download_search() {
+        Some(search) => crate::widgets::download_picker_view::title(search),
+        None if plain => " Lyrics · not timed ".to_string(),
+        None => " Lyrics ".to_string(),
+    };
     let block = Block::default()
-        .title(if plain {
-            " Lyrics · not timed "
-        } else {
-            " Lyrics "
-        })
+        .title(title)
         .title_style(Style::default().add_modifier(Modifier::BOLD))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
@@ -36,7 +39,14 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    if let Some(search) = state.download_search() {
+        // No lyrics drawn as an image are left under the list.
+        cache.lyrics.clear();
+        crate::widgets::download_picker_view::draw(frame, inner, search, t);
+        return;
+    }
     if let Some(search_state) = state.lyrics_search_state() {
+        cache.lyrics.clear();
         draw_search(frame, inner, search_state, t);
         return;
     }

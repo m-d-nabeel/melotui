@@ -3,42 +3,85 @@ use std::fs;
 use crate::{
     AppMsg, AppState,
     message::{download::DownloadMsg, library::LibraryMsg},
+    state::ui::FocusMode,
     state::{
         DownloadCandidate, DownloadJob, DownloadSearch, DownloadSource, DownloadStatus,
         Notification, NotificationKind,
     },
 };
 
-/// A link is downloaded as it is; anything else is searched for, and what
-/// to download picked from what is found.
+/// Downloads `query`: a link as it is, anything else as the first thing
+/// YouTube finds for it.
 pub fn handle_request_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
     tracing::info!("RequestDownload called with: {:?}", query);
     let query = query.trim().to_string();
-    if is_link(&query) {
-        let named = query.clone();
-        return enqueue_download(state, query, &named);
-    }
+    let named = query.clone();
+    enqueue_download(state, query, &named)
+}
 
+/// Searches for `query` and opens the list to pick from. A link needs no
+/// picking, and is downloaded.
+pub fn handle_request_search_downloads(state: &mut AppState, query: String) -> Vec<AppMsg> {
+    let query = query.trim().to_string();
+    if is_link(&query) {
+        return handle_request_download(state, query);
+    }
     // Said before searching, not after something has been picked.
     if state.config.download_dir(&state.library.roots).is_none() {
         nowhere_to_download_to(state);
         return vec![];
     }
 
+    // The list is shown where lyrics are, as a search for lyrics is; a
+    // search already open gives way to this one, and what it put aside is
+    // kept.
+    let panel_before = match close_search(state) {
+        Some(before) => before,
+        None => {
+            let (ui, lyrics) = (&state.session.ui, &state.session.lyrics);
+            (
+                ui.show_lyrics,
+                lyrics.panel_closed,
+                lyrics.panel_opened_for_lyrics,
+            )
+        }
+    };
+    crate::action::playback_action::lyrics_panel_set_by_hand(state, true);
+    // Where the panel is not on screen, the list would be picked from
+    // unseen.
+    state.session.ui.show_dsp_studio = false;
+    if !matches!(
+        state.session.ui.focus_mode,
+        FocusMode::Full | FocusMode::LyricsPlayback
+    ) {
+        state.session.ui.focus_mode = FocusMode::Full;
+    }
+
     let download = &mut state.session.download;
     download.searches += 1;
     let id = download.searches;
-    // A search already open gives way to this one.
     download.search = Some(DownloadSearch {
         id,
         query: query.clone(),
         searching: true,
+        panel_before,
         ..Default::default()
     });
     vec![AppMsg::Download(DownloadMsg::DispatchSearchDownloads {
         id,
         query,
     })]
+}
+
+/// Closes the list, if it is open, and puts the lyrics panel back as it
+/// was; what it was, for a search that takes this one's place.
+fn close_search(state: &mut AppState) -> Option<(bool, bool, bool)> {
+    let search = state.session.download.search.take()?;
+    let (shown, closed, opened_for_lyrics) = search.panel_before;
+    state.session.ui.show_lyrics = shown;
+    state.session.lyrics.panel_closed = closed;
+    state.session.lyrics.panel_opened_for_lyrics = opened_for_lyrics;
+    Some(search.panel_before)
 }
 
 fn is_link(query: &str) -> bool {
@@ -65,26 +108,21 @@ pub fn handle_download_search_result(
     };
     let results = match candidate.source {
         DownloadSource::Songs => &mut search.songs,
-        DownloadSource::Videos => &mut search.videos,
+        DownloadSource::YouTube => &mut search.youtube,
     };
-    if !results.iter().any(|found| found.url == candidate.url) {
-        results.push(candidate);
+    if results.iter().any(|found| found.url == candidate.url) {
+        return vec![];
     }
-    show_a_tab_with_results(search);
+    results.push(candidate.clone());
+    // A song goes in above the rest of YouTube: a selection made down
+    // there stays on the result it was put on.
+    if candidate.source == DownloadSource::Songs
+        && search.moved
+        && search.row >= search.songs.len() - 1
+    {
+        search.row += 1;
+    }
     vec![]
-}
-
-/// Songs are shown first, and videos if those are all there is: until a tab
-/// or row is chosen by hand, after which nothing moves by itself.
-fn show_a_tab_with_results(search: &mut DownloadSearch) {
-    if search.moved {
-        return;
-    }
-    search.tab = if search.songs.is_empty() && !search.videos.is_empty() {
-        DownloadSource::Videos
-    } else {
-        DownloadSource::Songs
-    };
 }
 
 pub fn handle_download_search_finished(
@@ -96,7 +134,7 @@ pub fn handle_download_search_finished(
         return vec![];
     };
     search.searching = false;
-    if !search.songs.is_empty() || !search.videos.is_empty() {
+    if !search.is_empty() {
         return vec![];
     }
     // Nothing to pick from: the list closes and says why.
@@ -107,24 +145,15 @@ pub fn handle_download_search_finished(
             format!("Nothing found for: {}", search.query),
         ),
     };
-    state.session.download.search = None;
+    close_search(state);
     state.session.notification.current = Some(said.with_duration(4));
     vec![]
 }
 
 pub fn handle_download_picker_move(state: &mut AppState, by: i64) -> Vec<AppMsg> {
     if let Some(search) = state.session.download.search.as_mut() {
-        let last = search.shown().len().saturating_sub(1) as i64;
+        let last = search.len().saturating_sub(1) as i64;
         search.row = (search.row as i64 + by).clamp(0, last) as usize;
-        search.moved = true;
-    }
-    vec![]
-}
-
-pub fn handle_download_picker_switch_tab(state: &mut AppState) -> Vec<AppMsg> {
-    if let Some(search) = state.session.download.search.as_mut() {
-        search.tab = search.tab.other();
-        search.row = 0;
         search.moved = true;
     }
     vec![]
@@ -142,7 +171,7 @@ pub fn handle_download_picker_submit(state: &mut AppState) -> Vec<AppMsg> {
     else {
         return vec![];
     };
-    state.session.download.search = None;
+    close_search(state);
     let named = match &picked.by {
         Some(by) => format!("{} – {}", by, picked.title),
         None => picked.title,
@@ -153,7 +182,7 @@ pub fn handle_download_picker_submit(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_download_picker_cancel(state: &mut AppState) -> Vec<AppMsg> {
-    if state.session.download.search.take().is_some() {
+    if close_search(state).is_some() {
         return vec![AppMsg::Download(DownloadMsg::CancelSearchDownloads)];
     }
     vec![]
@@ -373,8 +402,8 @@ mod download_search_tests {
         (state, music)
     }
 
-    fn ask(state: &mut AppState, query: &str) -> Vec<AppMsg> {
-        handle_request_download(state, query.into())
+    fn search(state: &mut AppState, query: &str) -> Vec<AppMsg> {
+        handle_request_search_downloads(state, query.into())
     }
 
     fn found(source: DownloadSource, name: &str) -> DownloadCandidate {
@@ -402,25 +431,42 @@ mod download_search_tests {
         reduce(state, AppMsg::UI(msg))
     }
 
+    fn selected(state: &AppState) -> &str {
+        &state.download_search().unwrap().selected().unwrap().title
+    }
+
     #[test]
-    fn a_link_is_downloaded_without_asking_which() {
+    fn dl_downloads_without_asking_which_words_and_links_alike() {
         let (mut state, _music) = state();
-        let msgs = ask(&mut state, " https://youtu.be/abc ");
-        assert!(state.session.download.search.is_none());
+        for query in [" https://youtu.be/abc ", "get lucky"] {
+            let msgs = handle_request_download(&mut state, query.into());
+            assert!(state.download_search().is_none());
+            assert_eq!(
+                state.session.download.queue.back().unwrap().query,
+                query.trim()
+            );
+            assert!(!msgs.iter().any(|msg| matches!(
+                msg,
+                AppMsg::Download(DownloadMsg::DispatchSearchDownloads { .. })
+            )));
+        }
+    }
+
+    #[test]
+    fn a_link_searched_for_is_downloaded() {
+        let (mut state, _music) = state();
+        let msgs = search(&mut state, "https://youtu.be/abc");
+        assert!(state.download_search().is_none());
         assert!(matches!(
             msgs.as_slice(),
             [AppMsg::Download(DownloadMsg::BeginNextDownload)]
         ));
-        assert_eq!(
-            state.session.download.queue[0].query,
-            "https://youtu.be/abc"
-        );
     }
 
     #[test]
-    fn words_are_searched_for_and_nothing_downloaded_until_one_is_picked() {
+    fn a_search_downloads_nothing_until_one_is_picked() {
         let (mut state, _music) = state();
-        let msgs = ask(&mut state, "get lucky");
+        let msgs = search(&mut state, "get lucky");
         assert!(matches!(
             msgs.as_slice(),
             [AppMsg::Download(DownloadMsg::DispatchSearchDownloads { id: 1, query })]
@@ -458,26 +504,41 @@ mod download_search_tests {
     }
 
     #[test]
-    fn videos_are_shown_when_they_are_all_there_is_until_a_tab_is_chosen() {
+    fn songs_come_first_and_the_selection_stays_on_what_it_was_put_on() {
         let (mut state, _music) = state();
-        ask(&mut state, "a live set");
-        find(&mut state, 1, DownloadSource::Videos, "video");
-        assert_eq!(state.download_search().unwrap().tab, DownloadSource::Videos);
-        // Songs, once there are some, are what is shown.
+        search(&mut state, "a live set");
+        find(&mut state, 1, DownloadSource::YouTube, "upload");
+        find(&mut state, 1, DownloadSource::YouTube, "another upload");
+        assert_eq!(selected(&state), "upload");
+        // Untouched, the selection is on whatever is first.
         find(&mut state, 1, DownloadSource::Songs, "song");
-        assert_eq!(state.download_search().unwrap().tab, DownloadSource::Songs);
+        assert_eq!(selected(&state), "song");
 
-        ui(&mut state, UIMsg::DownloadPickerSwitchTab);
-        find(&mut state, 1, DownloadSource::Songs, "another");
-        let search = state.download_search().unwrap();
-        assert_eq!(search.tab, DownloadSource::Videos, "left where it was put");
-        assert_eq!(search.selected().unwrap().title, "video");
+        // Put on something below the songs, it stays there as songs come.
+        ui(&mut state, UIMsg::DownloadPickerMoveDown);
+        ui(&mut state, UIMsg::DownloadPickerMoveDown);
+        assert_eq!(selected(&state), "another upload");
+        find(&mut state, 1, DownloadSource::Songs, "second song");
+        assert_eq!(selected(&state), "another upload");
+
+        // And on a song, as more come in after it.
+        ui(&mut state, UIMsg::DownloadPickerMoveUp);
+        ui(&mut state, UIMsg::DownloadPickerMoveUp);
+        ui(&mut state, UIMsg::DownloadPickerMoveUp);
+        assert_eq!(selected(&state), "song");
+        find(&mut state, 1, DownloadSource::Songs, "third song");
+        assert_eq!(selected(&state), "song");
+
+        for _ in 0..9 {
+            ui(&mut state, UIMsg::DownloadPickerMoveDown);
+        }
+        assert_eq!(selected(&state), "another upload", "the last there is");
     }
 
     #[test]
     fn a_search_closed_stops_and_what_it_still_says_is_not_heard() {
         let (mut state, _music) = state();
-        ask(&mut state, "first");
+        search(&mut state, "first");
         let msgs = ui(&mut state, UIMsg::DownloadPickerCancel);
         assert!(matches!(
             msgs.as_slice(),
@@ -487,24 +548,44 @@ mod download_search_tests {
         assert!(state.download_search().is_none());
 
         // Nor is it taken for the next search's.
-        ask(&mut state, "second");
+        search(&mut state, "second");
         find(&mut state, 1, DownloadSource::Songs, "late");
         reduce(
             &mut state,
             AppMsg::Download(DownloadMsg::DownloadSearchFinished { id: 1, error: None }),
         );
         let search = state.download_search().unwrap();
-        assert_eq!(
-            (search.id, search.songs.len(), search.searching),
-            (2, 0, true)
-        );
+        assert_eq!((search.id, search.len(), search.searching), (2, 0, true));
+    }
+
+    #[test]
+    fn the_list_takes_the_lyrics_panels_place_and_gives_it_back() {
+        let (mut state, _music) = state();
+        state.session.ui.show_dsp_studio = true;
+        assert!(!state.session.ui.show_lyrics);
+
+        search(&mut state, "first");
+        assert!(state.session.ui.show_lyrics);
+        assert!(!state.session.ui.show_dsp_studio, "it would be unseen");
+        // A second search in its place remembers what the first put aside.
+        search(&mut state, "second");
+        ui(&mut state, UIMsg::DownloadPickerCancel);
+        assert!(!state.session.ui.show_lyrics);
+
+        // Open before, the panel is open after — picked or not found alike.
+        crate::action::playback_action::lyrics_panel_set_by_hand(&mut state, true);
+        search(&mut state, "third");
+        let id = state.download_search().unwrap().id;
+        find(&mut state, id, DownloadSource::Songs, "song");
+        ui(&mut state, UIMsg::DownloadPickerSubmit);
+        assert!(state.session.ui.show_lyrics);
     }
 
     #[test]
     fn with_nowhere_to_download_to_nothing_is_searched_for() {
         let library = Library::new(vec![], vec![], HashMap::new());
         let mut state = AppState::new(library, &crate::config::AppConfig::default());
-        assert!(ask(&mut state, "get lucky").is_empty());
+        assert!(search(&mut state, "get lucky").is_empty());
         assert!(state.download_search().is_none());
         let said = state.session.notification.current.as_ref().unwrap();
         assert_eq!(said.message, "No music directory configured for downloads");
@@ -520,7 +601,7 @@ mod download_search_tests {
                 "Failed to start yt-dlp: not found",
             ),
         ] {
-            ask(&mut state, "zzqq");
+            search(&mut state, "zzqq");
             let id = state.download_search().unwrap().id;
             reduce(
                 &mut state,
@@ -540,17 +621,17 @@ mod download_search_tests {
     #[test]
     fn a_search_over_with_results_stays_open_to_be_picked_from() {
         let (mut state, _music) = state();
-        ask(&mut state, "get lucky");
-        find(&mut state, 1, DownloadSource::Videos, "video");
+        search(&mut state, "get lucky");
+        find(&mut state, 1, DownloadSource::YouTube, "upload");
         reduce(
             &mut state,
             AppMsg::Download(DownloadMsg::DownloadSearchFinished {
                 id: 1,
-                error: Some("one video was private".into()),
+                error: Some("one of them was private".into()),
             }),
         );
         let search = state.download_search().unwrap();
         assert!(!search.searching);
-        assert_eq!(search.selected().unwrap().title, "video");
+        assert_eq!(search.selected().unwrap().title, "upload");
     }
 }

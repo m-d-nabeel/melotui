@@ -420,6 +420,11 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         Command::Download { query } => {
             vec![AppMsg::Download(DownloadMsg::RequestDownload { query })]
         }
+        Command::DownloadSearch { query } => {
+            vec![AppMsg::Download(DownloadMsg::RequestSearchDownloads {
+                query,
+            })]
+        }
         Command::FetchLyrics { query } => {
             if let Some(track) = state.get_playing_track() {
                 // `Artist - Title`, split where it is spaced, as Jay-Z is not.

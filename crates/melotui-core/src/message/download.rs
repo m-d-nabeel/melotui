@@ -40,6 +40,10 @@ pub enum DownloadMsg {
     RequestSearchLyrics {
         query: String,
     },
+    /// Search for `query`, and open the list its results are picked from.
+    RequestSearchDownloads {
+        query: String,
+    },
     /// Asks the download worker what there is to download for `query`.
     DispatchSearchDownloads {
         id: u64,

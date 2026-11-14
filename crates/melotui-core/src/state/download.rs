@@ -30,22 +30,12 @@ pub struct DownloadState {
 }
 
 /// Where a download on offer was found.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DownloadSource {
     /// YouTube Music's songs: the recording itself, with its artist and album.
-    #[default]
     Songs,
-    /// YouTube's videos: everything else, live sets and uploads among them.
-    Videos,
-}
-
-impl DownloadSource {
-    pub fn other(self) -> Self {
-        match self {
-            Self::Songs => Self::Videos,
-            Self::Videos => Self::Songs,
-        }
-    }
+    /// Everything else on YouTube: live sets, covers and uploads.
+    YouTube,
 }
 
 /// One thing a search for something to download found.
@@ -54,14 +44,15 @@ pub struct DownloadCandidate {
     pub source: DownloadSource,
     pub url: String,
     pub title: String,
-    /// The artist of a song, the channel of a video.
+    /// The artist of a song; whose channel anything else is on.
     pub by: Option<String>,
     pub album: Option<String>,
     pub duration_secs: Option<u64>,
 }
 
 /// A search for something to download, and the list its results are
-/// picked from. They come one at a time, and can be picked as they come.
+/// picked from: the songs, then the rest of YouTube. They come one at a
+/// time, and can be picked as they come.
 #[derive(Debug, Clone, Default)]
 pub struct DownloadSearch {
     /// Which search this is, so that what a search since closed still has
@@ -69,28 +60,35 @@ pub struct DownloadSearch {
     pub id: u64,
     pub query: String,
     pub songs: Vec<DownloadCandidate>,
-    pub videos: Vec<DownloadCandidate>,
-    pub tab: DownloadSource,
+    pub youtube: Vec<DownloadCandidate>,
+    /// The result selected, counting through the songs and then the rest.
     pub row: usize,
     /// More results may still come.
     pub searching: bool,
-    /// The tab or row was chosen by hand, and is left where it was put.
+    /// A row was chosen by hand, and the selection stays on that result.
     pub moved: bool,
+    /// The lyrics panel as it was before the list took its place — shown,
+    /// closed by hand, opened for a song's lyrics — to be put back.
+    pub panel_before: (bool, bool, bool),
 }
 
 impl DownloadSearch {
     pub fn results(&self, source: DownloadSource) -> &[DownloadCandidate] {
         match source {
             DownloadSource::Songs => &self.songs,
-            DownloadSource::Videos => &self.videos,
+            DownloadSource::YouTube => &self.youtube,
         }
     }
 
-    pub fn shown(&self) -> &[DownloadCandidate] {
-        self.results(self.tab)
+    pub fn len(&self) -> usize {
+        self.songs.len() + self.youtube.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn selected(&self) -> Option<&DownloadCandidate> {
-        self.shown().get(self.row)
+        self.songs.iter().chain(&self.youtube).nth(self.row)
     }
 }

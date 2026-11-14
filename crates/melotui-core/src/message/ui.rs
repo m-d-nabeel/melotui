@@ -68,7 +68,6 @@ pub enum UIMsg {
     // Download picker
     DownloadPickerMoveUp,
     DownloadPickerMoveDown,
-    DownloadPickerSwitchTab,
     DownloadPickerSubmit,
     DownloadPickerCancel,
     // DSP Studio
