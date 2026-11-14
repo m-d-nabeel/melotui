@@ -136,6 +136,29 @@ pub fn handle_toggle_tree_expand(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+/// Closes everything open in the tree, down to its top rows. The selection
+/// goes to the top row it was under, so it is still on screen.
+pub fn handle_collapse_tree(state: &mut AppState) -> Vec<AppMsg> {
+    state.last_nav_time = state.time_elapsed;
+    let nav = &state.session.nav.library;
+    let top = nav.selected_id.as_ref().and_then(|selected| {
+        let at = projector::get_index_of(&state.library, nav, selected)?;
+        projector::get_visible_rows(&state.library, nav, 0, at + 1)
+            .into_iter()
+            .rev()
+            .find(|row| row.level == 0)
+            .map(|row| row.id)
+    });
+    let nav = &mut state.session.nav.library;
+    nav.expanded_ids.clear();
+    nav.scroll_offset = 0;
+    if top.is_some() {
+        nav.selected_id = top;
+    }
+    state.session.nav.show_track_info = false;
+    vec![]
+}
+
 pub fn handle_move_up(state: &mut AppState) -> Vec<AppMsg> {
     state.last_nav_time = state.time_elapsed;
     state.session.nav.show_track_info = false;
@@ -493,6 +516,42 @@ mod tests {
 
         handle_toggle_tree_expand(&mut state);
         assert!(!state.session.nav.library.expanded_ids.contains(&node));
+    }
+
+    #[test]
+    fn collapsing_the_tree_closes_everything_and_keeps_the_selection_in_sight() {
+        let mut state = test_state();
+        let closed = projector::get_row_count(&state.library, &state.session.nav.library);
+
+        // Open every top row, and whatever is first under each.
+        for at in (0..closed).rev() {
+            let nav = &state.session.nav.library;
+            let top = projector::get_node_at_index(&state.library, nav, at).unwrap();
+            state.session.nav.library.expanded_ids.insert(top);
+        }
+        let nav = &state.session.nav.library;
+        let open = projector::get_visible_rows(&state.library, nav, 0, usize::MAX);
+        assert!(open.len() > closed, "nothing opened");
+        // Selected: the last row that is under another, and the top row
+        // it is under.
+        let deep = open.iter().rposition(|row| row.level > 0).unwrap();
+        let under = open[..deep].iter().rfind(|row| row.level == 0).unwrap();
+        state.session.nav.library.selected_id = Some(open[deep].id.clone());
+        state.session.nav.library.scroll_offset = 3;
+
+        handle_collapse_tree(&mut state);
+        let nav = &state.session.nav.library;
+        assert!(nav.expanded_ids.is_empty());
+        assert_eq!(projector::get_row_count(&state.library, nav), closed);
+        assert_eq!(nav.selected_id.as_ref(), Some(&under.id));
+        assert_eq!(nav.scroll_offset, 0);
+
+        // Already closed, with a top row selected: nothing moves.
+        handle_collapse_tree(&mut state);
+        assert_eq!(
+            state.session.nav.library.selected_id.as_ref(),
+            Some(&under.id)
+        );
     }
 
     #[test]

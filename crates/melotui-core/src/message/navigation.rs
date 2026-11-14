@@ -17,5 +17,7 @@ pub enum NavigationMsg {
     },
     ToggleArt,
     ToggleTreeExpand,
+    /// Close everything open in the tree.
+    CollapseTree,
     CycleVisualizerStyle,
 }

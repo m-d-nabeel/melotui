@@ -57,6 +57,7 @@ pub enum KeyAction {
     TogglePlaybackPanel,
     MoveUp,
     MoveDown,
+    CollapseTree,
     MoveTop,
     MoveBottom,
     MovePageUp,
@@ -201,6 +202,7 @@ impl KeyAction {
             KeyAction::TogglePlaybackPanel => "Playback Panel",
             KeyAction::MoveUp => "Up",
             KeyAction::MoveDown => "Down",
+            KeyAction::CollapseTree => "Collapse the tree",
             KeyAction::MoveTop => "Top",
             KeyAction::MoveBottom => "Bottom",
             KeyAction::MovePageUp => "Page Up",
@@ -322,6 +324,7 @@ impl KeyAction {
 
             KeyAction::MoveUp => Some(AppMsg::Navigation(NavigationMsg::MoveUp)),
             KeyAction::MoveDown => Some(AppMsg::Navigation(NavigationMsg::MoveDown)),
+            KeyAction::CollapseTree => Some(AppMsg::Navigation(NavigationMsg::CollapseTree)),
             KeyAction::MoveTop => Some(AppMsg::Navigation(NavigationMsg::MoveTop)),
             KeyAction::MoveBottom => Some(AppMsg::Navigation(NavigationMsg::MoveBottom)),
             KeyAction::MovePageUp => {
@@ -665,6 +668,7 @@ impl Default for KeyRegistry {
                 KeyBinding::new(KeyCode::Char('d'), KeyAction::DeletePlaylist)
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::Char('o'), KeyAction::ToggleSort),
+                KeyBinding::new(KeyCode::Char('z'), KeyAction::CollapseTree),
             ],
         );
 

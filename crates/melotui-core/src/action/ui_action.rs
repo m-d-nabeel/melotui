@@ -645,6 +645,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             msgs
         }
         Command::Sort => vec![AppMsg::Library(LibraryMsg::ToggleSort)],
+        Command::CollapseTree => vec![AppMsg::Navigation(NavigationMsg::CollapseTree)],
         Command::ClearQueue => vec![AppMsg::Library(LibraryMsg::ClearQueue)],
         Command::ShowLyrics(show) => {
             let show = show.unwrap_or(!state.session.ui.show_lyrics);

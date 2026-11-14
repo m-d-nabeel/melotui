@@ -40,6 +40,7 @@ fn handle_navigation_message(state: &mut AppState, msg: NavigationMsg) -> Vec<Ap
         NavigationMsg::MovePage { down } => nav_action::handle_move_page(state, down),
         NavigationMsg::ToggleArt => playback_action::handle_toggle_art(state),
         NavigationMsg::ToggleTreeExpand => nav_action::handle_toggle_tree_expand(state),
+        NavigationMsg::CollapseTree => nav_action::handle_collapse_tree(state),
         NavigationMsg::CycleVisualizerStyle => {
             playback_action::handle_cycle_visualizer_style(state)
         }

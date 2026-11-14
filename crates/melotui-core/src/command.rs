@@ -270,6 +270,12 @@ pub static COMMANDS: &[Spec] = &[
         NOTHING,
     ),
     spec(&["sort"], "", "Next sort order", NOTHING),
+    spec(
+        &["collapse", "fold"],
+        "",
+        "Close everything open in the tree",
+        NOTHING,
+    ),
     spec(&["rescan", "r", "scan"], "", "Rescan the library", NOTHING),
     spec(
         &["yt", "youtube"],
@@ -509,6 +515,7 @@ pub enum Command {
     },
     ClearSearch,
     Sort,
+    CollapseTree,
     Download {
         query: String,
     },
@@ -815,6 +822,7 @@ fn parse(input: &str) -> Result<Command, Command> {
         }
         "noh" => Command::ClearSearch,
         "sort" => Command::Sort,
+        "collapse" => Command::CollapseTree,
         "rescan" => Command::Rescan,
         "yt" => match sub(spec, rest)? {
             ("search", rest) => Command::DownloadSearch {
