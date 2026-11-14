@@ -12,8 +12,8 @@ pub fn handle_request_download(state: &mut AppState, query: String) -> Vec<AppMs
 }
 
 fn enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
-    let root = match state.library.roots.first() {
-        Some(r) => r,
+    let download_dir = match state.config.download_dir(&state.library.roots) {
+        Some(dir) => dir,
         None => {
             state.session.notification.current = Some(
                 Notification::new(
@@ -25,8 +25,6 @@ fn enqueue_download(state: &mut AppState, query: String) -> Vec<AppMsg> {
             return vec![];
         }
     };
-    let download_dir = root.join("Downloads");
-
     if !download_dir.exists()
         && let Err(e) = fs::create_dir_all(&download_dir)
     {
@@ -66,6 +64,7 @@ pub fn handle_begin_next_download(state: &mut AppState) -> Vec<AppMsg> {
     vec![AppMsg::Download(DownloadMsg::DispatchDownload {
         query: job.query,
         download_path: job.download_path,
+        cookies_from_browser: state.config.library.download_cookies_from_browser.clone(),
     })]
 }
 
@@ -117,9 +116,9 @@ pub fn handle_request_search_lyrics(state: &mut AppState, query: String) -> Vec<
     // Auto switch to Lyrics View tab (which acts as the selector)
     crate::action::playback_action::lyrics_panel_set_by_hand(state, true);
 
-    vec![AppMsg::Download(DownloadMsg::DispatchSearchLyrics {
-        query,
-    })]
+    // The search itself is asked of the download worker by the engine's
+    // bridge, from the message this answers.
+    vec![]
 }
 
 pub fn handle_lyrics_search_results(

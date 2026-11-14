@@ -91,13 +91,27 @@ impl InputHandler {
             normalized_code = KeyCode::Char(c.to_ascii_lowercase());
         }
 
+        // A symbol typed with Shift — `:`, `?`, `+`, `<` — comes as the
+        // symbol alone from most terminals, and as the symbol with Shift from
+        // Windows' console and from terminals speaking kitty's keyboard
+        // protocol. Shift is part of what the symbol is, not a modifier on
+        // it, so a binding for the symbol answers to both; one that names
+        // Shift itself is tried first.
+        let shift = ratatui::crossterm::event::KeyModifiers::SHIFT;
+        let is_symbol = matches!(normalized_code, KeyCode::Char(c) if !c.is_alphabetic());
+        let without_shift =
+            (is_symbol && key.modifiers.contains(shift)).then(|| key.modifiers.difference(shift));
+        let wanted = std::iter::once(key.modifiers).chain(without_shift);
+
         let mut action = None;
-        'ctx_loop: for ctx in contexts {
-            if let Some(bindings) = registry.bindings.get(&ctx) {
-                for binding in bindings {
-                    if binding.key == normalized_code && binding.modifiers == key.modifiers {
-                        action = Some(binding.action);
-                        break 'ctx_loop;
+        'found: for modifiers in wanted {
+            for ctx in &contexts {
+                if let Some(bindings) = registry.bindings.get(ctx) {
+                    for binding in bindings {
+                        if binding.key == normalized_code && binding.modifiers == modifiers {
+                            action = Some(binding.action);
+                            break 'found;
+                        }
                     }
                 }
             }
@@ -514,6 +528,36 @@ mod tests {
         for c in ['b', 't', 'e', 'z', 'c', 'x', 'w'] {
             assert!(press(KeyCode::Char(c), none).is_none(), "{c} still bound");
         }
+    }
+
+    #[test]
+    fn a_symbol_does_the_same_with_shift_reported_as_without() {
+        // As Windows' console sends them: `:` is Char(':') with Shift.
+        let state = test_state();
+        let registry = KeyRegistry::default();
+        let press = |code, modifiers| {
+            InputHandler::handle(KeyEvent::new(code, modifiers), &state, &registry)
+                .map(|msg| format!("{msg:?}"))
+        };
+        let mut checked = 0;
+        for bindings in registry.bindings.values() {
+            for binding in bindings {
+                let KeyCode::Char(c) = binding.key else {
+                    continue;
+                };
+                if c.is_alphabetic() || !binding.modifiers.is_empty() {
+                    continue;
+                }
+                let plain = press(binding.key, KeyModifiers::NONE);
+                let shifted = press(binding.key, KeyModifiers::SHIFT);
+                assert_eq!(shifted, plain, "'{c}' with Shift reported");
+                checked += 1;
+            }
+        }
+        assert!(checked > 10, "only {checked} symbols checked");
+        // The ones the app cannot be used without.
+        assert!(press(KeyCode::Char(':'), KeyModifiers::SHIFT).is_some());
+        assert!(press(KeyCode::Char('?'), KeyModifiers::SHIFT).is_some());
     }
 
     #[test]

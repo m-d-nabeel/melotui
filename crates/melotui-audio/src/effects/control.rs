@@ -1,7 +1,7 @@
 //! Parameters as the graph sees them.
 
 use fundsp::DEFAULT_SR;
-use fundsp::hacker32::*;
+use fundsp::prelude32::*;
 use fundsp::signal::{Signal, SignalFrame};
 
 use super::dsp::{Glide, glide_coeff};

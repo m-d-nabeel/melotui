@@ -2,7 +2,7 @@
 
 use fundsp::DEFAULT_SR;
 use fundsp::buffer::{BufferMut, BufferRef};
-use fundsp::hacker32::*;
+use fundsp::prelude32::*;
 use fundsp::signal::SignalFrame;
 use fundsp::svf::SvfCoefs;
 

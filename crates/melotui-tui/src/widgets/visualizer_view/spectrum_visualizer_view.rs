@@ -295,7 +295,7 @@ pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
                 let peak_height = (peak * height).clamp(0.0, height);
 
                 // color oscillation: phase shift based on position
-                let color_phase = (i as f64 / num_ui_bars as f64) + (time as f64 * 0.1);
+                let color_phase = (i as f64 / num_ui_bars as f64) + (time * 0.1);
                 let r = ((color_phase * 2.0).sin() * 0.5 + 0.5) * 255.0;
                 let g = ((color_phase * 2.0 + 2.0).sin() * 0.5 + 0.5) * 255.0;
                 let b = ((color_phase * 2.0 + 4.0).sin() * 0.5 + 0.5) * 255.0;
@@ -350,7 +350,7 @@ pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
 
-    let time = state.time_elapsed as f64;
+    let time = state.time_elapsed;
     let drops = &state.spectrum_motion.fountain().drops;
 
     let canvas = Canvas::default()
@@ -423,7 +423,7 @@ pub fn draw_radial(frame: &mut Frame, area: Rect, state: &AppState) {
 
     let spectrum = &state.spectrum_smooth;
     let peaks = &state.spectrum_peaks;
-    let time = state.time_elapsed as f64;
+    let time = state.time_elapsed;
 
     if spectrum.is_empty() {
         return;

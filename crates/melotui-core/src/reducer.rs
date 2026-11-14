@@ -92,7 +92,12 @@ fn handle_playback_message(state: &mut AppState, msg: PlaybackMsg) -> Vec<AppMsg
         PlaybackMsg::AudioPaused => playback_action::handle_audio_paused(state),
         PlaybackMsg::AudioResumed => playback_action::handle_audio_resumed(state),
         PlaybackMsg::AudioFinished => playback_action::handle_audio_finished(state),
-        PlaybackMsg::AudioError { error } => playback_action::handle_audio_error(state, error),
+        PlaybackMsg::AudioAdvanced { path } => playback_action::handle_audio_advanced(state, path),
+        // Sent on to the audio thread by the engine's bridge.
+        PlaybackMsg::DispatchPreload { .. } => vec![],
+        PlaybackMsg::AudioError { path, error } => {
+            playback_action::handle_audio_error(state, path, error)
+        }
         PlaybackMsg::RequestPlayNext => playback_action::handle_request_next(state),
         PlaybackMsg::RequestPlayPrev => playback_action::handle_request_prev(state),
     }
@@ -104,64 +109,20 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
         AudioMsg::AdjustSpeed(delta) => audio_action::handle_adjust_speed(state, delta),
         AudioMsg::ToggleMute => audio_action::handle_toggle_mute(state),
         AudioMsg::ResetSpeed => audio_action::handle_reset_speed(state),
-        AudioMsg::AdjustBass(delta) => audio_action::handle_adjust_bass(state, delta),
-        AudioMsg::AdjustTreble(delta) => audio_action::handle_adjust_treble(state, delta),
-        AudioMsg::AdjustReverb(delta) => audio_action::handle_adjust_reverb(state, delta),
-        AudioMsg::AdjustEcho(delta) => audio_action::handle_adjust_echo(state, delta),
-        AudioMsg::AdjustPan(delta) => audio_action::handle_adjust_pan(state, delta),
-        AudioMsg::AdjustLowpass(delta) => audio_action::handle_adjust_lowpass(state, delta),
-        AudioMsg::AdjustHighpass(delta) => audio_action::handle_adjust_highpass(state, delta),
+        AudioMsg::Adjust(effect, delta) => audio_action::handle_adjust_effect(state, effect, delta),
         AudioMsg::AdjustEqBand { band, delta } => {
             audio_action::handle_adjust_eq_band(state, band, delta)
         }
-        AudioMsg::AdjustAutoPanRate(delta) => {
-            audio_action::handle_adjust_auto_pan_rate(state, delta)
-        }
-        AudioMsg::AdjustAutoPanDepth(delta) => {
-            audio_action::handle_adjust_auto_pan_depth(state, delta)
-        }
-        AudioMsg::AdjustWobble(delta) => audio_action::handle_adjust_wobble(state, delta),
-        AudioMsg::AdjustKaraoke(delta) => audio_action::handle_adjust_karaoke(state, delta),
-        AudioMsg::AdjustWidth(delta) => audio_action::handle_adjust_width(state, delta),
-        AudioMsg::AdjustBitcrush(delta) => audio_action::handle_adjust_bitcrush(state, delta),
-        AudioMsg::AdjustExciter(delta) => audio_action::handle_adjust_exciter(state, delta),
-        AudioMsg::AdjustPingPong(delta) => audio_action::handle_adjust_ping_pong(state, delta),
-        AudioMsg::AdjustPhaser(delta) => audio_action::handle_adjust_phaser(state, delta),
         AudioMsg::DispatchSetVolume(volume) => {
             audio_action::handle_dispatch_set_volume(state, volume)
         }
         AudioMsg::DispatchSetSpeed(speed) => audio_action::handle_dispatch_set_speed(state, speed),
-        AudioMsg::DispatchSetBass(bass) => audio_action::handle_dispatch_set_bass(state, bass),
-        AudioMsg::DispatchSetTreble(treble) => {
-            audio_action::handle_dispatch_set_treble(state, treble)
-        }
-        AudioMsg::DispatchSetReverb(reverb) => {
-            audio_action::handle_dispatch_set_reverb(state, reverb)
-        }
-        AudioMsg::DispatchSetEcho(echo) => audio_action::handle_dispatch_set_echo(state, echo),
-        AudioMsg::DispatchSetPan(pan) => audio_action::handle_dispatch_set_pan(state, pan),
-        AudioMsg::DispatchSetLowpass(lp) => audio_action::handle_dispatch_set_lowpass(state, lp),
-        AudioMsg::DispatchSetHighpass(hp) => audio_action::handle_dispatch_set_highpass(state, hp),
+        // Sent on to the audio thread by the engine's bridge; the state was
+        // set when the message was made.
+        AudioMsg::DispatchSet(..) => vec![],
         AudioMsg::DispatchSetEqBand { band, gain } => {
             audio_action::handle_dispatch_set_eq_band(state, band, gain)
         }
-        AudioMsg::DispatchSetAutoPanRate(rate) => {
-            audio_action::handle_dispatch_set_auto_pan_rate(state, rate)
-        }
-        AudioMsg::DispatchSetAutoPanDepth(depth) => {
-            audio_action::handle_dispatch_set_auto_pan_depth(state, depth)
-        }
-        AudioMsg::DispatchSetWobble(val) => audio_action::handle_dispatch_set_wobble(state, val),
-        AudioMsg::DispatchSetKaraoke(val) => audio_action::handle_dispatch_set_karaoke(state, val),
-        AudioMsg::DispatchSetWidth(val) => audio_action::handle_dispatch_set_width(state, val),
-        AudioMsg::DispatchSetBitcrush(val) => {
-            audio_action::handle_dispatch_set_bitcrush(state, val)
-        }
-        AudioMsg::DispatchSetExciter(val) => audio_action::handle_dispatch_set_exciter(state, val),
-        AudioMsg::DispatchSetPingPong(val) => {
-            audio_action::handle_dispatch_set_ping_pong(state, val)
-        }
-        AudioMsg::DispatchSetPhaser(val) => audio_action::handle_dispatch_set_phaser(state, val),
         AudioMsg::SetOutputDevice(device) => {
             state.session.output.wanted = device;
             vec![]
@@ -193,6 +154,7 @@ fn handle_audio_message(state: &mut AppState, msg: AudioMsg) -> Vec<AppMsg> {
 fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
     match msg {
         UIMsg::EnterCommandMode => ui_action::handle_enter_command_mode(state),
+        UIMsg::EnterSearch => ui_action::handle_enter_search(state),
         UIMsg::ExitCommandMode => ui_action::handle_exit_command_mode(state),
         UIMsg::CommandInput(key) => ui_action::handle_command_input(state, key),
         UIMsg::SubmitCommand(input) => ui_action::handle_submit_command(state, input),
@@ -244,6 +206,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::LyricsSelectorSubmit => ui_action::handle_lyrics_selector_submit(state),
         UIMsg::LyricsSelectorCancel => ui_action::handle_lyrics_selector_cancel(state),
         UIMsg::ToggleDspStudio => ui_action::handle_toggle_dsp_studio(state),
+        UIMsg::ToggleMinimal => ui_action::handle_toggle_minimal(state),
         UIMsg::DspSelectUp => ui_action::handle_dsp_select_up(state),
         UIMsg::DspSelectDown => ui_action::handle_dsp_select_down(state),
         UIMsg::DspSelectLeft => ui_action::handle_dsp_select_left(state),
@@ -262,6 +225,13 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
 }
 fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> {
     match msg {
+        LibraryMsg::Loaded { snapshot, session } => {
+            library_action::handle_library_loaded(state, *snapshot, session.map(|s| *s))
+        }
+        LibraryMsg::Grew(snapshot) => library_action::handle_library_grew(state, *snapshot),
+        LibraryMsg::Rescanned { changed } => {
+            library_action::handle_library_rescanned(state, changed)
+        }
         LibraryMsg::AddToQueue(track) => library_action::handle_add_to_queue(state, track),
         LibraryMsg::PlayNext(track) => library_action::handle_play_next(state, track),
         LibraryMsg::ToggleRepeatMode => library_action::handle_toggle_repeat_mode(state),
@@ -313,9 +283,6 @@ fn handle_library_message(state: &mut AppState, msg: LibraryMsg) -> Vec<AppMsg> 
             skipped,
             total,
         } => library_action::handle_update_scan_progress(state, scanned, skipped, total),
-        LibraryMsg::SetSearchResults { query, results } => {
-            library_action::handle_set_search_results(state, query, results)
-        }
     }
 }
 
@@ -328,6 +295,7 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         DownloadMsg::DispatchDownload {
             query,
             download_path,
+            ..
         } => download_action::handle_dispatch_download(state, query, download_path),
         DownloadMsg::DownloadProgress { percent } => {
             download_action::handle_download_progress(state, percent)
@@ -339,9 +307,8 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         DownloadMsg::RequestCancelDownload => {
             download_action::handle_request_cancel_download(state)
         }
-        DownloadMsg::RequestFetchLyrics { .. } | DownloadMsg::DispatchFetchLyrics { .. } => {
-            vec![]
-        }
+        // Sent on to the download worker by the engine's bridge.
+        DownloadMsg::RequestFetchLyrics { .. } => vec![],
         DownloadMsg::LyricsFetched { save_path } => {
             download_action::handle_lyrics_fetched(state, save_path)
         }
@@ -350,9 +317,6 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
         }
         DownloadMsg::RequestSearchLyrics { query } => {
             download_action::handle_request_search_lyrics(state, query)
-        }
-        DownloadMsg::DispatchSearchLyrics { .. } => {
-            vec![]
         }
         DownloadMsg::LyricsSearchResults {
             lrclib_results,
@@ -363,12 +327,12 @@ fn handle_download_message(state: &mut AppState, msg: DownloadMsg) -> Vec<AppMsg
 
 fn handle_database_message(state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg> {
     match msg {
-        DatabaseMsg::DispatchToggleFavorite(_)
+        DatabaseMsg::DispatchLoadLibrary
+        | DatabaseMsg::DispatchSetFavorite { .. }
         | DatabaseMsg::DispatchCreatePlaylist(_)
         | DatabaseMsg::DispatchDeletePlaylist(_)
         | DatabaseMsg::DispatchAddToPlaylist { .. }
-        | DatabaseMsg::DispatchRemoveFromPlaylist { .. }
-        | DatabaseMsg::DispatchSearchTracks(_) => vec![],
+        | DatabaseMsg::DispatchRemoveFromPlaylist { .. } => vec![],
         DatabaseMsg::DispatchIncrementPlayCount(track_id) => {
             // The one place this happens in memory — see `Library::record_play`
             // for why this used to poke `play_count` directly and why that was

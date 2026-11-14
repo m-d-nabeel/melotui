@@ -109,6 +109,9 @@ pub struct UIState {
     pub terminal_size: (u16, u16),
     pub sidebar_width: u16,
     pub focus_mode: FocusMode,
+    /// The layout that was showing when everything was minimized, to go
+    /// back to; `None` when not minimized.
+    pub minimized_from: Option<FocusMode>,
     /// Lyrics zoom in the lyrics panel, and in the full lyrics view.
     pub lyrics_zoom: f32,
     pub lyrics_zoom_focus: f32,
@@ -141,6 +144,7 @@ impl Default for UIState {
             terminal_size: (0, 0),
             sidebar_width: 28,
             focus_mode: FocusMode::default(),
+            minimized_from: None,
             lyrics_zoom: 2.0,
             lyrics_zoom_focus: 3.0,
             command_presets: Vec::new(),

@@ -4,6 +4,8 @@ use tui_input::InputRequest;
 #[derive(Debug, Clone)]
 pub enum UIMsg {
     EnterCommandMode,
+    /// Open the command bar with a search begun: what `/` does.
+    EnterSearch,
     ExitCommandMode,
     CommandInput(InputRequest),
     SubmitCommand(String),
@@ -49,6 +51,9 @@ pub enum UIMsg {
     },
     // Focus mode
     CycleFocusMode,
+    /// Minimize everything to the now-playing strip, or bring back what
+    /// was there.
+    ToggleMinimal,
     SetFocusMode(FocusMode),
     // Sidebar width
     SetSidebarWidth(u16),

@@ -1,5 +1,5 @@
 use fundsp::buffer::BufferVec;
-use fundsp::hacker32::*;
+use fundsp::prelude32::*;
 use rodio::Source;
 use rodio::source::SeekError;
 use std::sync::Arc;
@@ -334,7 +334,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{FundspSource, Source};
-    use fundsp::hacker32::{AudioUnit, pass};
+    use fundsp::prelude32::{AudioUnit, pass};
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
     use std::time::Duration;
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn effects_come_back_without_replaying_what_they_held() {
-        use fundsp::hacker32::delay;
+        use fundsp::prelude32::delay;
         use std::sync::atomic::Ordering;
 
         // Bypassing stops the graph, so every delay line in it — reverb,

@@ -1,3 +1,4 @@
+use crate::state::audio::Effect;
 use crate::{
     AppMsg, AppState, Command, UIMode,
     command::{LyricsView, Macro, Panel, Reset},
@@ -358,6 +359,15 @@ pub fn handle_enter_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     vec![AppMsg::Audio(AudioMsg::RequestOutputDevices)]
 }
 
+/// Opens the command bar with `find ` typed, ready for what to look for.
+/// Searching was a command among fifty, found by reading the help; this is
+/// the key everyone tries first.
+pub fn handle_enter_search(state: &mut AppState) -> Vec<AppMsg> {
+    let effects = handle_enter_command_mode(state);
+    state.session.ui.command_buffer = tui_input::Input::new("find ".to_string());
+    effects
+}
+
 pub fn handle_exit_command_mode(state: &mut AppState) -> Vec<AppMsg> {
     state.session.ui.mode = UIMode::Normal;
     state.session.ui.command_buffer.reset();
@@ -701,7 +711,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                     ..Default::default()
                 };
                 tell(state, "Effects reset");
-                sync_audio_msgs(&state.session.audio)
+                crate::action::audio_action::sync_audio_thread(&state.session.audio)
             }
             Reset::Eq => {
                 state.session.audio.eq_bands = [0.0; 10];
@@ -724,6 +734,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         }
         Command::Macro(Macro::Spatial) => crate::action::audio_action::handle_macro_spatial(state),
         Command::ToggleStudio => handle_toggle_dsp_studio(state),
+        Command::ToggleMinimal => handle_toggle_minimal(state),
         Command::SetOutputDevice(device) => {
             tell(
                 state,
@@ -786,7 +797,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                     NotificationKind::Info,
                     format!("Preset '{}' loaded", name),
                 ));
-                sync_audio_msgs(&state.session.audio)
+                crate::action::audio_action::sync_audio_thread(&state.session.audio)
             }
             Err(e) => {
                 state.session.notification.current = Some(Notification::new(
@@ -838,6 +849,7 @@ pub fn handle_cycle_focus_mode(state: &mut AppState) -> Vec<AppMsg> {
         state.session.ui.show_dsp_studio = false;
     }
     let next = state.session.ui.focus_mode.cycle();
+    state.session.ui.minimized_from = None;
     state.session.ui.focus_mode = next;
     state.session.notification.current = Some(
         Notification::new(NotificationKind::Info, format!("Focus: {}", next.label()))
@@ -846,10 +858,38 @@ pub fn handle_cycle_focus_mode(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+/// Minimizes everything down to the now-playing strip — the tree, the
+/// visualizer, the lyrics, the mixer and the studio all put away — or, if
+/// that is how things are, brings back the layout that was there.
+///
+/// The strip alone was already one of the layouts F1 goes round, two
+/// presses from the full one and three more to get back; this is one key
+/// there and the same key back to exactly where it was left.
+pub fn handle_toggle_minimal(state: &mut AppState) -> Vec<AppMsg> {
+    let ui = &mut state.session.ui;
+    let message = if ui.focus_mode == FocusMode::Playback {
+        // Back to where it was minimized from; reached by hand instead,
+        // there is nothing behind the strip but the full layout.
+        let before = ui.minimized_from.take().unwrap_or(FocusMode::Full);
+        ui.focus_mode = before;
+        format!("Restored: {}", before.label())
+    } else {
+        ui.minimized_from = Some(ui.focus_mode);
+        ui.focus_mode = FocusMode::Playback;
+        ui.show_dsp_studio = false;
+        "Minimized".to_string()
+    };
+    state.session.notification.current =
+        Some(Notification::new(NotificationKind::Info, message).with_duration(2));
+    vec![]
+}
+
 pub fn handle_set_focus_mode(state: &mut AppState, mode: FocusMode) -> Vec<AppMsg> {
     if state.session.ui.show_dsp_studio {
         state.session.ui.show_dsp_studio = false;
     }
+    // Chosen by hand: no longer "minimized from" anywhere.
+    state.session.ui.minimized_from = None;
     state.session.ui.focus_mode = mode;
     state.session.notification.current = Some(
         Notification::new(NotificationKind::Info, format!("Focus: {}", mode.label()))
@@ -1103,22 +1143,22 @@ pub fn handle_dsp_adjust_up(state: &mut AppState) -> Vec<AppMsg> {
         0..=9 => audio_action::handle_adjust_eq_band(state, idx, 1.0),
         10 => audio_action::handle_adjust_volume(state, 0.05),
         11 => audio_action::handle_adjust_speed(state, 0.1),
-        12 => audio_action::handle_adjust_bass(state, 0.1),
-        13 => audio_action::handle_adjust_treble(state, 0.1),
-        14 => audio_action::handle_adjust_pan(state, 0.1),
-        15 => audio_action::handle_adjust_auto_pan_rate(state, 0.05),
-        16 => audio_action::handle_adjust_auto_pan_depth(state, 0.1),
-        17 => audio_action::handle_adjust_reverb(state, 0.05),
-        18 => audio_action::handle_adjust_echo(state, 0.05),
-        19 => audio_action::handle_adjust_lowpass(state, 500.0),
-        20 => audio_action::handle_adjust_highpass(state, 50.0),
-        21 => audio_action::handle_adjust_exciter(state, 0.2),
-        22 => audio_action::handle_adjust_bitcrush(state, 0.05),
-        23 => audio_action::handle_adjust_width(state, 0.1),
-        24 => audio_action::handle_adjust_karaoke(state, 0.05),
-        25 => audio_action::handle_adjust_wobble(state, 0.05),
-        26 => audio_action::handle_adjust_ping_pong(state, 0.05),
-        27 => audio_action::handle_adjust_phaser(state, 0.05),
+        12 => audio_action::handle_adjust_effect(state, Effect::Bass, 0.1),
+        13 => audio_action::handle_adjust_effect(state, Effect::Treble, 0.1),
+        14 => audio_action::handle_adjust_effect(state, Effect::Pan, 0.1),
+        15 => audio_action::handle_adjust_effect(state, Effect::AutoPanRate, 0.05),
+        16 => audio_action::handle_adjust_effect(state, Effect::AutoPanDepth, 0.1),
+        17 => audio_action::handle_adjust_effect(state, Effect::Reverb, 0.05),
+        18 => audio_action::handle_adjust_effect(state, Effect::Echo, 0.05),
+        19 => audio_action::handle_adjust_effect(state, Effect::Lowpass, 500.0),
+        20 => audio_action::handle_adjust_effect(state, Effect::Highpass, 50.0),
+        21 => audio_action::handle_adjust_effect(state, Effect::Exciter, 0.2),
+        22 => audio_action::handle_adjust_effect(state, Effect::Bitcrush, 0.05),
+        23 => audio_action::handle_adjust_effect(state, Effect::Width, 0.1),
+        24 => audio_action::handle_adjust_effect(state, Effect::Karaoke, 0.05),
+        25 => audio_action::handle_adjust_effect(state, Effect::Wobble, 0.05),
+        26 => audio_action::handle_adjust_effect(state, Effect::PingPong, 0.05),
+        27 => audio_action::handle_adjust_effect(state, Effect::Phaser, 0.05),
         _ => vec![],
     }
 }
@@ -1130,22 +1170,22 @@ pub fn handle_dsp_adjust_down(state: &mut AppState) -> Vec<AppMsg> {
         0..=9 => audio_action::handle_adjust_eq_band(state, idx, -1.0),
         10 => audio_action::handle_adjust_volume(state, -0.05),
         11 => audio_action::handle_adjust_speed(state, -0.1),
-        12 => audio_action::handle_adjust_bass(state, -0.1),
-        13 => audio_action::handle_adjust_treble(state, -0.1),
-        14 => audio_action::handle_adjust_pan(state, -0.1),
-        15 => audio_action::handle_adjust_auto_pan_rate(state, -0.05),
-        16 => audio_action::handle_adjust_auto_pan_depth(state, -0.1),
-        17 => audio_action::handle_adjust_reverb(state, -0.05),
-        18 => audio_action::handle_adjust_echo(state, -0.05),
-        19 => audio_action::handle_adjust_lowpass(state, -500.0),
-        20 => audio_action::handle_adjust_highpass(state, -50.0),
-        21 => audio_action::handle_adjust_exciter(state, -0.2),
-        22 => audio_action::handle_adjust_bitcrush(state, -0.05),
-        23 => audio_action::handle_adjust_width(state, -0.1),
-        24 => audio_action::handle_adjust_karaoke(state, -0.05),
-        25 => audio_action::handle_adjust_wobble(state, -0.05),
-        26 => audio_action::handle_adjust_ping_pong(state, -0.05),
-        27 => audio_action::handle_adjust_phaser(state, -0.05),
+        12 => audio_action::handle_adjust_effect(state, Effect::Bass, -0.1),
+        13 => audio_action::handle_adjust_effect(state, Effect::Treble, -0.1),
+        14 => audio_action::handle_adjust_effect(state, Effect::Pan, -0.1),
+        15 => audio_action::handle_adjust_effect(state, Effect::AutoPanRate, -0.05),
+        16 => audio_action::handle_adjust_effect(state, Effect::AutoPanDepth, -0.1),
+        17 => audio_action::handle_adjust_effect(state, Effect::Reverb, -0.05),
+        18 => audio_action::handle_adjust_effect(state, Effect::Echo, -0.05),
+        19 => audio_action::handle_adjust_effect(state, Effect::Lowpass, -500.0),
+        20 => audio_action::handle_adjust_effect(state, Effect::Highpass, -50.0),
+        21 => audio_action::handle_adjust_effect(state, Effect::Exciter, -0.2),
+        22 => audio_action::handle_adjust_effect(state, Effect::Bitcrush, -0.05),
+        23 => audio_action::handle_adjust_effect(state, Effect::Width, -0.1),
+        24 => audio_action::handle_adjust_effect(state, Effect::Karaoke, -0.05),
+        25 => audio_action::handle_adjust_effect(state, Effect::Wobble, -0.05),
+        26 => audio_action::handle_adjust_effect(state, Effect::PingPong, -0.05),
+        27 => audio_action::handle_adjust_effect(state, Effect::Phaser, -0.05),
         _ => vec![],
     }
 }
@@ -1172,67 +1212,76 @@ pub fn handle_dsp_reset_control(state: &mut AppState) -> Vec<AppMsg> {
         }
         12 => {
             state.session.audio.bass = 1.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetBass(1.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bass, 1.0))]
         }
         13 => {
             state.session.audio.treble = 1.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetTreble(1.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Treble, 1.0))]
         }
         14 => {
             state.session.audio.pan = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetPan(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Pan, 0.0))]
         }
         15 => {
             state.session.audio.auto_pan_rate = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(
+                Effect::AutoPanRate,
+                0.0,
+            ))]
         }
         16 => {
             state.session.audio.auto_pan_depth = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(
+                Effect::AutoPanDepth,
+                0.0,
+            ))]
         }
         17 => {
             state.session.audio.reverb = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetReverb(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Reverb, 0.0))]
         }
         18 => {
             state.session.audio.echo = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetEcho(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Echo, 0.0))]
         }
         19 => {
             state.session.audio.lowpass = 20000.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetLowpass(20000.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(
+                Effect::Lowpass,
+                20000.0,
+            ))]
         }
         20 => {
             state.session.audio.highpass = 20.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetHighpass(20.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Highpass, 20.0))]
         }
         21 => {
             state.session.audio.exciter = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetExciter(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Exciter, 0.0))]
         }
         22 => {
             state.session.audio.bitcrush = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetBitcrush(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bitcrush, 0.0))]
         }
         23 => {
             state.session.audio.width = 1.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetWidth(1.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Width, 1.0))]
         }
         24 => {
             state.session.audio.karaoke = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetKaraoke(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Karaoke, 0.0))]
         }
         25 => {
             state.session.audio.wobble = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetWobble(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Wobble, 0.0))]
         }
         26 => {
             state.session.audio.ping_pong = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetPingPong(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::PingPong, 0.0))]
         }
         27 => {
             state.session.audio.phaser = 0.0;
-            vec![AppMsg::Audio(AudioMsg::DispatchSetPhaser(0.0))]
+            vec![AppMsg::Audio(AudioMsg::DispatchSet(Effect::Phaser, 0.0))]
         }
         _ => vec![],
     }
@@ -1274,34 +1323,6 @@ fn grid_col_len(col: usize) -> usize {
         2 => crate::state::audio::GRID_COL_EFFECTS.len(),
         _ => 0,
     }
-}
-
-fn sync_audio_msgs(audio: &crate::state::AudioState) -> Vec<AppMsg> {
-    use crate::message::audio::AudioMsg;
-    let mut msgs = vec![
-        AppMsg::Audio(AudioMsg::DispatchSetVolume(audio.volume)),
-        AppMsg::Audio(AudioMsg::DispatchSetSpeed(audio.speed)),
-        AppMsg::Audio(AudioMsg::DispatchSetBass(audio.bass)),
-        AppMsg::Audio(AudioMsg::DispatchSetTreble(audio.treble)),
-        AppMsg::Audio(AudioMsg::DispatchSetReverb(audio.reverb)),
-        AppMsg::Audio(AudioMsg::DispatchSetEcho(audio.echo)),
-        AppMsg::Audio(AudioMsg::DispatchSetPan(audio.pan)),
-        AppMsg::Audio(AudioMsg::DispatchSetLowpass(audio.lowpass)),
-        AppMsg::Audio(AudioMsg::DispatchSetHighpass(audio.highpass)),
-        AppMsg::Audio(AudioMsg::DispatchSetAutoPanRate(audio.auto_pan_rate)),
-        AppMsg::Audio(AudioMsg::DispatchSetAutoPanDepth(audio.auto_pan_depth)),
-        AppMsg::Audio(AudioMsg::DispatchSetExciter(audio.exciter)),
-        AppMsg::Audio(AudioMsg::DispatchSetBitcrush(audio.bitcrush)),
-        AppMsg::Audio(AudioMsg::DispatchSetWidth(audio.width)),
-        AppMsg::Audio(AudioMsg::DispatchSetKaraoke(audio.karaoke)),
-        AppMsg::Audio(AudioMsg::DispatchSetWobble(audio.wobble)),
-        AppMsg::Audio(AudioMsg::DispatchSetPingPong(audio.ping_pong)),
-        AppMsg::Audio(AudioMsg::DispatchSetPhaser(audio.phaser)),
-    ];
-    for (i, &gain) in audio.eq_bands.iter().enumerate() {
-        msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand { band: i, gain }));
-    }
-    msgs
 }
 
 pub fn handle_enter_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
@@ -1392,7 +1413,9 @@ pub fn handle_submit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
                     NotificationKind::Info,
                     format!("Preset '{}' loaded", name),
                 ));
-                msgs.extend(sync_audio_msgs(&state.session.audio));
+                msgs.extend(crate::action::audio_action::sync_audio_thread(
+                    &state.session.audio,
+                ));
             }
             Err(e) => {
                 state.session.notification.current = Some(Notification::new(
@@ -1427,6 +1450,60 @@ pub fn handle_submit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn minimizing_puts_everything_away_and_the_same_key_brings_it_back() {
+        let library = crate::library::Library::new(vec![], vec![], Default::default());
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
+        let mode = |state: &AppState| state.focus_mode();
+
+        // From a layout chosen, with the studio open over it.
+        handle_set_focus_mode(&mut state, FocusMode::LyricsPlayback);
+        state.session.ui.show_dsp_studio = true;
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), FocusMode::Playback);
+        assert!(!state.ui_show_dsp_studio(), "the studio stayed up");
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), FocusMode::LyricsPlayback, "not where it was");
+
+        // Minimized, then moved on by hand: the next press minimizes again
+        // rather than going back to somewhere long left.
+        handle_toggle_minimal(&mut state);
+        handle_cycle_focus_mode(&mut state);
+        let moved_to = mode(&state);
+        assert_ne!(moved_to, FocusMode::Playback);
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), FocusMode::Playback);
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), moved_to);
+
+        // Reached by hand rather than by this key: back to the full layout.
+        handle_set_focus_mode(&mut state, FocusMode::Playback);
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), FocusMode::Full);
+        assert_eq!(
+            "mini".parse::<crate::command::Command>(),
+            Ok(crate::command::Command::ToggleMinimal)
+        );
+    }
+
+    #[test]
+    fn the_search_key_opens_the_command_bar_with_a_search_begun() {
+        let library = crate::library::Library::new(vec![], vec![], Default::default());
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
+        handle_enter_search(&mut state);
+        assert!(matches!(state.session.ui.mode, UIMode::Command));
+        assert_eq!(state.session.ui.command_buffer.value(), "find ");
+        // Typed on from there, it is the search it says it is.
+        let parsed = "find way back".parse::<crate::command::Command>();
+        assert!(
+            matches!(
+                parsed,
+                Ok(crate::command::Command::Search { field: crate::command::SearchField::Any, ref query }) if query == "way back"
+            ),
+            "{parsed:?}"
+        );
+    }
     use super::*;
     use crate::library::snapshot::Library;
     use std::collections::HashMap;
@@ -1573,10 +1650,9 @@ mod tests {
         let mut state = test_state();
         let msgs = run(&mut state, "fx bass 9");
         assert_eq!(state.session.audio.bass, 5.0);
-        assert!(
-            msgs.iter()
-                .any(|m| matches!(m, AppMsg::Audio(AudioMsg::DispatchSetBass(v)) if *v == 5.0))
-        );
+        assert!(msgs.iter().any(
+            |m| matches!(m, AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bass, v)) if *v == 5.0)
+        ));
         run(&mut state, "fx bass -1.5");
         assert_eq!(state.session.audio.bass, 3.5);
         run(&mut state, "fx eq 2 +20");

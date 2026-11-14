@@ -12,6 +12,9 @@ use std::str::FromStr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SearchField {
+    /// Anything: songs by their title, artist or album, then artists and
+    /// albums by name. What `/` searches.
+    Any,
     Artist,
     Song,
     Album,
@@ -22,6 +25,7 @@ pub enum SearchField {
 impl fmt::Display for SearchField {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            SearchField::Any => write!(f, "find"),
             SearchField::Artist => write!(f, "artist"),
             SearchField::Song => write!(f, "song"),
             SearchField::Album => write!(f, "album"),
@@ -36,6 +40,7 @@ impl FromStr for SearchField {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "find" | "f" | "search" => Ok(SearchField::Any),
             "artist" | "a" => Ok(SearchField::Artist),
             "song" | "s" | "track" | "t" => Ok(SearchField::Song),
             "album" | "al" => Ok(SearchField::Album),
@@ -242,6 +247,12 @@ pub static COMMANDS: &[Spec] = &[
         "Repeat mode, or the next one",
         Then::Args(&[Values::Words(REPEAT_MODES)]),
     ),
+    spec(
+        &["find", "f", "search"],
+        "<words>",
+        "Find songs, artists and albums (the / key)",
+        TEXT,
+    ),
     spec(&["artist", "a"], "<query>", "Search artists", TEXT),
     spec(
         &["song", "s", "track", "t"],
@@ -349,6 +360,12 @@ pub static COMMANDS: &[Spec] = &[
         ]),
     ),
     spec(&["studio"], "", "Show or hide the DSP studio", NOTHING),
+    spec(
+        &["mini", "minimize", "min"],
+        "",
+        "Minimize to the now-playing strip, or bring everything back (the F4 key)",
+        NOTHING,
+    ),
     spec(
         &["device", "output"],
         "[name|default]",
@@ -532,6 +549,7 @@ pub enum Command {
     },
     PresetPicker,
     ToggleStudio,
+    ToggleMinimal,
     /// Plays through a device — `None` follows the system default.
     SetOutputDevice(Option<String>),
     /// Says which device is playing and which there are.
@@ -771,7 +789,7 @@ fn parse(input: &str) -> Result<Command, Command> {
                 }
             },
         ),
-        "artist" | "song" | "album" | "genre" | "year" => {
+        "find" | "artist" | "song" | "album" | "genre" | "year" => {
             let field = SearchField::from_str(spec.name()).expect("a search field");
             Command::Search {
                 field,
@@ -833,6 +851,7 @@ fn parse(input: &str) -> Result<Command, Command> {
             }
         }
         "studio" => Command::ToggleStudio,
+        "mini" => Command::ToggleMinimal,
         "device" => match rest.join(" ").trim() {
             "" => Command::ShowOutputDevices,
             "default" => Command::SetOutputDevice(None),

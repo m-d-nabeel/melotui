@@ -15,6 +15,61 @@ pub struct DirectoryNode {
     pub tracks: Vec<TrackId>,
 }
 
+/// The rows of the tree as they were last laid out, and what they were laid
+/// out for.
+///
+/// Laying the tree out means sorting the tracks of every open folder, artist
+/// and album, and going through the whole library for the favorites, the
+/// most played and the recently played. It was done afresh for every frame
+/// drawn and several times for every key: 15 ms a frame with 20,000 tracks,
+/// which is all the time a frame has. The rows are kept instead, for as long
+/// as nothing they depend on changes: the library — every method that
+/// changes it clears this — and, in the key, which nodes are open and how
+/// they are sorted.
+#[derive(Default)]
+pub(crate) struct ProjectionCache(
+    std::sync::Mutex<Option<(u64, std::sync::Arc<Vec<super::projector::SidebarRow>>)>>,
+);
+
+impl ProjectionCache {
+    /// The rows kept for `key`, if those are the ones kept.
+    pub(crate) fn get(
+        &self,
+        key: u64,
+    ) -> Option<std::sync::Arc<Vec<super::projector::SidebarRow>>> {
+        let kept = self.0.lock().ok()?;
+        kept.as_ref()
+            .filter(|(kept_for, _)| *kept_for == key)
+            .map(|(_, rows)| rows.clone())
+    }
+
+    pub(crate) fn put(&self, key: u64, rows: std::sync::Arc<Vec<super::projector::SidebarRow>>) {
+        if let Ok(mut kept) = self.0.lock() {
+            *kept = Some((key, rows));
+        }
+    }
+
+    /// Forgets the rows: the library has changed.
+    pub(crate) fn clear(&self) {
+        if let Ok(mut kept) = self.0.lock() {
+            *kept = None;
+        }
+    }
+}
+
+impl Clone for ProjectionCache {
+    /// A copy of a library starts with nothing kept.
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl std::fmt::Debug for ProjectionCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ProjectionCache")
+    }
+}
+
 /// In-memory representation of the music library.
 ///
 /// Contains the canonical track data (`tracks`, the only place track content
@@ -63,6 +118,10 @@ pub struct DirectoryNode {
 /// consistent with the first.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Library {
+    /// The tree as last laid out, kept until the library or the way it is
+    /// shown changes. See [`ProjectionCache`].
+    #[serde(skip)]
+    pub(crate) projection: ProjectionCache,
     pub roots: Vec<PathBuf>,
     pub playlists: HashMap<PlaylistId, PlaylistMeta>,
     pub tracks: HashMap<TrackId, TrackMeta>,
@@ -153,6 +212,7 @@ impl Library {
         let folder_tree = Self::build_multi_root_folder_tree(&roots, &tracks);
 
         Self {
+            projection: ProjectionCache::default(),
             roots,
             playlists,
             playlist_order,
@@ -177,6 +237,7 @@ impl Library {
     /// update: [`favorites`](Self::favorites) reads this field directly, so
     /// there is no separate list that could drift from it.
     pub fn toggle_favorite(&mut self, track_id: TrackId, is_favorite: bool) {
+        self.projection.clear();
         if let Some(track) = self.tracks.get_mut(&track_id) {
             track.is_favorite = is_favorite;
         }
@@ -198,6 +259,7 @@ impl Library {
     /// removed by a rescan racing with a still-in-flight play), in which case
     /// nothing is recorded.
     pub fn record_play(&mut self, track_id: TrackId, played_at: u64) -> bool {
+        self.projection.clear();
         let Some(track) = self.tracks.get_mut(&track_id) else {
             return false;
         };
@@ -264,6 +326,7 @@ impl Library {
 
     /// Add a playlist. Only touches `playlists` and `playlist_order`. O(1).
     pub fn add_playlist(&mut self, id: PlaylistId, name: String) {
+        self.projection.clear();
         let meta = PlaylistMeta {
             id,
             name,
@@ -275,12 +338,14 @@ impl Library {
 
     /// Remove a playlist. Only touches `playlists` and `playlist_order`. O(n).
     pub fn remove_playlist(&mut self, id: PlaylistId) {
+        self.projection.clear();
         self.playlists.remove(&id);
         self.playlist_order.retain(|pid| *pid != id);
     }
 
     /// Add a track to a playlist. Only touches `playlist.tracks`. O(n) duplicate check.
     pub fn add_track_to_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
+        self.projection.clear();
         if let Some(p) = self
             .playlists
             .get_mut(&playlist_id)
@@ -292,6 +357,7 @@ impl Library {
 
     /// Remove a track from a playlist. Only touches `playlist.tracks`. O(n).
     pub fn remove_track_from_playlist(&mut self, playlist_id: PlaylistId, track_id: TrackId) {
+        self.projection.clear();
         if let Some(p) = self.playlists.get_mut(&playlist_id) {
             p.tracks.retain(|tid| *tid != track_id);
         }

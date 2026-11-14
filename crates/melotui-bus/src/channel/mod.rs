@@ -2,15 +2,7 @@ pub mod inprocess;
 
 use std::time::Duration;
 
-use crate::{command::IpcCommand, event::IpcEvent};
-
-pub trait IpcSender: Send {
-    fn send(&self, cmd: IpcCommand);
-}
-
-pub trait IpcReceiver: Send {
-    fn try_recv(&mut self) -> Option<IpcEvent>;
-}
+use crate::event::IpcEvent;
 
 pub trait IpcWorker<C>: Send {
     fn recv(&self) -> Option<C>;

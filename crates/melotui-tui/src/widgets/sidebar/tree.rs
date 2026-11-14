@@ -1,3 +1,4 @@
+use melotui_core::domain::TrackId;
 use melotui_core::{
     AppState,
     library::projector::{SidebarRow, get_row_count, get_visible_rows},
@@ -136,10 +137,7 @@ fn render_row(
         .map(|id| id == &row.id)
         .unwrap_or(false);
 
-    let is_playing_track = state
-        .get_playing_node()
-        .map(|active| active == &row.id)
-        .unwrap_or(false);
+    let is_playing_track = is_playing_row(&row.id, state.get_playing_track_id());
 
     let is_ancestor = active_ancestors.contains(&row.id);
 
@@ -357,14 +355,72 @@ fn icon_display_cells(s: &str) -> usize {
     width
 }
 
+/// Whether the row is the track playing, wherever in the tree it is.
+///
+/// A song is in the tree many times over: in its folder, under its artist,
+/// its album, its genre and year, among the favorites and in playlists.
+/// Only the one it was started from used to be marked, so a song started in
+/// its folder was unmarked under its artist, and one started from the queue
+/// was marked nowhere at all.
+fn is_playing_row(row: &SidebarNodeId, playing: Option<TrackId>) -> bool {
+    matches!(row, SidebarNodeId::Track { id, .. } if Some(*id) == playing)
+}
+
+/// The folders and groups the playing track was started from, and the
+/// folders its file is in: marked, so a collapsed one shows it is inside.
 fn get_playing_ancestors(state: &AppState) -> HashSet<SidebarNodeId> {
     let mut ancestors = HashSet::new();
-    if let Some(playing_node) = state.get_playing_node() {
-        let mut current = playing_node.clone();
+    let mut mark = |node: SidebarNodeId| {
+        let mut current = node;
         while let Some(parent) = current.parent(&state.library.roots) {
             ancestors.insert(parent.clone());
             current = parent;
         }
+    };
+    if let Some(playing_node) = state.get_playing_node() {
+        mark(playing_node.clone());
+    }
+    if let Some(track) = state.get_playing_track()
+        && let Some(dir) = track.file_path.parent()
+    {
+        mark(SidebarNodeId::Track {
+            id: track.id,
+            parent: Box::new(SidebarNodeId::Folder(dir.to_path_buf())),
+        });
     }
     ancestors
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_playing_track_is_marked_in_every_place_it_appears() {
+        let under = |parent: SidebarNodeId| SidebarNodeId::Track {
+            id: TrackId(7),
+            parent: Box::new(parent),
+        };
+        let playing = Some(TrackId(7));
+        assert!(is_playing_row(
+            &under(SidebarNodeId::Folder("/music".into())),
+            playing
+        ));
+        assert!(is_playing_row(
+            &under(SidebarNodeId::Artist("LiSA".into())),
+            playing
+        ));
+        assert!(is_playing_row(&under(SidebarNodeId::Root), playing));
+        // Another track, a folder, and nothing playing.
+        let other = SidebarNodeId::Track {
+            id: TrackId(8),
+            parent: Box::new(SidebarNodeId::Root),
+        };
+        assert!(!is_playing_row(&other, playing));
+        assert!(!is_playing_row(
+            &SidebarNodeId::Folder("/music".into()),
+            playing
+        ));
+        assert!(!is_playing_row(&under(SidebarNodeId::Root), None));
+    }
 }

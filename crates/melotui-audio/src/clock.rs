@@ -63,6 +63,24 @@ impl TimeKeeper {
         }
     }
 
+    /// Holds the clock to `audio`, where the audio itself has got to: if the
+    /// two are more than `within` apart, the clock is moved there, and
+    /// `true` returned. Closer than that it is left alone — the audio is
+    /// counted in the lumps the device takes it in, and the clock between
+    /// them is the smoother of the two.
+    pub fn hold_to(&mut self, audio: Duration, within: Duration) -> bool {
+        if !self.is_playing {
+            return false;
+        }
+        let clock = self.get_position();
+        let apart = clock.abs_diff(audio);
+        if apart <= within {
+            return false;
+        }
+        self.seek(audio);
+        true
+    }
+
     fn commit_time(&mut self) {
         if let Some(start) = self.last_resume_time {
             let elapsed = start.elapsed().as_secs_f32();
@@ -120,6 +138,30 @@ mod tests {
             expected,
             pos
         );
+    }
+
+    #[test]
+    fn a_clock_that_has_run_on_from_the_audio_is_brought_back_to_it() {
+        let within = Duration::from_millis(500);
+        let mut clock = TimeKeeper::new();
+        clock.seek(Duration::from_secs(60));
+        clock.start();
+
+        // Close: left alone, in step or a little off.
+        assert!(!clock.hold_to(Duration::from_millis(60_200), within));
+        assert!(clock.get_position() < Duration::from_millis(60_100));
+
+        // The device stalled for three seconds while the clock ran on.
+        assert!(clock.hold_to(Duration::from_secs(57), within));
+        let at = clock.get_position();
+        assert!(
+            at >= Duration::from_secs(57) && at < Duration::from_millis(57_100),
+            "{at:?}"
+        );
+
+        // Paused, the clock stands where it was put.
+        clock.pause();
+        assert!(!clock.hold_to(Duration::from_secs(10), within));
     }
 
     #[test]

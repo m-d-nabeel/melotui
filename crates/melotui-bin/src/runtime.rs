@@ -3,11 +3,7 @@ use melotui_bus::{event::IpcEvent, spectrum_bridge};
 use melotui_core::{
     AppMsg, AppState,
     library::Library,
-    message::{
-        cover::{CoverContext, CoverMsg},
-        library::LibraryMsg,
-        ui::UIMsg,
-    },
+    message::{library::LibraryMsg, ui::UIMsg},
     reducer,
     state::{NotificationKind, visualizer::update_visualizer_physics},
 };
@@ -50,6 +46,9 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         sample_rate: config.audio.sample_rate,
         buffer_size: config.audio.buffer_size,
         output_device: config.audio.output_device.clone(),
+        // What a worker sends is acted on as it comes, not when the wait
+        // for a key next runs out.
+        wake: Some(Arc::new(tui.waker())),
     });
 
     // request async library load
@@ -87,9 +86,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         input_processor: InputProcessor::new(),
         music_roots,
         session_restored: false,
-        library_loaded: false,
         last_saved: Instant::now(),
-        startup_scan_requested: false,
     };
 
     // Changes in the music folders while running are scanned for a few
@@ -155,44 +152,44 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         let animating = state.should_draw_spectrum() && (state.is_playing() || spectrum_moving);
         let timeout = if animating {
             frames.wait(Instant::now())
+        } else if should_render {
+            // Something is waiting to be drawn: no waiting for a key first.
+            Duration::ZERO
         } else {
             Duration::from_millis(100)
         };
-
-        // event coalescing loop
-        // drain up to 50 events - non-blocking after first
-        let mut events = Vec::with_capacity(10);
 
         if quit_requested.swap(false, Ordering::SeqCst) {
             tracing::info!("Termination signal received, quitting");
             runtime.effect_queue.push_back(AppMsg::RequestQuit);
         }
 
-        // blocking poll for first event, then whatever else is waiting. A
-        // terminal that has gone away quits, session saved.
-        match tui.poll_event(&state, timeout) {
-            Ok(Some(msg)) => {
-                events.push(msg);
-                for _ in 0..50 {
-                    match tui.poll_event(&state, Duration::ZERO) {
-                        Ok(Some(msg)) => events.push(msg),
-                        _ => break,
-                    }
-                }
-            }
-            Ok(None) => {}
+        // What has been typed, each key read as the state stands once the
+        // keys before it have been acted on. A terminal that has gone away
+        // quits, session saved.
+        let debounce = state.config.ui.queue_add_debounce_ms;
+        let taken = take_input(
+            |state, wait| tui.poll_event(state, wait),
+            |messages, state| {
+                let messages = runtime.input_processor.coalesce(messages, debounce);
+                runtime.effect_queue.extend(messages);
+                process_effects(&mut runtime, state);
+                runtime.running
+            },
+            &mut state,
+            timeout,
+        );
+        match taken {
+            Ok(true) => should_render = true,
+            Ok(false) => {}
             Err(e) => {
                 tracing::warn!("Lost the terminal ({e}), quitting");
                 terminal_lost = true;
                 runtime.effect_queue.push_back(AppMsg::RequestQuit);
             }
         }
-
-        if !events.is_empty() {
-            let debounce = state.config.ui.search_debounce_ms;
-            let processed = runtime.input_processor.coalesce(events, debounce);
-            runtime.effect_queue.extend(processed);
-            should_render = true;
+        if !runtime.running {
+            break;
         }
 
         if runtime.engine_alive && handle_ipc_events(&mut runtime, &mut state) {
@@ -219,7 +216,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         let dt = now.duration_since(last_tick).as_secs_f32();
         last_tick = now;
 
-        state.time_elapsed += dt;
+        state.time_elapsed += f64::from(dt);
         if tick_state(&mut state) {
             should_render = true;
         }
@@ -250,7 +247,7 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         }
         if let Some(at) = folders_changed_at
             && at.elapsed() >= FOLDERS_SETTLE
-            && runtime.library_loaded
+            && state.library_loaded()
         {
             folders_changed_at = None;
             tracing::info!("Music folders changed, scanning");
@@ -259,14 +256,15 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
                 .push_back(AppMsg::Library(LibraryMsg::RequestBackgroundScan));
         }
 
-        if runtime.library_loaded && runtime.last_saved.elapsed() >= AUTOSAVE_EVERY {
+        if state.library_loaded() && runtime.last_saved.elapsed() >= AUTOSAVE_EVERY {
             save_session(&state);
             runtime.last_saved = Instant::now();
         }
 
-        // While animating, drawn on the frame's time: what changed in between
-        // waits at most a frame, and frames stay even.
-        if should_render && runtime.running && (frame_due || !animating) {
+        // Whether it is animating now, with this turn's keys acted on: `v`
+        // may just have put the album art where the spectrum was.
+        let animating_now = state.should_draw_spectrum() && (state.is_playing() || spectrum_moving);
+        if runtime.running && draws_now(should_render, frame_due, animating, animating_now) {
             if let Err(e) = tui.draw(&state) {
                 tracing::warn!("Lost the terminal ({e}), quitting");
                 terminal_lost = true;
@@ -292,13 +290,101 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
         std::mem::forget(mgr);
     }
 
-    match tui.shutdown() {
+    let restored = match tui.shutdown() {
         Err(e) if terminal_lost => {
             tracing::debug!("Not restoring a terminal that is gone: {e}");
             Ok(())
         }
         result => result,
+    };
+
+    // With the terminal handed back, so quitting looks as quick as it was:
+    // the workers finish what they were sent — the last favorite, the last
+    // play count — the database is closed, and a download's yt-dlp stopped.
+    if !runtime.engine_alive {
+        runtime.engine.join(WORKERS_FINISH_WITHIN);
     }
+    restored
+}
+
+/// How long quitting waits for the workers to finish.
+const WORKERS_FINISH_WITHIN: Duration = Duration::from_secs(3);
+
+/// Whether the screen is drawn this turn of the loop.
+///
+/// While the spectrum is animating, frames come on its clock: what changes
+/// between two of them waits for the next, at most a sixtieth of a second,
+/// and the frames stay even. Otherwise a change is drawn at once.
+///
+/// "Animating" used to be asked once, at the top of the turn, before the
+/// keys were read. Press `v` to put the album art where the spectrum was,
+/// and that turn still thought itself animating and waited for a frame
+/// that was not due; the next knew better, but by then was waiting a tenth
+/// of a second for a key. The art came a tenth of a second late, every
+/// time — the one toggle that felt slow. A turn in which the animating
+/// starts or stops is drawn at once.
+fn draws_now(changed: bool, frame_due: bool, was_animating: bool, is_animating: bool) -> bool {
+    changed && (frame_due || !(was_animating && is_animating))
+}
+
+/// The most keys taken in one go, so that a held key cannot keep the loop
+/// from drawing.
+const MOST_INPUT_AT_ONCE: usize = 50;
+
+/// Whether `msg` is one of those that merge with their like when several
+/// come together — a held seek key, a held volume key — and so can wait for
+/// the rest of the burst.
+fn merges(msg: &AppMsg) -> bool {
+    use melotui_core::message::{audio::AudioMsg, playback::PlaybackMsg};
+    matches!(
+        msg,
+        AppMsg::Playback(PlaybackMsg::RequestSeekRelative(_) | PlaybackMsg::RequestSeekAbsolute(_))
+            | AppMsg::Audio(AudioMsg::AdjustVolume(_))
+            | AppMsg::Library(LibraryMsg::AddToQueue(_))
+    )
+}
+
+/// Takes what has been typed: waits up to `timeout` for the first key, then
+/// takes whatever else is waiting. `poll` reads a key as the state stands;
+/// `apply` acts on messages, and says whether the app is still running.
+/// `true` if anything was typed.
+///
+/// What a key means depends on the state — `f` is a favorite in the tree
+/// and a letter in the command bar — so each is read only once those before
+/// it have been acted on. They used to be read all together, as the state
+/// stood before any of them: `:find`, arriving at once, opened the command
+/// bar and then made a favorite, opened the track's info and stepped the
+/// search, leaving `d` typed.
+fn take_input(
+    mut poll: impl FnMut(&AppState, Duration) -> Result<Option<AppMsg>>,
+    mut apply: impl FnMut(Vec<AppMsg>, &mut AppState) -> bool,
+    state: &mut AppState,
+    timeout: Duration,
+) -> Result<bool> {
+    let mut any = false;
+    // Seeks and volume steps, held back to be merged into one.
+    let mut held: Vec<AppMsg> = Vec::new();
+    for taken in 0..=MOST_INPUT_AT_ONCE {
+        let wait = if taken == 0 { timeout } else { Duration::ZERO };
+        let Some(msg) = poll(state, wait)? else {
+            break;
+        };
+        any = true;
+        if merges(&msg) {
+            held.push(msg);
+            continue;
+        }
+        // In the order typed: what was held goes first.
+        let mut now = std::mem::take(&mut held);
+        now.push(msg);
+        if !apply(now, state) {
+            return Ok(true);
+        }
+    }
+    if !held.is_empty() {
+        apply(held, state);
+    }
+    Ok(any)
 }
 
 /// Saves the session, logging rather than failing if it cannot.
@@ -318,12 +404,7 @@ struct RuntimeContext {
     input_processor: InputProcessor,
     music_roots: Vec<PathBuf>,
     session_restored: bool,
-    /// Whether the library is in. Until it is, the state has none of the
-    /// saved session in it, and saving would overwrite that with nothing.
-    library_loaded: bool,
     last_saved: Instant,
-    /// Whether the scan at start has been asked for.
-    startup_scan_requested: bool,
 }
 
 /// How long the music folders have to be still after a change before they
@@ -382,111 +463,28 @@ fn handle_ipc_events(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
     while let Ok(evt) = ctx.engine.event_rx.try_recv() {
         changed = true;
         match evt {
+            // The session file is read here, at the edge, the first time
+            // the library arrives; what is done with it is the reducer's.
             IpcEvent::LibraryLoaded { snapshot } => {
-                tracing::info!("Library loaded with {} tracks", snapshot.tracks.len());
-                state.library = *snapshot;
-                ctx.library_loaded = true;
+                let mut session = None;
                 if !ctx.session_restored && state.config.ui.restore_session {
                     ctx.session_restored = true;
-                    if let Ok(session) = melotui_core::PersistedSession::load() {
-                        let count = session.apply_to_app_state(state);
-                        // A device chosen with :device last time is chosen again.
-                        if let Some(device) = session.output_device.clone() {
-                            ctx.effect_queue.push_back(AppMsg::Audio(
-                                melotui_core::message::audio::AudioMsg::SetOutputDevice(Some(
-                                    device,
-                                )),
-                            ));
-                        }
-                        if let Some(active_id) = state.get_playing_track_id()
-                            && let Some(track) = state.library.tracks.get(&active_id)
-                        {
-                            ctx.engine.play(track.file_path.clone());
-                            ctx.engine.pause();
-                            if state.progress_ms() > 0 {
-                                ctx.engine.seek(state.progress_ms(), state.seek_epoch());
-                            }
-                            if track.has_cover {
-                                ctx.effect_queue
-                                    .push_back(AppMsg::Cover(CoverMsg::RequestLoad {
-                                        id: active_id,
-                                        path: track.file_path.clone(),
-                                        context: CoverContext::Playback,
-                                    }));
+                    match melotui_core::PersistedSession::load() {
+                        Ok(saved) => session = Some(Box::new(saved)),
+                        Err(e) => {
+                            // No file is a first run, and nothing to remark
+                            // on; a file that cannot be read is a session
+                            // lost, which should at least be said.
+                            let there = melotui_core::PersistedSession::file_path()
+                                .is_ok_and(|path| path.exists());
+                            if there {
+                                tracing::warn!("Session not restored: {e:#}");
                             }
                         }
-                        ctx.engine.sync_dsp(state.audio());
-
-                        if state.should_draw_spectrum() {
-                            ctx.effect_queue.push_back(AppMsg::Playback(
-                                melotui_core::message::playback::PlaybackMsg::DispatchSetVisualizer {
-                                    spectrum_style: Some(state.spectrum_style().clone()),
-                                },
-                            ));
-                        }
-
-                        state.set_notification(
-                            NotificationKind::Info,
-                            format!("Session restored ({} tracks in queue)", count),
-                        );
-                    } else {
-                        state.set_notification(NotificationKind::Info, "Library loaded");
-                    }
-                } else if state.take_quiet_scan() {
-                    // A background scan found something.
-                    state.set_notification(NotificationKind::Info, "Library updated");
-                } else {
-                    state.set_notification(NotificationKind::Info, "Library loaded");
-                }
-
-                // Music added while melotui was closed is picked up at start;
-                // an empty library is a first run, so that scan shows.
-                if !ctx.startup_scan_requested
-                    && !ctx.music_roots.is_empty()
-                    && state.config.library.scan_on_startup
-                {
-                    ctx.startup_scan_requested = true;
-                    let scan = if state.library.tracks.is_empty() {
-                        LibraryMsg::RequestScanLibrary
-                    } else {
-                        LibraryMsg::RequestBackgroundScan
-                    };
-                    ctx.effect_queue.push_back(AppMsg::Library(scan));
-                }
-
-                state.ensure_library_selection();
-
-                if state.is_showing_track_info()
-                    && let Some(tid) = state.get_track_info_target_id()
-                    && let Some(info_track) = state.library.get_track(tid).cloned()
-                    && info_track.has_cover
-                {
-                    ctx.effect_queue
-                        .push_back(AppMsg::Cover(CoverMsg::RequestLoad {
-                            id: tid,
-                            path: info_track.file_path,
-                            context: CoverContext::Info,
-                        }));
-                }
-            }
-            IpcEvent::LibraryRescanned { changed } => {
-                let quiet = state.is_scanning_quietly();
-                if changed {
-                    // Reloaded only when the scan found something, so a
-                    // background scan of an unchanged library disturbs nothing.
-                    ctx.engine.load_library(ctx.music_roots.clone());
-                    if !quiet {
-                        state.set_notification(
-                            NotificationKind::Info,
-                            "Scan complete, reloading...",
-                        );
-                    }
-                } else {
-                    state.take_quiet_scan();
-                    if !quiet {
-                        state.set_notification(NotificationKind::Info, "Library is up to date");
                     }
                 }
+                ctx.effect_queue
+                    .push_back(AppMsg::Library(LibraryMsg::Loaded { snapshot, session }));
             }
             _ => ctx.effect_queue.push_back(bridge::ipc_to_appmsg(evt)),
         }
@@ -500,7 +498,7 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
         changed = true;
         // lifecycle
         if matches!(msg, AppMsg::RequestQuit) {
-            if ctx.library_loaded {
+            if state.library_loaded() {
                 save_session(state);
             }
 
@@ -532,4 +530,161 @@ fn process_effects(ctx: &mut RuntimeContext, state: &mut AppState) -> bool {
         ctx.effect_queue.extend(next_effects);
     }
     changed
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use melotui_core::state::UIMode;
+    use melotui_tui::{input::InputHandler, keybinding::KeyRegistry};
+    use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    fn state() -> AppState {
+        let library = Library::new(vec![], vec![], HashMap::new());
+        AppState::new(library, &melotui_core::config::AppConfig::default())
+    }
+
+    /// Types `keys` all at once, as a paste or a quick hand does, through
+    /// the app's own keys and reducer. What the reducer was given, in order.
+    fn typed(state: &mut AppState, keys: &str) -> Vec<String> {
+        let registry = KeyRegistry::default();
+        let mut waiting: VecDeque<char> = keys.chars().collect();
+        let mut given = Vec::new();
+        take_input(
+            |state, _| {
+                Ok(waiting.pop_front().and_then(|c| {
+                    let key = KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE);
+                    // A key that means nothing here is passed over, as the
+                    // terminal's reader passes over it.
+                    InputHandler::handle(key, state, &registry).or(Some(AppMsg::Noop))
+                }))
+            },
+            |messages, state| {
+                let mut queue: VecDeque<AppMsg> = messages.into();
+                while let Some(msg) = queue.pop_front() {
+                    given.push(format!("{msg:?}"));
+                    queue.extend(reducer::reduce(state, msg));
+                }
+                true
+            },
+            state,
+            Duration::ZERO,
+        )
+        .unwrap();
+        given
+    }
+
+    #[test]
+    fn keys_typed_with_the_one_that_opens_the_command_bar_are_typed_into_it() {
+        let mut state = state();
+        let given = typed(&mut state, ":find");
+
+        assert_eq!(*state.ui_mode(), UIMode::Command);
+        assert_eq!(state.ui_command_buffer().value(), "find");
+        // None of them was taken for the key it is elsewhere: f a favorite,
+        // i the track's info, n the next match.
+        for shortcut in ["Favorite", "TrackInfo", "SearchNext"] {
+            assert!(
+                !given.iter().any(|msg| msg.contains(shortcut)),
+                "{shortcut} among {given:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_search_key_and_what_follows_it_are_one_search() {
+        let mut state = state();
+        typed(&mut state, "/kuch");
+        assert_eq!(state.ui_command_buffer().value(), "find kuch");
+    }
+
+    #[test]
+    fn held_seek_and_volume_keys_are_still_merged_and_kept_in_order() {
+        use melotui_core::message::{audio::AudioMsg, playback::PlaybackMsg};
+        let seek = || AppMsg::Playback(PlaybackMsg::RequestSeekRelative(5));
+        let mut waiting: VecDeque<AppMsg> = vec![
+            seek(),
+            seek(),
+            seek(),
+            AppMsg::Audio(AudioMsg::ToggleMute),
+            seek(),
+        ]
+        .into();
+        let mut batches: Vec<usize> = Vec::new();
+        let mut state = state();
+        let any = take_input(
+            |_, _| Ok(waiting.pop_front()),
+            |messages, _| {
+                batches.push(messages.len());
+                true
+            },
+            &mut state,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert!(any);
+        // The three seeks go with the key that ended their run, to be merged
+        // ahead of it; the last seek after.
+        assert_eq!(batches, [4, 1]);
+    }
+
+    #[test]
+    fn the_clock_still_moves_after_days_of_running() {
+        // Four and a half days in, a frame's sixtieth of a second: as an
+        // f32 the clock had stopped by now, and animations with it.
+        let mut state = state();
+        state.time_elapsed = 400_000.0;
+        let before = state.time_elapsed();
+        state.time_elapsed += f64::from(1.0_f32 / 60.0);
+        let moved = state.time_elapsed() - before;
+        assert!((moved - 1.0 / 60.0).abs() < 1e-6, "moved {moved}");
+    }
+
+    #[test]
+    fn a_change_is_drawn_at_once_unless_the_next_frame_will_carry_it() {
+        // Nothing changed: nothing drawn, whatever else.
+        assert!(!draws_now(false, true, true, true));
+        // Not animating: at once.
+        assert!(draws_now(true, false, false, false));
+        // Animating throughout: on the frame, and only on it.
+        assert!(draws_now(true, true, true, true));
+        assert!(!draws_now(true, false, true, true));
+        // The spectrum just gave way to the album art, or the music was
+        // paused and it came to rest: no frame is coming to wait for.
+        assert!(draws_now(true, false, true, false));
+        // And the other way: the spectrum just came back.
+        assert!(draws_now(true, false, false, true));
+    }
+
+    #[test]
+    fn quitting_stops_the_rest_from_being_read() {
+        let mut waiting: VecDeque<AppMsg> =
+            vec![AppMsg::RequestQuit, AppMsg::Noop, AppMsg::Noop].into();
+        let mut state = state();
+        take_input(
+            |_, _| Ok(waiting.pop_front()),
+            |_, _| false,
+            &mut state,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(waiting.len(), 2, "read on after quitting");
+    }
+
+    #[test]
+    fn a_held_key_does_not_keep_the_loop_for_ever() {
+        let mut polled = 0;
+        let mut state = state();
+        take_input(
+            |_, _| {
+                polled += 1;
+                Ok(Some(AppMsg::Noop))
+            },
+            |_, _| true,
+            &mut state,
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert_eq!(polled, MOST_INPUT_AT_ONCE + 1);
+    }
 }

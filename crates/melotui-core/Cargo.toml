@@ -5,18 +5,20 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
 anyhow = "1"
-lofty = "0.22"
+lofty = "0.25"
 tracing = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 toml = "1.1.2"
-dirs = "6"
+serde_ignored = "0.1"
+dirs = "7"
 image.workspace = true
 rand = "0.10"
 tui-input = { version = "0.15.3", default-features = false }
-lrc = "0.1.8"
+lrc = "0.2"
 
 [dev-dependencies]
 tempfile = "3.12"

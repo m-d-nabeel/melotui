@@ -2,6 +2,7 @@ use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use melotui_core::state::audio::Effect;
 use melotui_core::{
     AppMsg,
     message::{
@@ -140,9 +141,11 @@ pub enum KeyAction {
 
     // focus mode
     CycleFocusMode,
+    ToggleMinimal,
 
     // panel resize
     ShrinkSidebar,
+    Search,
     GrowSidebar,
 
     // DSP Studio
@@ -259,7 +262,9 @@ impl KeyAction {
             KeyAction::ConfirmYes => "Confirm",
             KeyAction::ConfirmNo => "Cancel",
             KeyAction::CycleFocusMode => "Focus Mode",
+            KeyAction::ToggleMinimal => "Minimize / Restore",
             KeyAction::ShrinkSidebar => "Sidebar-",
+            KeyAction::Search => "Search",
             KeyAction::GrowSidebar => "Sidebar+",
             KeyAction::ToggleDspStudio => "DSP Studio",
             KeyAction::DspSelectUp => "DSP Up",
@@ -387,14 +392,14 @@ impl KeyAction {
             KeyAction::SpeedDown => Some(AppMsg::Audio(AudioMsg::AdjustSpeed(
                 -config.audio.speed_step,
             ))),
-            KeyAction::BassUp => Some(AppMsg::Audio(AudioMsg::AdjustBass(0.1))),
-            KeyAction::BassDown => Some(AppMsg::Audio(AudioMsg::AdjustBass(-0.1))),
-            KeyAction::TrebleUp => Some(AppMsg::Audio(AudioMsg::AdjustTreble(0.1))),
-            KeyAction::TrebleDown => Some(AppMsg::Audio(AudioMsg::AdjustTreble(-0.1))),
-            KeyAction::ReverbUp => Some(AppMsg::Audio(AudioMsg::AdjustReverb(0.05))),
-            KeyAction::ReverbDown => Some(AppMsg::Audio(AudioMsg::AdjustReverb(-0.05))),
-            KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::AdjustEcho(0.05))),
-            KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::AdjustEcho(-0.05))),
+            KeyAction::BassUp => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Bass, 0.1))),
+            KeyAction::BassDown => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Bass, -0.1))),
+            KeyAction::TrebleUp => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Treble, 0.1))),
+            KeyAction::TrebleDown => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Treble, -0.1))),
+            KeyAction::ReverbUp => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Reverb, 0.05))),
+            KeyAction::ReverbDown => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Reverb, -0.05))),
+            KeyAction::EchoUp => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Echo, 0.05))),
+            KeyAction::EchoDown => Some(AppMsg::Audio(AudioMsg::Adjust(Effect::Echo, -0.05))),
 
             KeyAction::EnterPlaylistPicker => Some(AppMsg::UI(UIMsg::EnterPlaylistPicker)),
             KeyAction::ExitPlaylistPicker => Some(AppMsg::UI(UIMsg::ExitPlaylistPicker)),
@@ -413,7 +418,9 @@ impl KeyAction {
             KeyAction::ConfirmYes => Some(AppMsg::UI(UIMsg::ConfirmYes)),
             KeyAction::ConfirmNo => Some(AppMsg::UI(UIMsg::ConfirmNo)),
             KeyAction::CycleFocusMode => Some(AppMsg::UI(UIMsg::CycleFocusMode)),
+            KeyAction::ToggleMinimal => Some(AppMsg::UI(UIMsg::ToggleMinimal)),
             KeyAction::ShrinkSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(-2))),
+            KeyAction::Search => Some(AppMsg::UI(UIMsg::EnterSearch)),
             KeyAction::GrowSidebar => Some(AppMsg::UI(UIMsg::AdjustSidebarWidth(2))),
             KeyAction::ToggleDspStudio => Some(AppMsg::UI(UIMsg::ToggleDspStudio)),
             KeyAction::DspSelectUp => Some(AppMsg::UI(UIMsg::DspSelectUp)),
@@ -494,6 +501,7 @@ impl KeyRegistry {
                 "playlist" | "playlistpicker" => KeyContext::PlaylistPicker,
                 "preset" | "presetpicker" => KeyContext::PresetPicker,
                 "confirm" => KeyContext::Confirm,
+                "lyrics" | "lyricsselector" => KeyContext::LyricsSelector,
                 "dspstudio" | "dsp" => KeyContext::DspStudio,
                 "mixer" => KeyContext::Mixer,
                 "global" => KeyContext::Global,
@@ -509,6 +517,15 @@ impl KeyRegistry {
             // to allow silent overrides.
             for (key_str, action_str) in maps {
                 if let Ok((code, mods)) = parse_key(key_str) {
+                    // `"q" = "none"` takes the key away from whatever it
+                    // did: a key could be given a new use, but there was no
+                    // way to have one do nothing.
+                    if action_str.eq_ignore_ascii_case("none") {
+                        if let Some(ctx_bindings) = self.bindings.get_mut(&ctx) {
+                            ctx_bindings.retain(|b| !(b.key == code && b.modifiers == mods));
+                        }
+                        continue;
+                    }
                     let toml_doc = format!("action = \"{}\"", action_str);
                     if let Ok(mut wrapper) =
                         toml::from_str::<std::collections::HashMap<String, KeyAction>>(&toml_doc)
@@ -749,6 +766,7 @@ impl Default for KeyRegistry {
                     .with_mod(KeyModifiers::SHIFT),
                 KeyBinding::new(KeyCode::F(3), KeyAction::CycleVisualizerStyle),
                 KeyBinding::new(KeyCode::F(1), KeyAction::CycleFocusMode),
+                KeyBinding::new(KeyCode::F(4), KeyAction::ToggleMinimal),
                 KeyBinding::new(KeyCode::F(2), KeyAction::ToggleDspStudio),
                 KeyBinding::new(KeyCode::Char('l'), KeyAction::GrowSidebar)
                     .with_mod(KeyModifiers::CONTROL),
@@ -756,6 +774,7 @@ impl Default for KeyRegistry {
                     .with_mod(KeyModifiers::CONTROL),
                 KeyBinding::new(KeyCode::F(5), KeyAction::ScanLibrary),
                 KeyBinding::new(KeyCode::Char(':'), KeyAction::EnterCommandMode),
+                KeyBinding::new(KeyCode::Char('/'), KeyAction::Search),
                 KeyBinding::new(KeyCode::Char('?'), KeyAction::OpenHelp),
                 KeyBinding::new(KeyCode::Esc, KeyAction::CancelDownload),
                 KeyBinding::new(KeyCode::Char('q'), KeyAction::Quit),
@@ -825,6 +844,137 @@ impl Default for KeyRegistry {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    /// Actions with no key of their own: there to be given one in
+    /// `keymaps.toml`.
+    const UNBOUND: &[KeyAction] = &[
+        KeyAction::BassUp,
+        KeyAction::BassDown,
+        KeyAction::TrebleUp,
+        KeyAction::TrebleDown,
+        KeyAction::ReverbUp,
+        KeyAction::ReverbDown,
+        KeyAction::EchoUp,
+        KeyAction::EchoDown,
+        KeyAction::ShowTrackInfo,
+        KeyAction::HideTrackInfo,
+        KeyAction::ToggleFolderExpand,
+        KeyAction::TogglePlaybackPanel,
+    ];
+
+    /// Every action there is, read from the enum's own definition so that
+    /// one added to it is here without being remembered.
+    fn every_action() -> Vec<KeyAction> {
+        let source = include_str!("keybinding.rs");
+        let start = source.find("pub enum KeyAction {").unwrap();
+        let end = start + source[start..].find("\n}").unwrap();
+        source[start..end]
+            .lines()
+            .skip(1)
+            .map(|line| line.trim().trim_end_matches(','))
+            .filter(|name| !name.is_empty() && !name.starts_with("//"))
+            .map(|name| {
+                toml::from_str::<HashMap<String, KeyAction>>(&format!("a = \"{name}\""))
+                    .unwrap_or_else(|e| panic!("{name}: {e}"))
+                    .remove("a")
+                    .unwrap()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn no_key_does_two_things_in_one_place() {
+        let registry = KeyRegistry::default();
+        for (context, bindings) in &registry.bindings {
+            let mut seen = HashMap::new();
+            for binding in bindings {
+                if let Some(other) = seen.insert((binding.key, binding.modifiers), binding.action) {
+                    panic!(
+                        "in {context:?}, {:?} is both {other:?} and {:?}",
+                        binding.key, binding.action
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_action_has_a_key_or_is_known_to_have_none() {
+        let registry = KeyRegistry::default();
+        let bound: Vec<KeyAction> = registry
+            .bindings
+            .values()
+            .flatten()
+            .map(|binding| binding.action)
+            .collect();
+        let all = every_action();
+        assert!(all.len() > 100, "only {} actions read", all.len());
+        for action in all {
+            match (bound.contains(&action), UNBOUND.contains(&action)) {
+                (false, false) => panic!("{action:?} has no key, and is not listed as having none"),
+                (true, true) => panic!("{action:?} has a key now: take it off the list"),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn every_action_says_what_it_does_for_the_help() {
+        for action in every_action() {
+            let said = action.description();
+            assert!(!said.trim().is_empty(), "{action:?} says nothing");
+        }
+    }
+
+    #[test]
+    fn every_place_keys_are_read_can_be_named_in_keymaps() {
+        // Each context under some name `apply_overrides` knows: the lyrics
+        // picker had none, and its keys could not be changed.
+        for name in [
+            "help",
+            "command",
+            "library",
+            "queue",
+            "trackinfo",
+            "playlist",
+            "preset",
+            "confirm",
+            "lyrics",
+            "dsp",
+            "mixer",
+            "global",
+        ] {
+            let mut registry = KeyRegistry::default();
+            let overrides = HashMap::from([(
+                name.to_string(),
+                HashMap::from([("F9".into(), "Quit".into())]),
+            )]);
+            let errors = registry.apply_overrides(&overrides);
+            assert!(errors.is_empty(), "{name}: {errors:?}");
+        }
+        assert_eq!(
+            KeyRegistry::default().bindings.len(),
+            12,
+            "a context was added"
+        );
+    }
+
+    #[test]
+    fn a_key_can_be_taken_away_from_what_it_did() {
+        let mut registry = KeyRegistry::default();
+        let quits = |registry: &KeyRegistry| {
+            registry.bindings[&KeyContext::Global]
+                .iter()
+                .any(|b| b.key == KeyCode::Char('q') && b.action == KeyAction::Quit)
+        };
+        assert!(quits(&registry));
+        let overrides = HashMap::from([(
+            "global".to_string(),
+            HashMap::from([("q".to_string(), "none".to_string())]),
+        )]);
+        assert!(registry.apply_overrides(&overrides).is_empty());
+        assert!(!quits(&registry));
+    }
 
     #[test]
     fn test_apply_overrides_conflict_resolution() {

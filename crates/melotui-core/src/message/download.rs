@@ -9,6 +9,8 @@ pub enum DownloadMsg {
     DispatchDownload {
         query: String,
         download_path: PathBuf,
+        /// The browser whose cookies yt-dlp is to use, if one is configured.
+        cookies_from_browser: Option<String>,
     },
     RequestFetchLyrics {
         track_name: String,
@@ -16,13 +18,6 @@ pub enum DownloadMsg {
         /// Narrow the match to the song's album and length when known.
         album_name: Option<String>,
         duration_secs: Option<u64>,
-        save_path: PathBuf,
-        provider: Option<String>,
-        provider_id: Option<String>,
-    },
-    DispatchFetchLyrics {
-        track_name: String,
-        artist_name: String,
         save_path: PathBuf,
         provider: Option<String>,
         provider_id: Option<String>,
@@ -43,9 +38,6 @@ pub enum DownloadMsg {
     },
     RequestCancelDownload,
     RequestSearchLyrics {
-        query: String,
-    },
-    DispatchSearchLyrics {
         query: String,
     },
     LyricsSearchResults {

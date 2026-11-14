@@ -195,7 +195,7 @@ where
         let spectrum = samples_fft_to_spectrum(
             &hann_window(samples),
             self.sample_rate,
-            FrequencyLimit::Range(20.0, 22_050.0),
+            FrequencyLimit::Range(20.0.into(), 22_050.0.into()),
             Some(&divide_by_N),
         )
         .ok()?;

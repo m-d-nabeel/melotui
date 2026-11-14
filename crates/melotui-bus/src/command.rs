@@ -7,6 +7,11 @@ pub enum AudioCommand {
     Play {
         path: PathBuf,
     },
+    /// Make `path` ready to play the moment the track playing ends, with
+    /// no gap between them; `None` takes back whatever was made ready.
+    Preload {
+        path: Option<std::path::PathBuf>,
+    },
     Pause,
     Resume,
     Stop,
@@ -19,26 +24,12 @@ pub enum AudioCommand {
     },
     SetVolume(f32),
     SetSpeed(f32),
-    SetBass(f32),
-    SetTreble(f32),
-    SetReverb(f32),
-    SetEcho(f32),
-    SetPan(f32),
-    SetLowpass(f32),
-    SetHighpass(f32),
+    /// Set one of the effects to a value.
+    SetEffect(melotui_core::state::audio::Effect, f32),
     SetEqBand {
         band: usize,
         gain: f32,
     },
-    SetAutoPanRate(f32),
-    SetAutoPanDepth(f32),
-    SetWobble(f32),
-    SetKaraoke(f32),
-    SetWidth(f32),
-    SetBitcrush(f32),
-    SetExciter(f32),
-    SetPingPong(f32),
-    SetPhaser(f32),
     /// Plays through the device with this name, or part of it; `None`
     /// follows the system default.
     SetOutputDevice(Option<String>),
@@ -52,6 +43,8 @@ pub enum DownloadCommand {
     Request {
         query: String,
         download_path: PathBuf,
+        /// The browser whose cookies yt-dlp is to use; `None` for none.
+        cookies_from_browser: Option<String>,
     },
     FetchLyrics {
         track_name: String,
@@ -73,14 +66,12 @@ pub enum DownloadCommand {
 pub enum DatabaseCommand {
     LoadLibrary { roots: Vec<PathBuf> },
     ScanLibrary { roots: Vec<PathBuf> },
-    PruneLibrary,
-    SearchTracks { query: String },
     CreatePlaylist { name: String },
     AddTrackToPlaylist { playlist_id: i64, track_id: i64 },
     DeletePlaylist { playlist_id: i64 },
     RemoveTrackFromPlaylist { playlist_id: i64, track_id: i64 },
     IncrementPlayCount { track_id: i64 },
-    ToggleFavorite { track_id: i64 },
+    SetFavorite { track_id: i64, favorite: bool },
     Shutdown,
 }
 

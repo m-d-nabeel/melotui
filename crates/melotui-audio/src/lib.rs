@@ -4,6 +4,7 @@ mod effects;
 mod fft;
 mod output;
 mod output_kind;
+mod position;
 mod reaper;
 mod source;
 mod tap;

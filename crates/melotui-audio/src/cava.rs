@@ -26,7 +26,8 @@ impl Cava {
 
     pub fn new() -> anyhow::Result<(Self, CavaConsumer)> {
         let num_bars = 200;
-        let config_path = create_cava_config(num_bars)?;
+        let config_path =
+            write_cava_config(&melotui_core::config::AppConfig::data_dir(), num_bars)?;
 
         let mut process = Command::new("cava")
             .arg("-p")
@@ -86,9 +87,13 @@ impl Drop for Cava {
     }
 }
 
-fn create_cava_config(bars: usize) -> anyhow::Result<std::path::PathBuf> {
-    let temp_dir = std::env::temp_dir();
-    let config_path = temp_dir.join("melotui_cava.conf");
+/// Writes cava's configuration into `dir`, melotui's own folder.
+///
+/// It used to go to a fixed name in the system's temporary folder, which
+/// everyone on the machine can write to: another user's file there, or a link
+/// under that name to somewhere else, was written over or written through.
+fn write_cava_config(dir: &std::path::Path, bars: usize) -> anyhow::Result<std::path::PathBuf> {
+    let config_path = dir.join("cava.conf");
 
     // cava config
     let config = format!(
@@ -111,6 +116,34 @@ noise_reduction = 0.77
         bars = bars
     );
 
-    std::fs::write(&config_path, config)?;
+    melotui_core::utils::fs::write_atomically(&config_path, config.as_bytes())?;
     Ok(config_path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_configuration_is_written_where_it_is_told_to_be() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_cava_config(&dir.path().join("melotui"), 200).unwrap();
+        assert!(path.starts_with(dir.path()));
+        let text = std::fs::read_to_string(path).unwrap();
+        assert!(text.contains("bars = 200"), "{text}");
+        assert!(text.contains("method = raw"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_link_left_under_its_name_is_replaced_not_written_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let elsewhere = dir.path().join("someone-elses-file");
+        std::fs::write(&elsewhere, "untouched").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, dir.path().join("cava.conf")).unwrap();
+
+        write_cava_config(dir.path(), 200).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&elsewhere).unwrap(), "untouched");
+    }
 }
