@@ -51,6 +51,9 @@ pub enum UIMsg {
     },
     // Focus mode
     CycleFocusMode,
+    /// Minimize everything to the now-playing strip, or bring back what
+    /// was there.
+    ToggleMinimal,
     SetFocusMode(FocusMode),
     // Sidebar width
     SetSidebarWidth(u16),

@@ -206,6 +206,7 @@ fn handle_ui_message(state: &mut AppState, msg: UIMsg) -> Vec<AppMsg> {
         UIMsg::LyricsSelectorSubmit => ui_action::handle_lyrics_selector_submit(state),
         UIMsg::LyricsSelectorCancel => ui_action::handle_lyrics_selector_cancel(state),
         UIMsg::ToggleDspStudio => ui_action::handle_toggle_dsp_studio(state),
+        UIMsg::ToggleMinimal => ui_action::handle_toggle_minimal(state),
         UIMsg::DspSelectUp => ui_action::handle_dsp_select_up(state),
         UIMsg::DspSelectDown => ui_action::handle_dsp_select_down(state),
         UIMsg::DspSelectLeft => ui_action::handle_dsp_select_left(state),

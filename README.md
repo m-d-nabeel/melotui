@@ -107,7 +107,7 @@ The keys follow what cmus, ncmpcpp and mpv agree on.
 | `a`, `A`, `f`, `p` | Add to the queue, play next, favorite, add to a playlist |
 | `i`, `l` | Track info, and lyrics |
 | `v`, `Shift+V` | Album art or visualizer, and the next visualizer style |
-| `F1`, `F2` | Layout, and the DSP studio, where every effect is adjusted |
+| `F1`, `F2`, `F4` | Layout, the DSP studio, where every effect is adjusted, and minimize: everything down to the now-playing strip, and back |
 | `/`, `n`, `N` | Find a song, artist or album, and the next and previous match |
 | `:`, `?`, `q` | Commands, help, and quit |
 

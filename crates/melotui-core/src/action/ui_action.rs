@@ -734,6 +734,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         }
         Command::Macro(Macro::Spatial) => crate::action::audio_action::handle_macro_spatial(state),
         Command::ToggleStudio => handle_toggle_dsp_studio(state),
+        Command::ToggleMinimal => handle_toggle_minimal(state),
         Command::SetOutputDevice(device) => {
             tell(
                 state,
@@ -848,6 +849,7 @@ pub fn handle_cycle_focus_mode(state: &mut AppState) -> Vec<AppMsg> {
         state.session.ui.show_dsp_studio = false;
     }
     let next = state.session.ui.focus_mode.cycle();
+    state.session.ui.minimized_from = None;
     state.session.ui.focus_mode = next;
     state.session.notification.current = Some(
         Notification::new(NotificationKind::Info, format!("Focus: {}", next.label()))
@@ -856,10 +858,50 @@ pub fn handle_cycle_focus_mode(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+/// Minimizes everything down to the now-playing strip — the tree, the
+/// visualizer, the lyrics, the mixer and the studio all put away — or, if
+/// that is how things are, brings back the layout that was there.
+///
+/// The strip alone was already one of the layouts F1 goes round, two
+/// presses from the full one and three more to get back; this is one key
+/// there and the same key back to exactly where it was left.
+pub fn handle_toggle_minimal(state: &mut AppState) -> Vec<AppMsg> {
+    let ui = &mut state.session.ui;
+    let message = match ui.minimized_from.take() {
+        Some(before) if ui.focus_mode == FocusMode::Playback => {
+            ui.focus_mode = before;
+            format!("Restored: {}", before.label())
+        }
+        // Not minimized, or minimized and then moved on by hand.
+        _ => {
+            let before = match ui.focus_mode {
+                // Already the strip: there is nothing behind it but the
+                // full layout.
+                FocusMode::Playback => FocusMode::Full,
+                other => other,
+            };
+            if ui.focus_mode == FocusMode::Playback {
+                ui.focus_mode = before;
+                format!("Restored: {}", before.label())
+            } else {
+                ui.minimized_from = Some(before);
+                ui.focus_mode = FocusMode::Playback;
+                ui.show_dsp_studio = false;
+                "Minimized".to_string()
+            }
+        }
+    };
+    state.session.notification.current =
+        Some(Notification::new(NotificationKind::Info, message).with_duration(2));
+    vec![]
+}
+
 pub fn handle_set_focus_mode(state: &mut AppState, mode: FocusMode) -> Vec<AppMsg> {
     if state.session.ui.show_dsp_studio {
         state.session.ui.show_dsp_studio = false;
     }
+    // Chosen by hand: no longer "minimized from" anywhere.
+    state.session.ui.minimized_from = None;
     state.session.ui.focus_mode = mode;
     state.session.notification.current = Some(
         Notification::new(NotificationKind::Info, format!("Focus: {}", mode.label()))
@@ -1452,6 +1494,42 @@ pub fn handle_submit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn minimizing_puts_everything_away_and_the_same_key_brings_it_back() {
+        let library = crate::library::Library::new(vec![], vec![], Default::default());
+        let mut state = AppState::new(library, &crate::config::AppConfig::default());
+        let mode = |state: &AppState| state.focus_mode();
+
+        // From a layout chosen, with the studio open over it.
+        handle_set_focus_mode(&mut state, FocusMode::LyricsPlayback);
+        state.session.ui.show_dsp_studio = true;
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), FocusMode::Playback);
+        assert!(!state.ui_show_dsp_studio(), "the studio stayed up");
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), FocusMode::LyricsPlayback, "not where it was");
+
+        // Minimized, then moved on by hand: the next press minimizes again
+        // rather than going back to somewhere long left.
+        handle_toggle_minimal(&mut state);
+        handle_cycle_focus_mode(&mut state);
+        let moved_to = mode(&state);
+        assert_ne!(moved_to, FocusMode::Playback);
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), FocusMode::Playback);
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), moved_to);
+
+        // Reached by hand rather than by this key: back to the full layout.
+        handle_set_focus_mode(&mut state, FocusMode::Playback);
+        handle_toggle_minimal(&mut state);
+        assert_eq!(mode(&state), FocusMode::Full);
+        assert_eq!(
+            "mini".parse::<crate::command::Command>(),
+            Ok(crate::command::Command::ToggleMinimal)
+        );
+    }
 
     #[test]
     fn the_search_key_opens_the_command_bar_with_a_search_begun() {
