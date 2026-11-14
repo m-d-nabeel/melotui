@@ -88,11 +88,9 @@ impl Tui {
         let (wake, events) = spawn_input_thread()?;
         // The fonts for lyrics load from now, and the lyrics are drawn
         // again once they are in.
-        let redraw = std::sync::Mutex::new(wake.clone());
+        let redraw = wake.clone();
         image_cache.preload_lyrics_fonts(Box::new(move || {
-            if let Ok(redraw) = redraw.lock() {
-                let _ = redraw.send(Input::Redraw);
-            }
+            let _ = redraw.send(Input::Redraw);
         }));
 
         Ok((
@@ -145,11 +143,9 @@ impl Tui {
     /// [`Tui::poll_event`] at once: the loop waits on the terminal, and what
     /// the workers send it would otherwise wait for the wait to run out.
     pub fn waker(&self) -> impl Fn() + Send + Sync + 'static {
-        let wake = std::sync::Mutex::new(self.wake.clone());
+        let wake = self.wake.clone();
         move || {
-            if let Ok(wake) = wake.lock() {
-                let _ = wake.send(Input::Wake);
-            }
+            let _ = wake.send(Input::Wake);
         }
     }
 

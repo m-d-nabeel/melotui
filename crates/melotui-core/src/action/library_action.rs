@@ -65,7 +65,9 @@ pub fn handle_library_loaded(
                 }));
             }
         }
-        effects.extend(crate::action::audio_action::sync_audio_thread(state));
+        effects.extend(crate::action::audio_action::sync_audio_thread(
+            state.audio(),
+        ));
         if state.should_draw_spectrum() {
             effects.push(AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
                 spectrum_style: Some(state.spectrum_style().clone()),

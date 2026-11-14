@@ -372,13 +372,15 @@ fn why_it_failed(said: Option<&str>, status: &str) -> String {
 /// each item to `report_template`.
 fn yt_dlp_args(target: &str, dl_path: &std::path::Path, report_template: &str) -> Vec<String> {
     let mut args: Vec<String> = [
-        // The audio as YouTube has it — Opus, or AAC — taken out of its
-        // container and otherwise left alone. It used to be converted to
-        // FLAC, which cannot give back what the lossy original left out:
-        // the same sound in a file several times the size.
+        // The best audio there is, kept in FLAC. That is a larger file than
+        // the Opus YouTube sends, and no better a sound; but Opus is what
+        // the best audio nearly always is, and the player has no decoder
+        // for it: left as it came, a download could not be played.
         "-x",
         "-f",
         "bestaudio/best",
+        "--audio-format",
+        "flac",
         // A link to one video of a playlist is a request for that video;
         // without this it brought the whole playlist down with it.
         "--no-playlist",
@@ -871,9 +873,9 @@ mod download_tests {
             .unwrap()
             .to_string_lossy()
             .to_lowercase();
-        assert!(
-            ["opus", "m4a", "ogg", "mp3"].contains(&ext.as_str()),
-            "not something the library scans: {files:?}"
+        assert_eq!(
+            ext, "flac",
+            "not what the player is known to play: {files:?}"
         );
         let file = lofty::read_from_path(&files[0]).expect("unreadable by the tag library");
         assert!(file.properties().duration().as_secs() >= 15);
@@ -931,12 +933,16 @@ mod download_tests {
     }
 
     #[test]
-    fn the_audio_is_kept_as_it_is_not_converted() {
+    fn a_download_arrives_in_a_format_the_player_decodes() {
+        // Left as YouTube sends it, it is Opus, which the player cannot
+        // decode: the song arrived, was listed, and would not play.
         let args = args("ytsearch1:a song");
         assert!(args.iter().any(|a| a == "-x"));
-        assert!(
-            !args.iter().any(|a| a == "--audio-format"),
-            "converting a lossy original only makes it bigger: {args:?}"
+        let format = args.iter().position(|a| a == "--audio-format");
+        assert_eq!(
+            format.map(|at| args[at + 1].as_str()),
+            Some("flac"),
+            "{args:?}"
         );
     }
 

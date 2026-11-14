@@ -18,8 +18,7 @@ fn show_unless_mixer_shown(state: &mut AppState, message: String) {
 
 /// What brings the audio thread into line with the state: the volume, the
 /// speed, every effect and every band of the EQ, as they stand.
-pub fn sync_audio_thread(state: &AppState) -> Vec<AppMsg> {
-    let audio = state.audio();
+pub fn sync_audio_thread(audio: &AudioState) -> Vec<AppMsg> {
     let mut messages = vec![
         AudioMsg::DispatchSetVolume(audio.volume),
         AudioMsg::DispatchSetSpeed(audio.speed),
@@ -142,35 +141,8 @@ fn apply_macro_profile(state: &mut AppState, mut audio: AudioState) -> Vec<AppMs
     audio.muted_from = state.session.audio.muted_from;
     state.session.audio = audio.clone();
 
-    let mut msgs = vec![
-        AppMsg::Audio(AudioMsg::DispatchSetSpeed(audio.speed)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bass, audio.bass)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Treble, audio.treble)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Reverb, audio.reverb)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Echo, audio.echo)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Pan, audio.pan)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Lowpass, audio.lowpass)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Highpass, audio.highpass)),
-        AppMsg::Audio(AudioMsg::DispatchSet(
-            Effect::AutoPanRate,
-            audio.auto_pan_rate,
-        )),
-        AppMsg::Audio(AudioMsg::DispatchSet(
-            Effect::AutoPanDepth,
-            audio.auto_pan_depth,
-        )),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Wobble, audio.wobble)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Karaoke, audio.karaoke)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Width, audio.width)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bitcrush, audio.bitcrush)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Exciter, audio.exciter)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::PingPong, audio.ping_pong)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Phaser, audio.phaser)),
-    ];
-    for (band, gain) in audio.eq_bands.iter().copied().enumerate() {
-        msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand { band, gain }));
-    }
-    msgs
+    // The volume with them: it is the one the state already has.
+    sync_audio_thread(&audio)
 }
 
 pub fn handle_macro_slowed_reverb(state: &mut AppState) -> Vec<AppMsg> {
@@ -217,39 +189,7 @@ pub fn handle_macro_spatial(state: &mut AppState) -> Vec<AppMsg> {
 pub fn handle_macro_reset_all(state: &mut AppState) -> Vec<AppMsg> {
     let def = crate::state::audio::AudioState::default();
     state.session.audio = def.clone();
-    let mut msgs = vec![
-        AppMsg::Audio(AudioMsg::DispatchSetVolume(def.volume)),
-        AppMsg::Audio(AudioMsg::DispatchSetSpeed(def.speed)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bass, def.bass)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Treble, def.treble)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Reverb, def.reverb)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Echo, def.echo)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Pan, def.pan)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Lowpass, def.lowpass)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Highpass, def.highpass)),
-        AppMsg::Audio(AudioMsg::DispatchSet(
-            Effect::AutoPanRate,
-            def.auto_pan_rate,
-        )),
-        AppMsg::Audio(AudioMsg::DispatchSet(
-            Effect::AutoPanDepth,
-            def.auto_pan_depth,
-        )),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Wobble, def.wobble)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Karaoke, def.karaoke)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Width, def.width)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Bitcrush, def.bitcrush)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Exciter, def.exciter)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::PingPong, def.ping_pong)),
-        AppMsg::Audio(AudioMsg::DispatchSet(Effect::Phaser, def.phaser)),
-    ];
-    for i in 0..10 {
-        msgs.push(AppMsg::Audio(AudioMsg::DispatchSetEqBand {
-            band: i,
-            gain: 0.0,
-        }));
-    }
-    msgs
+    sync_audio_thread(&def)
 }
 
 #[cfg(test)]
