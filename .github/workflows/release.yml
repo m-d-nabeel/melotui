@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Existing release tag to publish, for example v0.3.0"
+        description: "Existing release tag to publish, for example v2026.11.0"
         required: true
         type: string
 
@@ -26,11 +26,37 @@ jobs:
   validate:
     name: Validate release tag
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
-      - name: Require semver tag
+      - name: Require a version tag
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Release tag must look like v1.2.3, optionally with prerelease/build metadata."
+          if [[ ! "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Release tag must look like v2026.11.0: three numbers, none with a leading zero."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      # A tag put on the commit before the version was changed would
+      # release archives that say they are the version before.
+      - name: Require the tag to be the version in Cargo.toml
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 --locked \
+            | jq -r '.packages[] | select(.name == "melotui") | .version')
+          if [[ "v$version" != "$RELEASE_TAG" ]]; then
+            echo "The tag is $RELEASE_TAG, and Cargo.toml says the version is $version."
+            exit 1
+          fi
+
+      - name: Require the tagged commit to be on master
+        run: |
+          if ! git merge-base --is-ancestor HEAD origin/master; then
+            echo "$RELEASE_TAG is not on master."
             exit 1
           fi
 
@@ -38,6 +64,7 @@ jobs:
     name: Build ${{ matrix.asset_name }}
     runs-on: ${{ matrix.os }}
     needs: validate
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -52,7 +79,10 @@ jobs:
             cargo_bin_name: melotui.exe
             final_bin_name: melotui.exe
             asset_name: melotui-windows-x86_64.zip
-          - os: macos-14
+          # Built for Intel on an Apple Silicon runner, as the one above
+          # the next is built for itself: the runner CI tests on, so a
+          # runner that is retired fails there before it fails a release.
+          - os: macos-latest
             target: x86_64-apple-darwin
             cargo_bin_name: melotui
             final_bin_name: melotui
@@ -69,8 +99,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -120,6 +150,7 @@ jobs:
     name: Publish GitHub Release
     runs-on: ubuntu-22.04
     needs: build
+    timeout-minutes: 15
     permissions:
       contents: write
 
@@ -129,6 +160,11 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+
+      # For checking a download: `sha256sum -c SHA256SUMS --ignore-missing`.
+      - name: Write checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
 
       - name: Publish release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
