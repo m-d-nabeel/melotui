@@ -27,6 +27,8 @@ A fast terminal music player written in Rust: your local library, synced lyrics,
 cargo binstall --git https://github.com/m-d-nabeel/melotui melotui
 ```
 
+Versions are dates: `2026.11.0` is the first release of November 2026, `2026.11.1` the next one that month.
+
 **From source** — with [Rust installed](https://rustup.rs/). On Linux, install the audio and D-Bus development libraries first:
 
 ```bash
