@@ -139,7 +139,11 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                     });
                 }
 
-                DownloadCommand::Search { id, query } => {
+                DownloadCommand::Search {
+                    id,
+                    query,
+                    cookies_from_browser,
+                } => {
                     tracing::info!("Searching for downloads: {}", query);
                     if let Some(search) = search.take() {
                         search.stop();
@@ -148,7 +152,15 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                     let (tx, flag) = (internal_tx.clone(), cancel.clone());
                     search = Some(Search {
                         cancel,
-                        thread: thread::spawn(move || crate::search::run(id, &query, &tx, &flag)),
+                        thread: thread::spawn(move || {
+                            crate::search::run(
+                                id,
+                                &query,
+                                cookies_from_browser.as_deref(),
+                                &tx,
+                                &flag,
+                            )
+                        }),
                     });
                 }
 

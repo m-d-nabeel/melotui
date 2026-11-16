@@ -48,6 +48,9 @@ pub enum DownloadMsg {
     DispatchSearchDownloads {
         id: u64,
         query: String,
+        /// The browser whose cookies yt-dlp is to use, if one is configured:
+        /// what is found is then what that account can download.
+        cookies_from_browser: Option<String>,
     },
     /// Tells the download worker the search is no longer wanted.
     CancelSearchDownloads,
