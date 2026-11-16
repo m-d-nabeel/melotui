@@ -8,6 +8,13 @@ Versions are dates: the year, the month, and a count of the releases in that mon
 - Play, pause, volume and the track keys work while lyrics or YouTube results are being picked from.
 - `:yt search` uses the browser cookies `download_cookies_from_browser` names, as downloads do.
 - [CONFIG.md](CONFIG.md): every setting with its default, how themes are written, and the keymap.
+- **Surround is mixed down to stereo**, in every format: the centre, where a mix puts the voice, and the surrounds are heard. Only the front left and right were played before. The mix is ITU-R BS.775's, which FFmpeg, mpv and VLC use; the LFE is left out, as they leave it.
+- **Opus in up to eight channels** is played, however its channels are shared among its streams. Opus is now decoded by opus-rs: rusty-opus, used before, decodes surround wrongly.
+- Opus is played at the gain its header gives, as the Opus spec requires.
+- FLAC files tagged with the speakers their channels are for (`WAVEFORMATEXTENSIBLE_CHANNEL_MASK`) are mixed for those speakers.
+- The limiter, with any effect on, no longer lets the start of a loud passage through over its ceiling for its first 50 ms.
+
+Known limits: surround AAC (`.m4a`) cannot be opened, and 5.1 Vorbis made below quality 6 plays with its rear right nearly silent. Both are in the decoder library melotui uses; the Vorbis one is fixed there, in no release yet.
 
 ## 2026.11.0
 
