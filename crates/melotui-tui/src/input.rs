@@ -122,6 +122,35 @@ impl InputHandler {
             }
         }
 
+        // A list being picked from has the keys to itself, but for the ones
+        // that only mind the music: it need not stop being listened to, or
+        // be too loud, until something is picked.
+        let picking = matches!(
+            contexts.as_slice(),
+            [KeyContext::LyricsSelector] | [KeyContext::DownloadPicker]
+        );
+        if action.is_none() && picking {
+            action = registry
+                .bindings
+                .get(&KeyContext::Global)
+                .into_iter()
+                .flatten()
+                .find(|binding| {
+                    binding.key == normalized_code
+                        && binding.modifiers == key.modifiers
+                        && matches!(
+                            binding.action,
+                            KeyAction::PlayPause
+                                | KeyAction::VolUp
+                                | KeyAction::VolDown
+                                | KeyAction::Mute
+                                | KeyAction::PlayNextTrack
+                                | KeyAction::PlayPrevTrack
+                        )
+                })
+                .map(|binding| binding.action);
+        }
+
         // command mode typing fallback
         let Some(act) = action else {
             if *state.ui_mode() == UIMode::Command {
@@ -539,6 +568,41 @@ mod tests {
         for c in ['b', 't', 'e', 'c', 'x', 'w'] {
             assert!(press(KeyCode::Char(c), none).is_none(), "{c} still bound");
         }
+    }
+
+    #[test]
+    fn the_music_is_still_minded_while_a_list_is_picked_from() {
+        use melotui_core::message::download::DownloadMsg;
+        let dir = std::env::temp_dir();
+        let library = Library::new(vec![dir], vec![], std::collections::HashMap::new());
+        let mut state = AppState::new(library, &melotui_core::config::AppConfig::default());
+        reduce(
+            &mut state,
+            AppMsg::Download(DownloadMsg::RequestSearchDownloads {
+                query: "get lucky".into(),
+            }),
+        );
+        assert!(state.download_search().is_some());
+        let registry = KeyRegistry::default();
+        let press =
+            |code| InputHandler::handle(KeyEvent::new(code, KeyModifiers::NONE), &state, &registry);
+
+        assert!(press(KeyCode::Char(' ')).is_some(), "play or pause");
+        assert!(press(KeyCode::Char('-')).is_some(), "quieter");
+        assert!(press(KeyCode::Char('m')).is_some(), "mute");
+        // The list's own keys are the list's, and nothing else gets by.
+        assert!(matches!(
+            press(KeyCode::Char('j')),
+            Some(AppMsg::UI(UIMsg::DownloadPickerMoveDown))
+        ));
+        assert!(matches!(
+            press(KeyCode::Esc),
+            Some(AppMsg::UI(UIMsg::DownloadPickerCancel))
+        ));
+        for c in ['i', 'v', 's', 'r', ':', '/', 'l', 'z'] {
+            assert!(press(KeyCode::Char(c)).is_none(), "{c} got by");
+        }
+        assert!(press(KeyCode::F(2)).is_none(), "the studio opened");
     }
 
     #[test]
