@@ -31,11 +31,19 @@ pub struct LinkedLimiter {
     delay_r: Vec<f32>,
     write_idx: usize,
     lookahead: usize,
-    /// Peak envelope over the lookahead window, shared by both channels.
-    envelope: f32,
-    /// Currently applied gain, smoothed.
+    /// The frames come in so far, counting from the last reset.
+    frame: u64,
+    /// The smallest gain any frame in the lookahead needs, kept as a queue
+    /// of (frame, gain) in which each gain is smaller than every one after
+    /// it: the front is the smallest, and a frame is dropped once it has
+    /// left the window or a later one needs less.
+    needs: std::collections::VecDeque<(u64, f32)>,
+    /// That smallest gain over the last `lookahead` frames, and their sum:
+    /// a moving average of it, which is the gain smoothed.
+    smallest: Vec<f32>,
+    smallest_idx: usize,
+    smallest_sum: f64,
     gain: f32,
-    attack_coeff: f32,
     release_coeff: f32,
 }
 
@@ -53,9 +61,12 @@ impl LinkedLimiter {
             delay_r: Vec::new(),
             write_idx: 0,
             lookahead: 0,
-            envelope: 0.0,
+            frame: 0,
+            needs: std::collections::VecDeque::new(),
+            smallest: Vec::new(),
+            smallest_idx: 0,
+            smallest_sum: 0.0,
             gain: 1.0,
-            attack_coeff: 0.0,
             release_coeff: 0.0,
         };
         limiter.reconfigure();
@@ -67,20 +78,41 @@ impl LinkedLimiter {
         let len = self.lookahead + 1;
         self.delay_l = vec![0.0; len];
         self.delay_r = vec![0.0; len];
-        self.write_idx = 0;
-        // One-pole coefficients. Attack spans the lookahead window so the gain
-        // has fully arrived by the time the peak reaches the output.
-        self.attack_coeff = 1.0 - (-1.0 / (self.sample_rate * LOOKAHEAD_SECONDS)).exp();
+        // Room for the whole window, so that nothing is allocated on the
+        // audio thread.
+        self.needs = std::collections::VecDeque::with_capacity(len + 1);
+        self.smallest = vec![1.0; self.lookahead];
         self.release_coeff = 1.0 - (-1.0 / (self.sample_rate * RELEASE_SECONDS)).exp();
-        self.envelope = 0.0;
+        self.clear();
+    }
+
+    /// Back to silence, with nothing to hold back.
+    fn clear(&mut self) {
+        self.delay_l.fill(0.0);
+        self.delay_r.fill(0.0);
+        self.write_idx = 0;
+        self.frame = 0;
+        self.needs.clear();
+        self.smallest.fill(1.0);
+        self.smallest_idx = 0;
+        self.smallest_sum = self.lookahead as f64;
         self.gain = 1.0;
     }
 
+    /// Lets `left` and `right` in, and gives out the frame `lookahead` frames
+    /// before them at the gain it needs.
+    ///
+    /// The gain never lets a frame out above the ceiling. Each frame's need
+    /// is in the smallest-gain window for the `lookahead` frames it spends in
+    /// the delay line, so every value the moving average takes in over that
+    /// time is at most its need, and so is the average when it comes out.
+    /// Easing toward the need instead — as this did, over the lookahead —
+    /// gets only part of the way there by then: a loud start came out a
+    /// third over the ceiling for its first 50 ms.
     #[inline]
     fn process_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
         let len = self.delay_l.len();
 
-        // Push the incoming frame and take the one leaving the window.
         self.delay_l[self.write_idx] = left;
         self.delay_r[self.write_idx] = right;
         let read_idx = (self.write_idx + len - self.lookahead) % len;
@@ -88,26 +120,41 @@ impl LinkedLimiter {
         let out_r = self.delay_r[read_idx];
         self.write_idx = (self.write_idx + 1) % len;
 
-        // One detector for both channels: this is what keeps the image stable.
+        // What this frame needs, and the least any frame in the window does.
         let peak = left.abs().max(right.abs());
-        self.envelope = if peak > self.envelope {
-            peak
-        } else {
-            self.envelope + (peak - self.envelope) * self.release_coeff
-        };
-
-        let target = if self.envelope > THRESHOLD {
-            THRESHOLD / self.envelope
+        let need = if peak > THRESHOLD {
+            THRESHOLD / peak
         } else {
             1.0
         };
-        // Duck quickly, recover gently.
-        let coeff = if target < self.gain {
-            self.attack_coeff
+        while self.needs.back().is_some_and(|&(_, gain)| gain >= need) {
+            self.needs.pop_back();
+        }
+        self.needs.push_back((self.frame, need));
+        while self
+            .needs
+            .front()
+            .is_some_and(|&(frame, _)| frame + (self.lookahead as u64) < self.frame)
+        {
+            self.needs.pop_front();
+        }
+        let smallest = self.needs.front().map_or(1.0, |&(_, gain)| gain);
+        self.frame += 1;
+
+        // Its moving average, which comes down to a need by the time the
+        // frame with it comes out.
+        self.smallest_sum += f64::from(smallest) - f64::from(self.smallest[self.smallest_idx]);
+        self.smallest[self.smallest_idx] = smallest;
+        self.smallest_idx = (self.smallest_idx + 1) % self.lookahead;
+        let average = (self.smallest_sum / self.lookahead as f64) as f32;
+
+        // Down with it at once, which is already smooth; back up slowly, so
+        // that the low end does not pump between one peak and the next.
+        self.gain = if average < self.gain {
+            average
         } else {
-            self.release_coeff
+            self.gain + (average - self.gain) * self.release_coeff
         };
-        self.gain += (target - self.gain) * coeff;
 
         (out_l * self.gain, out_r * self.gain)
     }
@@ -118,11 +165,7 @@ impl AudioUnit for LinkedLimiter {
         // Cleared in place rather than through `reconfigure`: the graph is
         // reset on the audio thread every time the effects come out of bypass,
         // and with the sample rate unchanged there is nothing to reallocate.
-        self.delay_l.fill(0.0);
-        self.delay_r.fill(0.0);
-        self.write_idx = 0;
-        self.envelope = 0.0;
-        self.gain = 1.0;
+        self.clear();
     }
 
     fn set_sample_rate(&mut self, sample_rate: f64) {
@@ -265,10 +308,55 @@ mod tests {
             })
             .collect();
         let out = run(&mut lim, &input);
-        // Skip the first window while the envelope is still catching up.
-        let peak = out[2000..]
+        // From the very first frame: a limiter that is only right once it
+        // has caught up lets the start of every loud passage through.
+        let peak = out
             .iter()
             .fold(0.0f32, |a, &(l, r)| a.max(l.abs()).max(r.abs()));
-        assert!(peak <= THRESHOLD * 1.02, "peak {peak} exceeded the ceiling");
+        assert!(
+            peak <= THRESHOLD * 1.0001,
+            "peak {peak} exceeded the ceiling"
+        );
+    }
+
+    #[test]
+    fn a_sudden_loud_start_is_held_under_the_ceiling_from_its_first_frame() {
+        // Silence, then at once far over: drums out of nowhere, or surround
+        // mixed down. Eased toward over the lookahead, the gain had come only
+        // part of the way down when the loud frames came out.
+        for over in [1.5f32, 3.0, 10.0, 100.0] {
+            let mut lim = LinkedLimiter::new(48_000.0);
+            let mut input = vec![(0.0, 0.0); 1_000];
+            input.extend((0..24_000).map(|i| {
+                let v = (i as f32 / 48_000.0 * 220.0 * std::f32::consts::TAU).sin() * over;
+                (v, -v)
+            }));
+            // And a single-frame spike after it has settled.
+            input[12_000] = (over * 1.5, 0.0);
+            let out = run(&mut lim, &input);
+            let peak = out
+                .iter()
+                .fold(0.0f32, |a, &(l, r)| a.max(l.abs()).max(r.abs()));
+            assert!(peak <= THRESHOLD * 1.0001, "{over}x: peaked at {peak}");
+            // And limited, not silenced: it settles at the ceiling.
+            let settled = out[20_000..]
+                .iter()
+                .fold(0.0f32, |a, &(l, _)| a.max(l.abs()));
+            assert!(settled > THRESHOLD * 0.9, "{over}x: settled at {settled}");
+        }
+    }
+
+    #[test]
+    fn it_recovers_slowly_once_the_loud_passage_is_over() {
+        // Released over about 120 ms, not snapped back.
+        let mut lim = LinkedLimiter::new(48_000.0);
+        let loud: Vec<(f32, f32)> = (0..9_600).map(|_| (2.0, 2.0)).collect();
+        let quiet: Vec<(f32, f32)> = (0..48_000).map(|_| (0.5, 0.5)).collect();
+        run(&mut lim, &loud);
+        let out = run(&mut lim, &quiet);
+        // 10 ms after the quiet starts it is still held well down; a second
+        // after — eight times the release — it is back to as it is.
+        assert!(out[240 + 480].0 < 0.4, "{}", out[240 + 480].0);
+        assert!((out[47_000].0 - 0.5).abs() < 1e-3, "{}", out[47_000].0);
     }
 }
