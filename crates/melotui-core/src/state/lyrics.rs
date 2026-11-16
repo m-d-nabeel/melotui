@@ -163,7 +163,13 @@ fn embedded_lyrics(audio: &std::path::Path) -> Option<String> {
     let options = ParseOptions::new()
         .read_properties(false)
         .read_cover_art(false);
-    let file = Probe::open(audio).ok()?.options(options).read().ok()?;
+    let file = Probe::open(audio)
+        .ok()?
+        .options(options)
+        .guess_file_type()
+        .ok()?
+        .read()
+        .ok()?;
     // Under either of the two names the tag library has for them: ID3's
     // USLT is "unsynchronised lyrics" to it whatever is in it, and the
     // others' LYRICS are plain "lyrics". Read as one name only, an MP3's

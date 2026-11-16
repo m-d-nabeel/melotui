@@ -122,7 +122,12 @@ impl CoverCache {
         let picture_data = {
             use lofty::file::TaggedFileExt;
 
-            let tagged_file = lofty::probe::Probe::open(path).ok()?.read().ok()?;
+            let tagged_file = lofty::probe::Probe::open(path)
+                .ok()?
+                .guess_file_type()
+                .ok()?
+                .read()
+                .ok()?;
             let tag = tagged_file
                 .primary_tag()
                 .or_else(|| tagged_file.first_tag())?;

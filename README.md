@@ -11,7 +11,7 @@ A fast terminal music player written in Rust: your local library, synced lyrics,
 
 ## Features
 
-- **Library and playlists** — your music folders are scanned at start and watched while running, so new music appears by itself. MP3, FLAC, M4A, WAV and OGG.
+- **Library and playlists** — your music folders are scanned at start and watched while running, so new music appears by itself. MP3, FLAC, M4A, WAV, OGG and Opus.
 - **Visualizer** — six styles, cycled with `Shift+V` or picked with `:vis <style>`: Particle, Default, Bar, Radial, Nova, and Cava when [CAVA](https://github.com/karlstav/cava) is installed.
 - **Synced lyrics** — from `.lrc` files, the tags in your files, or fetched from LRCLIB as a song starts. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
 - **DSP studio** — speed, bass, treble, reverb, echo, panning, width, filters and more, with a 10-band EQ and presets.

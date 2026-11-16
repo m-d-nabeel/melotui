@@ -2,9 +2,8 @@ use melotui_bus::{
     channel::IpcWorker, command::AudioCommand, event::IpcEvent, spectrum_bridge::SpectrumProducer,
 };
 use ringbuf::{HeapRb, traits::Split};
-use rodio::{Decoder, Player, Source};
+use rodio::{Player, Source};
 use std::{
-    fs::File,
     path::PathBuf,
     sync::{
         Arc,
@@ -520,9 +519,8 @@ impl AudioEngine {
             .file_name()
             .unwrap_or(path.as_os_str())
             .to_string_lossy();
-        let decoder = File::open(path)
-            .map_err(|e| format!("Cannot play {name}: {e}"))
-            .and_then(|f| Decoder::try_from(f).map_err(|e| format!("Cannot play {name}: {e}")))?;
+        let decoder =
+            crate::opus::Decoded::open(path).map_err(|e| format!("Cannot play {name}: {e}"))?;
 
         let channels = decoder.channels().get();
         let sample_rate = decoder.sample_rate().get();
@@ -1094,7 +1092,7 @@ mod tests {
         // it. They were once left as Opus, on the word of the tag library,
         // which reads Opus; the decoder does not, and nothing checked it.
         let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/tone.m4a");
-        let decoder = Decoder::try_from(File::open(path).unwrap()).expect("AAC is not decoded");
+        let decoder = crate::opus::Decoded::open(path.as_ref()).expect("AAC is not decoded");
         assert!(decoder.count() > 10_000, "next to nothing came out of it");
     }
 

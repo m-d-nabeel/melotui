@@ -693,7 +693,12 @@ impl Library {
     }
 
     pub fn get_album_art(path: &Path) -> Option<(Vec<u8>, String)> {
-        let tagged_file = Probe::open(path).ok()?.read().ok()?;
+        let tagged_file = Probe::open(path)
+            .ok()?
+            .guess_file_type()
+            .ok()?
+            .read()
+            .ok()?;
         let tag = tagged_file
             .primary_tag()
             .or_else(|| tagged_file.first_tag())?;
