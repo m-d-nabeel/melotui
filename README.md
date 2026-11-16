@@ -16,6 +16,7 @@ A fast terminal music player written in Rust: your local library, synced lyrics,
 - **Synced lyrics** — from `.lrc` files, the tags in your files, or fetched from LRCLIB as a song starts. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
 - **DSP studio** — speed, bass, treble, reverb, echo, panning, width, filters and more, with a 10-band EQ and presets.
 - **Gapless playback**, which carries on through the default output when headphones or Bluetooth go away.
+- **Surround** — 5.1, 7.1 and other surround files are mixed down to stereo the way FFmpeg and mpv mix them, the centre and every speaker in.
 - **Media controls** — shows in the desktop's media controls on Linux, macOS and Windows, and answers media keys and headset buttons.
 - **YouTube downloads** — search and pick, or download a link, through `yt-dlp`; tagged with the song's title and artist.
 

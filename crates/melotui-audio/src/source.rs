@@ -67,6 +67,9 @@ pub struct FundspSource<S> {
     /// Whether the graph has been running since it was last reset, i.e.
     /// whether its state follows the music rather than some earlier moment.
     graph_live: bool,
+    /// Kept running whether or not any effect is on: for surround mixed
+    /// down, whose peaks can pass full scale and need the limiter.
+    always_live: bool,
     /// The sample rate the graph is configured for.
     sample_rate: u32,
     /// The graph's latency, in frames.
@@ -110,11 +113,23 @@ where
             bypass,
             wet: if bypassed { 0.0 } else { 1.0 },
             graph_live: !bypassed,
+            always_live: false,
             sample_rate,
             latency,
             priming: 0,
             dry: DryLine::new(latency),
         }
+    }
+
+    /// Kept running whatever `bypass` says, so that the limiter at its end
+    /// always runs: for a source mixed down from surround, whose channels
+    /// can add up past full scale.
+    pub fn always_live(mut self) -> Self {
+        self.always_live = true;
+        self.wet = 1.0;
+        // Reset when it was made: what it puts out follows the music.
+        self.graph_live = true;
+        self
     }
 
     /// Retunes the graph for a new sample rate, and the dry side with it.
@@ -185,7 +200,7 @@ where
             self.configure(sample_rate);
         }
 
-        let want_wet = !self.bypass.load(Ordering::Relaxed);
+        let want_wet = self.always_live || !self.bypass.load(Ordering::Relaxed);
         let input_ref = self.input_buffer.buffer_ref();
 
         if !want_wet && self.wet == 0.0 {
@@ -639,6 +654,67 @@ mod tests {
             worst < 1e-5,
             "the output strayed {worst:.4} from the input delayed by the graph's latency"
         );
+    }
+
+    #[test]
+    fn surround_mixed_down_is_kept_under_full_scale_with_every_effect_off() {
+        use crate::effects::{AudioParams, create_audio_graph};
+        // A downmix of loud surround: front, centre and surrounds in step,
+        // adding up to more than twice full scale.
+        const SR: usize = 48_000;
+        let loud = |i: usize| (i as f32 / SR as f32 * 220.0 * std::f32::consts::TAU).sin() * 2.2;
+        let params = AudioParams::new();
+        assert!(params.is_all_default());
+        let source = |live: bool| {
+            let fs = FundspSource::new(
+                Script::new((0..SR).map(loud)),
+                create_audio_graph(2, &params),
+                Arc::new(AtomicBool::new(true)),
+            );
+            if live { fs.always_live() } else { fs }
+        };
+        let peak = |out: &[(f32, f32)]| {
+            out.iter()
+                .map(|(l, r)| l.abs().max(r.abs()))
+                .fold(0.0, f32::max)
+        };
+
+        // With nothing on, the effects are passed by, and the limiter with
+        // them: what comes out is what went in.
+        let mut passed_by = source(false);
+        assert!(peak(&take(&mut passed_by, SR)) > 2.0);
+
+        // Kept running, the limiter holds it at its ceiling, -1 dBFS.
+        let mut limited = source(true);
+        let out = take(&mut limited, SR);
+        assert!(peak(&out) <= 0.892, "peaked at {}", peak(&out));
+        // And it is the music, not silence: past the lookahead, at the ceiling.
+        assert!(peak(&out[SR / 2..]) > 0.85);
+    }
+
+    #[test]
+    fn surround_mixed_down_at_an_ordinary_level_goes_through_the_effects_unchanged() {
+        use crate::effects::{AudioParams, create_audio_graph};
+        // Kept running only for its limiter: below the limiter's ceiling,
+        // with every effect off, the graph gives back what it is given.
+        const SR: usize = 48_000;
+        let tone = |i: usize| (i as f32 / SR as f32 * 440.0 * std::f32::consts::TAU).sin() * 0.3;
+        let params = AudioParams::new();
+        let mut fs = FundspSource::new(
+            Script::new((0..SR).map(tone)),
+            create_audio_graph(2, &params),
+            Arc::new(AtomicBool::new(true)),
+        )
+        .always_live();
+        let latency = fs.latency;
+        let out = take(&mut fs, SR);
+        let worst = (latency + 4_800..SR)
+            .map(|i| {
+                let want = tone(i - latency);
+                (out[i].0 - want).abs().max((out[i].1 - want).abs())
+            })
+            .fold(0.0, f32::max);
+        assert!(worst < 1e-3, "strayed {worst} from the input");
     }
 
     /// Stereo source that can seek, and that switches sample rate partway
