@@ -519,8 +519,13 @@ impl AudioEngine {
             .file_name()
             .unwrap_or(path.as_os_str())
             .to_string_lossy();
-        let decoder =
+        let decoded =
             crate::opus::Decoded::open(path).map_err(|e| format!("Cannot play {name}: {e}"))?;
+        // In stereo from here on: surround is mixed down before the effects,
+        // which would otherwise take its first two channels and nothing else.
+        let speakers = decoded.speakers();
+        let decoder = crate::downmix::Downmixed::new(decoded, speakers.as_deref());
+        let downmixed = decoder.is_downmixing();
 
         let channels = decoder.channels().get();
         let sample_rate = decoder.sample_rate().get();
@@ -528,7 +533,10 @@ impl AudioEngine {
         // Counted straight from the decoder, before the effects and the
         // speed control: a frame there is a frame of the file.
         let (decoder, position) = Counted::new(decoder);
-        let dsp_source = FundspSource::new(decoder, unit, self.bypass.clone());
+        let mut dsp_source = FundspSource::new(decoder, unit, self.bypass.clone());
+        if downmixed {
+            dsp_source = dsp_source.always_live();
+        }
 
         // A second of audio: room for the biggest lump the device pulls at
         // once plus the backlog the analyser keeps behind it.

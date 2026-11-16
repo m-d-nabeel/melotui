@@ -59,5 +59,5 @@ opt-level = 3
 [profile.dev.package.melotui-audio]
 opt-level = 2
 # Opus is decoded as it is played, and unoptimized its decoder is slow.
-[profile.dev.package.rusty-opus]
+[profile.dev.package.opus-rs]
 opt-level = 3

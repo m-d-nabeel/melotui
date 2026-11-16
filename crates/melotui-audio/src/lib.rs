@@ -1,5 +1,6 @@
 mod cava;
 mod clock;
+mod downmix;
 mod effects;
 mod fft;
 mod opus;

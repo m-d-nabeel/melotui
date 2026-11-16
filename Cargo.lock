@@ -2203,9 +2203,9 @@ dependencies = [
  "fundsp",
  "melotui-bus",
  "melotui-core",
+ "opus-rs",
  "ringbuf",
  "rodio",
- "rusty-opus",
  "serde_json",
  "spectrum-analyzer",
  "symphonia",
@@ -2830,6 +2830,12 @@ name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
+name = "opus-rs"
+version = "0.1.42"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bafbcaf2ed381cdf68ced4ed8d16517de90ffd7424e36f0b9e45d67fbe30b1f9"
 
 [[package]]
 name = "ordered-float"
@@ -3821,12 +3827,6 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
-
-[[package]]
-name = "rusty-opus"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8acfb69e58b5082d511451aae511dd1b1d0fe693e54ddb29535b480ac48bf8b9"
 
 [[package]]
 name = "ryu"
