@@ -961,7 +961,8 @@ mod tests {
 
     #[test]
     fn the_keymap_written_up_is_one_that_is_taken() {
-        let written = include_str!("../../../CONFIG.md");
+        // With Windows' line endings where git checks it out with them.
+        let written = include_str!("../../../CONFIG.md").replace("\r\n", "\n");
         let from = written
             .find("```toml\n[global]")
             .expect("the example is gone")

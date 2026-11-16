@@ -686,7 +686,8 @@ mod tests {
     fn the_settings_written_up_are_the_settings_there_are() {
         // CONFIG.md lists every setting with its default: none of them
         // misspelt or since removed, and the defaults as it says.
-        let written = include_str!("../../../CONFIG.md");
+        // With Windows' line endings where git checks it out with them.
+        let written = include_str!("../../../CONFIG.md").replace("\r\n", "\n");
         let from = written
             .find("```toml\n[library]")
             .expect("the settings are gone")
