@@ -105,11 +105,11 @@ impl Default for LyricsConfig {
 pub struct LibraryConfig {
     /// Directories to scan for music. If empty, falls back to `dirs::audio_dir()`.
     pub music_directories: Vec<String>,
-    /// Where `:dl` puts what it downloads. Unset, a `Downloads` folder in
+    /// Where `:yt` puts what it downloads. Unset, a `Downloads` folder in
     /// the first music directory. It has to be inside one of the music
     /// directories for what is downloaded to be found by the scan.
     pub download_directory: Option<String>,
-    /// A browser yt-dlp is to take its YouTube cookies from for `:dl` —
+    /// A browser yt-dlp is to take its YouTube cookies from for `:yt` —
     /// `"firefox"`, `"chrome"`, `"brave"`, or anything else its
     /// `--cookies-from-browser` takes, a profile included
     /// (`"firefox:work"`). Signed in to a Premium account there, downloads
@@ -681,5 +681,78 @@ mod tests {
         assert_eq!(dirs.len(), 2);
         assert_eq!(dirs[0], PathBuf::from("/home/user/Music"));
         assert_eq!(dirs[1], PathBuf::from("/mnt/data/audio"));
+    }
+    #[test]
+    fn the_settings_written_up_are_the_settings_there_are() {
+        // CONFIG.md lists every setting with its default: none of them
+        // misspelt or since removed, and the defaults as it says.
+        // With Windows' line endings where git checks it out with them.
+        let written = include_str!("../../../CONFIG.md").replace("\r\n", "\n");
+        let from = written
+            .find("```toml\n[library]")
+            .expect("the settings are gone")
+            + 8;
+        let settings = &written[from..from + written[from..].find("```").unwrap()];
+        let config = AppConfig::parse(std::path::Path::new("CONFIG.md"), settings);
+        let wrong: Vec<_> = config
+            .startup_errors
+            .iter()
+            .filter(|e| e.contains("Unknown setting") || e.contains("Config Error"))
+            .collect();
+        assert!(wrong.is_empty(), "{wrong:?}");
+
+        let default = AppConfig::default();
+        assert_eq!(config.ui.sidebar_width, default.ui.sidebar_width);
+        assert_eq!(config.ui.lyrics_zoom_focus, default.ui.lyrics_zoom_focus);
+        assert_eq!(config.audio.buffer_size, default.audio.buffer_size);
+        assert_eq!(config.audio.default_lowpass, default.audio.default_lowpass);
+        assert_eq!(
+            config.library.max_cover_resolution,
+            default.library.max_cover_resolution
+        );
+        assert_eq!(config.lyrics.auto_fetch, default.lyrics.auto_fetch);
+        // And none left out: each setting's name is in it.
+        for name in [
+            "music_directories",
+            "download_directory",
+            "download_cookies_from_browser",
+            "db_path",
+            "scan_on_startup",
+            "watch",
+            "max_cover_resolution",
+            "picker_viewport_size",
+            "gapless",
+            "output_device",
+            "sample_rate",
+            "buffer_size",
+            "seek_step",
+            "volume_step",
+            "speed_step",
+            "fft_size",
+            "default_speed",
+            "default_bass",
+            "default_treble",
+            "default_reverb",
+            "default_echo",
+            "default_pan",
+            "default_lowpass",
+            "default_highpass",
+            "auto_fetch",
+            "offset_ms",
+            "theme",
+            "sidebar_width",
+            "scrolloff",
+            "notification_duration_secs",
+            "art_max_height_percent",
+            "fps_limit",
+            "restore_session",
+            "lyrics_shaping",
+            "lyrics_zoom",
+            "lyrics_zoom_focus",
+            "queue_add_debounce_ms",
+            "playlist_picker_max_visible",
+        ] {
+            assert!(settings.contains(name), "{name} is not written up");
+        }
     }
 }

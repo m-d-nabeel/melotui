@@ -2,6 +2,7 @@ mod cava;
 mod clock;
 mod effects;
 mod fft;
+mod opus;
 mod output;
 mod output_kind;
 mod position;

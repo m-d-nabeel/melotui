@@ -694,8 +694,15 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
         return None;
     }
 
-    // lofty parsing
-    let tagged_file = Probe::open(path).ok()?.read().ok()?;
+    // Read as what its contents say it is, not what its name does: an
+    // .ogg with Opus in it was read as Vorbis, found not to be, and left
+    // out of the library.
+    let tagged_file = Probe::open(path)
+        .ok()?
+        .guess_file_type()
+        .ok()?
+        .read()
+        .ok()?;
     let properties = tagged_file.properties();
 
     let duration_ms = properties.duration().as_millis() as u64;
@@ -708,7 +715,10 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
     }
 
     let sample_rate = properties.sample_rate();
-    let format = ext.to_uppercase();
+    let format = match tagged_file.file_type() {
+        lofty::file::FileType::Opus => "OPUS".to_string(),
+        _ => ext.to_uppercase(),
+    };
 
     let tag = tagged_file
         .primary_tag()
@@ -1011,6 +1021,20 @@ mod tests {
     use super::*;
     use melotui_bus::channel::inprocess;
     use std::sync::mpsc;
+
+    #[test]
+    fn opus_is_read_whatever_its_file_is_called() {
+        let opus =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../melotui-audio/tests/fixtures/tone.opus");
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["song.opus", "song.ogg"] {
+            let path = dir.path().join(name);
+            fs::copy(&opus, &path).unwrap();
+            let track = extract_track_data(&path).unwrap_or_else(|| panic!("{name} was left out"));
+            assert_eq!(track.format, "OPUS", "{name}");
+            assert_eq!(track.duration_ms, 3_000, "{name}");
+        }
+    }
 
     /// A second of silent mono 8 kHz audio, as a WAV file.
     fn wav(path: &Path) {

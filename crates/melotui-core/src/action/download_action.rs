@@ -56,6 +56,7 @@ pub fn handle_request_search_downloads(state: &mut AppState, query: String) -> V
         state.session.ui.focus_mode = FocusMode::Full;
     }
 
+    let cookies_from_browser = state.config.library.download_cookies_from_browser.clone();
     let download = &mut state.session.download;
     download.searches += 1;
     let id = download.searches;
@@ -69,6 +70,7 @@ pub fn handle_request_search_downloads(state: &mut AppState, query: String) -> V
     vec![AppMsg::Download(DownloadMsg::DispatchSearchDownloads {
         id,
         query,
+        cookies_from_browser,
     })]
 }
 
@@ -473,7 +475,7 @@ mod download_search_tests {
         let msgs = search(&mut state, "get lucky");
         assert!(matches!(
             msgs.as_slice(),
-            [AppMsg::Download(DownloadMsg::DispatchSearchDownloads { id: 1, query })]
+            [AppMsg::Download(DownloadMsg::DispatchSearchDownloads { id: 1, query, cookies_from_browser: None })]
                 if query == "get lucky"
         ));
         assert!(state.session.download.queue.is_empty());

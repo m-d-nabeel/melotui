@@ -11,7 +11,7 @@ A fast terminal music player written in Rust: your local library, synced lyrics,
 
 ## Features
 
-- **Library and playlists** — your music folders are scanned at start and watched while running, so new music appears by itself. MP3, FLAC, M4A, WAV and OGG.
+- **Library and playlists** — your music folders are scanned at start and watched while running, so new music appears by itself. MP3, FLAC, M4A, WAV, OGG and Opus.
 - **Visualizer** — six styles, cycled with `Shift+V` or picked with `:vis <style>`: Particle, Default, Bar, Radial, Nova, and Cava when [CAVA](https://github.com/karlstav/cava) is installed.
 - **Synced lyrics** — from `.lrc` files, the tags in your files, or fetched from LRCLIB as a song starts. Hindi, Urdu and other complex or right-to-left scripts are drawn properly on terminals with image support (kitty, Ghostty, WezTerm, iTerm2, and Sixel terminals such as Windows Terminal, foot and Konsole).
 - **DSP studio** — speed, bass, treble, reverb, echo, panning, width, filters and more, with a 10-band EQ and presets.
@@ -91,7 +91,7 @@ The keys follow what cmus, ncmpcpp and mpv agree on.
 | `/`, `n`, `N` | Find a song, artist or album, and the next and previous match |
 | `:`, `?`, `q` | Commands, help, and quit |
 
-Volume, speed and effects changed out of sight of the mixer are shown in a notification. Press `:` for the command bar (e.g., `:vol 80` or `:quit`): it lists every command as you type, and `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names. Keys can be changed in `keymaps.toml` (`melotui --paths` shows where).
+Volume, speed and effects changed out of sight of the mixer are shown in a notification. Press `:` for the command bar (e.g., `:vol 80` or `:quit`): it lists every command as you type, and `Tab` and `Shift+Tab` complete commands, their options, and playlist and preset names. Keys can be changed in `keymaps.toml` (`melotui --paths` shows where); [CONFIG.md](CONFIG.md) has every setting, the themes and the keymap.
 
 ### Commands
 
@@ -114,7 +114,7 @@ Volume, speed and effects changed out of sight of the mixer are shown in a notif
 
 ### Downloads
 
-`:yt search <words>` lists what YouTube Music (`[M]`: songs, with their artist, album and length) and YouTube (`[Y]`) have, in the lyrics panel, as the results are found: `j` `k` move, `Enter` downloads the one selected, `Esc` closes the list and puts the screen back as it was. `:yt dl <words or link>` downloads a link, or the first match for some words, without asking.
+`:yt search <words>` lists what YouTube Music (`[M]`: songs, with their artist, album and length) and YouTube (`[Y]`) have, in the lyrics panel, as the results are found: `j` `k` move, `Enter` downloads the one selected, `Esc` closes the list and puts the screen back as it was. Play, pause, volume and the track keys work while it is open. `:yt dl <words or link>` downloads a link, or the first match for some words, without asking.
 
 Downloads go into a `Downloads` folder in your first music directory, or wherever `[library] download_directory` in `config.toml` says, which has to be inside one of your music directories. They are kept as YouTube's AAC audio (`.m4a`), exactly as it is sent: about a megabyte a minute, with nothing re-encoded.
 
@@ -125,7 +125,7 @@ Signed in to YouTube Premium in your browser, you can have yt-dlp use that brows
 download_cookies_from_browser = "firefox"   # or "chrome", "brave", "edge", ... ; "firefox:profile" for a profile
 ```
 
-This is off unless you set it, and is passed to yt-dlp's `--cookies-from-browser` as it stands. Firefox is the most dependable; Chrome on Windows keeps its cookies locked while it is running, and yt-dlp then says so when the download fails.
+This is off unless you set it, and is passed to yt-dlp's `--cookies-from-browser` as it stands, for searches as well as downloads. Firefox is the most dependable; Chrome on Windows keeps its cookies locked while it is running, and yt-dlp then says so when the download fails.
 
 ### Audio output
 

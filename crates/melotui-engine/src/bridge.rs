@@ -71,12 +71,15 @@ pub fn appmsg_to_ipc(msg: &AppMsg, library_roots: &[PathBuf]) -> Option<IpcComma
                     query: query.clone(),
                 }))
             }
-            DownloadMsg::DispatchSearchDownloads { id, query } => {
-                Some(IpcCommand::Download(DownloadCommand::Search {
-                    id: *id,
-                    query: query.clone(),
-                }))
-            }
+            DownloadMsg::DispatchSearchDownloads {
+                id,
+                query,
+                cookies_from_browser,
+            } => Some(IpcCommand::Download(DownloadCommand::Search {
+                id: *id,
+                query: query.clone(),
+                cookies_from_browser: cookies_from_browser.clone(),
+            })),
             DownloadMsg::CancelSearchDownloads => {
                 Some(IpcCommand::Download(DownloadCommand::CancelSearch))
             }

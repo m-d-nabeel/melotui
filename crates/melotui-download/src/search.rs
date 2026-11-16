@@ -36,10 +36,17 @@ const FIELDS: &str =
 /// Searches both places for `query` at once, telling `tx` each result as it
 /// is found and then that the search `id` is over — unless `cancel` is set,
 /// when it stops where it is and says nothing more.
-pub(crate) fn run(id: u64, query: &str, tx: &mpsc::Sender<InternalEvent>, cancel: &AtomicBool) {
+pub(crate) fn run(
+    id: u64,
+    query: &str,
+    cookies_from_browser: Option<&str>,
+    tx: &mpsc::Sender<InternalEvent>,
+    cancel: &AtomicBool,
+) {
     let errors: Vec<Option<String>> = thread::scope(|scope| {
-        let searches = [DownloadSource::Songs, DownloadSource::YouTube]
-            .map(|source| scope.spawn(move || search(id, source, query, tx, cancel)));
+        let searches = [DownloadSource::Songs, DownloadSource::YouTube].map(|source| {
+            scope.spawn(move || search(id, source, query, cookies_from_browser, tx, cancel))
+        });
         searches
             .into_iter()
             .map(|search| search.join().unwrap_or(None))
@@ -53,9 +60,17 @@ pub(crate) fn run(id: u64, query: &str, tx: &mpsc::Sender<InternalEvent>, cancel
     }
 }
 
-/// What yt-dlp is run with to search `source` for `query`.
-fn yt_dlp_args(source: DownloadSource, query: &str) -> Vec<String> {
+/// What yt-dlp is run with to search `source` for `query`, with the
+/// cookies of `cookies_from_browser` if a browser is named.
+fn yt_dlp_args(
+    source: DownloadSource,
+    query: &str,
+    cookies_from_browser: Option<&str>,
+) -> Vec<String> {
     let mut args = vec!["--no-warnings".to_string()];
+    if let Some(browser) = cookies_from_browser {
+        args.extend(["--cookies-from-browser".into(), browser.into()]);
+    }
     let target = match source {
         // Each song is looked up in full, a second or so apiece: the list
         // of them alone has their titles and nothing else, and five songs
@@ -103,12 +118,13 @@ fn search(
     id: u64,
     source: DownloadSource,
     query: &str,
+    cookies_from_browser: Option<&str>,
     tx: &mpsc::Sender<InternalEvent>,
     cancel: &AtomicBool,
 ) -> Option<String> {
     let mut command = Command::new("yt-dlp");
     command
-        .args(yt_dlp_args(source, query))
+        .args(yt_dlp_args(source, query, cookies_from_browser))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -259,7 +275,7 @@ mod tests {
 
     #[test]
     fn the_words_searched_for_cannot_be_taken_for_options_or_break_the_link() {
-        let songs = yt_dlp_args(DownloadSource::Songs, "--exec x & y/ñ #1");
+        let songs = yt_dlp_args(DownloadSource::Songs, "--exec x & y/ñ #1", None);
         let target = songs.last().unwrap();
         assert_eq!(
             target,
@@ -272,10 +288,27 @@ mod tests {
             .unwrap();
         assert_eq!(songs[most + 1], "5");
 
-        let youtube = yt_dlp_args(DownloadSource::YouTube, "--exec x");
+        let youtube = yt_dlp_args(DownloadSource::YouTube, "--exec x", None);
         assert_eq!(youtube.last().unwrap(), "ytsearch10:--exec x");
         assert_eq!(youtube[youtube.len() - 2], "--");
         assert!(youtube.contains(&"--flat-playlist".to_string()));
+    }
+
+    #[test]
+    fn a_browsers_cookies_are_used_to_search_only_when_one_is_named() {
+        for source in [DownloadSource::Songs, DownloadSource::YouTube] {
+            let without = yt_dlp_args(source, "get lucky", None);
+            assert!(!without.iter().any(|arg| arg.contains("cookies")));
+
+            let with = yt_dlp_args(source, "get lucky", Some("firefox:work"));
+            let at = with
+                .iter()
+                .position(|arg| arg == "--cookies-from-browser")
+                .expect("the cookies are not asked for");
+            assert_eq!(with[at + 1], "firefox:work");
+            // Before the `--`, after which it would be searched for.
+            assert!(at < with.iter().position(|arg| arg == "--").unwrap());
+        }
     }
 
     /// Run by hand: asks YouTube.
@@ -283,7 +316,7 @@ mod tests {
     #[ignore = "needs yt-dlp and the network"]
     fn a_real_search_finds_songs_and_the_rest_and_says_it_is_over() {
         let (tx, rx) = mpsc::channel();
-        run(7, "daft punk get lucky", &tx, &AtomicBool::new(false));
+        run(7, "daft punk get lucky", None, &tx, &AtomicBool::new(false));
         let events: Vec<InternalEvent> = rx.try_iter().collect();
         let found = |source| {
             events
@@ -307,7 +340,7 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let started = std::time::Instant::now();
         thread::scope(|scope| {
-            scope.spawn(|| run(7, "daft punk get lucky", &tx, &cancel));
+            scope.spawn(|| run(7, "daft punk get lucky", None, &tx, &cancel));
             thread::sleep(Duration::from_millis(500));
             cancel.store(true, Ordering::SeqCst);
         });

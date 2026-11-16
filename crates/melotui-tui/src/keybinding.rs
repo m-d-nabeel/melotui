@@ -960,6 +960,39 @@ mod tests {
     }
 
     #[test]
+    fn the_keymap_written_up_is_one_that_is_taken() {
+        // With Windows' line endings where git checks it out with them.
+        let written = include_str!("../../../CONFIG.md").replace("\r\n", "\n");
+        let from = written
+            .find("```toml\n[global]")
+            .expect("the example is gone")
+            + 8;
+        let example = &written[from..from + written[from..].find("```").unwrap()];
+        let overrides: HashMap<String, HashMap<String, String>> = toml::from_str(example).unwrap();
+        assert!(overrides.len() >= 2);
+        let errors = KeyRegistry::default().apply_overrides(&overrides);
+        assert!(errors.is_empty(), "{errors:?}");
+        // And every place it says keys are read is one.
+        for name in [
+            "global",
+            "library",
+            "queue",
+            "mixer",
+            "dsp",
+            "lyrics",
+            "download",
+            "playlist",
+            "preset",
+            "trackinfo",
+            "confirm",
+            "command",
+            "help",
+        ] {
+            assert!(written.contains(&format!("`{name}`")), "{name}");
+        }
+    }
+
+    #[test]
     fn every_place_keys_are_read_can_be_named_in_keymaps() {
         // Each context under some name `apply_overrides` knows: the lyrics
         // picker had none, and its keys could not be changed.

@@ -63,6 +63,8 @@ pub enum DownloadCommand {
     Search {
         id: u64,
         query: String,
+        /// The browser whose cookies yt-dlp is to use; `None` for none.
+        cookies_from_browser: Option<String>,
     },
     /// Stops the search under way, if there is one.
     CancelSearch,
