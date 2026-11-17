@@ -2,6 +2,10 @@
 
 Versions are dates: the year, the month, and a count of the releases in that month.
 
+## Unreleased
+
+- **melotui is on crates.io**: `cargo install --locked melotui` builds it, and `cargo binstall melotui` fetches the release download.
+
 ## 2026.11.1
 
 - **Opus is played**, in `.opus` files and in `.ogg` files that hold it. It was listed in the library and failed to play.

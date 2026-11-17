@@ -21,7 +21,7 @@ A fast terminal music player written in Rust: your local library, synced lyrics,
 **Prebuilt binary** — download the archive for your platform from the [latest release](https://github.com/m-d-nabeel/melotui/releases/latest) (Linux x86_64, macOS Intel and Apple Silicon, Windows x86_64), or let [cargo-binstall](https://github.com/cargo-bins/cargo-binstall) fetch it:
 
 ```bash
-cargo binstall --git https://github.com/m-d-nabeel/melotui melotui
+cargo binstall melotui
 ```
 
 Versions are dates: `2026.11.0` is the first release of November 2026, `2026.11.1` the next one that month.
@@ -36,10 +36,16 @@ sudo dnf install alsa-lib-devel dbus-devel pkgconf-pkg-config     # Fedora / RHE
 macOS and Windows need nothing extra. Then:
 
 ```bash
-cargo install --profile dist --git https://github.com/m-d-nabeel/melotui melotui
+cargo install --locked melotui
 ```
 
-or clone the repository and build it:
+or, for the fully optimized build the release downloads are, from the repository:
+
+```bash
+cargo install --locked --profile dist --git https://github.com/m-d-nabeel/melotui melotui
+```
+
+or clone it and build it:
 
 ```bash
 git clone https://github.com/m-d-nabeel/melotui.git
