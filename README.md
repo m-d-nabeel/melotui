@@ -39,21 +39,15 @@ macOS and Windows need nothing extra. Then:
 cargo install --locked melotui
 ```
 
-or, for the fully optimized build the release downloads are, from the repository:
-
-```bash
-cargo install --locked --profile dist --git https://github.com/m-d-nabeel/melotui melotui
-```
-
-or clone it and build it:
+or clone the repository and build it:
 
 ```bash
 git clone https://github.com/m-d-nabeel/melotui.git
 cd melotui
-cargo build --profile dist
+cargo build --release
 ```
 
-The binary will be at `./target/dist/melotui`. `dist` is the profile the release downloads are built with: fully optimized and stripped, and slower to compile. `cargo build --release` is quicker and fine for trying things out.
+The binary will be at `./target/release/melotui`, built as the release downloads are.
 
 **For downloads** — install [yt-dlp](https://github.com/yt-dlp/yt-dlp/wiki/Installation) and have it in your PATH.
 

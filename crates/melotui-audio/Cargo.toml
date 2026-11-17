@@ -5,6 +5,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Playback, decoding, effects and spectrum analysis for the melotui music player. Part of melotui; not meant to be used on its own."
+readme = "README.md"
 edition.workspace = true
 rust-version.workspace = true
 

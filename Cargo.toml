@@ -40,20 +40,17 @@ melotui-tui = { path = "crates/melotui-tui", version = "=2026.11.1" }
 # the default set also builds an AVIF encoder that nothing here uses.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "rayon"] }
 
-# What the release downloads are built with: `cargo build --profile dist`.
-# The name is the usual one for this (cargo-dist's), as `release` is taken.
-[profile.dist]
-inherits = "release"
-opt-level = 3
-lto = "fat"
-codegen-units = 1
+# What the release downloads are built with, as everyone else builds it:
+# `cargo build --release`. Stripped, the binary is 22 MB instead of 27; a panic
+# still says where it happened. Fat LTO and one codegen unit, measured on
+# 2026-11-17, played no lighter (3.2% of a core either way, with the
+# visualizer and an effect on) and made the download 0.9 MB smaller, at five
+# times the rebuild: not kept. Panics unwind, as cargo's default: the ones
+# that are caught (a tag library failing on one file) could not be caught
+# under "abort". One nobody catches still ends the process, from the panic
+# hook in `main`.
+[profile.release]
 strip = true
-# Unwinding, as in the other profiles: the panics that are caught — a tag
-# library failing on one file — could not be under "abort", and a release
-# archive would then behave differently from a `cargo install`. A panic
-# nobody catches still ends the process, from the panic hook in `main`.
-overflow-checks = false
-incremental = false
 
 # The effects' tests push seconds of audio through the DSP graph, and
 # unoptimised that took half a minute of every test run. The crates doing the
