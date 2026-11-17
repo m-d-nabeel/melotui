@@ -4,6 +4,7 @@ version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "Connects the melotui music player's workers to its interface. Part of melotui; not meant to be used on its own."
 edition.workspace = true
 rust-version.workspace = true
 

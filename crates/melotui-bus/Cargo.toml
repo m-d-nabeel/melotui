@@ -4,6 +4,7 @@ version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+description = "The messages melotui's threads send one another. Part of melotui; not meant to be used on its own."
 edition.workspace = true
 rust-version.workspace = true
 
