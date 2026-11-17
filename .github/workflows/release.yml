@@ -121,13 +121,13 @@ jobs:
       - name: Build
         env:
           MACOSX_DEPLOYMENT_TARGET: ${{ matrix.deployment_target }}
-        run: cargo build --profile dist --bin melotui --target ${{ matrix.target }} --locked
+        run: cargo build --release --bin melotui --target ${{ matrix.target }} --locked
 
       - name: Package Unix
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/dist/${{ matrix.cargo_bin_name }} dist/${{ matrix.final_bin_name }}
+          cp target/${{ matrix.target }}/release/${{ matrix.cargo_bin_name }} dist/${{ matrix.final_bin_name }}
           strip dist/${{ matrix.final_bin_name }} || true
           tar -C dist -czf ${{ matrix.asset_name }} ${{ matrix.final_bin_name }}
 
@@ -136,7 +136,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
-          Copy-Item target\${{ matrix.target }}\dist\${{ matrix.cargo_bin_name }} dist\${{ matrix.final_bin_name }}
+          Copy-Item target\${{ matrix.target }}\release\${{ matrix.cargo_bin_name }} dist\${{ matrix.final_bin_name }}
           Compress-Archive -Path dist\${{ matrix.final_bin_name }} -DestinationPath ${{ matrix.asset_name }}
 
       - name: Upload artifact
