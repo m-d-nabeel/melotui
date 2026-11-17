@@ -17,6 +17,7 @@ A fast terminal music player written in Rust: your local library, synced lyrics,
 - **DSP studio** — speed, bass, treble, reverb, echo, panning, width, filters and more, with a 10-band EQ and presets.
 - **Gapless playback**, which carries on through the default output when headphones or Bluetooth go away.
 - **Surround** — 5.1, 7.1 and other surround files are mixed down to stereo the way FFmpeg and mpv mix them, the centre and every speaker in.
+- **Themes** — fifteen built in, dark and light, switched with `:theme` while playing; or your own from sixteen colours ([CONFIG.md](CONFIG.md#themes)).
 - **Media controls** — shows in the desktop's media controls on Linux, macOS and Windows, and answers media keys and headset buttons.
 - **YouTube downloads** — search and pick, or download a link, through `yt-dlp`; tagged with the song's title and artist.
 
