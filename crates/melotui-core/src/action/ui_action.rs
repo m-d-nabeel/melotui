@@ -144,9 +144,9 @@ fn set_theme(state: &mut AppState, name: Option<String>) -> Vec<AppMsg> {
         None => Notification::new(
             NotificationKind::Info,
             format!(
-                "Theme: {}. There are: {}",
+                "Theme: {}. :theme and Tab list the {} there are",
                 state.session.ui.theme.name,
-                crate::theme::available().join(", ")
+                crate::theme::available().len()
             ),
         )
         .with_duration(6),
@@ -1980,11 +1980,7 @@ mod tests {
         reduce(&mut state, AppMsg::UI(UIMsg::SubmitCommand("theme".into())));
         let said = &state.session.notification.current.as_ref().unwrap().message;
         assert!(
-            said.starts_with("Theme: tokyo_night. There are: "),
-            "{said}"
-        );
-        assert!(
-            said.contains("catppuccin_latte") && said.contains("dracula"),
+            said.starts_with("Theme: tokyo_night. :theme and Tab list the "),
             "{said}"
         );
     }

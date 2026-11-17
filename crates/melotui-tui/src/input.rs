@@ -125,10 +125,7 @@ impl InputHandler {
         // A list being picked from has the keys to itself, but for the ones
         // that only mind the music: it need not stop being listened to, or
         // be too loud, until something is picked.
-        let picking = matches!(
-            contexts.as_slice(),
-            [KeyContext::LyricsSelector] | [KeyContext::DownloadPicker]
-        );
+        let picking = picking_in(&contexts);
         if action.is_none() && picking {
             action = registry
                 .bindings
@@ -271,6 +268,16 @@ impl InputHandler {
             _ => act.to_msg(&state.config),
         }
     }
+}
+
+/// Whether a list is being picked from where keys are read in `contexts`:
+/// the picker is the last of them, and the only one but for track info,
+/// which the lyrics picker can be open over.
+fn picking_in(contexts: &[KeyContext]) -> bool {
+    matches!(
+        contexts.last(),
+        Some(KeyContext::LyricsSelector | KeyContext::DownloadPicker)
+    )
 }
 
 #[cfg(test)]
@@ -603,6 +610,18 @@ mod tests {
             assert!(press(KeyCode::Char(c)).is_none(), "{c} got by");
         }
         assert!(press(KeyCode::F(2)).is_none(), "the studio opened");
+    }
+
+    #[test]
+    fn a_list_is_picked_from_over_track_info_too() {
+        use KeyContext as K;
+        assert!(picking_in(&[K::DownloadPicker]));
+        assert!(picking_in(&[K::LyricsSelector]));
+        // The lyrics picker open with track info showing: it was taken for
+        // something else, and the music keys were not let through.
+        assert!(picking_in(&[K::TrackInfo, K::LyricsSelector]));
+        assert!(!picking_in(&[K::Library, K::Global]));
+        assert!(!picking_in(&[K::TrackInfo, K::Library, K::Global]));
     }
 
     #[test]

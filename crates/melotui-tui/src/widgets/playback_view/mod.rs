@@ -160,9 +160,11 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             Span::styled(label, Style::default().fg(t.fg_muted)),
             Span::styled(
                 name,
+                // The theme's muted colour alone: dimmed by the terminal as
+                // well, it all but vanished on a light theme.
                 Style::default()
                     .fg(t.fg_muted)
-                    .add_modifier(Modifier::ITALIC | Modifier::DIM),
+                    .add_modifier(Modifier::ITALIC),
             ),
         ]);
         frame.render_widget(

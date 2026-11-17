@@ -22,13 +22,15 @@ pub fn get_theme(state: &melotui_core::AppState) -> &'static Theme {
     // Each theme is worked out once and kept for as long as the program
     // runs, so that what is drawn can hold on to it: one for each theme
     // switched to, which is never many.
-    static THEMES: Mutex<Vec<(u64, bool, &'static Theme)>> = Mutex::new(Vec::new());
+    static THEMES: Mutex<Vec<(ThemeChoice, bool, &'static Theme)>> = Mutex::new(Vec::new());
     let choice = state.theme();
     let background = state.theme_background();
     let mut themes = THEMES.lock().unwrap_or_else(|e| e.into_inner());
+    // Known by all of what it was worked out from, not its count alone,
+    // which two states can share.
     if let Some(&(_, _, theme)) = themes
         .iter()
-        .find(|(generation, painted, _)| *generation == choice.generation && *painted == background)
+        .find(|(known, painted, _)| known == choice && *painted == background)
     {
         return theme;
     }
@@ -37,7 +39,7 @@ pub fn get_theme(state: &melotui_core::AppState) -> &'static Theme {
         theme.bg_main = Color::Reset;
     }
     let theme: &'static Theme = Box::leak(Box::new(theme));
-    themes.push((choice.generation, background, theme));
+    themes.push((choice.clone(), background, theme));
     theme
 }
 
