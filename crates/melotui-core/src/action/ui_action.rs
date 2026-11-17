@@ -141,15 +141,22 @@ pub fn handle_lyrics_selector_cancel(state: &mut AppState) -> Vec<AppMsg> {
 /// in use and which there are.
 fn set_theme(state: &mut AppState, name: Option<String>) -> Vec<AppMsg> {
     let said = match name {
-        None => Notification::new(
-            NotificationKind::Info,
-            format!(
-                "Theme: {}. :theme and Tab list the {} there are",
-                state.session.ui.theme.name,
-                crate::theme::available().len()
-            ),
-        )
-        .with_duration(6),
+        None => {
+            let name = &state.session.ui.theme.name;
+            // An alias, say which theme it is.
+            let is = crate::theme::built_in(name)
+                .filter(|built| built != name)
+                .map(|built| format!(" ({built})"))
+                .unwrap_or_default();
+            Notification::new(
+                NotificationKind::Info,
+                format!(
+                    "Theme: {name}{is}. Tab after :theme lists all {}",
+                    crate::theme::available().len()
+                ),
+            )
+            .with_duration(6)
+        }
         Some(name) => match crate::theme::ThemeChoice::load(&name) {
             Ok(mut theme) => {
                 theme.generation = state.session.ui.theme.generation + 1;
@@ -1986,7 +1993,7 @@ mod tests {
         reduce(&mut state, AppMsg::UI(UIMsg::SubmitCommand("theme".into())));
         let said = &state.session.notification.current.as_ref().unwrap().message;
         assert!(
-            said.starts_with("Theme: tokyo_night. :theme and Tab list the "),
+            said.starts_with("Theme: tokyo_night. Tab after :theme lists all "),
             "{said}"
         );
     }

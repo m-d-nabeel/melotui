@@ -89,15 +89,57 @@ pub fn load_from(dir: &Path, name: &str) -> Result<Option<HashMap<String, String
     }
     let path = dir.join(format!("{name}.toml"));
     match std::fs::read_to_string(&path) {
-        Ok(contents) => toml::from_str::<HashMap<String, String>>(&contents)
+        Ok(contents) => read(&contents)
             .map(Some)
             .map_err(|e| format!("The theme file {} does not read: {e}", path.display())),
-        Err(_) if built_in(name).is_some() => Ok(None),
-        Err(_) => Err(format!(
-            "No theme called `{name}`: it is not built in, and there is no {}",
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => match built_in(name) {
+            Some(_) => Ok(None),
+            None => Err(format!(
+                "No theme called `{name}`: it is not built in, and there is no {}",
+                path.display()
+            )),
+        },
+        // There, but not to be read: not taken for missing.
+        Err(e) => Err(format!(
+            "The theme file {} does not open: {e}",
             path.display()
         )),
     }
+}
+
+/// What a theme file says, by name. A value that is not a string is kept as
+/// it is written, for what it is to be said of that one name, as of a
+/// string that is not a colour, rather than of the whole file.
+fn read(contents: &str) -> Result<HashMap<String, String>, String> {
+    let table = toml::from_str::<toml::Table>(contents).map_err(|e| {
+        // Said on one line: where, and what is wrong there. toml says it
+        // over several, with the line drawn out between.
+        let said = e.to_string();
+        let lines: Vec<&str> = said.lines().map(str::trim).collect();
+        let what = lines
+            .iter()
+            .rev()
+            .find(|line| !line.is_empty() && !line.starts_with('|') && !line.contains(" | "));
+        let at = lines
+            .first()
+            .map(|line| line.trim_start_matches("TOML parse error at "));
+        match (at, what) {
+            (Some(at), Some(what)) if !what.starts_with("TOML parse error") => {
+                format!("{at}: {what}")
+            }
+            _ => said.replace('\n', " "),
+        }
+    })?;
+    Ok(table
+        .into_iter()
+        .map(|(name, value)| {
+            let value = match value {
+                toml::Value::String(text) => text,
+                other => other.to_string(),
+            };
+            (name, value)
+        })
+        .collect())
 }
 
 /// Every theme there is to choose: the built-in ones and those in `dir`.
@@ -161,9 +203,42 @@ mod tests {
             "{missing}"
         );
 
-        std::fs::write(dir.path().join("broken.toml"), "accent = 3\n").unwrap();
+        // A value that is not a string is the one name's problem, as a
+        // string that is not a colour is, not the whole file's.
+        std::fs::write(
+            dir.path().join("number.toml"),
+            "accent = 3\nred = \"#f00\"\n",
+        )
+        .unwrap();
+        let number = load_from(dir.path(), "number").unwrap().unwrap();
+        assert_eq!(
+            (number["accent"].as_str(), number["red"].as_str()),
+            ("3", "#f00")
+        );
+
+        // What does not read as TOML at all is said on one line.
+        std::fs::write(dir.path().join("broken.toml"), "this is = not toml [[\n").unwrap();
         let broken = load_from(dir.path(), "broken").unwrap_err();
-        assert!(broken.contains("does not read"), "{broken}");
+        assert!(
+            broken.contains("does not read: line 1, column 6: "),
+            "{broken}"
+        );
+        assert!(!broken.contains('\n') && !broken.contains('|'), "{broken}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_theme_file_that_does_not_open_is_not_taken_for_missing() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("nord.toml");
+        std::fs::write(&path, "accent = \"red\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        // Root reads it all the same; there is nothing to see then.
+        if std::fs::read_to_string(&path).is_err() {
+            let said = load_from(dir.path(), "nord").unwrap_err();
+            assert!(said.contains("does not open"), "{said}");
+        }
     }
 
     #[test]
