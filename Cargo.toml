@@ -37,7 +37,9 @@ melotui-tui = { path = "crates/melotui-tui", version = "2026.11.0" }
 # the default set also builds an AVIF encoder that nothing here uses.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "rayon"] }
 
-[profile.production]
+# What the release downloads are built with: `cargo build --profile dist`.
+# The name is the usual one for this (cargo-dist's), as `release` is taken.
+[profile.dist]
 inherits = "release"
 opt-level = 3
 lto = "fat"

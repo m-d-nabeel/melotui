@@ -20,6 +20,7 @@ Versions are dates: the year, the month, and a count of the releases in that mon
 - A theme with a misspelt name or a colour that is not one says so on screen; one that is not there is said at start, not only in the log.
 - Opening the DSP studio no longer changes the main screen's visualizer to bars, nor the album art to the visualizer, for good: the studio draws its bars of its own accord.
 - Notifications grow to fit what they say, where a long one was cut off after two lines; and what went wrong at start stays in sight once the library has loaded.
+- The build profile the release downloads use is now `dist`: `cargo install --profile dist …` or `cargo build --profile dist`, with the binary in `target/dist/`. It was `production`, and the `cargo prod` alias is gone.
 
 Known limits: surround AAC (`.m4a`) cannot be opened, and 5.1 Vorbis made below quality 6 plays with its rear right nearly silent. Both are in the decoder library melotui uses; the Vorbis one is fixed there, in no release yet.
 
