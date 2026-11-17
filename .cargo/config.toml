@@ -1,8 +1,0 @@
-[alias]
-check-all = "check --workspace"
-core = "check -p melotui-core"
-tui = "check -p melotui-tui"
-bin = "check -p melotui"
-db = "check -p melotui-db"
-dev = "run -p melotui --profile release"
-do-test = "nextest run"
