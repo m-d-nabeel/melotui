@@ -57,7 +57,7 @@ impl AppState {
         session.ui.lyrics_zoom = crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom, 2.0);
         session.ui.lyrics_zoom_focus =
             crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom_focus, 3.0);
-        session.ui.theme_overrides = config.theme_overrides.clone();
+        session.ui.theme = config.theme.clone();
 
         // Apply audio defaults from config
         session.audio.speed = config.audio.default_speed;
@@ -166,8 +166,14 @@ impl AppState {
         self.session.audio.phaser
     }
 
-    pub fn theme_overrides(&self) -> &std::collections::HashMap<String, String> {
-        &self.session.ui.theme_overrides
+    /// The colour theme in use.
+    pub fn theme(&self) -> &crate::theme::ThemeChoice {
+        &self.session.ui.theme
+    }
+
+    /// Whether the theme's own background is painted.
+    pub fn theme_background(&self) -> bool {
+        self.config.ui.theme_background
     }
 }
 
@@ -591,6 +597,7 @@ impl AppState {
             devices: std::iter::once("default".to_string())
                 .chain(self.session.output.devices.iter().cloned())
                 .collect(),
+            themes: crate::theme::available(),
         }
     }
 

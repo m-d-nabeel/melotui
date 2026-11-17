@@ -11,6 +11,7 @@ pub mod navigation;
 pub mod playback;
 pub mod reducer;
 pub mod state;
+pub mod theme;
 pub mod utils;
 
 pub use app_state::AppState;

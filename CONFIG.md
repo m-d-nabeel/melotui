@@ -38,7 +38,8 @@ auto_fetch = true                 # fetch lyrics from lrclib.net for a song that
 offset_ms = 0                     # show lyrics this much later; negative for earlier
 
 [ui]
-theme = "default"                 # or the name of a file in the themes folder
+theme = "default"                 # a built-in theme (see below), or a file in the themes folder
+theme_background = true           # paint the theme's background; false keeps the terminal's (for transparency)
 sidebar_width = 28                # columns, 28 to 80
 scrolloff = 8                     # rows kept in sight above and below the selection
 notification_duration_secs = 2
@@ -54,34 +55,61 @@ playlist_picker_max_visible = 10
 
 ## Themes
 
-The default colours are Catppuccin Mocha. A theme is a file of colours in the `themes` folder inside the config folder: `[ui] theme = "dracula"` reads `themes/dracula.toml`. It is read when melotui starts.
+`:theme <name>` switches theme while melotui runs (Tab completes the names) and is remembered next time, until you change `theme` in `config.toml`. `:theme` on its own says which is in use and lists the rest.
 
-A theme file sets as many of these as it wants, each to a colour such as `"#bd93f9"`; the rest keep their defaults:
+Built in, each with its project's own colours:
+
+| Dark | Light |
+| --- | --- |
+| `catppuccin_mocha` (the default), `catppuccin_macchiato`, `catppuccin_frappe`, `dracula`, `everforest_dark`, `gruvbox_dark`, `kanagawa`, `nord`, `one_dark`, `rose_pine`, `solarized_dark`, `tokyo_night` | `catppuccin_latte`, `gruvbox_light`, `solarized_light` |
+
+The default keeps your terminal's background and text colour; the others paint their own, unless `theme_background = false`.
+
+### Your own
+
+A theme is a `.toml` file in the `themes` folder inside the config folder (`melotui --paths` shows where), named for how you choose it: `themes/mine.toml` is `theme = "mine"`. Colours are hex (`"#bd93f9"`), a terminal colour's name (`"red"`, `"light blue"`), a number from 0 to 255, or `"reset"` for the terminal's own.
+
+The easy way is a palette of sixteen colours. Everything melotui draws is worked out from them, so these alone make a whole theme:
+
+```toml
+background = "#1a1b26"   # "reset" keeps the terminal's
+surface = "#16161e"      # pickers, dialogs, the command bar
+surface_high = "#292e42" # what is selected
+border = "#3b4261"       # borders of what does not have the keys, slider tracks
+foreground = "#c0caf5"
+subtext = "#a9b1d6"
+muted = "#565f89"
+accent = "#7aa2f7"       # what has the keys, and selections
+red = "#f7768e"
+orange = "#ff9e64"
+yellow = "#e0af68"
+green = "#9ece6a"        # what is playing
+cyan = "#7dcfff"
+blue = "#7aa2f7"
+purple = "#9d7cd8"
+pink = "#bb9af7"
+```
+
+A file named for a built-in theme changes that theme: `themes/nord.toml` with only `accent = "#ebcb8b"` is Nord with a yellow accent. A file with another name starts from the default, or from the built-in theme it names as `base = "dracula"`.
+
+Any single colour can be given too, after the palette:
 
 | For | Names |
 | --- | --- |
-| Borders | `border_active`, `border_inactive` |
-| Backgrounds | `bg_selected`, `bg_overlay`, `bg_input` |
-| Text | `fg_primary`, `fg_secondary`, `fg_muted` |
+| Borders | `border_active`, `border_inactive`, `border_panel` (the visualizer, album art and what is playing) |
+| Backgrounds | `bg_main`, `bg_selected`, `bg_overlay`, `bg_input`, `bg_dim` (behind a popup) |
+| Text | `fg_primary`, `fg_secondary`, `fg_muted`, `fg_selected` (on the accent) |
 | The tree | `fg_tree_root`, `fg_tree_folder`, `fg_tree_subfolder`, `fg_tree_file` |
 | Accents | `accent_primary`, `accent_playing`, `accent_ancestor`, `accent_info`, `accent_warning`, `accent_error` |
 | Playback status | `status_playing`, `status_paused`, `status_stopped` |
 | Icons | `icon_folder`, `icon_playlist`, `icon_category` |
-| Mixer sliders | `slider_volume`, `slider_speed`, `slider_bass`, `slider_treble`, `slider_reverb`, `slider_echo`, `slider_track`, `slider_pan`, `slider_lowpass`, `slider_highpass` |
-| DSP studio | `dsp_section_border`, `dsp_selected_bg`, `eq_bar_fill`, `eq_bar_empty`, `eq_bar_selected`, `eq_zero_line` |
+| Sliders | `slider_volume`, `slider_speed`, `slider_bass`, `slider_treble`, `slider_reverb`, `slider_echo`, `slider_track`, `slider_pan`, `slider_lowpass`, `slider_highpass` |
+| DSP studio | `dsp_section_border` (the equaliser), `dsp_selected_bg`, `eq_bar_fill`, `eq_bar_empty`, `eq_bar_selected`, `eq_zero_line` |
 | Help | `help_key`, `help_header`, `help_text`, `help_subtext`, `help_overlay_bg`, `help_border` |
 | Track info | `badge_lossless`, `badge_lossy`, `badge_detail_bg` |
+| Visualizer | `visualizer_low`, `visualizer_mid`, `visualizer_high` (from the quietest or lowest to the loudest or highest) |
 
-For example, `themes/dracula.toml`:
-
-```toml
-border_active = "#bd93f9"
-border_inactive = "#6272a4"
-bg_selected = "#44475a"
-fg_primary = "#f8f8f2"
-accent_primary = "#bd93f9"
-accent_playing = "#50fa7b"
-```
+A name melotui does not know, or a value that is not a colour, is said when the theme is chosen, and the rest of the file is still used.
 
 ## Keys
 

@@ -117,7 +117,8 @@ pub struct UIState {
     pub lyrics_zoom_focus: f32,
     /// Saved presets' names, read when the command bar opens, for completion.
     pub command_presets: Vec<String>,
-    pub theme_overrides: std::collections::HashMap<String, String>,
+    /// The colour theme in use.
+    pub theme: crate::theme::ThemeChoice,
 }
 
 impl Default for UIState {
@@ -148,7 +149,7 @@ impl Default for UIState {
             lyrics_zoom: 2.0,
             lyrics_zoom_focus: 3.0,
             command_presets: Vec::new(),
-            theme_overrides: std::collections::HashMap::new(),
+            theme: crate::theme::ThemeChoice::default(),
         }
     }
 }

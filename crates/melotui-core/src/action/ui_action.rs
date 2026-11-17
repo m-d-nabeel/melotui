@@ -136,6 +136,33 @@ pub fn handle_lyrics_selector_cancel(state: &mut AppState) -> Vec<AppMsg> {
     vec![]
 }
 
+/// Switches to the theme `name`, read again from its file if it has one:
+/// one being edited is seen as it now is. With no name, says which theme is
+/// in use and which there are.
+fn set_theme(state: &mut AppState, name: Option<String>) -> Vec<AppMsg> {
+    let said = match name {
+        None => Notification::new(
+            NotificationKind::Info,
+            format!(
+                "Theme: {}. There are: {}",
+                state.session.ui.theme.name,
+                crate::theme::available().join(", ")
+            ),
+        )
+        .with_duration(6),
+        Some(name) => match crate::theme::ThemeChoice::load(&name) {
+            Ok(mut theme) => {
+                theme.generation = state.session.ui.theme.generation + 1;
+                state.session.ui.theme = theme;
+                Notification::new(NotificationKind::Info, format!("Theme: {name}"))
+            }
+            Err(why) => Notification::new(NotificationKind::Error, why).with_duration(5),
+        },
+    };
+    state.session.notification.current = Some(said);
+    vec![]
+}
+
 pub fn handle_show_confirm(
     state: &mut AppState,
     message: String,
@@ -414,6 +441,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
         Command::Quit => {
             vec![AppMsg::RequestQuit]
         }
+        Command::Theme { name } => set_theme(state, name),
         Command::Rescan => {
             vec![AppMsg::Library(LibraryMsg::RequestScanLibrary)]
         }
@@ -1909,5 +1937,55 @@ mod tests {
         handle_scroll_help(&mut state, 9, 30);
         handle_open_help(&mut state);
         assert_eq!(state.session.ui.help_scroll, 0);
+    }
+
+    #[test]
+    fn a_theme_is_switched_to_by_name_and_one_that_is_not_there_is_said_so() {
+        use crate::{message::ui::UIMsg, reducer::reduce};
+        let mut state = crate::AppState::new(
+            crate::library::snapshot::Library::new(
+                vec![],
+                vec![],
+                std::collections::HashMap::new(),
+            ),
+            &crate::config::AppConfig::default(),
+        );
+        let before = state.theme().generation;
+        reduce(
+            &mut state,
+            AppMsg::UI(UIMsg::SubmitCommand("theme tokyo_night".into())),
+        );
+        assert_eq!(state.theme().name, "tokyo_night");
+        assert_eq!(state.theme().generation, before + 1, "to be drawn again");
+        assert_eq!(
+            state.session.notification.current.as_ref().unwrap().message,
+            "Theme: tokyo_night"
+        );
+
+        reduce(
+            &mut state,
+            AppMsg::UI(UIMsg::SubmitCommand("theme no_such_theme_at_all".into())),
+        );
+        assert_eq!(state.theme().name, "tokyo_night", "kept as it was");
+        let said = state.session.notification.current.as_ref().unwrap();
+        assert_eq!(said.kind, NotificationKind::Error);
+        assert!(
+            said.message
+                .starts_with("No theme called `no_such_theme_at_all`"),
+            "{}",
+            said.message
+        );
+
+        // With no name, which it is and which there are.
+        reduce(&mut state, AppMsg::UI(UIMsg::SubmitCommand("theme".into())));
+        let said = &state.session.notification.current.as_ref().unwrap().message;
+        assert!(
+            said.starts_with("Theme: tokyo_night. There are: "),
+            "{said}"
+        );
+        assert!(
+            said.contains("catppuccin_latte") && said.contains("dracula"),
+            "{said}"
+        );
     }
 }

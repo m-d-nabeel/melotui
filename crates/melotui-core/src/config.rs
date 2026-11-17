@@ -25,8 +25,9 @@ pub struct AppConfig {
     pub library: LibraryConfig,
     pub audio: AudioConfig,
     pub lyrics: LyricsConfig,
+    /// The theme `ui.theme` names, its file read.
     #[serde(skip)]
-    pub theme_overrides: std::collections::HashMap<String, String>,
+    pub theme: crate::theme::ThemeChoice,
     #[serde(skip)]
     pub keymap_overrides:
         std::collections::HashMap<String, std::collections::HashMap<String, String>>,
@@ -41,8 +42,12 @@ pub struct UiConfig {
     pub sidebar_width: u16,
     /// Scroll offset — lines to keep visible above/below cursor
     pub scrolloff: usize,
-    /// Color theme ID (e.g. "catppuccin_mocha", "dracula")
+    /// The colour theme: one of the built-in ones, or a file in the themes
+    /// folder, which can also change a built-in one by having its name.
     pub theme: String,
+    /// Paint the theme's own background, where it has one; off, the
+    /// terminal's shows through, as for a transparent terminal.
+    pub theme_background: bool,
     /// Notification duration in seconds
     pub notification_duration_secs: u64,
     /// Maximum cover art height percentage in sidebar (e.g. 40 means 40%)
@@ -188,6 +193,7 @@ impl Default for UiConfig {
             sidebar_width: 28,
             scrolloff: 8,
             theme: "default".into(),
+            theme_background: true,
             notification_duration_secs: 2,
             art_max_height_percent: 40,
             queue_add_debounce_ms: 500,
@@ -308,30 +314,16 @@ impl AppConfig {
         self.validated()
     }
 
+    /// Reads the theme `ui.theme` names. One that is not there, or does not
+    /// read, is said so, and the default is used.
     fn load_external_theme(&mut self) {
-        let theme_name = &self.ui.theme;
-        if theme_name == "default" || theme_name == "catppuccin_mocha" {
-            return; // Use embedded default
-        }
-
-        if let Some(mut theme_path) = dirs::config_dir() {
-            theme_path.push("melotui");
-            theme_path.push("themes");
-            theme_path.push(format!("{}.toml", theme_name));
-
-            if let Ok(contents) = std::fs::read_to_string(&theme_path) {
-                if let Ok(overrides) = toml::from_str(&contents) {
-                    self.theme_overrides = overrides;
-                    tracing::info!("Loaded theme overrides from {:?}", theme_path);
-                } else if let Err(e) =
-                    toml::from_str::<std::collections::HashMap<String, String>>(&contents)
-                {
-                    let err_msg = format!("Failed to parse theme file {:?}: {}", theme_path, e);
-                    tracing::warn!("{}", err_msg);
-                    self.startup_errors.push(err_msg);
-                }
-            } else {
-                tracing::warn!("Theme file not found: {:?}", theme_path);
+        match crate::theme::ThemeChoice::load(&self.ui.theme) {
+            Ok(theme) => self.theme = theme,
+            Err(e) => {
+                tracing::warn!("{e}");
+                self.startup_errors.push(e);
+                self.ui.theme = "default".into();
+                self.theme = crate::theme::ThemeChoice::default();
             }
         }
     }
@@ -740,6 +732,7 @@ mod tests {
             "auto_fetch",
             "offset_ms",
             "theme",
+            "theme_background",
             "sidebar_width",
             "scrolloff",
             "notification_duration_secs",
