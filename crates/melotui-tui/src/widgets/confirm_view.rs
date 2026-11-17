@@ -30,7 +30,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, registry: &KeyRegis
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(t.accent_warning))
-        .style(Style::default().bg(t.bg_overlay));
+        .style(Style::default().bg(t.bg_overlay).fg(t.text()));
 
     let inner = block.inner(popup_area);
     frame.render_widget(block, popup_area);

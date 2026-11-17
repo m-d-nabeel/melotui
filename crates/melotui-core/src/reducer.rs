@@ -11,6 +11,23 @@ use crate::{
 };
 
 pub fn reduce(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
+    let drawn = state.drawn_visualizer();
+    let mut effects = reduce_message(state, msg);
+    // Whatever changed what the visualizer draws — the DSP studio hidden for
+    // a search list, say — the audio side analyses for what is drawn.
+    let told = effects.iter().any(|effect| {
+        matches!(
+            effect,
+            AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer { .. })
+        )
+    });
+    if !told && state.drawn_visualizer() != drawn {
+        effects.push(state.visualizer_dispatch());
+    }
+    effects
+}
+
+fn reduce_message(state: &mut AppState, msg: AppMsg) -> Vec<AppMsg> {
     match msg {
         AppMsg::RequestQuit => library_action::handle_request_quit(state),
         AppMsg::Noop => vec![],

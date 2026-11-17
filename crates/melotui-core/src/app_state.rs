@@ -57,7 +57,7 @@ impl AppState {
         session.ui.lyrics_zoom = crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom, 2.0);
         session.ui.lyrics_zoom_focus =
             crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom_focus, 3.0);
-        session.ui.theme_overrides = config.theme_overrides.clone();
+        session.ui.theme = config.theme.clone();
 
         // Apply audio defaults from config
         session.audio.speed = config.audio.default_speed;
@@ -166,8 +166,14 @@ impl AppState {
         self.session.audio.phaser
     }
 
-    pub fn theme_overrides(&self) -> &std::collections::HashMap<String, String> {
-        &self.session.ui.theme_overrides
+    /// The colour theme in use.
+    pub fn theme(&self) -> &crate::theme::ThemeChoice {
+        &self.session.ui.theme
+    }
+
+    /// Whether the theme's own background is painted.
+    pub fn theme_background(&self) -> bool {
+        self.config.ui.theme_background
     }
 }
 
@@ -412,12 +418,37 @@ impl AppState {
         &self.session.visualizer_mode
     }
 
+    /// Whether the spectrum is drawn: always in the DSP studio, and on the
+    /// main screen when the visualizer is chosen over the art.
     pub fn should_draw_spectrum(&self) -> bool {
-        self.session.visualizer_mode == VisualizerMode::Spectrum
+        self.session.ui.show_dsp_studio || self.session.visualizer_mode == VisualizerMode::Spectrum
     }
 
+    /// The style the spectrum is drawn in: bars in the DSP studio, and the
+    /// one chosen on the main screen. The studio's own is not kept as the
+    /// choice, which it was, so that the main screen came back in bars.
     pub fn spectrum_style(&self) -> &SpectrumStyle {
-        &self.session.spectrum_style
+        if self.session.ui.show_dsp_studio {
+            &SpectrumStyle::Bar
+        } else {
+            &self.session.spectrum_style
+        }
+    }
+
+    /// What the visualizer draws, if anything: what the audio side is to
+    /// analyse for.
+    pub fn drawn_visualizer(&self) -> Option<SpectrumStyle> {
+        self.should_draw_spectrum()
+            .then(|| self.spectrum_style().clone())
+    }
+
+    /// Tells the audio side what is drawn now.
+    pub fn visualizer_dispatch(&self) -> crate::message::AppMsg {
+        crate::message::AppMsg::Playback(
+            crate::message::playback::PlaybackMsg::DispatchSetVisualizer {
+                spectrum_style: self.drawn_visualizer(),
+            },
+        )
     }
 
     pub fn get_spectrum_data(&self) -> (&Vec<f32>, &Vec<f32>) {
@@ -591,6 +622,7 @@ impl AppState {
             devices: std::iter::once("default".to_string())
                 .chain(self.session.output.devices.iter().cloned())
                 .collect(),
+            themes: crate::theme::available(),
         }
     }
 

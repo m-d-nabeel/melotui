@@ -14,6 +14,13 @@ Versions are dates: the year, the month, and a count of the releases in that mon
 - FLAC files tagged with the speakers their channels are for (`WAVEFORMATEXTENSIBLE_CHANNEL_MASK`) are mixed for those speakers.
 - The limiter, with any effect on, no longer lets the start of a loud passage through over its ceiling for its first 50 ms.
 
+- **Themes**: fifteen built in (Catppuccin's four, Dracula, Everforest, Gruvbox dark and light, Kanagawa, Nord, One Dark, Rosé Pine, Solarized dark and light, Tokyo Night), each in its project's own colours. **`:theme <name>`** switches while playing and is remembered.
+- A theme can be written as a palette of sixteen colours, from which every colour is worked out; a file named for a built-in theme changes that one, and `base` names one to start from. Theme files made before still work, and the colours they leave out come from the theme they are named for.
+- Everything is themed: the visualizer, in each of its styles, the background (`[ui] theme_background = false` keeps the terminal's), selections, popups and the DSP studio.
+- A theme with a misspelt name or a colour that is not one says so on screen; one that is not there is said at start, not only in the log.
+- Opening the DSP studio no longer changes the main screen's visualizer to bars, nor the album art to the visualizer, for good: the studio draws its bars of its own accord.
+- Notifications grow to fit what they say, where a long one was cut off after two lines; and what went wrong at start stays in sight once the library has loaded.
+
 Known limits: surround AAC (`.m4a`) cannot be opened, and 5.1 Vorbis made below quality 6 plays with its rear right nearly silent. Both are in the decoder library melotui uses; the Vorbis one is fixed there, in no release yet.
 
 ## 2026.11.0

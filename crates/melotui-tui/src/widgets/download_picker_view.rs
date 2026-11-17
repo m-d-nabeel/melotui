@@ -8,7 +8,7 @@ use crate::widgets::help_view::key_for;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -92,7 +92,7 @@ pub fn draw(frame: &mut Frame, area: Rect, search: &DownloadSearch, t: &crate::t
     let found = search.songs.iter().chain(&search.youtube);
     for (i, found) in found.enumerate().skip(skip).take(visible) {
         let (title, rest) = if i == search.row {
-            let on = Style::default().fg(Color::Black).bg(t.accent_primary);
+            let on = Style::default().fg(t.fg_selected).bg(t.accent_primary);
             (on.add_modifier(Modifier::BOLD), on)
         } else {
             (Style::default().fg(t.fg_primary), muted)

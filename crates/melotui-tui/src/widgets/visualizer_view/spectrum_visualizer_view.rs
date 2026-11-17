@@ -1,3 +1,4 @@
+use crate::theme::{Theme, blend};
 use melotui_core::AppState;
 use ratatui::{
     Frame,
@@ -12,11 +13,44 @@ use ratatui::{
 
 static SENSITIVITY: f32 = 60.0;
 
-pub fn draw_bar(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default()
-        .title(" Visualizer ")
+/// The colour `x` of the way through the theme's visualizer colours: 0 its
+/// low, a half its middle, 1 its high.
+fn gradient(t: &Theme, x: f64) -> Color {
+    let x = x.clamp(0.0, 1.0) as f32;
+    if x < 0.5 {
+        blend(t.visualizer_low, t.visualizer_mid, x * 2.0)
+    } else {
+        blend(t.visualizer_mid, t.visualizer_high, (x - 0.5) * 2.0)
+    }
+}
+
+/// `colour` at `level` of its strength: faded toward what it is drawn on,
+/// which is black on a dark theme and white on a light one.
+fn faded(t: &Theme, colour: Color, level: f64) -> Color {
+    blend(
+        colour,
+        t.palette.ground(),
+        (1.0 - level.clamp(0.0, 1.0)) as f32,
+    )
+}
+
+/// A peak's colour: lighter than its bar, or on a light theme stronger.
+fn peak_of(t: &Theme, colour: Color) -> Color {
+    blend(colour, t.fg_primary, 0.35)
+}
+
+/// The block every style is drawn in.
+fn block<'a>(t: &Theme, title: &'a str) -> Block<'a> {
+    Block::default()
+        .title(title)
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+        .border_type(BorderType::Rounded)
+        .border_style(ratatui::style::Style::default().fg(t.border_panel))
+}
+
+pub fn draw_bar(frame: &mut Frame, area: Rect, state: &AppState) {
+    let t = crate::theme::get_theme(state);
+    let block = block(t, " Visualizer ");
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
@@ -31,6 +65,7 @@ pub fn draw_bar(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     let canvas = Canvas::default()
+        .background_color(t.bg_main)
         .marker(symbols::Marker::Braille)
         .x_bounds([0.0, inner_area.width as f64])
         .y_bounds([0.0, inner_area.height as f64])
@@ -65,21 +100,11 @@ pub fn draw_bar(frame: &mut Frame, area: Rect, state: &AppState) {
                     continue;
                 }
 
-                // cyberpunk shimmer
+                // Low to high across the bars, shimmering a little.
                 let freq_ratio = i as f64 / num_bars as f64;
-
-                let r = (20.0 + freq_ratio * 50.0) as u8;
-                let g = (50.0 + freq_ratio * 150.0) as u8;
-                let b = (200.0 + (time * 2.0).sin() * 20.0) as u8;
-
-                let color = Color::Rgb(r, g, b);
-
-                // peak color
-                let peak_color = Color::Rgb(
-                    r.saturating_add(60),
-                    g.saturating_add(60),
-                    b.saturating_add(60),
-                );
+                let shimmer = 0.06 * (time * 2.0).sin();
+                let color = gradient(t, freq_ratio + shimmer);
+                let peak_color = peak_of(t, color);
 
                 // right side
                 let right_x = center_x + (i as f64 * bar_width);
@@ -129,10 +154,8 @@ pub fn draw_bar(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 pub fn draw_default(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default()
-        .title(" Visualizer ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+    let t = crate::theme::get_theme(state);
+    let block = block(t, " Visualizer ");
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
@@ -145,6 +168,7 @@ pub fn draw_default(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     let canvas = Canvas::default()
+        .background_color(t.bg_main)
         .marker(symbols::Marker::Braille)
         // HD resolution scaling (2x width, 4x height for braille dots)
         .x_bounds([0.0, (inner_area.width * 2) as f64])
@@ -180,17 +204,10 @@ pub fn draw_default(frame: &mut Frame, area: Rect, state: &AppState) {
                 // color logic
                 let freq_ratio = i as f64 / num_bars as f64;
 
-                // freq mapping
-                let r = 100 + (spectrum[idx] * 800.0).clamp(0.0, 155.0) as u8;
-                let g = 100 + ((1.0 - freq_ratio) * 155.0) as u8;
-                let b = 150 + (freq_ratio * 105.0) as u8;
-
-                let color = Color::Rgb(r, g, b);
-                let peak_color = Color::Rgb(
-                    r.saturating_add(50),
-                    g.saturating_add(50),
-                    b.saturating_add(50),
-                );
+                // Low to high across the bars, and higher the louder.
+                let loudness = f64::from((spectrum[idx] * 800.0).clamp(0.0, 155.0)) / 155.0;
+                let color = gradient(t, 0.6 * freq_ratio + 0.4 * loudness);
+                let peak_color = peak_of(t, color);
 
                 // mirror: bass at edges
 
@@ -243,10 +260,8 @@ pub fn draw_default(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default()
-        .title(" Visualizer ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+    let t = crate::theme::get_theme(state);
+    let block = block(t, " Visualizer ");
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
@@ -264,6 +279,7 @@ pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
     let time = state.time_elapsed;
 
     let canvas = Canvas::default()
+        .background_color(t.bg_main)
         .marker(symbols::Marker::Braille)
         .x_bounds([0.0, (inner_area.width * 2) as f64])
         .y_bounds([0.0, (inner_area.height * 4) as f64])
@@ -296,18 +312,8 @@ pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
 
                 // color oscillation: phase shift based on position
                 let color_phase = (i as f64 / num_ui_bars as f64) + (time * 0.1);
-                let r = ((color_phase * 2.0).sin() * 0.5 + 0.5) * 255.0;
-                let g = ((color_phase * 2.0 + 2.0).sin() * 0.5 + 0.5) * 255.0;
-                let b = ((color_phase * 2.0 + 4.0).sin() * 0.5 + 0.5) * 255.0;
-
-                let color = Color::Rgb(r as u8, g as u8, b as u8);
-
-                // peak color
-                let peak_color = Color::Rgb(
-                    (r as u16 + 60).min(255) as u8,
-                    (g as u16 + 60).min(255) as u8,
-                    (b as u16 + 60).min(255) as u8,
-                );
+                let color = gradient(t, (color_phase * 2.0).sin() * 0.5 + 0.5);
+                let peak_color = peak_of(t, color);
 
                 let x = i as f64;
 
@@ -342,10 +348,8 @@ pub fn draw_cava(frame: &mut Frame, area: Rect, state: &AppState) {
 /// bass in the middle. Where they turn traces the spectrum; their motion is
 /// worked out with the rest of the visualizer's physics.
 pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default()
-        .title(" Visualizer ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+    let t = crate::theme::get_theme(state);
+    let block = block(t, " Visualizer ");
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
@@ -354,6 +358,7 @@ pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
     let drops = &state.spectrum_motion.fountain().drops;
 
     let canvas = Canvas::default()
+        .background_color(t.bg_main)
         .marker(symbols::Marker::Braille)
         .x_bounds([0.0, (inner_area.width * 2) as f64])
         .y_bounds([0.0, (inner_area.height * 4) as f64])
@@ -364,6 +369,7 @@ pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
             let reach_y = center_y * 0.95;
 
             // The centre line, wavering slowly.
+            let line = faded(t, t.visualizer_low, 0.67);
             for x_int in 0..(width as usize) {
                 let x = x_int as f64;
                 let wave = (x * 0.025 + time * 2.0).sin() * 1.5;
@@ -372,7 +378,7 @@ pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
                     y1: center_y + wave - 0.5,
                     x2: x,
                     y2: center_y + wave + 0.5,
-                    color: Color::Rgb(40, 70, 140),
+                    color: line,
                 });
             }
 
@@ -398,13 +404,9 @@ pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
                 if coords.is_empty() {
                     continue;
                 }
-                let t = (shade % 8) as f64 / 7.0;
+                let along = (shade % 8) as f64 / 7.0;
                 let dim = if shade >= 8 { 0.75 } else { 1.0 };
-                let color = Color::Rgb(
-                    ((40.0 + 100.0 * t) * dim) as u8,
-                    ((90.0 + 120.0 * t) * dim) as u8,
-                    ((210.0 + 45.0 * t) * dim) as u8,
-                );
+                let color = faded(t, gradient(t, along), dim);
                 ctx.draw(&ratatui::widgets::canvas::Points { coords, color });
             }
         });
@@ -413,10 +415,8 @@ pub fn draw_particle(frame: &mut Frame, area: Rect, state: &AppState) {
 }
 
 pub fn draw_radial(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default()
-        .title(" Visualizer: Radial (Orbit) ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+    let t = crate::theme::get_theme(state);
+    let block = block(t, " Visualizer: Radial (Orbit) ");
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
@@ -430,6 +430,7 @@ pub fn draw_radial(frame: &mut Frame, area: Rect, state: &AppState) {
     }
 
     let canvas = Canvas::default()
+        .background_color(t.bg_main)
         .marker(symbols::Marker::Braille)
         .x_bounds([0.0, (inner_area.width * 2) as f64])
         .y_bounds([0.0, (inner_area.height * 4) as f64])
@@ -480,21 +481,16 @@ pub fn draw_radial(frame: &mut Frame, area: Rect, state: &AppState) {
                 let x2 = cx + (pulse_r + val) * theta.cos();
                 let y2 = cy + (pulse_r + val) * theta.sin();
 
-                // Dynamic neon gradient
+                // Round the ring through the theme's colours, turning.
                 let phase = (i as f64 / num_rays as f64) + time * 0.1;
-                let r = ((phase * 2.0 * std::f64::consts::PI).sin() * 100.0 + 155.0)
-                    .clamp(0.0, 255.0) as u8;
-                let g = ((phase * 2.0 * std::f64::consts::PI + 2.094).sin() * 100.0 + 155.0)
-                    .clamp(0.0, 255.0) as u8;
-                let b = ((phase * 2.0 * std::f64::consts::PI + 4.188).sin() * 100.0 + 155.0)
-                    .clamp(0.0, 255.0) as u8;
+                let ray = gradient(t, (phase * std::f64::consts::TAU).sin() * 0.5 + 0.5);
 
                 ctx.draw(&Line {
                     x1,
                     y1,
                     x2,
                     y2,
-                    color: Color::Rgb(r, g, b),
+                    color: ray,
                 });
 
                 if peak > val + 1.0 {
@@ -505,7 +501,7 @@ pub fn draw_radial(frame: &mut Frame, area: Rect, state: &AppState) {
                         y: py,
                         width: 1.0,
                         height: 1.0,
-                        color: Color::White,
+                        color: peak_of(t, t.visualizer_high),
                     });
                 }
 
@@ -517,7 +513,7 @@ pub fn draw_radial(frame: &mut Frame, area: Rect, state: &AppState) {
                         y: cy + p_dist * theta.sin(),
                         width: 1.0,
                         height: 1.0,
-                        color: Color::Rgb(r, g, b),
+                        color: ray,
                     });
                 }
             }
@@ -530,10 +526,8 @@ pub fn draw_radial(frame: &mut Frame, area: Rect, state: &AppState) {
 /// a shockwave ring for each kick. The particles' motion is worked out with
 /// the rest of the visualizer's physics; this draws them where they are.
 pub fn draw_nova(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = Block::default()
-        .title(" Visualizer: Nova ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+    let t = crate::theme::get_theme(state);
+    let block = block(t, " Visualizer: Nova ");
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);
@@ -541,6 +535,7 @@ pub fn draw_nova(frame: &mut Frame, area: Rect, state: &AppState) {
     let nova = state.spectrum_motion.nova();
 
     let canvas = Canvas::default()
+        .background_color(t.bg_main)
         .marker(symbols::Marker::Braille)
         .x_bounds([0.0, (inner_area.width * 2) as f64])
         .y_bounds([0.0, (inner_area.height * 4) as f64])
@@ -566,25 +561,17 @@ pub fn draw_nova(frame: &mut Frame, area: Rect, state: &AppState) {
                     y1: cy + core * a1.sin(),
                     x2: cx + core * a2.cos(),
                     y2: cy + core * a2.sin(),
-                    color: Color::Rgb(
-                        (255.0 * glow) as u8,
-                        (80.0 * glow) as u8,
-                        (150.0 * glow) as u8,
-                    ),
+                    color: faded(t, t.visualizer_high, glow),
                 });
             }
 
             // The last kick's shockwave, spreading out and fading.
             const WAVE_SECS: f32 = 0.6;
             if nova.since_kick < WAVE_SECS {
-                let t = (nova.since_kick / WAVE_SECS) as f64;
-                let radius = core + (reach - core) * t.powf(0.7);
-                let fade = (1.0 - t) * (0.35 + 0.65 * nova.kick_strength as f64);
-                let color = Color::Rgb(
-                    (80.0 * fade) as u8,
-                    (240.0 * fade) as u8,
-                    (255.0 * fade) as u8,
-                );
+                let spread = (nova.since_kick / WAVE_SECS) as f64;
+                let radius = core + (reach - core) * spread.powf(0.7);
+                let fade = (1.0 - spread) * (0.35 + 0.65 * nova.kick_strength as f64);
+                let color = faded(t, t.visualizer_mid, fade);
                 for s in (0..steps).step_by(2) {
                     let a1 = s as f64 * std::f64::consts::TAU / steps as f64;
                     let a2 = (s + 1) as f64 * std::f64::consts::TAU / steps as f64;
@@ -600,11 +587,8 @@ pub fn draw_nova(frame: &mut Frame, area: Rect, state: &AppState) {
 
             // The particles, each a streak along its way, dimming as it ages.
             for p in &nova.particles {
-                let frac = p.hue as f64;
                 let fade = 0.3 + 0.7 * p.freshness() as f64;
-                let r = ((1.0 - frac) * 255.0 + frac * 50.0) * fade;
-                let g = ((frac * std::f64::consts::PI).sin() * 230.0 + 30.0) * fade;
-                let b = (frac * 255.0 + (1.0 - frac) * 120.0) * fade;
+                let streak = faded(t, gradient(t, p.hue as f64), fade);
                 let (x1, y1) = at(p.x, p.y);
                 let (x2, y2) = at(p.x - p.vx * 0.04, p.y - p.vy * 0.04);
                 ctx.draw(&Line {
@@ -612,10 +596,54 @@ pub fn draw_nova(frame: &mut Frame, area: Rect, state: &AppState) {
                     y1,
                     x2,
                     y2,
-                    color: Color::Rgb(r as u8, g as u8, b as u8),
+                    color: streak,
                 });
             }
         });
 
     frame.render_widget(canvas, inner_area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_visualizer_is_drawn_in_the_themes_colours() {
+        let t = Theme::built_in("nord").unwrap();
+        assert_eq!(
+            gradient(&t, 0.0),
+            blend(t.visualizer_low, t.visualizer_low, 0.0)
+        );
+        assert_eq!(
+            gradient(&t, 0.5),
+            blend(t.visualizer_mid, t.visualizer_mid, 0.0)
+        );
+        assert_eq!(
+            gradient(&t, 1.0),
+            blend(t.visualizer_high, t.visualizer_high, 0.0)
+        );
+        // Past either end, the end.
+        assert_eq!(gradient(&t, -3.0), gradient(&t, 0.0));
+        assert_eq!(gradient(&t, 9.0), gradient(&t, 1.0));
+    }
+
+    #[test]
+    fn what_fades_fades_into_the_background_dark_or_light() {
+        for name in ["tokyo_night", "catppuccin_latte"] {
+            let t = Theme::built_in(name).unwrap();
+            let full = t.visualizer_mid;
+            assert_eq!(faded(&t, full, 1.0), blend(full, full, 0.0), "{name}");
+            assert_eq!(
+                faded(&t, full, 0.0),
+                blend(t.palette.ground(), full, 0.0),
+                "{name}"
+            );
+            // Half-faded is nearer the background than the colour is.
+            let half = faded(&t, full, 0.5);
+            let toward = crate::theme::contrast(half, t.palette.ground())
+                < crate::theme::contrast(full, t.palette.ground());
+            assert!(toward, "{name}: {half:?} is not nearer the background");
+        }
+    }
 }

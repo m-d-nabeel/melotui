@@ -64,6 +64,8 @@ pub enum Values {
     Preset,
     /// An audio output device's name, or `default`.
     Device,
+    /// A colour theme's name.
+    Theme,
 }
 
 /// What follows a command's name.
@@ -277,6 +279,12 @@ pub static COMMANDS: &[Spec] = &[
         NOTHING,
     ),
     spec(&["rescan", "r", "scan"], "", "Rescan the library", NOTHING),
+    spec(
+        &["theme"],
+        "[name]",
+        "Colour theme: switch to one, or see which is in use",
+        Then::Args(&[Values::Theme]),
+    ),
     spec(
         &["yt", "youtube"],
         "",
@@ -495,6 +503,10 @@ pub enum Command {
     Quit,
     Help,
     Rescan,
+    /// Switch to the theme `name`, or say which is in use.
+    Theme {
+        name: Option<String>,
+    },
     Play,
     Pause,
     Stop,
@@ -824,6 +836,9 @@ fn parse(input: &str) -> Result<Command, Command> {
         "sort" => Command::Sort,
         "collapse" => Command::CollapseTree,
         "rescan" => Command::Rescan,
+        "theme" => Command::Theme {
+            name: Some(rest.join(" ")).filter(|name| !name.is_empty()),
+        },
         "yt" => match sub(spec, rest)? {
             ("search", rest) => Command::DownloadSearch {
                 query: text(rest, "yt search")?,

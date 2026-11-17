@@ -19,7 +19,7 @@ pub fn get_repeat_icon(mode: &RepeatMode, t: &Theme) -> Span<'static> {
             Style::default().fg(t.fg_muted).add_modifier(Modifier::DIM),
         ),
         RepeatMode::PlayOnce => Span::styled("󰑗 ", Style::default().fg(t.accent_primary)),
-        RepeatMode::Track => Span::styled("󰑘 ", Style::default().fg(t.slider_reverb)),
+        RepeatMode::Track => Span::styled("󰑘 ", Style::default().fg(t.palette.purple)),
         RepeatMode::Playlist => Span::styled("󰑖 ", Style::default().fg(t.accent_playing)),
     }
 }

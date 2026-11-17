@@ -2,7 +2,7 @@ use melotui_core::AppState;
 use ratatui::{
     Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Padding, Paragraph, Wrap},
 };
@@ -227,7 +227,7 @@ fn render_badges(
         format!(" {} ", format),
         Style::default()
             .bg(fmt_color)
-            .fg(Color::Black)
+            .fg(t.fg_selected)
             .add_modifier(Modifier::BOLD),
     ));
 

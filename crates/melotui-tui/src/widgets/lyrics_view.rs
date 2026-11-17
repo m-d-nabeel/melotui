@@ -161,7 +161,7 @@ fn draw_search(
     let item_style = |is_selected: bool| {
         if is_selected {
             Style::default()
-                .fg(Color::Black)
+                .fg(t.fg_selected)
                 .bg(t.accent_primary)
                 .add_modifier(Modifier::BOLD)
         } else {

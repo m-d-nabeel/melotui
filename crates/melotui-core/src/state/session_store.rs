@@ -53,6 +53,13 @@ pub struct PersistedSession {
     /// The output device chosen with `:device`; `None` leaves the config's.
     #[serde(default)]
     pub output_device: Option<String>,
+    /// The theme in use, and the one the config named then: it is gone
+    /// back to while the config names the same, and the config's is taken
+    /// once it has been changed.
+    #[serde(default)]
+    pub theme: Option<String>,
+    #[serde(default)]
+    pub theme_in_config: Option<String>,
 }
 
 impl Default for PersistedSession {
@@ -83,6 +90,8 @@ impl Default for PersistedSession {
             spectrum_style: SpectrumStyle::default(),
             dsp: PersistedDspParams::from_audio_state(&audio),
             output_device: None,
+            theme: None,
+            theme_in_config: None,
         }
     }
 }
@@ -313,6 +322,8 @@ impl PersistedSession {
             spectrum_style: state.session.spectrum_style.clone(),
             dsp: PersistedDspParams::from_audio_state(&state.session.audio),
             output_device: state.session.output.wanted.clone(),
+            theme: Some(state.session.ui.theme.name.clone()),
+            theme_in_config: Some(state.config.ui.theme.clone()),
         }
     }
 
@@ -478,6 +489,20 @@ impl PersistedSession {
         if self.output_device.is_some() {
             state.session.output.wanted = self.output_device.clone();
         }
+        if let Some(theme) = self.theme.as_deref()
+            && self.theme_in_config.as_deref() == Some(state.config.ui.theme.as_str())
+            && theme != state.session.ui.theme.name
+        {
+            // A theme since taken away is let go of quietly: the config's
+            // is the one there is.
+            match crate::theme::ThemeChoice::load(theme) {
+                Ok(mut chosen) => {
+                    chosen.generation = state.session.ui.theme.generation + 1;
+                    state.session.ui.theme = chosen;
+                }
+                Err(e) => tracing::info!("Not going back to the last theme: {e}"),
+            }
+        }
         state.session.audio.sanitize();
 
         valid_queue.len()
@@ -621,6 +646,8 @@ mod tests {
             spectrum_style: crate::state::SpectrumStyle::Bar,
             dsp: PersistedDspParams::default(),
             output_device: Some("USB Audio DAC".to_string()),
+            theme: Some("nord".to_string()),
+            theme_in_config: Some("default".to_string()),
         };
 
         let toml_str = toml::to_string_pretty(&session).expect("Failed to serialize");
@@ -631,6 +658,8 @@ mod tests {
         assert_eq!(deserialized.active_node, Some(active));
         assert_eq!(deserialized.left_panel, LeftPanelMode::Queue);
         assert_eq!(deserialized.output_device.as_deref(), Some("USB Audio DAC"));
+        assert_eq!(deserialized.theme.as_deref(), Some("nord"));
+        assert_eq!(deserialized.theme_in_config.as_deref(), Some("default"));
         assert!(deserialized.show_track_info);
         assert_eq!(
             deserialized.repeat_mode,
@@ -810,5 +839,56 @@ mod tests {
         assert_eq!(state.session.audio.wobble, 0.0);
         assert_eq!(state.session.audio.ping_pong, 1.0);
         assert_eq!(state.session.audio.phaser, 0.0);
+    }
+
+    #[test]
+    fn the_theme_chosen_is_gone_back_to_until_the_config_names_another() {
+        let mut state = crate::AppState::new(
+            crate::library::snapshot::Library::new(
+                vec![],
+                vec![],
+                std::collections::HashMap::new(),
+            ),
+            &crate::config::AppConfig::default(),
+        );
+        let saved = PersistedSession {
+            theme: Some("nord".into()),
+            theme_in_config: Some("default".into()),
+            ..PersistedSession::default()
+        };
+        saved.apply_to_app_state(&mut state);
+        assert_eq!(state.theme().name, "nord");
+        assert!(state.theme().generation > 0, "drawn again in it");
+
+        // The config names another since: it is the config's.
+        let mut state = crate::AppState::new(
+            crate::library::snapshot::Library::new(
+                vec![],
+                vec![],
+                std::collections::HashMap::new(),
+            ),
+            &crate::config::AppConfig::default(),
+        );
+        state.config.ui.theme = "dracula".into();
+        state.session.ui.theme.name = "dracula".into();
+        saved.apply_to_app_state(&mut state);
+        assert_eq!(state.theme().name, "dracula");
+
+        // And one since removed is let go of.
+        let mut state = crate::AppState::new(
+            crate::library::snapshot::Library::new(
+                vec![],
+                vec![],
+                std::collections::HashMap::new(),
+            ),
+            &crate::config::AppConfig::default(),
+        );
+        let gone = PersistedSession {
+            theme: Some("no_such_theme_anywhere".into()),
+            theme_in_config: Some("default".into()),
+            ..PersistedSession::default()
+        };
+        gone.apply_to_app_state(&mut state);
+        assert_eq!(state.theme().name, "default");
     }
 }

@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
@@ -74,7 +74,8 @@ pub fn draw_picker(frame: &mut Frame, area: Rect, state: &AppState, config: Pick
         Span::styled("█", Style::default().fg(t.fg_primary)),
     ]);
 
-    let input_widget = Paragraph::new(input_content).style(Style::default().bg(t.bg_input));
+    let input_widget =
+        Paragraph::new(input_content).style(Style::default().bg(t.bg_input).fg(t.text()));
     frame.render_widget(input_widget, input_area);
 
     let visible_items = &filtered[scroll..scroll + visible_count];
@@ -85,7 +86,7 @@ pub fn draw_picker(frame: &mut Frame, area: Rect, state: &AppState, config: Pick
         .map(|(vi, (name, is_create))| {
             let abs_idx = scroll + vi;
             let style = if abs_idx == config.selection {
-                Style::default().fg(Color::Black).bg(t.accent_info)
+                Style::default().fg(t.fg_selected).bg(t.accent_info)
             } else {
                 Style::default().fg(t.fg_primary).bg(t.bg_overlay)
             };
@@ -98,7 +99,8 @@ pub fn draw_picker(frame: &mut Frame, area: Rect, state: &AppState, config: Pick
     let list = List::new(items).block(
         Block::default()
             .borders(Borders::TOP)
-            .style(Style::default().bg(t.bg_overlay)),
+            .border_style(Style::default().fg(t.border_panel))
+            .style(Style::default().bg(t.bg_overlay).fg(t.text())),
     );
 
     frame.render_widget(list, list_area);

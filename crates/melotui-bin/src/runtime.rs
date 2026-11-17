@@ -25,6 +25,19 @@ const AUTOSAVE_EVERY: Duration = Duration::from_secs(30);
 
 use crate::input_processor::InputProcessor;
 
+/// What is wrong with the theme in use, each said with its name, and logged.
+fn theme_problems(state: &AppState) -> Vec<String> {
+    let theme = state.theme();
+    melotui_tui::theme::problems(theme)
+        .into_iter()
+        .map(|problem| {
+            let said = format!("Theme {}: {problem}", theme.name);
+            tracing::warn!("{said}");
+            said
+        })
+        .collect()
+}
+
 pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
     tracing::info!("Starting melotui application");
 
@@ -55,8 +68,13 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
     engine.load_library(music_roots.clone());
 
     // Aggregate startup errors
+    // What went wrong at start, said again once the library has loaded:
+    // "Library loaded" coming a moment later put it out of sight before it
+    // could be read.
+    let mut startup_said: Option<String> = None;
     let mut startup_errors = config.startup_errors.clone();
     startup_errors.extend(keymap_errors);
+    startup_errors.extend(theme_problems(&state));
 
     if music_roots.is_empty() {
         state.set_notification_with_duration(
@@ -73,7 +91,8 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
             startup_errors.len(),
             startup_errors[0]
         );
-        state.set_notification_with_duration(NotificationKind::Error, msg, 7);
+        state.set_notification_with_duration(NotificationKind::Error, msg.clone(), 7);
+        startup_said = Some(msg);
     } else {
         state.set_notification(NotificationKind::Info, "Loading library...");
     }
@@ -143,6 +162,9 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
     let mut should_render = true;
     let mut frames = crate::frame_clock::FrameClock::new(Instant::now());
     let mut spectrum_moving = true;
+    // The theme last checked for problems: a theme switched to, or gone
+    // back to with the session, is checked when it comes.
+    let mut theme_checked = state.theme().generation;
 
     while runtime.running {
         let frame_time =
@@ -263,6 +285,30 @@ pub fn run(config: melotui_core::config::AppConfig) -> Result<()> {
 
         // Whether it is animating now, with this turn's keys acted on: `v`
         // may just have put the album art where the spectrum was.
+        if state.library_loaded()
+            && let Some(said) = startup_said.take()
+        {
+            state.set_notification_with_duration(NotificationKind::Error, said, 10);
+            should_render = true;
+        }
+
+        if state.theme().generation != theme_checked {
+            theme_checked = state.theme().generation;
+            let problems = theme_problems(&state);
+            if let Some(first) = problems.first() {
+                let more = match problems.len() {
+                    1 => String::new(),
+                    n => format!(" (and {} more; see the log)", n - 1),
+                };
+                state.set_notification_with_duration(
+                    NotificationKind::Warning,
+                    format!("{first}{more}"),
+                    7,
+                );
+                should_render = true;
+            }
+        }
+
         let animating_now = state.should_draw_spectrum() && (state.is_playing() || spectrum_moving);
         if runtime.running && draws_now(should_render, frame_due, animating, animating_now) {
             if let Err(e) = tui.draw(&state) {

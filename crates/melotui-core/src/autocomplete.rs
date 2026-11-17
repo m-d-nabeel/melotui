@@ -9,6 +9,7 @@ pub struct Names {
     pub presets: Vec<String>,
     /// Audio output devices, `default` among them.
     pub devices: Vec<String>,
+    pub themes: Vec<String>,
 }
 
 /// One way to complete what has been typed.
@@ -92,7 +93,7 @@ pub fn complete(input: &str, names: &Names) -> Vec<Suggestion> {
         Some(Place::Arguments(spec, args, typed)) => {
             // A name is the only argument and may run to several words.
             let index = match args.first() {
-                Some(Values::Playlist | Values::Preset | Values::Device) => 0,
+                Some(Values::Playlist | Values::Preset | Values::Device | Values::Theme) => 0,
                 _ => typed.len(),
             };
             let Some(values) = args.get(index) else {
@@ -111,7 +112,7 @@ pub fn complete(input: &str, names: &Names) -> Vec<Suggestion> {
                         help: spec.help,
                     })
                     .collect(),
-                Values::Playlist | Values::Preset | Values::Device => {
+                Values::Playlist | Values::Preset | Values::Device | Values::Theme => {
                     // Names can have spaces in them, so everything after the
                     // command is the name being typed.
                     let words = done.len() - typed.len();
@@ -120,6 +121,7 @@ pub fn complete(input: &str, names: &Names) -> Vec<Suggestion> {
                     let (pool, help) = match values {
                         Values::Playlist => (&names.playlists, "playlist"),
                         Values::Preset => (&names.presets, "preset"),
+                        Values::Theme => (&names.themes, "theme"),
                         _ => (&names.devices, "output device"),
                     };
                     pool.iter()
@@ -174,6 +176,7 @@ mod tests {
                 "Built-in Speakers".into(),
                 "USB Audio DAC".into(),
             ],
+            themes: vec!["dracula".into(), "nord".into(), "tokyo_night".into()],
         }
     }
 
@@ -257,5 +260,15 @@ mod tests {
         assert!(labels("dance ").is_empty());
         assert!(labels("pl dance ").is_empty());
         assert!(labels("q extra").is_empty());
+    }
+
+    #[test]
+    fn a_theme_is_completed_from_the_themes_there_are() {
+        let texts: Vec<String> = complete("theme to", &names())
+            .into_iter()
+            .map(|s| s.text)
+            .collect();
+        assert_eq!(texts, ["theme tokyo_night"]);
+        assert_eq!(complete("theme ", &names()).len(), 3);
     }
 }
