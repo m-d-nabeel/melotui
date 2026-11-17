@@ -69,9 +69,7 @@ pub fn handle_library_loaded(
             state.audio(),
         ));
         if state.should_draw_spectrum() {
-            effects.push(AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-                spectrum_style: Some(state.spectrum_style().clone()),
-            }));
+            effects.push(state.visualizer_dispatch());
         }
         state.set_notification(
             NotificationKind::Info,

@@ -565,6 +565,40 @@ mod download_search_tests {
     }
 
     #[test]
+    fn the_audio_side_is_told_when_the_list_hides_the_studios_spectrum() {
+        use crate::message::playback::PlaybackMsg;
+        use crate::state::{SpectrumStyle, VisualizerMode};
+        let told = |effects: &[AppMsg]| {
+            effects.iter().find_map(|effect| match effect {
+                AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer { spectrum_style }) => {
+                    Some(spectrum_style.clone())
+                }
+                _ => None,
+            })
+        };
+        let (mut state, _music) = state();
+        // The art on the main screen; the studio's spectrum is analysed.
+        state.session.visualizer_mode = VisualizerMode::AlbumArt;
+        ui(&mut state, UIMsg::ToggleDspStudio);
+        assert_eq!(state.drawn_visualizer(), Some(SpectrumStyle::Bar));
+
+        // The list hides the studio: nothing is drawn to analyse for.
+        let effects = reduce(
+            &mut state,
+            AppMsg::Download(DownloadMsg::RequestSearchDownloads {
+                query: "song".into(),
+            }),
+        );
+        assert!(state.download_search().is_some());
+        assert_eq!(told(&effects), Some(None));
+        // Closed, the studio is back, and its bars with it.
+        let effects = ui(&mut state, UIMsg::DownloadPickerCancel);
+        assert_eq!(told(&effects), Some(Some(SpectrumStyle::Bar)));
+        // Nothing drawn changes, nothing is said.
+        assert_eq!(told(&ui(&mut state, UIMsg::OpenHelp)), None);
+    }
+
+    #[test]
     fn the_list_takes_the_lyrics_panels_place_and_gives_the_screen_back() {
         let (mut state, _music) = state();
         state.session.ui.show_dsp_studio = true;

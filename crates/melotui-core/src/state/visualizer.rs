@@ -248,8 +248,9 @@ pub fn update_visualizer_physics(state: &mut AppState, dt: f32) -> bool {
         showing |= *cap > 0.0;
     }
 
+    let style = state.spectrum_style().clone();
     let motion = &mut state.spectrum_motion;
-    match state.session.spectrum_style {
+    match style {
         SpectrumStyle::Nova => showing |= motion.nova.step(&motion.targets, dt),
         SpectrumStyle::Particle => showing |= motion.fountain.step(&motion.targets, dt),
         _ => {}

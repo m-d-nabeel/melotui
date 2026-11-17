@@ -493,11 +493,7 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
         VisualizerMode::AlbumArt => VisualizerMode::Spectrum,
     };
 
-    let active = state.should_draw_spectrum();
-    let style = state.session.spectrum_style.clone();
-    vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-        spectrum_style: active.then_some(style),
-    })]
+    vec![state.visualizer_dispatch()]
 }
 
 pub fn handle_cycle_visualizer_style(state: &mut AppState) -> Vec<AppMsg> {
@@ -511,9 +507,7 @@ pub fn handle_cycle_visualizer_style(state: &mut AppState) -> Vec<AppMsg> {
         )
         .with_duration(2),
     );
-    vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-        spectrum_style: Some(style),
-    })]
+    vec![state.visualizer_dispatch()]
 }
 
 pub fn handle_dispatch_play(_: &mut AppState, _: std::path::PathBuf) -> Vec<AppMsg> {
@@ -690,17 +684,13 @@ fn begin_track(
         format!("Playing {}", title),
     ));
 
-    let active = state.should_draw_spectrum();
-    let style = state.session.spectrum_style.clone();
     let mut effects = vec![];
     if !already_playing {
         effects.push(AppMsg::Playback(PlaybackMsg::DispatchPlay {
             path: file_path.clone(),
         }));
     }
-    effects.push(AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-        spectrum_style: active.then_some(style),
-    }));
+    effects.push(state.visualizer_dispatch());
 
     // request async cover load
     if has_cover {

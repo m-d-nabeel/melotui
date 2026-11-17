@@ -521,11 +521,9 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 );
                 vec![]
             } else {
-                state.session.spectrum_style = arg.clone();
+                state.session.spectrum_style = arg;
                 state.session.visualizer_mode = VisualizerMode::Spectrum;
-                vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-                    spectrum_style: Some(arg),
-                })]
+                vec![state.visualizer_dispatch()]
             }
         }
         Command::SearchLyrics { query } => {
@@ -1044,18 +1042,10 @@ pub fn handle_command_history_next(state: &mut AppState) -> Vec<AppMsg> {
 // ── DSP Studio ──────────────────────────────────────────
 
 pub fn handle_toggle_dsp_studio(state: &mut AppState) -> Vec<AppMsg> {
+    // The studio draws its spectrum in bars of its own accord, leaving what
+    // the main screen shows as it was chosen.
     state.session.ui.show_dsp_studio = !state.session.ui.show_dsp_studio;
-    if state.session.ui.show_dsp_studio {
-        // Switch to spectrum mode so the mini visualizer renders
-        state.session.spectrum_style = crate::state::SpectrumStyle::Bar;
-        state.session.visualizer_mode = VisualizerMode::Spectrum;
-    }
-
-    let active = state.should_draw_spectrum();
-    let style = state.session.spectrum_style.clone();
-    vec![AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
-        spectrum_style: active.then_some(style),
-    })]
+    vec![state.visualizer_dispatch()]
 }
 
 /// The mixer's controls as it lays them out, column by column, as the DSP
@@ -1887,14 +1877,30 @@ mod tests {
         let mut state = test_state();
         assert!(!state.session.ui.show_dsp_studio);
 
+        // The art on the main screen and particles chosen for it.
+        state.session.visualizer_mode = VisualizerMode::AlbumArt;
+        state.session.spectrum_style = crate::state::SpectrumStyle::Particle;
         let msgs = handle_toggle_dsp_studio(&mut state);
         assert!(state.session.ui.show_dsp_studio);
-        assert_eq!(state.session.visualizer_mode, VisualizerMode::Spectrum);
+        // The studio draws bars, and the audio side is told so.
+        assert!(state.should_draw_spectrum());
+        assert_eq!(*state.spectrum_style(), crate::state::SpectrumStyle::Bar);
+        assert!(matches!(
+            msgs.as_slice(),
+            [AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+                spectrum_style: Some(crate::state::SpectrumStyle::Bar)
+            })]
+        ));
+        // Out of it, the main screen is as it was chosen: it came back as
+        // bars instead of the art.
+        handle_toggle_dsp_studio(&mut state);
+        assert_eq!(state.session.visualizer_mode, VisualizerMode::AlbumArt);
         assert_eq!(
             state.session.spectrum_style,
-            crate::state::SpectrumStyle::Bar
+            crate::state::SpectrumStyle::Particle
         );
-        assert!(!msgs.is_empty());
+        assert!(!state.should_draw_spectrum());
+        handle_toggle_dsp_studio(&mut state);
 
         // Default control index is 0
         assert_eq!(state.session.ui.dsp_selected_control, 0);

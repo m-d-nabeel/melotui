@@ -418,12 +418,37 @@ impl AppState {
         &self.session.visualizer_mode
     }
 
+    /// Whether the spectrum is drawn: always in the DSP studio, and on the
+    /// main screen when the visualizer is chosen over the art.
     pub fn should_draw_spectrum(&self) -> bool {
-        self.session.visualizer_mode == VisualizerMode::Spectrum
+        self.session.ui.show_dsp_studio || self.session.visualizer_mode == VisualizerMode::Spectrum
     }
 
+    /// The style the spectrum is drawn in: bars in the DSP studio, and the
+    /// one chosen on the main screen. The studio's own is not kept as the
+    /// choice, which it was, so that the main screen came back in bars.
     pub fn spectrum_style(&self) -> &SpectrumStyle {
-        &self.session.spectrum_style
+        if self.session.ui.show_dsp_studio {
+            &SpectrumStyle::Bar
+        } else {
+            &self.session.spectrum_style
+        }
+    }
+
+    /// What the visualizer draws, if anything: what the audio side is to
+    /// analyse for.
+    pub fn drawn_visualizer(&self) -> Option<SpectrumStyle> {
+        self.should_draw_spectrum()
+            .then(|| self.spectrum_style().clone())
+    }
+
+    /// Tells the audio side what is drawn now.
+    pub fn visualizer_dispatch(&self) -> crate::message::AppMsg {
+        crate::message::AppMsg::Playback(
+            crate::message::playback::PlaybackMsg::DispatchSetVisualizer {
+                spectrum_style: self.drawn_visualizer(),
+            },
+        )
     }
 
     pub fn get_spectrum_data(&self) -> (&Vec<f32>, &Vec<f32>) {

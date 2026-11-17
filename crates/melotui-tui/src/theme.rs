@@ -247,7 +247,13 @@ impl Theme {
             bg_selected: p.surface_high,
             bg_overlay: p.surface,
             bg_input: p.surface,
-            bg_dim: blend(ground, Color::Rgb(0, 0, 0), 0.55),
+            // Darkened as far on a light theme turned it a muddy mid-grey,
+            // with dark text all over it.
+            bg_dim: blend(
+                ground,
+                Color::Rgb(0, 0, 0),
+                if luminance(ground) > 0.5 { 0.35 } else { 0.55 },
+            ),
             fg_primary: p.foreground,
             fg_secondary: p.subtext,
             fg_muted: p.muted,
