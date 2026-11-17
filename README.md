@@ -2,12 +2,7 @@
 
 A fast terminal music player written in Rust: your local library, synced lyrics, a spectrum visualizer, a full effects studio, and downloads from YouTube.
 
-![The player: library, visualizer, lyrics and the track playing](assets/player.png)
-
-| | |
-| --- | --- |
-| ![Album art](assets/album-art.png) | ![Full-screen lyrics](assets/lyrics.png) |
-| ![DSP studio](assets/dsp-studio.png) | ![Searching YouTube](assets/youtube-search.png) |
+![melotui in eight screenshots: album art with synced lyrics, full-screen lyrics, the bars, default and particle visualizers with the queue and track info, the DSP studio, searching YouTube, and switching among the fifteen themes](assets/screenshots.webp)
 
 ## Features
 
