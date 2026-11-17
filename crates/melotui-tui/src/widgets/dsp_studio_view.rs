@@ -36,7 +36,7 @@ pub fn draw(
         .split(area);
 
     draw_mini_spectrum(frame, main_layout[0], state, cache);
-    draw_horizontal_eq(frame, main_layout[1], state, t, t.icon_category);
+    draw_horizontal_eq(frame, main_layout[1], state, t, t.dsp_section_border);
     draw_controls_grid(frame, main_layout[2], state, t);
 
     let muted = Style::default().fg(t.fg_muted);
@@ -156,7 +156,7 @@ fn render_eq_slider(
     let bg = if is_selected {
         t.dsp_selected_bg
     } else {
-        ratatui::style::Color::Reset
+        t.bg_main
     };
 
     // Label
@@ -237,9 +237,9 @@ fn render_bipolar_bar(
         } else if is_active {
             ("━", accent)
         } else if is_interval {
-            ("▪", t.slider_track)
+            ("▪", t.eq_bar_empty)
         } else {
-            ("┄", t.slider_track)
+            ("┄", t.eq_bar_empty)
         };
         spans.push(Span::styled(ch, Style::default().fg(color).bg(bg)));
     }
@@ -552,7 +552,7 @@ fn render_inline_control(
     let bg = if is_selected {
         t.dsp_selected_bg
     } else {
-        ratatui::style::Color::Reset
+        t.bg_main
     };
 
     // Label

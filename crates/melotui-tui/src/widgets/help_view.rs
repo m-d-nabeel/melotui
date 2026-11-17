@@ -161,7 +161,7 @@ pub fn draw(
         .borders(Borders::ALL)
         .border_type(ratatui::widgets::BorderType::Rounded)
         .border_style(Style::default().fg(t.help_border))
-        .style(Style::default().bg(t.help_overlay_bg));
+        .style(Style::default().bg(t.help_overlay_bg).fg(t.text()));
     if max > 0 {
         block = block.title_bottom(
             Line::from(Span::styled(

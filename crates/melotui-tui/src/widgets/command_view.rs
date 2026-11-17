@@ -55,7 +55,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(t.border_inactive))
-        .style(Style::default().bg(t.bg_input));
+        .style(Style::default().bg(t.bg_input).fg(t.text()));
     // What the chosen or typed command still takes and what it does, as
     // virtual text like the completions: the command itself is in the input
     // already.

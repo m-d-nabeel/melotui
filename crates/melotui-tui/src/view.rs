@@ -34,6 +34,17 @@ pub fn draw(
         return;
     }
 
+    // The theme's own background under everything, where it has one; the
+    // terminal's shows through otherwise.
+    // Its text colour too, for what has none of its own.
+    let t = crate::theme::get_theme(state);
+    if t.bg_main != Color::Reset {
+        frame.render_widget(
+            Block::default().style(Style::default().bg(t.bg_main).fg(t.text())),
+            area,
+        );
+    }
+
     if state.ui_show_dsp_studio() {
         let playback_height: u16 = 3;
         let layout = Layout::default()
@@ -213,7 +224,8 @@ fn draw_overlays(
 
     // Shared dim overlay — uses a dark background that works on all terminals
     // (Modifier::DIM is ignored by many terminal emulators)
-    let dim_block = Block::default().style(Style::default().bg(Color::Rgb(10, 10, 15)));
+    let dim_block =
+        Block::default().style(Style::default().bg(crate::theme::get_theme(state).bg_dim));
 
     if *state.ui_mode() == UIMode::Command {
         frame.render_widget(dim_block.clone(), area);

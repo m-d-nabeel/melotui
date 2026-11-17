@@ -35,7 +35,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
     let block = Block::default()
         .title(" Album Art ")
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+        .border_type(BorderType::Rounded)
+        .border_style(ratatui::style::Style::default().fg(t.border_panel));
 
     let inner_area = block.inner(area);
     frame.render_widget(block, area);

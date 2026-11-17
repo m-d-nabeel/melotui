@@ -14,10 +14,12 @@ use ratatui::{
 };
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
+    let t = crate::theme::get_theme(state);
     // Container block
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(t.border_panel))
         .title(" Now Playing ")
         .title_style(Style::default().add_modifier(Modifier::BOLD))
         .padding(Padding::horizontal(2));
@@ -42,7 +44,6 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
     // Prepare data
     let current_track = state.get_playing_track();
     let next_song_name = state.predict_next_song();
-    let t = crate::theme::get_theme(state);
     let (status_icon, status_color) = utils::get_status_icon(state.playback_status(), t);
     let (source_icon, source_color) = if state.is_playing_from_queue() {
         ("Q", t.accent_warning)

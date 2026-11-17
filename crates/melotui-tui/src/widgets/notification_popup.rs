@@ -32,7 +32,8 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(base_color))
         .title(format!(" {} {} ", icon, title))
-        .title_alignment(Alignment::Left);
+        .title_alignment(Alignment::Left)
+        .style(Style::default().bg(t.bg_main).fg(t.text()));
 
     match notification.kind {
         NotificationKind::Progress => {

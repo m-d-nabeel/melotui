@@ -7,7 +7,7 @@ use melotui_core::{
 use ratatui::{
     Frame,
     layout::{Alignment, Margin, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     symbols,
     text::{Line, Span},
     widgets::{
@@ -111,7 +111,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .end_symbol(None)
         .track_symbol(None)
         .thumb_style(Style::default().fg(t.fg_muted))
-        .track_style(Style::default().fg(Color::Black));
+        .track_style(Style::default().fg(t.border_inactive));
 
     let mut scrollbar_state = ScrollbarState::new(total_rows).position(offset);
 
