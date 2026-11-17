@@ -2,12 +2,7 @@
 
 A fast terminal music player written in Rust: your local library, synced lyrics, a spectrum visualizer, a full effects studio, and downloads from YouTube.
 
-![The player: library, visualizer, lyrics and the track playing](assets/player.png)
-
-| | |
-| --- | --- |
-| ![Album art](assets/album-art.png) | ![Full-screen lyrics](assets/lyrics.png) |
-| ![DSP studio](assets/dsp-studio.png) | ![Searching YouTube](assets/youtube-search.png) |
+![melotui in six screenshots: the player in the default Catppuccin Mocha theme, full-screen synced lyrics, the Gruvbox Dark and Catppuccin Latte themes, the DSP studio, and searching YouTube](assets/screenshots.webp)
 
 ## Features
 
