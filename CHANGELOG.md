@@ -2,7 +2,7 @@
 
 Versions are dates: the year, the month, and a count of the releases in that month.
 
-## Unreleased
+## 2026.11.1
 
 - **Opus is played**, in `.opus` files and in `.ogg` files that hold it. It was listed in the library and failed to play.
 - Play, pause, volume and the track keys work while lyrics or YouTube results are being picked from.
