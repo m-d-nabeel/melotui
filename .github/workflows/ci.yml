@@ -115,4 +115,4 @@ jobs:
       # As the release workflow builds it, so a profile or lock file that
       # no longer builds is found here and not at a release.
       - name: Build release
-        run: cargo build --profile production --bin melotui --locked
+        run: cargo build --profile dist --bin melotui --locked
