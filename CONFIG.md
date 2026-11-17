@@ -55,7 +55,7 @@ playlist_picker_max_visible = 10
 
 ## Themes
 
-`:theme <name>` switches theme while melotui runs (Tab completes the names) and is remembered next time, until you change `theme` in `config.toml`. `:theme` on its own says which is in use and lists the rest.
+`:theme <name>` switches theme while melotui runs (Tab completes the names) and is remembered next time, until you change `theme` in `config.toml`. `:theme` on its own says which is in use.
 
 Built in, each with its project's own colours:
 
@@ -67,7 +67,7 @@ The default keeps your terminal's background and text colour; the others paint t
 
 ### Your own
 
-A theme is a `.toml` file in the `themes` folder inside the config folder (`melotui --paths` shows where), named for how you choose it: `themes/mine.toml` is `theme = "mine"`. Colours are hex (`"#bd93f9"`), a terminal colour's name (`"red"`, `"light blue"`), a number from 0 to 255, or `"reset"` for the terminal's own.
+A theme is a `.toml` file in the `themes` folder inside the config folder (`melotui --paths` shows where), named for how you choose it: `themes/mine.toml` is `theme = "mine"`. Colours are hex (`"#bd93f9"`), a terminal colour's name (`"red"`, `"light blue"`), a number from 0 to 255, or `"reset"` for the terminal's own. Editing a theme while you use it, `:theme` with its name again reads it afresh.
 
 The easy way is a palette of sixteen colours. Everything melotui draws is worked out from them, so these alone make a whole theme:
 
