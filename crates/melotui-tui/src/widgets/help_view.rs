@@ -275,8 +275,8 @@ fn boxed(section: &Section, width: u16, t: &Theme) -> Vec<Line<'static>> {
             _ => (key.clone(), String::new()),
         };
         let key_spans = vec![
-            Span::styled(name.clone(), Style::default().fg(t.help_key)),
-            Span::styled(args.clone(), Style::default().fg(t.help_subtext)),
+            Span::styled(name, Style::default().fg(t.help_key)),
+            Span::styled(args, Style::default().fg(t.help_subtext)),
         ];
         let key_fits = key.width() <= key_width;
         if !key_fits {

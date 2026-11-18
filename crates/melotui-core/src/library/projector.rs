@@ -190,7 +190,7 @@ where
         let has_children = !subdir.subdirs.is_empty() || !subdir.tracks.is_empty();
 
         if visitor(SidebarRow {
-            id: id.clone(),
+            id,
             label: subdir.name.clone(),
             level,
             is_expandable: has_children,
