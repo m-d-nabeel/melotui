@@ -2173,7 +2173,7 @@ dependencies = [
 
 [[package]]
 name = "melotui"
-version = "2026.11.1"
+version = "2026.11.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2196,7 +2196,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-audio"
-version = "2026.11.1"
+version = "2026.11.2"
 dependencies = [
  "anyhow",
  "cpal",
@@ -2215,7 +2215,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-bus"
-version = "2026.11.1"
+version = "2026.11.2"
 dependencies = [
  "image",
  "melotui-core",
@@ -2224,7 +2224,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-core"
-version = "2026.11.1"
+version = "2026.11.2"
 dependencies = [
  "anyhow",
  "dirs",
@@ -2242,7 +2242,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-cover"
-version = "2026.11.1"
+version = "2026.11.2"
 dependencies = [
  "dirs",
  "hex",
@@ -2257,7 +2257,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-db"
-version = "2026.11.1"
+version = "2026.11.2"
 dependencies = [
  "anyhow",
  "lofty",
@@ -2271,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-download"
-version = "2026.11.1"
+version = "2026.11.2"
 dependencies = [
  "lofty",
  "melotui-bus",
@@ -2285,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-engine"
-version = "2026.11.1"
+version = "2026.11.2"
 dependencies = [
  "melotui-audio",
  "melotui-bus",
@@ -2299,7 +2299,7 @@ dependencies = [
 
 [[package]]
 name = "melotui-tui"
-version = "2026.11.1"
+version = "2026.11.2"
 dependencies = [
  "anyhow",
  "ar-reshaper",
