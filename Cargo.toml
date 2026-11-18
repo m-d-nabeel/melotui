@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "2026.11.1"
+version = "2026.11.2"
 authors = ["m-d-nabeel"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/m-d-nabeel/melotui"
@@ -28,14 +28,14 @@ rust-version = "1.90"
 # "2026.11.1" would let an older melotui be built with newer crates of its own,
 # from a later release, which it was never built with.
 [workspace.dependencies]
-melotui-core = { path = "crates/melotui-core", version = "=2026.11.1" }
-melotui-bus = { path = "crates/melotui-bus", version = "=2026.11.1" }
-melotui-audio = { path = "crates/melotui-audio", version = "=2026.11.1" }
-melotui-db = { path = "crates/melotui-db", version = "=2026.11.1" }
-melotui-cover = { path = "crates/melotui-cover", version = "=2026.11.1" }
-melotui-download = { path = "crates/melotui-download", version = "=2026.11.1" }
-melotui-engine = { path = "crates/melotui-engine", version = "=2026.11.1" }
-melotui-tui = { path = "crates/melotui-tui", version = "=2026.11.1" }
+melotui-core = { path = "crates/melotui-core", version = "=2026.11.2" }
+melotui-bus = { path = "crates/melotui-bus", version = "=2026.11.2" }
+melotui-audio = { path = "crates/melotui-audio", version = "=2026.11.2" }
+melotui-db = { path = "crates/melotui-db", version = "=2026.11.2" }
+melotui-cover = { path = "crates/melotui-cover", version = "=2026.11.2" }
+melotui-download = { path = "crates/melotui-download", version = "=2026.11.2" }
+melotui-engine = { path = "crates/melotui-engine", version = "=2026.11.2" }
+melotui-tui = { path = "crates/melotui-tui", version = "=2026.11.2" }
 # Only the formats melotui reads cover art in, and writes its images as:
 # the default set also builds an AVIF encoder that nothing here uses.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "rayon"] }
