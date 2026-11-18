@@ -9,7 +9,7 @@ use crate::{
     },
     navigation::ids::SidebarNodeId,
     state::{
-        Notification, NotificationKind, VisualizerMode,
+        Notification, NotificationKind,
         ui::{ConfirmDialog, FocusMode, PlaylistPickerState, PresetPickerState},
         visualizer::{SpectrumStyle, is_cava_available},
     },
@@ -527,8 +527,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 );
                 vec![]
             } else {
-                state.session.spectrum_style = arg;
-                state.session.visualizer_mode = VisualizerMode::Spectrum;
+                crate::action::playback_action::set_visualizer_style(state, arg);
                 vec![state.visualizer_dispatch()]
             }
         }
@@ -1878,7 +1877,7 @@ mod tests {
         assert!(!state.session.ui.show_dsp_studio);
 
         // The art on the main screen and particles chosen for it.
-        state.session.visualizer_mode = VisualizerMode::AlbumArt;
+        state.session.visualizer_mode = crate::state::VisualizerMode::AlbumArt;
         state.session.spectrum_style = crate::state::SpectrumStyle::Particle;
         let msgs = handle_toggle_dsp_studio(&mut state);
         assert!(state.session.ui.show_dsp_studio);
@@ -1891,16 +1890,37 @@ mod tests {
                 spectrum_style: Some(crate::state::SpectrumStyle::Bar)
             })]
         ));
-        // Out of it, the main screen is as it was chosen: it came back as
-        // bars instead of the art.
-        handle_toggle_dsp_studio(&mut state);
-        assert_eq!(state.session.visualizer_mode, VisualizerMode::AlbumArt);
-        assert_eq!(
-            state.session.spectrum_style,
-            crate::state::SpectrumStyle::Particle
+        // In it, the style is changed for the studio alone: it was fixed at
+        // bars, the change going unseen to the main screen.
+        let msgs = crate::action::playback_action::handle_cycle_visualizer_style(&mut state);
+        assert_eq!(*state.spectrum_style(), SpectrumStyle::Particle);
+        assert!(matches!(
+            msgs.as_slice(),
+            [AppMsg::Playback(PlaybackMsg::DispatchSetVisualizer {
+                spectrum_style: Some(SpectrumStyle::Particle)
+            })]
+        ));
+        crate::reducer::reduce(
+            &mut state,
+            AppMsg::UI(UIMsg::SubmitCommand("visualizer default".into())),
         );
-        assert!(!state.should_draw_spectrum());
+        assert_eq!(*state.spectrum_style(), SpectrumStyle::Default);
+        assert_eq!(state.session.spectrum_style, SpectrumStyle::Particle);
+
+        // Out of it, the main screen is as it was chosen: the art, and
+        // particles for when the visualizer is shown. It came back as bars
+        // instead of the art.
         handle_toggle_dsp_studio(&mut state);
+        assert_eq!(
+            state.session.visualizer_mode,
+            crate::state::VisualizerMode::AlbumArt
+        );
+        assert_eq!(*state.spectrum_style(), SpectrumStyle::Particle);
+        assert!(!state.should_draw_spectrum());
+
+        // Back in, the studio's own again.
+        handle_toggle_dsp_studio(&mut state);
+        assert_eq!(*state.spectrum_style(), SpectrumStyle::Default);
 
         // Default control index is 0
         assert_eq!(state.session.ui.dsp_selected_control, 0);

@@ -427,12 +427,13 @@ impl AppState {
         self.session.ui.show_dsp_studio || self.session.visualizer_mode == VisualizerMode::Spectrum
     }
 
-    /// The style the spectrum is drawn in: bars in the DSP studio, and the
-    /// one chosen on the main screen. The studio's own is not kept as the
-    /// choice, which it was, so that the main screen came back in bars.
+    /// The style the spectrum is drawn in: the DSP studio's own while it is
+    /// open, and the main screen's otherwise. Each is changed only where it
+    /// is seen: once one was both, so that the main screen came back from
+    /// the studio in its bars.
     pub fn spectrum_style(&self) -> &SpectrumStyle {
         if self.session.ui.show_dsp_studio {
-            &SpectrumStyle::Bar
+            &self.session.dsp_spectrum_style
         } else {
             &self.session.spectrum_style
         }

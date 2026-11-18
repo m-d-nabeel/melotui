@@ -497,17 +497,33 @@ pub fn handle_toggle_art(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_cycle_visualizer_style(state: &mut AppState) -> Vec<AppMsg> {
-    state.session.visualizer_mode = VisualizerMode::Spectrum;
-    state.session.spectrum_style = state.session.spectrum_style.next();
-    let style = state.session.spectrum_style.clone();
-    state.session.notification.current = Some(
-        Notification::new(
-            NotificationKind::Info,
-            format!("Visualizer Style: {}", style.as_str()),
-        )
-        .with_duration(2),
-    );
+    let style = state.spectrum_style().next();
+    set_visualizer_style(state, style);
     vec![state.visualizer_dispatch()]
+}
+
+/// The visualizer drawn in `style` where it is on screen: in the DSP studio
+/// while it is open, which keeps its own, and otherwise on the main screen,
+/// shown there in place of the art.
+pub fn set_visualizer_style(state: &mut AppState, style: crate::state::SpectrumStyle) {
+    let in_studio = state.session.ui.show_dsp_studio;
+    let said = format!(
+        "{}: {}",
+        if in_studio {
+            "DSP studio visualizer"
+        } else {
+            "Visualizer Style"
+        },
+        style.as_str()
+    );
+    if in_studio {
+        state.session.dsp_spectrum_style = style;
+    } else {
+        state.session.visualizer_mode = VisualizerMode::Spectrum;
+        state.session.spectrum_style = style;
+    }
+    state.session.notification.current =
+        Some(Notification::new(NotificationKind::Info, said).with_duration(2));
 }
 
 pub fn handle_dispatch_play(_: &mut AppState, _: std::path::PathBuf) -> Vec<AppMsg> {
