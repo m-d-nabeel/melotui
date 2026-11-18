@@ -11,9 +11,8 @@ use ratatui::{
 use melotui_core::AppState;
 
 pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, registry: &KeyRegistry) {
-    let dialog = match state.confirm_dialog() {
-        Some(d) => d,
-        None => return,
+    let Some(dialog) = state.confirm_dialog() else {
+        return;
     };
 
     let t = crate::theme::get_theme(state);

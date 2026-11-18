@@ -82,6 +82,12 @@ jobs:
         run: cargo fmt --all --check
       - name: Clippy (default features)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # As docs.rs builds them for each crate: a link to nothing, or to a
+      # private item, fails here rather than there.
+      - name: Documentation
+        run: cargo doc --workspace --no-deps --locked
+        env:
+          RUSTDOCFLAGS: -D warnings
 
   deny:
     name: Dependencies (cargo deny)

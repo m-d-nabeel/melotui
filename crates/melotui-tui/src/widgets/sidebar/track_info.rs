@@ -38,20 +38,14 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         state.get_selected_track_id_in_queue()
     };
 
-    let track_id = match track_id {
-        Some(id) => id,
-        None => {
-            render_empty_state(frame, inner_area, t);
-            return;
-        }
+    let Some(track_id) = track_id else {
+        render_empty_state(frame, inner_area, t);
+        return;
     };
 
-    let track = match state.library.get_track(track_id) {
-        Some(track) => track,
-        None => {
-            render_empty_state(frame, inner_area, t);
-            return;
-        }
+    let Some(track) = state.library.get_track(track_id) else {
+        render_empty_state(frame, inner_area, t);
+        return;
     };
 
     // Art + info split - Always allocate space for art to prevent layout jumping
@@ -224,7 +218,7 @@ fn render_badges(
         t.badge_lossy
     };
     parts.push(Span::styled(
-        format!(" {} ", format),
+        format!(" {format} "),
         Style::default()
             .bg(fmt_color)
             .fg(t.fg_selected)
@@ -234,7 +228,7 @@ fn render_badges(
     if bitrate > 0 {
         parts.push(Span::raw(" "));
         parts.push(Span::styled(
-            format!(" {}k ", bitrate),
+            format!(" {bitrate}k "),
             Style::default().bg(t.badge_detail_bg).fg(t.fg_primary),
         ));
     }
@@ -247,7 +241,7 @@ fn render_badges(
         };
         parts.push(Span::raw(" "));
         parts.push(Span::styled(
-            format!(" {} ", sample_str),
+            format!(" {sample_str} "),
             Style::default().bg(t.badge_detail_bg).fg(t.fg_primary),
         ));
     }
@@ -269,7 +263,7 @@ fn render_details(
         details.push(format!("▶ {}", track.play_count));
     }
     if let Some(y) = track.year {
-        details.push(format!("{}", y));
+        details.push(format!("{y}"));
     }
     if let Some(g) = &track.genre {
         details.push(g.clone());
@@ -296,13 +290,11 @@ fn render_file_info(
         .file_path
         .parent()
         .and_then(|p| p.file_name())
-        .map(|s| s.to_string_lossy())
-        .unwrap_or("Unknown".into());
+        .map_or_else(|| "Unknown".into(), |s| s.to_string_lossy());
     let filename = track
         .file_path
         .file_name()
-        .map(|s| s.to_string_lossy())
-        .unwrap_or("Unknown".into());
+        .map_or_else(|| "Unknown".into(), |s| s.to_string_lossy());
     let size_mb = track.file_size_bytes as f64 / 1024.0 / 1024.0;
 
     let info_text = vec![
@@ -316,7 +308,7 @@ fn render_file_info(
         ]),
         Line::from(vec![
             Span::styled("💾 Size:   ", Style::default().fg(t.accent_primary)),
-            Span::raw(format!("{:.2} MB", size_mb)),
+            Span::raw(format!("{size_mb:.2} MB")),
         ]),
         Line::from(""),
         Line::from(vec![

@@ -62,7 +62,7 @@ pub fn draw(
             FocusMode::Playback => draw_playback_only(frame, area, state),
             FocusMode::VisualizerPlayback => draw_viz_playback(frame, area, state, image_cache),
             FocusMode::LyricsPlayback => {
-                draw_lyrics_playback(frame, area, state, image_cache, registry)
+                draw_lyrics_playback(frame, area, state, image_cache, registry);
             }
         }
     }

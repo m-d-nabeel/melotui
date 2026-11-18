@@ -33,7 +33,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(base_color))
-        .title(format!(" {} {} ", icon, title))
+        .title(format!(" {icon} {title} "))
         .title_alignment(Alignment::Left)
         .style(Style::default().bg(t.bg_main).fg(t.text()));
 
@@ -66,7 +66,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
             let gauge = Gauge::default()
                 .gauge_style(Style::default().fg(base_color).add_modifier(Modifier::BOLD))
                 .ratio(pct as f64 / 100.0)
-                .label(format!("{}%", pct))
+                .label(format!("{pct}%"))
                 .use_unicode(true);
             // no .block() - already rendered above
 

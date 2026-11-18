@@ -65,7 +65,7 @@ impl StereoImage {
         self.w.step(w, self.coeff);
         let (k, w) = (self.k.value(), self.w.value());
 
-        let mid = (left + right) * 0.5;
+        let mid = f32::midpoint(left, right);
         // Run on every sample, so the crossover is already settled whenever
         // the karaoke comes in.
         let mid_low = self.low.tick(&self.low_coefs, mid);

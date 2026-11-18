@@ -206,12 +206,9 @@ fn nowhere_to_download_to(state: &mut AppState) {
 
 /// Puts `query` in the queue of downloads, saying so by the name `named`.
 fn enqueue_download(state: &mut AppState, query: String, named: &str) -> Vec<AppMsg> {
-    let download_dir = match state.config.download_dir(&state.library.roots) {
-        Some(dir) => dir,
-        None => {
-            nowhere_to_download_to(state);
-            return vec![];
-        }
+    let Some(download_dir) = state.config.download_dir(&state.library.roots) else {
+        nowhere_to_download_to(state);
+        return vec![];
     };
     if !download_dir.exists()
         && let Err(e) = fs::create_dir_all(&download_dir)
@@ -243,9 +240,8 @@ fn enqueue_download(state: &mut AppState, query: String, named: &str) -> Vec<App
 }
 
 pub fn handle_begin_next_download(state: &mut AppState) -> Vec<AppMsg> {
-    let job = match state.session.download.queue.pop_front() {
-        Some(job) => job,
-        None => return vec![],
+    let Some(job) = state.session.download.queue.pop_front() else {
+        return vec![];
     };
     tracing::info!("Next Download Started with: {:?}", job.query);
     state.session.download.status = DownloadStatus::Running { percent: 0 };
@@ -298,7 +294,7 @@ pub fn handle_request_search_lyrics(state: &mut AppState, query: String) -> Vec<
     tracing::info!("RequestSearchLyrics called with: {:?}", query);
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Searching lyrics for: {}", query),
+        format!("Searching lyrics for: {query}"),
     ));
 
     // Auto switch to Lyrics View tab (which acts as the selector)
@@ -388,7 +384,7 @@ pub fn handle_lyrics_fetch_failed(
     state.session.notification.current = Some(
         Notification::new(
             NotificationKind::Error,
-            format!("Lyrics fetch failed: {}", error),
+            format!("Lyrics fetch failed: {error}"),
         )
         .with_duration(5),
     );

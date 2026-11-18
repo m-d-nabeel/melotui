@@ -37,7 +37,10 @@ impl Cava {
             .stdin(Stdio::null())
             .spawn()?;
 
-        let stdout = process.stdout.take().ok_or(anyhow::anyhow!("No stdout"))?;
+        let stdout = process
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("No stdout"))?;
 
         // capacity for ~5 frames
         let ring = HeapRb::<f32>::new(1024);
@@ -97,7 +100,7 @@ fn write_cava_config(dir: &std::path::Path, bars: usize) -> anyhow::Result<std::
 
     // cava config
     let config = format!(
-        r#"
+        r"
 [general]
 bars = {bars}
 framerate = 60
@@ -112,8 +115,7 @@ bit_format = 8bit
 [smoothing]
 monstercat = 1
 noise_reduction = 0.77
-"#,
-        bars = bars
+"
     );
 
     melotui_core::utils::fs::write_atomically(&config_path, config.as_bytes())?;

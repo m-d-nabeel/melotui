@@ -893,7 +893,7 @@ mod tests {
         let skip = out.len() / 4;
         let (mut m, mut s) = (0.0f64, 0.0f64);
         for &(l, r) in &out[skip..] {
-            m += (((l + r) * 0.5) as f64).powi(2);
+            m += (f32::midpoint(l, r) as f64).powi(2);
             s += (((l - r) * 0.5) as f64).powi(2);
         }
         20.0 * ((s / m).sqrt() as f32).max(1e-12).log10()

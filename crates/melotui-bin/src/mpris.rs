@@ -83,7 +83,7 @@ impl MprisManager {
                 }
                 MediaControlEvent::SeekBy(direction, duration) => {
                     let mut offset = duration.as_secs() as i64;
-                    if let souvlaki::SeekDirection::Backward = direction {
+                    if direction == souvlaki::SeekDirection::Backward {
                         offset = -offset;
                     }
                     Some(AppMsg::Playback(PlaybackMsg::RequestSeekRelative(offset)))
@@ -201,7 +201,7 @@ impl MprisManager {
             }
 
             self.cached.track_id = current_id;
-            self.cached.cover_path = current_cover.clone();
+            self.cached.cover_path.clone_from(current_cover);
         }
     }
 }

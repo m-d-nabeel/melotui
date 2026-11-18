@@ -272,7 +272,7 @@ mod tests {
                     cache,
                     zoom,
                     &crate::keybinding::KeyRegistry::default(),
-                )
+                );
             })
             .unwrap();
         frame.buffer.clone()
@@ -377,7 +377,7 @@ mod tests {
                     &mut cache,
                     2.0,
                     &crate::keybinding::KeyRegistry::default(),
-                )
+                );
             })
             .unwrap();
         let sent = terminal.backend().buffer();
@@ -419,7 +419,12 @@ mod tests {
         let frame = terminal
             .draw(|f| draw_search(f, f.area(), &search, &theme))
             .unwrap();
-        let text: String = frame.buffer.content().iter().map(|c| c.symbol()).collect();
+        let text: String = frame
+            .buffer
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
         // A header and four rows: the fourth is the selected one.
         assert!(text.contains("Song 6"), "{text}");
         assert!(

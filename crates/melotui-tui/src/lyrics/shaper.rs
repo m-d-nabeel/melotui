@@ -286,7 +286,7 @@ mod tests {
             .unwrap();
         assert_eq!((image.width(), image.height()), (600, 40));
         let (left, right) = ink(&image).expect("nothing was drawn");
-        let centre = (left + right) / 2;
+        let centre = u32::midpoint(left, right);
         assert!(
             (290..=310).contains(&centre),
             "not centred: ink from {left} to {right}"
@@ -399,7 +399,7 @@ mod tests {
             "twice the pitch drew {ratio}x as wide"
         );
         let (top, bottom) = ink_rows(&two).unwrap();
-        let middle = (top + bottom) / 2;
+        let middle = u32::midpoint(top, bottom);
         assert!((30..=50).contains(&middle), "ink from {top} to {bottom}");
     }
 }

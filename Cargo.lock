@@ -2244,7 +2244,6 @@ dependencies = [
 name = "melotui-cover"
 version = "2026.11.1"
 dependencies = [
- "anyhow",
  "dirs",
  "hex",
  "image",
@@ -2261,7 +2260,6 @@ name = "melotui-db"
 version = "2026.11.1"
 dependencies = [
  "anyhow",
- "dirs",
  "lofty",
  "melotui-bus",
  "melotui-core",

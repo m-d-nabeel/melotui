@@ -134,9 +134,7 @@ mod tests {
 
         assert!(
             (expected.saturating_sub(margin)..=expected + margin).contains(&pos),
-            "Expected around {}ms, got {}ms",
-            expected,
-            pos
+            "Expected around {expected}ms, got {pos}ms"
         );
     }
 

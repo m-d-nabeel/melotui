@@ -85,7 +85,7 @@ impl CoverCache {
 
     /// Retrieve cover from cache, or extract from source if missing.
     pub fn get_or_load(&self, track_path: &Path) -> Option<Arc<DynamicImage>> {
-        let key = self.compute_cache_key(track_path)?;
+        let key = Self::compute_cache_key(track_path)?;
         let cache_path = self.get_cache_path(&key);
 
         if cache_path.exists() {
@@ -169,7 +169,7 @@ impl CoverCache {
         Some(result)
     }
 
-    fn compute_cache_key(&self, path: &Path) -> Option<String> {
+    fn compute_cache_key(path: &Path) -> Option<String> {
         let metadata = fs::metadata(path).ok()?;
         let size = metadata.len();
         let mtime = metadata
@@ -190,7 +190,7 @@ impl CoverCache {
     /// Return the on-disk cache path for a track's cover art, if the key can be computed.
     /// Does NOT load or extract the image — just resolves the path.
     pub fn resolve_cache_path(&self, track_path: &Path) -> Option<PathBuf> {
-        let key = self.compute_cache_key(track_path)?;
+        let key = Self::compute_cache_key(track_path)?;
         let path = self.get_cache_path(&key);
         if path.exists() { Some(path) } else { None }
     }
@@ -204,7 +204,7 @@ impl CoverCache {
             let _ = fs::create_dir_all(&shard_dir);
         }
 
-        shard_dir.join(format!("{}.jpg", key))
+        shard_dir.join(format!("{key}.jpg"))
     }
 }
 
@@ -258,10 +258,13 @@ fn image_dimensions_from_bytes(data: &[u8]) -> Option<(u32, u32)> {
 /// return those pages to the OS, reducing RSS after large temporary
 /// allocations (like decoding a 3000×3000 cover art image).
 fn release_memory_to_os() {
-    #[cfg(target_os = "linux")]
+    // glibc's alone: musl, Alpine's C library, has no `malloc_trim`, and a
+    // build there failed to link.
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
     {
-        // malloc_trim is a standard glibc function that returns freed pages to the OS.
-        // It only affects the malloc arena's free list, not any active allocations.
+        // SAFETY: `malloc_trim` is glibc's, with this signature; it only gives
+        // back free pages of the malloc arena, touching no live allocation,
+        // and is safe to call from any thread at any time.
         unsafe extern "C" {
             safe fn malloc_trim(pad: usize) -> i32;
         }
@@ -306,7 +309,7 @@ mod tests {
         // Override cache dir for testing
         cache.cache_dir = dir.path().join("covers");
 
-        let key = cache.compute_cache_key(&file_path);
+        let key = CoverCache::compute_cache_key(&file_path);
         assert!(key.is_some());
 
         let key_str = key.unwrap();
@@ -320,7 +323,7 @@ mod tests {
         assert_eq!(parent.file_name().unwrap(), expected_shard);
         assert_eq!(
             cache_path.file_name().unwrap().to_str().unwrap(),
-            format!("{}.jpg", key_str)
+            format!("{key_str}.jpg")
         );
     }
 

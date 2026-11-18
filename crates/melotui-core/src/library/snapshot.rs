@@ -283,14 +283,14 @@ impl Library {
             .map(|t| t.id)
             .collect();
         ids.sort_by(|a, b| {
-            let ta = self.tracks.get(a).map(|t| t.title.as_str()).unwrap_or("");
-            let tb = self.tracks.get(b).map(|t| t.title.as_str()).unwrap_or("");
+            let ta = self.tracks.get(a).map_or("", |t| t.title.as_str());
+            let tb = self.tracks.get(b).map_or("", |t| t.title.as_str());
             ta.cmp(tb)
         });
         ids
     }
 
-    /// The [`PLAY_STATS_LIMIT`] most-played tracks, highest count first, ties
+    /// The 100 (`PLAY_STATS_LIMIT`) most-played tracks, highest count first, ties
     /// broken by title so the result is deterministic.
     ///
     /// Reflects `play_count` as of *this call* — there is no staleness window
@@ -307,7 +307,7 @@ impl Library {
         entries.into_iter().map(|t| t.id).collect()
     }
 
-    /// The [`PLAY_STATS_LIMIT`] most recently played tracks, most recent
+    /// The 100 (`PLAY_STATS_LIMIT`) most recently played tracks, most recent
     /// first, ties broken by title.
     pub fn recently_played(&self) -> Vec<TrackId> {
         let mut entries: Vec<&TrackMeta> = self
@@ -400,10 +400,10 @@ impl Library {
     }
 
     fn build_folder_tree(root: &Path, tracks: &HashMap<TrackId, TrackMeta>) -> DirectoryNode {
-        let name = root
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "Library".to_string());
+        let name = root.file_name().map_or_else(
+            || "Library".to_string(),
+            |n| n.to_string_lossy().into_owned(),
+        );
 
         let mut root_node = DirectoryNode {
             name,
@@ -559,7 +559,7 @@ impl Library {
 
     /// Track ids for a sidebar node, in the exact order the tree displays them.
     ///
-    /// This has to go through [`resolve_sorted_tracks_for_node`] rather than
+    /// This has to go through [`Self::resolve_sorted_tracks_for_node`] rather than
     /// reading the raw indices (`self.artists`, `self.albums`, ...) directly.
     /// Those are kept sorted by [`TrackId`] — insertion/scan order — purely so
     /// index rebuilds are cheap; the tree itself is always rendered through
@@ -722,10 +722,10 @@ mod tests {
         TrackMeta {
             id: TrackId(id),
             file_path: PathBuf::from(path),
-            title: format!("Track {}", id),
-            artist: artist.map(|s| s.to_string()),
-            album: album.map(|s| s.to_string()),
-            genre: genre.map(|s| s.to_string()),
+            title: format!("Track {id}"),
+            artist: artist.map(std::string::ToString::to_string),
+            album: album.map(std::string::ToString::to_string),
+            genre: genre.map(std::string::ToString::to_string),
             year: Some(2020),
             track_number: None,
             play_count: 0,

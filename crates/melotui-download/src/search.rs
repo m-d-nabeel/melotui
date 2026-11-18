@@ -107,7 +107,10 @@ fn percent_encoded(text: &str) -> String {
         if byte.is_ascii_alphanumeric() || b"-_.~".contains(&byte) {
             encoded.push(char::from(byte));
         } else {
-            encoded.push_str(&format!("%{byte:02X}"));
+            {
+                use std::fmt::Write;
+                let _ = write!(encoded, "%{byte:02X}");
+            }
         }
     }
     encoded
@@ -215,7 +218,7 @@ fn candidate_in(line: &str, source: DownloadSource) -> Option<DownloadCandidate>
         album: text("album"),
         duration_secs: found
             .get("duration")
-            .and_then(|v| v.as_f64())
+            .and_then(serde_json::Value::as_f64)
             .filter(|secs| *secs >= 1.0)
             .map(|secs| secs as u64),
     })
