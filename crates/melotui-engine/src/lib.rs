@@ -96,7 +96,7 @@ impl Engine {
             output_device: config.output_device,
         };
         let audio = spawn("audio", move || {
-            melotui_audio::run(audio_worker, spectrum_producer, audio_config)
+            melotui_audio::run(audio_worker, spectrum_producer, audio_config);
         });
 
         // spawn database worker
@@ -108,7 +108,7 @@ impl Engine {
         let (cover_tx, cover_worker) = end::<CoverCommand>(&bus_tx, &wake);
         let max_cover_resolution = config.max_cover_resolution;
         let cover = spawn("cover", move || {
-            melotui_cover::run(cover_worker, max_cover_resolution)
+            melotui_cover::run(cover_worker, max_cover_resolution);
         });
 
         Self {

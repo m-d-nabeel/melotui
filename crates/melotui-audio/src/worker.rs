@@ -1083,7 +1083,7 @@ mod tests {
         let (bus_tx, _bus_rx) = mpsc::channel();
         let (_tx, mut worker) = inprocess::join_worker::<AudioCommand>(bus_tx);
         let mut engine = engine();
-        engine.do_play(path.clone(), &mut worker);
+        engine.do_play(path, &mut worker);
         engine.do_seek(3_000, 2);
         assert!((3_000..3_200).contains(&engine.time_keeper.get_position().as_millis()));
 
@@ -1113,7 +1113,7 @@ mod tests {
         match bus_rx.try_recv() {
             Ok(IpcEvent::PlaybackFailed { path, error }) => {
                 assert_eq!(path, "/nonexistent/song.flac");
-                assert!(error.starts_with("Cannot play song.flac:"), "{error}")
+                assert!(error.starts_with("Cannot play song.flac:"), "{error}");
             }
             other => panic!("{other:?}"),
         }

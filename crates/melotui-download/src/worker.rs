@@ -159,7 +159,7 @@ pub fn run(worker: impl IpcWorker<DownloadCommand>) {
                                 cookies_from_browser.as_deref(),
                                 &tx,
                                 &flag,
-                            )
+                            );
                         }),
                     });
                 }
@@ -252,9 +252,9 @@ fn download_task(
     tracing::debug!("YT-DLP Thread Spawned, root: {:?}", dl_path);
 
     let target = if query.starts_with("http://") || query.starts_with("https://") {
-        query.clone()
+        query
     } else {
-        format!("ytsearch1:{}", query)
+        format!("ytsearch1:{query}")
     };
 
     let mut reports = Reports::new(std::env::temp_dir().join(format!(
@@ -282,8 +282,7 @@ fn download_task(
         Ok(c) => c,
         Err(e) => {
             let _ = tx.send(InternalEvent::Failed(format!(
-                "Failed to start yt-dlp: {}",
-                e
+                "Failed to start yt-dlp: {e}"
             )));
             return;
         }
@@ -544,7 +543,7 @@ fn candidates(
                 .is_some_and(|s| !s.trim().is_empty()),
             provider_id: record
                 .get("id")
-                .and_then(|v| v.as_i64())
+                .and_then(serde_json::Value::as_i64)
                 .map(|id| id.to_string()),
         };
         let same = |c: &LyricsCandidate| {
@@ -579,7 +578,7 @@ fn best_match(results: Vec<serde_json::Value>, duration: Option<u64>) -> Option<
     let drift = |r: &serde_json::Value| match duration {
         Some(d) => r
             .get("duration")
-            .and_then(|v| v.as_f64())
+            .and_then(serde_json::Value::as_f64)
             .map_or(f64::INFINITY, |len| (len - d as f64).abs()),
         None => 0.0,
     };

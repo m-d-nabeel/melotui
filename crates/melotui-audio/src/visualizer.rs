@@ -165,7 +165,7 @@ impl VisualizerManager {
             Backend::External(consumer) => {
                 self.idle_cava = Some(consumer);
             }
-            _ => {}
+            Backend::None => {}
         }
     }
 

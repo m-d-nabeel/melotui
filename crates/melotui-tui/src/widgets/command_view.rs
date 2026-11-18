@@ -24,7 +24,7 @@ use melotui_core::autocomplete::{self, Suggestion};
 fn suggestions(state: &AppState) -> (String, Vec<Suggestion>) {
     let (prefix, _) = state.ui_autocomplete();
     let typed = prefix
-        .unwrap_or(state.ui_command_buffer().value())
+        .unwrap_or_else(|| state.ui_command_buffer().value())
         .to_string();
     if typed.is_empty() && prefix.is_none() {
         return (typed, Vec::new());

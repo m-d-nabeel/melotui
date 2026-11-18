@@ -648,7 +648,7 @@ mod tests {
             };
             let out = play(unit, 48_000, tone, |i| {
                 if i == 0 {
-                    change()
+                    change();
                 }
             });
             let l: Vec<f32> = out.iter().map(|x| x.0).collect();

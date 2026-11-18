@@ -524,7 +524,7 @@ impl KeyRegistry {
                 "mixer" => KeyContext::Mixer,
                 "global" => KeyContext::Global,
                 _ => {
-                    let err = format!("Unknown keymap context: {}", ctx_str);
+                    let err = format!("Unknown keymap context: {ctx_str}");
                     tracing::warn!("{}", err);
                     errors.push(err);
                     continue;
@@ -544,7 +544,7 @@ impl KeyRegistry {
                         }
                         continue;
                     }
-                    let toml_doc = format!("action = \"{}\"", action_str);
+                    let toml_doc = format!("action = \"{action_str}\"");
                     if let Ok(mut wrapper) =
                         toml::from_str::<std::collections::HashMap<String, KeyAction>>(&toml_doc)
                     {
@@ -569,17 +569,17 @@ impl KeyRegistry {
                                 );
                             }
                         } else {
-                            let err = format!("Unknown action '{}'", action_str);
+                            let err = format!("Unknown action '{action_str}'");
                             tracing::error!("{}", err);
                             errors.push(err);
                         }
                     } else {
-                        let err = format!("Failed to parse action '{}'", action_str);
+                        let err = format!("Failed to parse action '{action_str}'");
                         tracing::error!("{}", err);
                         errors.push(err);
                     }
                 } else {
-                    let err = format!("Invalid key sequence '{}'", key_str);
+                    let err = format!("Invalid key sequence '{key_str}'");
                     tracing::error!("{}", err);
                     errors.push(err);
                 }

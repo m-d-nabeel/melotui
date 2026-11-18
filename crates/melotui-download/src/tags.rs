@@ -69,14 +69,14 @@ pub fn retag(report: &str) -> Result<PathBuf, String> {
     let song = song_name(&Video {
         title: field("title").unwrap_or_default(),
         track: field("track"),
-        artist: field("artist").or(artists.as_deref().filter(|a| !a.is_empty())),
+        artist: field("artist").or_else(|| artists.as_deref().filter(|a| !a.is_empty())),
         album: field("album"),
-        uploader: field("uploader").or(field("channel")),
+        uploader: field("uploader").or_else(|| field("channel")),
     });
     // A tagging library that panics over some odd file must not take the
     // download's progress down with it.
     melotui_core::utils::panic::guarded(|| write_tags(&path, &song.title, song.artist.as_deref()))
-        .map_err(|_| format!("the tag library failed on {path:?}"))??;
+        .map_err(|_| format!("the tag library failed on {}", path.display()))??;
     Ok(path)
 }
 

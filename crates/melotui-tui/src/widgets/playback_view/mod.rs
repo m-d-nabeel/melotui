@@ -62,20 +62,14 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState) {
         let title_line = if let Some(track) = current_track {
             let artist = track.artist.as_deref().unwrap_or("Unknown");
             Line::from(vec![
-                Span::styled(
-                    format!("{} ", status_icon),
-                    Style::default().fg(status_color),
-                ),
+                Span::styled(format!("{status_icon} "), Style::default().fg(status_color)),
                 Span::styled(&track.title, Style::default().add_modifier(Modifier::BOLD)),
                 Span::styled(" • ", Style::default().fg(t.fg_muted)),
                 Span::styled(artist, Style::default().fg(t.fg_secondary)),
             ])
         } else {
             Line::from(vec![
-                Span::styled(
-                    format!("{} ", status_icon),
-                    Style::default().fg(status_color),
-                ),
+                Span::styled(format!("{status_icon} "), Style::default().fg(status_color)),
                 Span::styled(
                     "No Track Selected",
                     Style::default().add_modifier(Modifier::BOLD),
@@ -203,7 +197,7 @@ pub fn draw_compact(frame: &mut Frame, area: Rect, state: &AppState) {
             let artist = track.artist.as_deref().unwrap_or("Unknown");
             Line::from(vec![
                 Span::styled(
-                    format!(" {} ", status_icon),
+                    format!(" {status_icon} "),
                     Style::default().fg(status_color),
                 ),
                 Span::styled(
@@ -218,7 +212,7 @@ pub fn draw_compact(frame: &mut Frame, area: Rect, state: &AppState) {
         } else {
             Line::from(vec![
                 Span::styled(
-                    format!(" {} ", status_icon),
+                    format!(" {status_icon} "),
                     Style::default().fg(status_color),
                 ),
                 Span::styled("No Track", Style::default().fg(t.fg_muted)),
@@ -284,7 +278,7 @@ pub fn draw_compact(frame: &mut Frame, area: Rect, state: &AppState) {
             "--:--".to_string()
         };
         frame.render_widget(
-            Paragraph::new(format!("{} ", total_str))
+            Paragraph::new(format!("{total_str} "))
                 .alignment(Alignment::Right)
                 .style(Style::default().fg(t.fg_muted)),
             h_chunks[2],

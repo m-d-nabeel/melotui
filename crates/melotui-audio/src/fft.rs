@@ -532,7 +532,7 @@ mod tests {
     #[test]
     fn test_spectrum_analyzer_full_frame() {
         let (mut prod, mut analyzer) = analyzer();
-        prod.push_slice(&[0.5; 8192]);
+        prod.push_slice(&vec![0.5; 8192]);
         let data = analyzer
             .next_spectrum_at(Instant::now())
             .expect("a window's worth is waiting");

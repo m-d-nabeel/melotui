@@ -5,6 +5,7 @@ Versions are dates: the year, the month, and a count of the releases in that mon
 ## Unreleased
 
 - **melotui is on crates.io**: `cargo install --locked melotui` builds it, and `cargo binstall melotui` fetches the release download. Each of the crates it is made of has a page there saying what it does.
+- `cargo install melotui` builds on Linux with musl (Alpine and the like): it failed to link, calling a memory function only glibc has.
 - The `dist` build profile is gone: the release downloads are built with `cargo build --release`, which now strips the binary. The profile's extra optimization made melotui play no lighter, and a release build is what `cargo install` makes anyway.
 
 ## 2026.11.1

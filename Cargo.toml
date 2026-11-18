@@ -40,6 +40,47 @@ melotui-tui = { path = "crates/melotui-tui", version = "=2026.11.1" }
 # the default set also builds an AVIF encoder that nothing here uses.
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "gif", "bmp", "rayon"] }
 
+# Lints beyond clippy's defaults that the code keeps to; CI's clippy treats
+# every warning as an error, so they stay kept. Chosen from clippy's pedantic
+# and nursery groups for catching real waste or mistakes (a clone not needed,
+# a value built though unused, a match that would swallow a variant added
+# later) or for reading plainly (`format!("{x}")`, let-else). Left out on
+# purpose: `use_self`, `unreadable_literal`, the casts, `missing_const_for_fn`,
+# `must_use_candidate` and `suboptimal_flops` — thousands of changes of taste
+# in DSP code, or `mul_add`, slower without FMA hardware.
+[workspace.lints.clippy]
+assigning_clones = "warn"
+cloned_instead_of_copied = "warn"
+collection_is_never_read = "warn"
+equatable_if_let = "warn"
+flat_map_option = "warn"
+format_collect = "warn"
+format_push_string = "warn"
+if_not_else = "warn"
+ignored_unit_patterns = "warn"
+implicit_clone = "warn"
+inefficient_to_string = "warn"
+large_stack_arrays = "warn"
+manual_let_else = "warn"
+manual_midpoint = "warn"
+manual_ok_or = "warn"
+manual_string_new = "warn"
+map_unwrap_or = "warn"
+match_wildcard_for_single_variants = "warn"
+needless_collect = "warn"
+needless_for_each = "warn"
+needless_raw_string_hashes = "warn"
+or_fun_call = "warn"
+redundant_clone = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+unchecked_time_subtraction = "warn"
+undocumented_unsafe_blocks = "warn"
+uninlined_format_args = "warn"
+unnecessary_debug_formatting = "warn"
+unnested_or_patterns = "warn"
+unused_self = "warn"
+
 # What the release downloads are built with, as everyone else builds it:
 # `cargo build --release`. Stripped, the binary is 22 MB instead of 27; a panic
 # still says where it happened. Fat LTO and one codegen unit, measured on

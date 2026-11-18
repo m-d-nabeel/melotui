@@ -73,7 +73,11 @@ fn walk<'a>(done: &'a [&'a str]) -> Option<Place<'a>> {
 /// Every completion of `input`, in the order the command table lists them.
 pub fn complete(input: &str, names: &Names) -> Vec<Suggestion> {
     let (done, partial) = split(input);
-    let prefix: String = done.iter().map(|word| format!("{word} ")).collect();
+    let prefix: String = done.iter().fold(String::new(), |mut s, word| {
+        s.push_str(word);
+        s.push(' ');
+        s
+    });
     match walk(&done) {
         None => Vec::new(),
         Some(Place::Choosing(specs)) => specs
@@ -116,7 +120,11 @@ pub fn complete(input: &str, names: &Names) -> Vec<Suggestion> {
                     // Names can have spaces in them, so everything after the
                     // command is the name being typed.
                     let words = done.len() - typed.len();
-                    let command: String = done[..words].iter().map(|w| format!("{w} ")).collect();
+                    let command: String = done[..words].iter().fold(String::new(), |mut s, w| {
+                        s.push_str(w);
+                        s.push(' ');
+                        s
+                    });
                     let typed = after_words(input, words);
                     let (pool, help) = match values {
                         Values::Playlist => (&names.playlists, "playlist"),

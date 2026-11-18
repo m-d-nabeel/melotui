@@ -8,7 +8,7 @@ use ratatui::{
 
 use crate::image_cache::ImageCache;
 
-const BRANDING_ART_WIDE: &str = r#"
+const BRANDING_ART_WIDE: &str = r"
 ░▒▓██████████████▓▒░░▒▓████████▓▒░▒▓█▓▒░      ░▒▓██████▓▒░▒▓████████▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
 ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
 ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
@@ -16,14 +16,14 @@ const BRANDING_ART_WIDE: &str = r#"
 ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
 ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░      ░▒▓█▓▒░     ░▒▓█▓▒░░▒▓█▓▒░ ░▒▓█▓▒░   ░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░ 
 ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓████████▓▒░▒▓████████▓▒░▒▓██████▓▒░  ░▒▓█▓▒░    ░▒▓██████▓▒░░▒▓█▓▒░ 
-"#;
+";
 
 // Compact branding for narrower terminals (< 92 cols)
-const BRANDING_ART_COMPACT: &str = r#"
+const BRANDING_ART_COMPACT: &str = r"
  ╔╦╗╔═╗╦  ╔═╗╔╦╗╦ ╦╦
  ║║║║╣ ║  ║ ║ ║ ║ ║║
  ╩ ╩╚═╝╩═╝╚═╝ ╩ ╚═╝╩
-"#;
+";
 
 const DESCRIPTION: &str = "The Terminal Music Player";
 
@@ -52,7 +52,7 @@ pub fn draw(frame: &mut Frame, area: Rect, state: &AppState, cache: &mut ImageCa
         };
 
         let art_clean = art.trim_matches('\n');
-        let content = format!("{}\n\n{}", art_clean, DESCRIPTION);
+        let content = format!("{art_clean}\n\n{DESCRIPTION}");
 
         let content_height = (art_clean.lines().count() + 2) as u16;
         let y_offset = inner_area.height.saturating_sub(content_height) / 2;

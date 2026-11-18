@@ -138,12 +138,11 @@ fn draw_queue_table(
         .enumerate()
         .map(|(i, entry)| {
             let track = state.library.get_track(entry.track_id);
-            let title = track.map(|t| t.title.as_str()).unwrap_or("Unknown");
-            let duration = track.map(|t| t.duration_ms).unwrap_or(0);
+            let title = track.map_or("Unknown", |t| t.title.as_str());
+            let duration = track.map_or(0, |t| t.duration_ms);
 
             let is_selected = selected_idx == i;
-            let is_current =
-                is_playing_queue && playing_id.map(|p| p == entry.track_id).unwrap_or(false);
+            let is_current = is_playing_queue && playing_id.is_some_and(|p| p == entry.track_id);
 
             let mut row_style = Style::default();
             if is_selected {

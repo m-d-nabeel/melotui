@@ -32,3 +32,5 @@ cosmic-text = "0.19"
 tui-input = { version = "0.15.3", features = ["ratatui-crossterm"] }
 toml = "1.1.2"
 
+[lints]
+workspace = true

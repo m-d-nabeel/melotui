@@ -166,7 +166,7 @@ impl OpusSource {
             .find(|track| track.codec_params.codec == CODEC_TYPE_OPUS)
             .ok_or("there is no Opus in it")?;
         let params = &track.codec_params;
-        let channels = params.channels.map_or(0, |channels| channels.count());
+        let channels = params.channels.map_or(0, Channels::count);
         if !(1..=8).contains(&channels) {
             return Err(format!("Opus in {channels} channels is not played"));
         }

@@ -39,8 +39,7 @@ fn is_loss(kind: ErrorKind) -> bool {
 fn name_of(device: &cpal::Device) -> String {
     let name = device
         .description()
-        .map(|d| d.name().to_string())
-        .unwrap_or_else(|_| "unknown device".to_string());
+        .map_or_else(|_| "unknown device".to_string(), |d| d.name().to_string());
     // ALSA joins a card and its device with ", ", leaving a dangling comma
     // for a device with no name of its own.
     name.trim_end_matches([',', ' ']).to_string()
@@ -72,12 +71,9 @@ pub fn device_names() -> Vec<String> {
 /// whose name contains it, ignoring case.
 fn find_device(wanted: &str) -> Result<cpal::Device, String> {
     let host = cpal::default_host();
-    let devices: Vec<cpal::Device> = host
+    let named: Vec<(String, cpal::Device)> = host
         .output_devices()
         .map_err(|e| format!("cannot list output devices: {e}"))?
-        .collect();
-    let named: Vec<(String, cpal::Device)> = devices
-        .into_iter()
         .map(|d| (name_of(&d), d))
         .filter(|(name, _)| !is_plumbing(name))
         .collect();
@@ -115,8 +111,7 @@ pub fn open(
         None => {
             let name = cpal::default_host()
                 .default_output_device()
-                .map(|d| name_of(&d))
-                .unwrap_or_else(|| "default".to_string());
+                .map_or_else(|| "default".to_string(), |d| name_of(&d));
             let builder =
                 rodio::DeviceSinkBuilder::from_default_device().map_err(|e| e.to_string())?;
             (builder, name)
