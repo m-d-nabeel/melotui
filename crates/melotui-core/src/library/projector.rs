@@ -190,7 +190,7 @@ where
         let has_children = !subdir.subdirs.is_empty() || !subdir.tracks.is_empty();
 
         if visitor(SidebarRow {
-            id: id.clone(),
+            id,
             label: subdir.name.clone(),
             level,
             is_expandable: has_children,
@@ -513,7 +513,7 @@ mod layout_tests {
         assert!(std::sync::Arc::ptr_eq(&first, &again), "laid out again");
 
         // Moving the selection or scrolling is not a change to the layout.
-        let mut moved = nav.clone();
+        let mut moved = nav;
         moved.scroll_offset = 9;
         moved.selected_id = Some(SidebarNodeId::Root);
         assert!(std::sync::Arc::ptr_eq(&first, &rows(&library, &moved)));

@@ -169,7 +169,7 @@ fn render_eq_slider(
         Style::default().fg(label_color).bg(bg)
     };
     frame.render_widget(
-        Paragraph::new(format!("{:>5} ", label)).style(label_style),
+        Paragraph::new(format!("{label:>5} ")).style(label_style),
         cols[0],
     );
 
@@ -180,7 +180,7 @@ fn render_eq_slider(
 
     // Value
     frame.render_widget(
-        Paragraph::new(format!(" {:+.0}dB", value))
+        Paragraph::new(format!(" {value:+.0}dB"))
             .alignment(Alignment::Left)
             .style(Style::default().fg(label_color).bg(bg)),
         cols[2],
@@ -582,7 +582,7 @@ fn render_inline_control(
     // Value
     let val_str = (item.fmt)(item.value);
     frame.render_widget(
-        Paragraph::new(format!("{:>7}", val_str))
+        Paragraph::new(format!("{val_str:>7}"))
             .alignment(Alignment::Right)
             .style(Style::default().fg(label_color).bg(bg)),
         cols[2],
@@ -627,11 +627,11 @@ fn format_percent(v: f32) -> String {
 }
 
 fn format_speed(v: f32) -> String {
-    format!("x{:.1}", v)
+    format!("x{v:.1}")
 }
 
 fn format_mult(v: f32) -> String {
-    format!("x{:.1}", v)
+    format!("x{v:.1}")
 }
 
 fn format_pan(v: f32) -> String {
@@ -648,7 +648,7 @@ fn format_hz(v: f32) -> String {
     if v < 0.01 {
         "Off".to_string()
     } else {
-        format!("{:.2}Hz", v)
+        format!("{v:.2}Hz")
     }
 }
 
@@ -676,7 +676,7 @@ fn format_lopass(v: f32) -> String {
     } else if v >= 1000.0 {
         format!("{:.1}k", v / 1000.0)
     } else {
-        format!("{:.0}Hz", v)
+        format!("{v:.0}Hz")
     }
 }
 
@@ -686,7 +686,7 @@ fn format_hipass(v: f32) -> String {
     } else if v >= 1000.0 {
         format!("{:.1}k", v / 1000.0)
     } else {
-        format!("{:.0}Hz", v)
+        format!("{v:.0}Hz")
     }
 }
 
@@ -694,6 +694,6 @@ fn format_exciter(v: f32) -> String {
     if v < 0.05 {
         "Off".to_string()
     } else {
-        format!("+{:.1}", v)
+        format!("+{v:.1}")
     }
 }

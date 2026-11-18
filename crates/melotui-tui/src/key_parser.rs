@@ -1,12 +1,19 @@
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 
-/// Parses a Vim-style key string into a Crossterm KeyCode and KeyModifiers.
-/// Examples:
-/// "j" -> (KeyCode::Char('j'), KeyModifiers::empty())
-/// "<C-c>" -> (KeyCode::Char('c'), KeyModifiers::CONTROL)
-/// "<S-Up>" -> (KeyCode::Up, KeyModifiers::SHIFT)
-/// "<A-Enter>" -> (KeyCode::Enter, KeyModifiers::ALT)
-/// "<Space>" or "Space" -> (KeyCode::Char(' '), KeyModifiers::empty())
+/// Parses a Vim-style key string into a crossterm `KeyCode` and
+/// `KeyModifiers`:
+///
+/// ```text
+/// "j"                  -> (Char('j'), empty)
+/// "<C-c>"              -> (Char('c'), CONTROL)
+/// "<S-Up>"             -> (Up, SHIFT)
+/// "<A-Enter>"          -> (Enter, ALT)
+/// "<Space>" or "Space" -> (Char(' '), empty)
+/// ```
+///
+/// # Errors
+///
+/// When the string names no key, or a modifier it does not know.
 pub fn parse_key(s: &str) -> Result<(KeyCode, KeyModifiers), String> {
     let s = s.trim();
     if s.is_empty() {
@@ -50,7 +57,7 @@ pub fn parse_key(s: &str) -> Result<(KeyCode, KeyModifiers), String> {
                     "c" | "ctrl" => modifiers.insert(KeyModifiers::CONTROL),
                     "s" | "shift" => modifiers.insert(KeyModifiers::SHIFT),
                     "a" | "alt" | "m" | "meta" => modifiers.insert(KeyModifiers::ALT),
-                    _ => return Err(format!("Unknown modifier: {}", modifier)),
+                    _ => return Err(format!("Unknown modifier: {modifier}")),
                 }
             }
         }
@@ -97,10 +104,10 @@ fn parse_keycode(s: &str) -> Result<KeyCode, String> {
                 if let Ok(num) = s[1..].parse::<u8>() {
                     Ok(KeyCode::F(num))
                 } else {
-                    Err(format!("Invalid function key: {}", s))
+                    Err(format!("Invalid function key: {s}"))
                 }
             } else {
-                Err(format!("Unknown key code: {}", s))
+                Err(format!("Unknown key code: {s}"))
             }
         }
     }

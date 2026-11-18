@@ -144,7 +144,10 @@ fn read(contents: &str) -> Result<HashMap<String, String>, String> {
 
 /// Every theme there is to choose: the built-in ones and those in `dir`.
 pub fn available_in(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = BUILT_IN.iter().map(|name| name.to_string()).collect();
+    let mut names: Vec<String> = BUILT_IN
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     if let Ok(entries) = std::fs::read_dir(dir) {
         names.extend(entries.filter_map(|entry| {
             let path = entry.ok()?.path();

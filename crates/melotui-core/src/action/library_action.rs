@@ -159,10 +159,7 @@ pub fn handle_update_scan_progress(
     }
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!(
-            "Scanning Library... {} processed ({} skipped)",
-            scanned, skipped
-        ),
+        format!("Scanning Library... {scanned} processed ({skipped} skipped)"),
     ));
     vec![]
 }
@@ -173,11 +170,10 @@ pub fn handle_add_to_queue(state: &mut AppState, track_id: TrackId) -> Vec<AppMs
     let title = state
         .library
         .get_track(track_id)
-        .map(|t| t.title.clone())
-        .unwrap_or("Track".into());
+        .map_or_else(|| "Track".into(), |t| t.title.clone());
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Added to Queue: {}", title),
+        format!("Added to Queue: {title}"),
     ));
     vec![]
 }
@@ -188,11 +184,10 @@ pub fn handle_play_next(state: &mut AppState, track_id: TrackId) -> Vec<AppMsg> 
     let title = state
         .library
         .get_track(track_id)
-        .map(|t| t.title.clone())
-        .unwrap_or("Track".into());
+        .map_or_else(|| "Track".into(), |t| t.title.clone());
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Will play next: {}", title),
+        format!("Will play next: {title}"),
     ));
     vec![]
 }
@@ -207,7 +202,7 @@ pub fn handle_toggle_repeat_mode(state: &mut AppState) -> Vec<AppMsg> {
     };
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Repeat Mode: {}", mode_str),
+        format!("Repeat Mode: {mode_str}"),
     ));
     vec![]
 }
@@ -257,7 +252,7 @@ pub fn handle_toggle_sort(state: &mut AppState) -> Vec<AppMsg> {
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Sorted by {:?} ({})", new_field, dir_str),
+        format!("Sorted by {new_field:?} ({dir_str})"),
     ));
 
     vec![]
@@ -276,15 +271,15 @@ pub fn handle_remove_from_queue(state: &mut AppState) -> Vec<AppMsg> {
         if let Some(idx) = queue.iter().position(|e| e.id == target_id) {
             queue.remove(idx);
 
-            if !queue.is_empty() {
+            if queue.is_empty() {
+                state.session.nav.queue.selected_queue_id = None;
+            } else {
                 let new_idx = if idx >= queue.len() {
                     queue.len() - 1
                 } else {
                     idx
                 };
                 state.session.nav.queue.selected_queue_id = Some(queue[new_idx].id);
-            } else {
-                state.session.nav.queue.selected_queue_id = None;
             }
 
             state.session.notification.current = Some(Notification::new(
@@ -314,11 +309,7 @@ pub fn handle_request_quit(state: &mut AppState) -> Vec<AppMsg> {
 }
 
 pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<AppMsg> {
-    let current_status = state
-        .library
-        .get_track(id)
-        .map(|t| t.is_favorite)
-        .unwrap_or(false);
+    let current_status = state.library.get_track(id).is_some_and(|t| t.is_favorite);
     let new_status = !current_status;
 
     // save index if removing selected fav to keep cursor stable
@@ -367,8 +358,7 @@ pub fn handle_request_toggle_favorite(state: &mut AppState, id: TrackId) -> Vec<
     let title = state
         .library
         .get_track(id)
-        .map(|t| t.title.clone())
-        .unwrap_or_else(|| "Track".to_string());
+        .map_or_else(|| "Track".to_string(), |t| t.title.clone());
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
@@ -394,29 +384,26 @@ pub fn handle_request_create_playlist(state: &mut AppState, name: String) -> Vec
     if state.library.find_playlist_by_name(&name).is_some() {
         state.session.notification.current = Some(Notification::new(
             NotificationKind::Warning,
-            format!("Playlist '{}' already exists", name),
+            format!("Playlist '{name}' already exists"),
         ));
         return vec![];
     }
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Creating playlist: {}", name),
+        format!("Creating playlist: {name}"),
     ));
 
     vec![AppMsg::Database(DatabaseMsg::DispatchCreatePlaylist(name))]
 }
 
 pub fn handle_request_delete_playlist(state: &mut AppState, name: String) -> Vec<AppMsg> {
-    let pid = match state.library.find_playlist_by_name(&name) {
-        Some(id) => id,
-        None => {
-            state.session.notification.current = Some(Notification::new(
-                NotificationKind::Warning,
-                format!("Playlist '{}' not found", name),
-            ));
-            return vec![];
-        }
+    let Some(pid) = state.library.find_playlist_by_name(&name) else {
+        state.session.notification.current = Some(Notification::new(
+            NotificationKind::Warning,
+            format!("Playlist '{name}' not found"),
+        ));
+        return vec![];
     };
 
     // adjust selection to next/prev sibling before removing
@@ -439,7 +426,7 @@ pub fn handle_request_delete_playlist(state: &mut AppState, name: String) -> Vec
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Deleted playlist: {}", name),
+        format!("Deleted playlist: {name}"),
     ));
 
     vec![AppMsg::Database(DatabaseMsg::DispatchDeletePlaylist(pid))]
@@ -454,20 +441,18 @@ pub fn handle_request_add_to_playlist(
         .library
         .playlists
         .get(&playlist_id)
-        .map(|p| p.name.clone())
-        .unwrap_or_else(|| "Playlist".to_string());
+        .map_or_else(|| "Playlist".to_string(), |p| p.name.clone());
 
     let track_title = state
         .library
         .get_track(track_id)
-        .map(|t| t.title.clone())
-        .unwrap_or_else(|| "Track".to_string());
+        .map_or_else(|| "Track".to_string(), |t| t.title.clone());
 
     state.library.add_track_to_playlist(playlist_id, track_id);
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Added '{}' to '{}'", track_title, pl_name),
+        format!("Added '{track_title}' to '{pl_name}'"),
     ));
 
     vec![AppMsg::Database(DatabaseMsg::DispatchAddToPlaylist {
@@ -484,8 +469,7 @@ pub fn handle_request_remove_from_playlist(
     let track_title = state
         .library
         .get_track(track_id)
-        .map(|t| t.title.clone())
-        .unwrap_or_else(|| "Track".to_string());
+        .map_or_else(|| "Track".to_string(), |t| t.title.clone());
 
     // save index if removing selected track to keep cursor stable
     let mut restore_selection_idx = None;
@@ -530,7 +514,7 @@ pub fn handle_request_remove_from_playlist(
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Removed '{}' from playlist", track_title),
+        format!("Removed '{track_title}' from playlist"),
     ));
 
     vec![AppMsg::Database(DatabaseMsg::DispatchRemoveFromPlaylist {
@@ -560,7 +544,7 @@ pub fn handle_search(state: &mut AppState, field: SearchField, query: String) ->
     if search.matches.is_empty() {
         state.session.notification.current = Some(Notification::new(
             NotificationKind::Warning,
-            format!("No results for {} {}", field, query),
+            format!("No results for {field} {query}"),
         ));
         return vec![];
     }
@@ -600,7 +584,7 @@ fn navigate_to_current_match(state: &mut AppState) {
     let label = search
         .field
         .as_ref()
-        .map(|f| format!("{}", f))
+        .map(|f| format!("{f}"))
         .unwrap_or_default();
     let query = search.query.clone();
 
@@ -627,7 +611,7 @@ fn navigate_to_current_match(state: &mut AppState) {
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("[{}/{}] {} {}", idx_display, total, label, query),
+        format!("[{idx_display}/{total}] {label} {query}"),
     ));
 }
 

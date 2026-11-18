@@ -13,6 +13,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use windows::core::w;
 
 unsafe extern "system" fn procedure(window: HWND, message: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+    // SAFETY: Windows calls this with a message for our window, whose
+    // arguments are passed on unchanged to the default handling.
     unsafe { DefWindowProcW(window, message, w, l) }
 }
 
@@ -21,6 +23,9 @@ pub fn spawn() -> Option<isize> {
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::Builder::new()
         .name("media-window".into())
+        // SAFETY: plain Win32 calls on this thread's own window class and
+        // window: each handle passed is one just created here, or null where
+        // the API allows it, and the window lives as long as the thread.
         .spawn(move || unsafe {
             let Ok(module) = GetModuleHandleW(None) else {
                 let _ = tx.send(None);

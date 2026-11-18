@@ -214,7 +214,7 @@ pub fn handle_delete_playlist_confirm(state: &mut AppState) -> Vec<AppMsg> {
     };
     handle_show_confirm(
         state,
-        format!("Delete playlist \"{}\"?", name),
+        format!("Delete playlist \"{name}\"?"),
         Box::new(AppMsg::Library(LibraryMsg::RequestDeletePlaylist(name))),
     )
 }
@@ -314,9 +314,8 @@ fn picker_max_index(state: &AppState) -> usize {
 
 pub fn handle_submit_playlist_picker(state: &mut AppState) -> Vec<AppMsg> {
     let picker = &state.session.ui.playlist_picker;
-    let track_id = match picker.track_id {
-        Some(id) => id,
-        None => return vec![], // should not happen
+    let Some(track_id) = picker.track_id else {
+        return vec![]; // should not happen
     };
 
     let query = picker.query.trim();
@@ -498,7 +497,7 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
 
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Info,
-                    format!("Fetching lyrics for {}...", track_name),
+                    format!("Fetching lyrics for {track_name}..."),
                 ));
                 vec![AppMsg::Download(DownloadMsg::RequestFetchLyrics {
                     track_name,
@@ -574,15 +573,12 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 }
             };
 
-            let playlist_id = match state.library.find_playlist_by_name(&name) {
-                Some(id) => id,
-                None => {
-                    state.session.notification.current = Some(Notification::new(
-                        NotificationKind::Warning,
-                        format!("Playlist '{}' not found", name),
-                    ));
-                    return vec![];
-                }
+            let Some(playlist_id) = state.library.find_playlist_by_name(&name) else {
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Warning,
+                    format!("Playlist '{name}' not found"),
+                ));
+                return vec![];
             };
 
             vec![AppMsg::Library(LibraryMsg::RequestAddToPlaylist {
@@ -602,15 +598,12 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 }
             };
 
-            let playlist_id = match state.library.find_playlist_by_name(&name) {
-                Some(id) => id,
-                None => {
-                    state.session.notification.current = Some(Notification::new(
-                        NotificationKind::Warning,
-                        format!("Playlist '{}' not found", name),
-                    ));
-                    return vec![];
-                }
+            let Some(playlist_id) = state.library.find_playlist_by_name(&name) else {
+                state.session.notification.current = Some(Notification::new(
+                    NotificationKind::Warning,
+                    format!("Playlist '{name}' not found"),
+                ));
+                return vec![];
             };
 
             vec![AppMsg::Library(LibraryMsg::RequestRemoveFromPlaylist {
@@ -814,12 +807,12 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             if let Err(e) = preset.save() {
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Error,
-                    format!("Failed to save preset '{}': {}", name, e),
+                    format!("Failed to save preset '{name}': {e}"),
                 ));
             } else {
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Info,
-                    format!("Preset '{}' saved", name),
+                    format!("Preset '{name}' saved"),
                 ));
             }
             vec![]
@@ -829,14 +822,14 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
                 preset.params.apply_to_audio_state(&mut state.session.audio);
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Info,
-                    format!("Preset '{}' loaded", name),
+                    format!("Preset '{name}' loaded"),
                 ));
                 crate::action::audio_action::sync_audio_thread(&state.session.audio)
             }
             Err(e) => {
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Error,
-                    format!("Failed to load preset '{}': {}", name, e),
+                    format!("Failed to load preset '{name}': {e}"),
                 ));
                 vec![]
             }
@@ -845,12 +838,12 @@ fn process_command_input(state: &mut AppState, input: String) -> Vec<AppMsg> {
             if let Err(e) = crate::state::DspPreset::delete(&name) {
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Error,
-                    format!("Failed to delete preset '{}': {}", name, e),
+                    format!("Failed to delete preset '{name}': {e}"),
                 ));
             } else {
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Info,
-                    format!("Preset '{}' deleted", name),
+                    format!("Preset '{name}' deleted"),
                 ));
             }
             vec![]
@@ -935,7 +928,7 @@ pub fn handle_set_focus_mode(state: &mut AppState, mode: FocusMode) -> Vec<AppMs
 pub fn handle_set_sidebar_width(state: &mut AppState, width: u16) -> Vec<AppMsg> {
     state.session.ui.sidebar_width = width;
     state.session.notification.current = Some(
-        Notification::new(NotificationKind::Info, format!("Sidebar width: {}", width))
+        Notification::new(NotificationKind::Info, format!("Sidebar width: {width}"))
             .with_duration(2),
     );
     vec![]
@@ -1039,7 +1032,7 @@ pub fn handle_command_history_next(state: &mut AppState) -> Vec<AppMsg> {
                 tui_input::Input::new(cmd.clone()).with_cursor(cmd.len());
         } else {
             state.session.ui.history_index = None;
-            state.session.ui.command_buffer = tui_input::Input::new("".to_string());
+            state.session.ui.command_buffer = tui_input::Input::new(String::new());
         }
     }
     vec![]
@@ -1393,10 +1386,10 @@ pub fn handle_preset_picker_move_up(state: &mut AppState) -> Vec<AppMsg> {
 
 pub fn handle_preset_picker_move_down(state: &mut AppState) -> Vec<AppMsg> {
     let filtered_len = preset_picker_filtered(state).len();
-    let total_items = if !state.session.ui.preset_picker.query.trim().is_empty() {
-        filtered_len + 1
-    } else {
+    let total_items = if state.session.ui.preset_picker.query.trim().is_empty() {
         filtered_len
+    } else {
+        filtered_len + 1
     };
     let max_idx = total_items.saturating_sub(1);
     let picker = &mut state.session.ui.preset_picker;
@@ -1437,7 +1430,7 @@ pub fn handle_submit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
                 preset.params.apply_to_audio_state(&mut state.session.audio);
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Info,
-                    format!("Preset '{}' loaded", name),
+                    format!("Preset '{name}' loaded"),
                 ));
                 msgs.extend(crate::action::audio_action::sync_audio_thread(
                     &state.session.audio,
@@ -1446,7 +1439,7 @@ pub fn handle_submit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
             Err(e) => {
                 state.session.notification.current = Some(Notification::new(
                     NotificationKind::Error,
-                    format!("Failed to load preset '{}': {}", name, e),
+                    format!("Failed to load preset '{name}': {e}"),
                 ));
             }
         }
@@ -1459,12 +1452,12 @@ pub fn handle_submit_preset_picker(state: &mut AppState) -> Vec<AppMsg> {
         if let Err(e) = preset.save() {
             state.session.notification.current = Some(Notification::new(
                 NotificationKind::Error,
-                format!("Failed to save preset '{}': {}", query, e),
+                format!("Failed to save preset '{query}': {e}"),
             ));
         } else {
             state.session.notification.current = Some(Notification::new(
                 NotificationKind::Info,
-                format!("Preset '{}' saved", query),
+                format!("Preset '{query}' saved"),
             ));
         }
     }

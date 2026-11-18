@@ -92,7 +92,7 @@ pub fn draw_picker(frame: &mut Frame, area: Rect, state: &AppState, config: Pick
             };
 
             let prefix = if *is_create { "+ " } else { "  " };
-            ListItem::new(format!("{}{}", prefix, name)).style(style)
+            ListItem::new(format!("{prefix}{name}")).style(style)
         })
         .collect();
 

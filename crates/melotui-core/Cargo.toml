@@ -24,3 +24,6 @@ lrc = "0.2"
 
 [dev-dependencies]
 tempfile = "3.12"
+
+[lints]
+workspace = true

@@ -14,5 +14,5 @@ pub fn format_duration(ms: u64) -> String {
     let seconds = ms / 1000;
     let minutes = seconds / 60;
     let rem_seconds = seconds % 60;
-    format!("{:02}:{:02}", minutes, rem_seconds)
+    format!("{minutes:02}:{rem_seconds:02}")
 }

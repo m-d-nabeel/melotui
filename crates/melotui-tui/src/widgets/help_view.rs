@@ -180,19 +180,13 @@ pub fn draw(
 
     let areas = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints(
-            widths
-                .iter()
-                .enumerate()
-                .flat_map(|(c, &w)| {
-                    let mut parts = vec![Constraint::Length(w)];
-                    if c + 1 < widths.len() {
-                        parts.push(Constraint::Length(gap));
-                    }
-                    parts
-                })
-                .collect::<Vec<_>>(),
-        )
+        .constraints(widths.iter().enumerate().flat_map(|(c, &w)| {
+            let mut parts = vec![Constraint::Length(w)];
+            if c + 1 < widths.len() {
+                parts.push(Constraint::Length(gap));
+            }
+            parts
+        }))
         .split(inner);
     for (lines, area) in column_lines.into_iter().zip(areas.iter().step_by(2)) {
         frame.render_widget(Paragraph::new(lines).scroll((scroll, 0)), *area);
@@ -244,7 +238,7 @@ fn boxed(section: &Section, width: u16, t: &Theme) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(vec![
         Span::styled("╭─ ", border),
         Span::styled(
-            section.title.to_string(),
+            section.title.clone(),
             Style::default()
                 .fg(t.help_header)
                 .add_modifier(Modifier::BOLD),
@@ -281,8 +275,8 @@ fn boxed(section: &Section, width: u16, t: &Theme) -> Vec<Line<'static>> {
             _ => (key.clone(), String::new()),
         };
         let key_spans = vec![
-            Span::styled(name.clone(), Style::default().fg(t.help_key)),
-            Span::styled(args.clone(), Style::default().fg(t.help_subtext)),
+            Span::styled(name, Style::default().fg(t.help_key)),
+            Span::styled(args, Style::default().fg(t.help_subtext)),
         ];
         let key_fits = key.width() <= key_width;
         if !key_fits {
@@ -473,7 +467,7 @@ fn format_key(binding: &KeyBinding) -> String {
         KeyCode::BackTab => "Shift+Tab".to_string(),
         KeyCode::Backspace => "⌫".to_string(),
         KeyCode::Delete => "Del".to_string(),
-        KeyCode::F(n) => format!("F{}", n),
+        KeyCode::F(n) => format!("F{n}"),
         _ => format!("{:?}", binding.key),
     };
 

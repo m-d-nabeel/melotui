@@ -134,8 +134,7 @@ fn render_row(
 ) -> ListItem<'static> {
     let is_selected = state
         .get_library_selection()
-        .map(|id| id == &row.id)
-        .unwrap_or(false);
+        .is_some_and(|id| id == &row.id);
 
     let is_playing_track = is_playing_row(&row.id, state.get_playing_track_id());
 
@@ -178,7 +177,7 @@ fn render_row(
             | SidebarNodeId::Genre(_)
             | SidebarNodeId::Year(_) => Style::default().fg(t.icon_category),
             SidebarNodeId::Track { .. } => Style::default().fg(base_color),
-            _ => Style::default().fg(t.fg_secondary),
+            SidebarNodeId::Root => Style::default().fg(t.fg_secondary),
         }
     } else {
         Style::default().fg(t.fg_muted)
@@ -283,7 +282,7 @@ fn get_icon(
                 CategoryId::RecentlyPlayed => "󰥔",
                 CategoryId::MostPlayed => "󰓎",
             };
-            format!("{} {} ", arrow, icon)
+            format!("{arrow} {icon} ")
         }
         SidebarNodeId::Folder(_) => {
             if is_expandable {

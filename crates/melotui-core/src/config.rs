@@ -284,7 +284,7 @@ impl AppConfig {
         let mut unknown: Vec<String> = Vec::new();
         let parsed = toml::Deserializer::parse(contents).and_then(|file| {
             serde_ignored::deserialize::<_, _, AppConfig>(file, |setting| {
-                unknown.push(setting.to_string())
+                unknown.push(setting.to_string());
             })
         });
         match parsed {
@@ -301,7 +301,7 @@ impl AppConfig {
             Err(e) => {
                 tracing::warn!("Failed to parse config {:?}: {}", path, e);
                 let mut config = Self::default();
-                config.startup_errors.push(format!("Config Error: {}", e));
+                config.startup_errors.push(format!("Config Error: {e}"));
                 config.finished()
             }
         }
@@ -341,7 +341,10 @@ impl AppConfig {
                     std::collections::HashMap<String, std::collections::HashMap<String, String>>,
                 >(&contents)
                 {
-                    let err_msg = format!("Failed to parse keymaps file {:?}: {}", keymaps_path, e);
+                    let err_msg = format!(
+                        "Failed to parse keymaps file {}: {e}",
+                        keymaps_path.display()
+                    );
                     tracing::warn!("{}", err_msg);
                     self.startup_errors.push(err_msg);
                 }
@@ -503,10 +506,10 @@ mod tests {
 
     #[test]
     fn test_parse_minimal_toml() {
-        let toml_str = r#"
+        let toml_str = r"
             [ui]
             sidebar_width = 40
-        "#;
+        ";
         let config: AppConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(config.ui.sidebar_width, 40);
         assert_eq!(config.ui.scrolloff, 8); // default
@@ -620,14 +623,14 @@ mod tests {
 
     #[test]
     fn test_validation_clamps() {
-        let toml_str = r#"
+        let toml_str = r"
             [ui]
             sidebar_width = 200
             scrolloff = 50
 
             [audio]
             default_speed = 10.0
-        "#;
+        ";
         let config: AppConfig = toml::from_str::<AppConfig>(toml_str).unwrap().validated();
         assert_eq!(config.ui.sidebar_width, 80);
         assert_eq!(config.ui.scrolloff, 20);

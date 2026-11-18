@@ -41,7 +41,7 @@ impl DspPreset {
     pub fn load(name: &str) -> Result<Self> {
         let path = Self::preset_path(name)?;
         if !path.exists() {
-            anyhow::bail!("Preset '{}' does not exist", name);
+            anyhow::bail!("Preset '{name}' does not exist");
         }
         let content = std::fs::read_to_string(&path)?;
         let preset: Self = toml::from_str(&content)?;
@@ -65,7 +65,7 @@ impl DspPreset {
 
     fn preset_path(name: &str) -> Result<PathBuf> {
         let name = valid_preset_name(name)?;
-        Ok(Self::presets_dir()?.join(format!("{}.toml", name)))
+        Ok(Self::presets_dir()?.join(format!("{name}.toml")))
     }
 }
 
@@ -75,15 +75,14 @@ fn valid_preset_name(name: &str) -> Result<&str> {
         anyhow::bail!("Preset name cannot be empty");
     }
     if trimmed != name || trimmed == "." || trimmed == ".." || trimmed.starts_with('.') {
-        anyhow::bail!("Invalid preset name '{}'", name);
+        anyhow::bail!("Invalid preset name '{name}'");
     }
     if !trimmed
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_' | '.'))
     {
         anyhow::bail!(
-            "Invalid preset name '{}'. Use letters, numbers, spaces, '.', '-' or '_'",
-            name
+            "Invalid preset name '{name}'. Use letters, numbers, spaces, '.', '-' or '_'"
         );
     }
     Ok(trimmed)

@@ -293,7 +293,7 @@ impl ImageCache {
         // Source changed — update reference and invalidate the protocol.
         // The protocol will be created by update_protocol() on the next render.
         local.forget_image();
-        local.source = core_cover.clone(); // Arc clone = ref count increment only
+        local.source.clone_from(core_cover); // Arc clone = ref count increment only
     }
 }
 

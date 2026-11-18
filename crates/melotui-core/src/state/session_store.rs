@@ -493,7 +493,7 @@ impl PersistedSession {
         state.session.dsp_spectrum_style = self.dsp_spectrum_style.clone();
         self.dsp.apply_to_audio_state(&mut state.session.audio);
         if self.output_device.is_some() {
-            state.session.output.wanted = self.output_device.clone();
+            state.session.output.wanted.clone_from(&self.output_device);
         }
         if let Some(theme) = self.theme.as_deref()
             && self.theme_in_config.as_deref() == Some(state.config.ui.theme.as_str())

@@ -214,7 +214,7 @@ fn handle_command(
                 Err(e) => {
                     tracing::error!("Failed to set favorite: {:?}", e);
                     worker.send(IpcEvent::Error {
-                        message: format!("Failed to set favorite: {}", e),
+                        message: format!("Failed to set favorite: {e}"),
                     });
                 }
             }
@@ -227,7 +227,7 @@ fn handle_command(
             Err(e) => {
                 tracing::error!("Failed to create playlist: {:?}", e);
                 worker.send(IpcEvent::Error {
-                    message: format!("Failed to create playlist: {}", e),
+                    message: format!("Failed to create playlist: {e}"),
                 });
             }
         },
@@ -241,7 +241,7 @@ fn handle_command(
                 Err(e) => {
                     tracing::error!("Failed to delete playlist: {:?}", e);
                     worker.send(IpcEvent::Error {
-                        message: format!("Failed to delete playlist: {}", e),
+                        message: format!("Failed to delete playlist: {e}"),
                     });
                 }
             }
@@ -263,7 +263,7 @@ fn handle_command(
                 Err(e) => {
                     tracing::error!("Failed to add to playlist: {:?}", e);
                     worker.send(IpcEvent::Error {
-                        message: format!("Failed to add to playlist: {}", e),
+                        message: format!("Failed to add to playlist: {e}"),
                     });
                 }
             }
@@ -285,7 +285,7 @@ fn handle_command(
                 Err(e) => {
                     tracing::error!("Failed to remove from playlist: {:?}", e);
                     worker.send(IpcEvent::Error {
-                        message: format!("Failed to remove from playlist: {}", e),
+                        message: format!("Failed to remove from playlist: {e}"),
                     });
                 }
             }
@@ -447,12 +447,11 @@ fn tracks_under(conn: &rusqlite::Connection, root: &Path) -> usize {
         return 0;
     };
     stmt.query_map([], |row| row.get::<_, String>(0))
-        .map(|rows| {
+        .map_or(0, |rows| {
             rows.flatten()
                 .filter(|path| Path::new(path).starts_with(root))
                 .count()
         })
-        .unwrap_or(0)
 }
 
 impl<W: IpcWorker<DatabaseCommand>> Scan<'_, W> {
@@ -644,7 +643,15 @@ fn fingerprint(path: &Path) -> Option<String> {
         hasher.update(&chunk);
     }
     let digest = hasher.finalize();
-    Some(digest[..16].iter().map(|b| format!("{b:02x}")).collect())
+    Some(
+        digest[..16]
+            .iter()
+            .fold(String::with_capacity(32), |mut s, b| {
+                use std::fmt::Write;
+                let _ = write!(s, "{b:02x}");
+                s
+            }),
+    )
 }
 
 fn set_fingerprint(conn: &rusqlite::Connection, path: &str, print: &str) -> Result<()> {
@@ -736,9 +743,11 @@ fn extract_track_data(path: &Path) -> Option<TrackData> {
     let album = tag.and_then(|t| t.album().map(|s| s.to_string()));
     let genre = tag.and_then(|t| t.genre().map(|s| s.to_string()));
     // The year of the recording date; lofty reads the plain year tag as one.
-    let year = tag.and_then(|t| t.date()).map(|date| u32::from(date.year));
-    let track_number = tag.and_then(|t| t.track());
-    let has_cover = tag.map(|t| !t.pictures().is_empty()).unwrap_or(false);
+    let year = tag
+        .and_then(lofty::tag::Accessor::date)
+        .map(|date| u32::from(date.year));
+    let track_number = tag.and_then(lofty::tag::Accessor::track);
+    let has_cover = tag.is_some_and(|t| !t.pictures().is_empty());
 
     let file_path = path.to_string_lossy().to_string();
     let file_size = fs::metadata(path).ok()?.len() as i64;
@@ -891,12 +900,9 @@ fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Re
     })?;
 
     let mut tracks_map: HashMap<TrackId, TrackMeta> = HashMap::new();
-    let mut all_track_ids = Vec::new();
-
     for t in track_iter {
         let (id, track) = t?;
         tracks_map.insert(id, track);
-        all_track_ids.push(id);
     }
 
     // Each track's most recent play, from history. This used to instead be a
@@ -942,7 +948,7 @@ fn load_library_snapshot(conn: &rusqlite::Connection, roots: Vec<PathBuf>) -> Re
             .query_map(params![pid.0 as i64], |row| {
                 Ok(TrackId(row.get::<_, i64>(0)? as u64))
             })?
-            .filter_map(|r| r.ok())
+            .filter_map(std::result::Result::ok)
             .collect();
 
         playlists_vec.push(PlaylistMeta {
@@ -1145,7 +1151,7 @@ mod tests {
         let events = run_commands(
             &db,
             vec![DatabaseCommand::ScanLibrary {
-                roots: vec![dir.path().join("unplugged"), music.clone()],
+                roots: vec![dir.path().join("unplugged"), music],
             }],
         );
         assert!(events.iter().any(|e| matches!(e, IpcEvent::Error { .. })));
@@ -1189,9 +1195,7 @@ mod tests {
 
         let events = run_commands(
             &db,
-            vec![DatabaseCommand::ScanLibrary {
-                roots: vec![music.clone()],
-            }],
+            vec![DatabaseCommand::ScanLibrary { roots: vec![music] }],
         );
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
 
@@ -1217,9 +1221,7 @@ mod tests {
 
         let events = run_commands(
             &db,
-            vec![DatabaseCommand::ScanLibrary {
-                roots: vec![music.clone()],
-            }],
+            vec![DatabaseCommand::ScanLibrary { roots: vec![music] }],
         );
 
         assert_eq!(titles(&db), ["song"], "each file once");
@@ -1670,9 +1672,7 @@ mod tests {
 
         let events = run_commands(
             &db,
-            vec![DatabaseCommand::ScanLibrary {
-                roots: vec![music.clone()],
-            }],
+            vec![DatabaseCommand::ScanLibrary { roots: vec![music] }],
         );
         assert_eq!(rescanned(&events), Some(false), "said to have changed");
 
@@ -1781,7 +1781,7 @@ mod tests {
                 assert!(
                     message.starts_with("Cannot open the library database"),
                     "{message}"
-                )
+                );
             }
             other => panic!("expected an error event, got {other:?}"),
         }

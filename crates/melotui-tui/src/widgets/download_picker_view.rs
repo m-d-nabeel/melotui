@@ -114,8 +114,11 @@ fn credits(found: &DownloadCandidate) -> String {
     [&found.by, &found.album]
         .into_iter()
         .flatten()
-        .map(|credit| format!("  ·  {}", bidi::for_terminal(credit)))
-        .collect()
+        .fold(String::new(), |mut s, credit| {
+            s.push_str("  ·  ");
+            s.push_str(&bidi::for_terminal(credit));
+            s
+        })
 }
 
 /// How long a result is, `4:08` or `1:00:01`; nothing if it does not say.

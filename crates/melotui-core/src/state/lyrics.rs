@@ -381,7 +381,7 @@ mod tests {
         std::fs::write(song.with_extension("lrc"), "[00:00.50] From the lrc").unwrap();
         match LyricsData::load_for(&song, None, &store) {
             LyricsData::Synced(lyrics) => {
-                assert_eq!(lyrics.get_timed_lines()[0].1.as_ref(), "From the lrc")
+                assert_eq!(lyrics.get_timed_lines()[0].1.as_ref(), "From the lrc");
             }
             other => panic!("{other:?}"),
         }

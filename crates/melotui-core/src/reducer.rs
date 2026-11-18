@@ -372,8 +372,7 @@ fn handle_database_message(state: &mut AppState, msg: DatabaseMsg) -> Vec<AppMsg
             // the actual cause of `most_played`/`recently_played` going stale.
             let played_at = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_secs())
-                .unwrap_or(0);
+                .map_or(0, |d| d.as_secs());
             state.library.record_play(track_id, played_at);
             vec![]
         }

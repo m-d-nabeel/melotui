@@ -30,7 +30,7 @@ impl CommandHistory {
             return;
         }
 
-        self.entries.push(command.clone());
+        self.entries.push(command);
         if self.entries.len() > MAX_HISTORY {
             self.entries.remove(0);
         }
@@ -55,9 +55,8 @@ impl CommandHistory {
     }
 
     fn load(&mut self) {
-        let path = match Self::file_path() {
-            Some(p) => p,
-            None => return,
+        let Some(path) = Self::file_path() else {
+            return;
         };
 
         if let Ok(file) = fs::File::open(&path) {
@@ -74,9 +73,8 @@ impl CommandHistory {
     }
 
     fn save(&self) {
-        let path = match Self::file_path() {
-            Some(p) => p,
-            None => return,
+        let Some(path) = Self::file_path() else {
+            return;
         };
 
         let mut contents = String::new();
@@ -113,7 +111,7 @@ mod tests {
     fn test_history_max_capacity() {
         let mut history = CommandHistory::default();
         for i in 0..105 {
-            history.push(format!("cmd {}", i));
+            history.push(format!("cmd {i}"));
         }
         assert_eq!(history.entries().len(), MAX_HISTORY);
         assert_eq!(history.entries().first().unwrap(), "cmd 5"); // 0-4 removed

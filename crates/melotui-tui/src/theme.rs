@@ -25,7 +25,9 @@ pub fn get_theme(state: &melotui_core::AppState) -> &'static Theme {
     static THEMES: Mutex<Vec<(ThemeChoice, bool, &'static Theme)>> = Mutex::new(Vec::new());
     let choice = state.theme();
     let background = state.theme_background();
-    let mut themes = THEMES.lock().unwrap_or_else(|e| e.into_inner());
+    let mut themes = THEMES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     // Known by all of what it was worked out from, not its count alone,
     // which two states can share.
     if let Some(&(_, _, theme)) = themes

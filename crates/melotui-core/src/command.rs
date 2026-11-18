@@ -690,12 +690,7 @@ fn sub<'a>(
     let Then::Sub(subs) = spec.then else {
         unreachable!("{} has no subcommands", spec.name())
     };
-    let choices = || {
-        subs.iter()
-            .map(|sub| sub.name())
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
+    let choices = || subs.iter().map(Spec::name).collect::<Vec<_>>().join(", ");
     let Some((name, rest)) = rest.split_first() else {
         return Err(invalid(format!(
             "{} needs one of: {}",
@@ -904,7 +899,7 @@ fn parse(input: &str) -> Result<Command, Command> {
         },
         "focus" => {
             let arg = rest.first().map_or("", String::as_str);
-            let mode = FocusMode::from_str(arg).map_err(|_| {
+            let mode = FocusMode::from_str(arg).map_err(|()| {
                 invalid(format!(
                     "focus takes full, viz, play, vp or lyrics{}",
                     if arg.is_empty() {
@@ -919,7 +914,7 @@ fn parse(input: &str) -> Result<Command, Command> {
         "vis" => {
             let arg = rest.join(" ");
             let style = SpectrumStyle::from_str(&arg)
-                .map_err(|_| invalid("vis takes cava, default, bar, particle, radial or nova"))?;
+                .map_err(|()| invalid("vis takes cava, default, bar, particle, radial or nova"))?;
             Command::ChangeVisualizer { arg: style }
         }
         "sidebar" => {
@@ -973,7 +968,7 @@ impl Command {
                     format!(
                         "{}: {}",
                         spec.help,
-                        subs.iter().map(|s| s.name()).collect::<Vec<_>>().join(", ")
+                        subs.iter().map(Spec::name).collect::<Vec<_>>().join(", ")
                     ),
                 ),
                 Then::Args(_) => (

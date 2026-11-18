@@ -80,16 +80,16 @@ pub fn handle_request_play_selected(state: &mut AppState) -> Vec<AppMsg> {
                                 new_source_name = "Folder View".to_string();
                             }
                             SidebarNodeId::Artist(ref name) => {
-                                new_source_name = format!("Artist: {}", name);
+                                new_source_name = format!("Artist: {name}");
                             }
                             SidebarNodeId::Album(ref name) => {
-                                new_source_name = format!("Album: {}", name);
+                                new_source_name = format!("Album: {name}");
                             }
                             SidebarNodeId::Genre(ref name) => {
-                                new_source_name = format!("Genre: {}", name);
+                                new_source_name = format!("Genre: {name}");
                             }
                             SidebarNodeId::Year(ref year) => {
-                                new_source_name = format!("Year: {}", year);
+                                new_source_name = format!("Year: {year}");
                             }
                             _ => {
                                 new_source_name = "Library Selection".to_string();
@@ -143,10 +143,10 @@ fn play_next_up(state: &mut AppState) -> Vec<AppMsg> {
 
     match advance::commit(&mut state.session, &decision) {
         Some(track) => {
-            if !from_queue {
-                update_active_node(state, track);
-            } else {
+            if from_queue {
                 state.session.playback.active_node = None;
+            } else {
+                update_active_node(state, track);
             }
             start_playback(state, track, from_queue)
         }
@@ -270,10 +270,10 @@ fn track_ended(state: &mut AppState, carried_on: Option<&std::path::Path>) -> Ve
     let from_queue = matches!(decision, advance::NextUp::Queued { .. });
     match advance::commit(&mut state.session, &decision) {
         Some(track) => {
-            if !from_queue {
-                update_active_node(state, track);
-            } else {
+            if from_queue {
                 state.session.playback.active_node = None;
+            } else {
+                update_active_node(state, track);
             }
             let already = is_carried_on(state, track);
             effects.extend(begin_track(state, track, from_queue, already));
@@ -332,7 +332,7 @@ fn preload_what_follows(state: &mut AppState) -> Vec<AppMsg> {
     if wanted == state.session.preloaded {
         return vec![];
     }
-    state.session.preloaded = wanted.clone();
+    state.session.preloaded.clone_from(&wanted);
     vec![AppMsg::Playback(PlaybackMsg::DispatchPreload {
         path: wanted,
     })]
@@ -668,9 +668,8 @@ fn begin_track(
 
     state.session.last_play_time = Some(now);
 
-    let meta = match state.library.get_track(id) {
-        Some(m) => m,
-        None => return vec![],
+    let Some(meta) = state.library.get_track(id) else {
+        return vec![];
     };
 
     // Extract all needed values before mutating state (borrow checker)
@@ -697,7 +696,7 @@ fn begin_track(
 
     state.session.notification.current = Some(Notification::new(
         NotificationKind::Info,
-        format!("Playing {}", title),
+        format!("Playing {title}"),
     ));
 
     let mut effects = vec![];
@@ -823,8 +822,11 @@ mod tests {
 
     /// Bypasses the "same track within 1s" throttle in `start_playback`.
     fn untick(state: &mut AppState) {
-        state.session.last_play_time =
-            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        state.session.last_play_time = Some(
+            std::time::Instant::now()
+                .checked_sub(std::time::Duration::from_secs(2))
+                .unwrap(),
+        );
     }
 
     #[test]
@@ -1542,8 +1544,8 @@ mod tests {
                 track_id,
                 TrackMeta {
                     id: track_id,
-                    file_path: PathBuf::from(format!("/home/user/Music/Album/track{}.mp3", id)),
-                    title: format!("Track {}", id),
+                    file_path: PathBuf::from(format!("/home/user/Music/Album/track{id}.mp3")),
+                    title: format!("Track {id}"),
                     artist: Some("Artist".into()),
                     album: Some("Album".into()),
                     genre: None,
@@ -1571,7 +1573,7 @@ mod tests {
         let folder_node = SidebarNodeId::Folder(PathBuf::from("/home/user/Music/Album"));
         original_state.session.nav.library.selected_id = Some(SidebarNodeId::Track {
             id: TrackId(2),
-            parent: Box::new(folder_node.clone()),
+            parent: Box::new(folder_node),
         });
 
         // Trigger normal playback selection action
@@ -1613,8 +1615,11 @@ mod tests {
 
         // --- Step 4: Verify Skip Next works identically after session restore ---
         // Advance time to bypass 1s same-track play throttle
-        restored_state.session.last_play_time =
-            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        restored_state.session.last_play_time = Some(
+            std::time::Instant::now()
+                .checked_sub(std::time::Duration::from_secs(2))
+                .unwrap(),
+        );
         let next_effects = handle_request_next(&mut restored_state);
         assert!(
             !next_effects.is_empty(),
@@ -1628,8 +1633,11 @@ mod tests {
 
         // --- Step 5: Verify Skip Prev works identically after session restore ---
         restored_state.session.playback.progress_ms = 0; // Ensure progress is at start so it skips to previous track
-        restored_state.session.last_play_time =
-            Some(std::time::Instant::now() - std::time::Duration::from_secs(2));
+        restored_state.session.last_play_time = Some(
+            std::time::Instant::now()
+                .checked_sub(std::time::Duration::from_secs(2))
+                .unwrap(),
+        );
         let prev_effects = handle_request_prev(&mut restored_state);
         assert!(
             !prev_effects.is_empty(),
@@ -1831,7 +1839,7 @@ mod lyrics_tests {
     #[test]
     fn lyrics_chosen_in_a_search_beat_a_lrc_beside_the_song() {
         let (mut state, dir, song) = playing(Some("[00:01.00] Beside"));
-        handle_audio_started(&mut state, song.clone());
+        handle_audio_started(&mut state, song);
         let line = |state: &AppState| match &state.session.lyrics.data {
             LyricsData::Synced(lyrics) => lyrics.get_timed_lines()[0].1.to_string(),
             other => panic!("{other:?}"),

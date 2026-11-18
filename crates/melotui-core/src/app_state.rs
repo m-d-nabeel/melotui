@@ -53,7 +53,10 @@ impl AppState {
         // Apply config to session
         session.ui.sidebar_width = config.ui.sidebar_width;
         session.ui.scrolloff = config.ui.scrolloff;
-        session.output.wanted = config.audio.output_device.clone();
+        session
+            .output
+            .wanted
+            .clone_from(&config.audio.output_device);
         session.ui.lyrics_zoom = crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom, 2.0);
         session.ui.lyrics_zoom_focus =
             crate::config::clamp_lyrics_zoom(config.ui.lyrics_zoom_focus, 3.0);
@@ -343,7 +346,7 @@ impl AppState {
                 _ => false,
             };
             if update_sel {
-                self.session.nav.library.selected_id = Some(canon.clone());
+                self.session.nav.library.selected_id = Some(canon);
             }
         }
 
@@ -375,7 +378,7 @@ impl AppState {
     pub fn is_viewing_collection(&self) -> bool {
         matches!(
             &self.session.nav.library.selected_id,
-            Some(SidebarNodeId::Playlist(_)) | Some(SidebarNodeId::Folder(_))
+            Some(SidebarNodeId::Playlist(_) | SidebarNodeId::Folder(_))
         )
     }
 
@@ -683,7 +686,6 @@ impl AppState {
     fn resolve_track_title(&self, id: TrackId) -> String {
         self.library
             .get_track(id)
-            .map(|t| t.title.clone())
-            .unwrap_or("Unknown".into())
+            .map_or_else(|| "Unknown".into(), |t| t.title.clone())
     }
 }
