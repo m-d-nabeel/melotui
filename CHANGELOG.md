@@ -5,6 +5,7 @@ Versions are dates: the year, the month, and a count of the releases in that mon
 ## Unreleased
 
 - **melotui is on crates.io**: `cargo install --locked melotui` builds it, and `cargo binstall melotui` fetches the release download. Each of the crates it is made of has a page there saying what it does.
+- The DSP studio's visualizer style can be changed again, with Shift+V, F3 or `:visualizer` while the studio is open. Since 2026.11.1 it was fixed at bars, the change going unseen to the main screen. The studio's style is its own, bars to begin with, and remembered; the main screen's is left as it was.
 - The `dist` build profile is gone: the release downloads are built with `cargo build --release`, which now strips the binary. The profile's extra optimization made melotui play no lighter, and a release build is what `cargo install` makes anyway.
 
 ## 2026.11.1

@@ -29,6 +29,9 @@ pub struct SessionState {
     pub repeat_mode: RepeatMode,
     pub visualizer_mode: VisualizerMode,
     pub spectrum_style: SpectrumStyle,
+    /// The style the DSP studio draws its spectrum in: its own, bars to begin
+    /// with, so that changing it there leaves the main screen's as it was.
+    pub dsp_spectrum_style: SpectrumStyle,
 
     pub seek_epoch: u64,
     /// Whether the scan under way is a background one, which shows no
@@ -70,6 +73,7 @@ impl Default for SessionState {
             repeat_mode: RepeatMode::Off,
             visualizer_mode: VisualizerMode::AlbumArt,
             spectrum_style: SpectrumStyle::default(),
+            dsp_spectrum_style: SpectrumStyle::Bar,
             seek_epoch: 0,
             scan_quietly: false,
             last_play_time: None,

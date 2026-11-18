@@ -49,6 +49,9 @@ pub struct PersistedSession {
     pub focus_mode: FocusMode,
     pub visualizer_mode: VisualizerMode,
     pub spectrum_style: SpectrumStyle,
+    /// The DSP studio's own; bars for a session saved before it had one.
+    #[serde(default = "studio_style")]
+    pub dsp_spectrum_style: SpectrumStyle,
     pub dsp: PersistedDspParams,
     /// The output device chosen with `:device`; `None` leaves the config's.
     #[serde(default)]
@@ -88,6 +91,7 @@ impl Default for PersistedSession {
             focus_mode: FocusMode::default(),
             visualizer_mode: VisualizerMode::default(),
             spectrum_style: SpectrumStyle::default(),
+            dsp_spectrum_style: studio_style(),
             dsp: PersistedDspParams::from_audio_state(&audio),
             output_device: None,
             theme: None,
@@ -320,6 +324,7 @@ impl PersistedSession {
             focus_mode: state.session.ui.focus_mode,
             visualizer_mode: state.session.visualizer_mode.clone(),
             spectrum_style: state.session.spectrum_style.clone(),
+            dsp_spectrum_style: state.session.dsp_spectrum_style.clone(),
             dsp: PersistedDspParams::from_audio_state(&state.session.audio),
             output_device: state.session.output.wanted.clone(),
             theme: Some(state.session.ui.theme.name.clone()),
@@ -485,6 +490,7 @@ impl PersistedSession {
         state.session.ui.focus_mode = self.focus_mode;
         state.session.visualizer_mode = self.visualizer_mode.clone();
         state.session.spectrum_style = self.spectrum_style.clone();
+        state.session.dsp_spectrum_style = self.dsp_spectrum_style.clone();
         self.dsp.apply_to_audio_state(&mut state.session.audio);
         if self.output_device.is_some() {
             state.session.output.wanted = self.output_device.clone();
@@ -507,6 +513,11 @@ impl PersistedSession {
 
         valid_queue.len()
     }
+}
+
+/// The style the DSP studio starts in.
+fn studio_style() -> SpectrumStyle {
+    SpectrumStyle::Bar
 }
 
 #[cfg(test)]
@@ -579,6 +590,18 @@ mod tests {
     }
 
     #[test]
+    fn a_session_saved_before_the_studio_had_its_own_style_gives_it_bars() {
+        let mut saved = toml::to_string(&PersistedSession::default()).unwrap();
+        saved = saved
+            .lines()
+            .filter(|line| !line.starts_with("dsp_spectrum_style"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let read: PersistedSession = toml::from_str(&saved).unwrap();
+        assert_eq!(read.dsp_spectrum_style, crate::state::SpectrumStyle::Bar);
+    }
+
+    #[test]
     fn test_persisted_session_serialization_roundtrip() {
         let session = PersistedSession {
             queue: vec![TrackId(1), TrackId(2)],
@@ -644,6 +667,7 @@ mod tests {
             focus_mode: crate::state::ui::FocusMode::Full,
             visualizer_mode: crate::state::VisualizerMode::Spectrum,
             spectrum_style: crate::state::SpectrumStyle::Bar,
+            dsp_spectrum_style: crate::state::SpectrumStyle::Nova,
             dsp: PersistedDspParams::default(),
             output_device: Some("USB Audio DAC".to_string()),
             theme: Some("nord".to_string()),
@@ -660,6 +684,10 @@ mod tests {
         assert_eq!(deserialized.output_device.as_deref(), Some("USB Audio DAC"));
         assert_eq!(deserialized.theme.as_deref(), Some("nord"));
         assert_eq!(deserialized.theme_in_config.as_deref(), Some("default"));
+        assert_eq!(
+            deserialized.dsp_spectrum_style,
+            crate::state::SpectrumStyle::Nova
+        );
         assert!(deserialized.show_track_info);
         assert_eq!(
             deserialized.repeat_mode,
