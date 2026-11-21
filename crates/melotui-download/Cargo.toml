@@ -21,7 +21,7 @@ lofty = "0.25"
 # To stop a download's whole family of processes, not yt-dlp alone: safe
 # wrappers for signals, the same crate and feature ctrlc already builds.
 [target.'cfg(unix)'.dependencies]
-nix = { version = "0.31", default-features = false, features = ["signal"] }
+nix = { version = "0.32", default-features = false, features = ["signal"] }
 
 [dev-dependencies]
 tempfile = "3.12"
